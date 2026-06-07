@@ -1,0 +1,185 @@
+# Gremio
+
+**Gremio** ist eine Web-App zur Verwaltung von Anträgen in Gremien — z. B.
+Studierendenvertretungen, Vereinen, Verbänden oder Ausschüssen. Ein
+**öffentliches Antragsformular** speist Anträge je nach Standort in **interne
+Kanban-Boards** ein, auf denen das Gremium sie bearbeitet — mit Rollen & Gruppen,
+Finanzübersichten, Vorlagen, optionaler Nextcloud-Archivierung und einer schmalen
+REST-API.
+
+Stack: **Next.js (App Router) + React + TypeScript**, **PostgreSQL** (`pg` +
+Drizzle ORM), Tailwind CSS, `dnd-kit`, iron-session, Custom-OIDC-Client (`jose`),
+`sharp`, `pdf-lib`, `webdav`. REST-API-Doku: [docs/API.md](docs/API.md).
+
+---
+
+## Was die App kann
+
+**Öffentlich (ohne Login)**
+- **Antragsformular** mit Pflicht-Standortwahl; Uploads (Finanzantrag,
+  Studierendenausweis, Anlage A/B). Spam-Schutz (Honeypot + signierte Zeitfalle),
+  Ratenbegrenzung.
+- **Eingangsbestätigung als PDF** mit einem zufälligen **Status-Token-Link**.
+- **Statusseite** (`/status/{token}`): aktueller Status ansehen, Dokumente
+  herunterladen (außer Studierendenausweis — bleibt intern) und **PDFs nachreichen**
+  (append-only). In der Archiv-Spalte ist das Nachreichen gesperrt.
+
+**Intern (Login via SSO)**
+- **Mehrere Kanban-Boards** mit pro Board konfigurierbaren Status-Spalten,
+  Drag-&-Drop-Sortierung, Live-Aktualisierung (SSE), Filtern, Kommentaren und
+  Aktivitäts-/Statushistorie je Karte.
+- **Karten** mit pro Board ein-/ausschaltbaren Feldern (Antragsteller, Priorität,
+  Deadline, Sitzung, Beträge, Konto, Anweisungsdatum, automatische **Antragsnummer**,
+  Haushaltstitel, Anhänge u. v. m.) — Erstellen/Bearbeiten speichert automatisch.
+- **Standort-Routing**: pro Standort legt der Admin Ziel-Board + Ziel-Spalte fest;
+  nur Standorte mit Ziel sind aktivierbar.
+- **Finanzübersichten** mit Haushaltsplan (Einnahmen/Ausgaben), Live-/Ist-Ausgaben
+  und Antragsübersicht; **XLSX-Export**.
+- **Vorlagen** für Boards und Finanzpläne (Admin oder Template-Verwalter).
+- **Nextcloud-Archivierung** (optional, pro Board): erreicht ein Antrag die
+  Trigger-Spalte, werden seine Dateien automatisch hochgeladen. Schlägt das fehl,
+  wird **automatisch wiederholt**; nach > 24 h erscheint eine Warnung auf dem
+  Dashboard.
+- **REST-API** (`/api/v1`, persönliche Bearer-Tokens) — kann nie mehr als der
+  Nutzer über die Weboberfläche. Siehe [docs/API.md](docs/API.md).
+
+**Rollen:** `admin` (alles, inkl. Admin-Panel), `template_manager` (zusätzlich
+Vorlagen), `user` (eigene Boards + Freigaben). Board-Zugriff ist binär; Verwalten
+bleibt Eigentümer/Admin vorbehalten.
+
+---
+
+## Entwicklung
+
+```bash
+npm install
+cp .env.example .env          # Werte anpassen (siehe „Umgebungsvariablen")
+docker compose up -d db       # PostgreSQL starten (127.0.0.1:5432)
+npm run db:setup              # Migrationen + Seed (Standorte, Prioritäten, Board-Template — KEIN Admin)
+npm run dev                   # http://localhost:3000
+```
+
+> Der erste Admin entsteht **über das SSO**: Der in `ADMIN_USER` gesetzte
+> SSO-Benutzer wird beim **ersten Login** automatisch Admin (kein Admin im Seed,
+> kein Passwort in dieser App).
+
+### Skripte
+
+| Skript | Zweck |
+|--------|-------|
+| `npm run dev` | Entwicklungsserver |
+| `npm run build` / `npm start` | Produktions-Build / -Start |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Drizzle-Migration aus dem Schema erzeugen |
+| `npm run db:migrate` | Migrationen anwenden |
+| `npm run db:seed` | Startbestand: 4 Standorte, Prioritäten, Board-Template (kein Admin) |
+| `npm run db:setup` | `db:migrate` + `db:seed` |
+
+---
+
+## Umgebungsvariablen (`.env`)
+
+Vorlage: [`.env.example`](.env.example) (ausführlich kommentiert in
+[`.env.example.read`](.env.example.read)). **Ohne gültige Secrets startet die App
+bewusst nicht.**
+
+| Variable | Beschreibung |
+|----------|--------------|
+| `APP_BASE_URL` | Kanonische öffentliche URL — Quelle für Status-Links **und** die OIDC-`redirect_uri`. Muss exakt der beim SSO registrierten URL entsprechen. |
+| `AUTH_SECRET` | Session-/HMAC-Basisgeheimnis, **min. 32 Zeichen** (`openssl rand -base64 48`). |
+| `ENCRYPTION_KEY` | AES-256-Schlüssel für Nextcloud-Zugangsdaten, **64 Hex-Zeichen** (`openssl rand -hex 32`). |
+| `OIDC_ISSUER` | Öffentlicher SSO-Issuer (Browser: authorize/logout, `iss`-Prüfung). In Produktion **https**. |
+| `OIDC_INTERNAL_ISSUER` | Optional: containerinterner Issuer für Server-zu-Server-Calls (token/jwks/userinfo). Leer = `OIDC_ISSUER`. |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | OAuth-Client aus der SSO-Registrierung. |
+| `ADMIN_USER` | SSO-Benutzer, der beim **ersten Login** automatisch Admin wird. |
+| `POSTGRES_PASSWORD` | Passwort des Postgres-Containers — **muss gesetzt sein** (docker-compose bricht sonst ab). |
+| `DATABASE_URL` | PostgreSQL-Verbindung (im Container von docker-compose gesetzt). |
+| `UPLOAD_DIR` | Verzeichnis für Anhänge + Profilbilder (Default `/app/uploads` im Container). |
+| `AUTH_TRUST_HOST` | Hinter Reverse-Proxy auf `true`. |
+
+---
+
+## Deployment (Docker hinter nginx)
+
+Der Container liefert **nur HTTP** auf Port 3000; **SSL/TLS terminiert nginx**
+davor. Persistente Volumes sind zwingend, sonst gehen DB und Uploads beim Rebuild
+verloren.
+
+```bash
+cp .env.example .env          # echte Secrets eintragen (siehe oben)
+docker compose up -d --build  # startet PostgreSQL (db) + App
+```
+
+- Beim Start laufen automatisch **nur die Migrationen** (Instrumentation-Hook) —
+  **kein** Auto-Seed. Startbestand bei Bedarf einmalig mit `npm run db:seed`.
+- Daten liegen in `./pgdata` (PostgreSQL) und `./uploads` (Dateien) — **beides
+  sichern**.
+- nginx-Beispiel: [`deploy/nginx.conf.example`](deploy/nginx.conf.example) — weist
+  fremde Host-Header ab (`default_server` → 444), reicht
+  `X-Forwarded-Proto`/`-For` + `Host` weiter und setzt `client_max_body_size 105m`
+  (4 Dateien × 25 MB + Overhead).
+
+```
+Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js, Node) ──> PostgreSQL-Container
+                                                              └──> /uploads (Volume)
+```
+
+---
+
+## Worauf man achten muss
+
+- **Echte Secrets setzen.** `AUTH_SECRET` und `ENCRYPTION_KEY` müssen zufällig
+  sein; die Platzhalter aus `.env.example*` werden beim Start **abgelehnt**.
+  `AUTH_SECRET` ändern ⇒ alle Sessions werden ungültig (einmal neu anmelden).
+- **`POSTGRES_PASSWORD` ist Pflicht** (kein schwaches Default mehr). Ein nachträglich
+  geändertes Passwort wirkt nur bei DB-Neuinitialisierung — sonst zusätzlich
+  `ALTER USER gremio WITH PASSWORD '…'` im laufenden Container.
+- **TLS für ausgehende Credentials:** In Produktion muss der `OIDC_ISSUER` **https**
+  sein (über http zu einem öffentlichen Host bricht der Start ab). **Nextcloud-URLs
+  müssen `https://`** sein — sonst gingen Zugangsdaten im Klartext.
+- **Genau ein vertrauenswürdiger nginx davor:** Die App vertraut `X-Forwarded-*` /
+  `X-Real-IP`. nginx **muss** fremde Host-Header abweisen (siehe Beispiel), sonst
+  Host-Header-Injection.
+- **Volumes nie verlieren:** `./pgdata` und `./uploads` liegen außerhalb des Images.
+- **DSGVO:** Keine Antragsteller-E-Mail; Status nur per Token-Link; Roh-IPs werden
+  nicht gespeichert (nur HMAC fürs Rate-Limit). Studierendenausweis ist nie
+  öffentlich abrufbar.
+- **Skalierung:** Rate-Limiting läuft in-memory (eine Instanz). Bei horizontaler
+  Skalierung geteilten Speicher (Redis) ergänzen.
+- Weitere bewusste Design-/Sicherheitsentscheidungen: siehe Abschnitt
+  „Sicherheits-/Design-Entscheidungen" in [CLAUDE.md](CLAUDE.md).
+
+---
+
+## Sicherheit (kurz)
+
+- Login ausschließlich über **SSO/OIDC** (PKCE, `state`/`nonce`, `iss`/`aud`/`exp`,
+  JIT-Provisioning) — kein lokales Passwort in dieser App.
+- Sessions als **verschlüsseltes, HttpOnly-, in Produktion Secure-Cookie**
+  (iron-session). HMAC-Schlüssel je Zweck per HKDF aus `AUTH_SECRET` abgeleitet.
+- Board-Nextcloud-Zugangsdaten **AES-256-GCM-verschlüsselt** in der DB; ausgehende
+  WebDAV-Requests sind SSRF-gehärtet (DNS-Pinning, kein Redirect, https-Pflicht).
+- REST-API ist eine **Teilmenge** der Web-Rechte (nie mehr).
+
+---
+
+## Lizenz
+
+**GNU Affero General Public License, Version 3 oder (nach deiner Wahl) jeder
+späteren Version** (`AGPL-3.0-or-later`) — Volltext der Version 3 siehe
+[`LICENSE`](LICENSE).
+
+Diese Software ist freie Software: Du kannst sie unter den Bedingungen der AGPL
+weitergeben und/oder verändern. **Wichtig:** Wer eine modifizierte Version **über
+ein Netzwerk** zugänglich macht (z. B. als gehostete Web-App), muss den
+**vollständigen Quellcode** dieser Version den Nutzern anbieten.
+
+```
+Copyright (C) 2026  Erik Engler
+
+Dieses Programm ist freie Software: Sie können es unter den Bedingungen der GNU
+Affero General Public License, wie von der Free Software Foundation veröffentlicht,
+weitergeben und/oder modifizieren — entweder gemäß Version 3 der Lizenz oder (nach
+Ihrer Wahl) jeder späteren Version.
+Es wird ohne jede Gewährleistung bereitgestellt; siehe die Lizenz für Details.
+```

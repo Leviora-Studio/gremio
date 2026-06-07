@@ -1,0 +1,43 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# IDE
+.idea/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env files
+.env
+.env*.local
+
+# data & uploads (persistente Volumes — nie ins Repo)
+/data
+/uploads
+/pgdata
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# typescript
+*.tsbuildinfo
+
+# lokales Compose-Override (App lokal bauen statt Registry-Pull) — nie committen
+docker-compose.override.yml

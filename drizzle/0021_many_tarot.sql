@@ -1,0 +1,2 @@
+ALTER TABLE "board_archive" ADD COLUMN "folder_fields" text DEFAULT 'number,title' NOT NULL;--> statement-breakpoint
+ALTER TABLE "board_archive" ADD COLUMN "folder_separator" text DEFAULT '-' NOT NULL;

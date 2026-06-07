@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.idea
+data
+uploads
+pgdata
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+.env
+.env*.local
+npm-debug.log*
+Dockerfile
+.dockerignore
+README.md

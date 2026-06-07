@@ -1,0 +1,1 @@
+ALTER TABLE "finance_boards" ADD COLUMN "description" text;

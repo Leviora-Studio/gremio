@@ -1,0 +1,69 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gremio
+      # Kein schwaches Default mehr: muss in .env gesetzt sein (sonst bricht
+      # `docker compose up` mit klarer Meldung ab) — keine vorhersehbaren Creds.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in .env gesetzt sein}
+      POSTGRES_DB: gremio
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    # Bewusst KEIN Host-Port: jeder Stack hat seine EIGENE DB, nur compose-intern
+    # erreichbar (die App nutzt db:5432 über das Compose-Netz, siehe DATABASE_URL
+    # unten). Für lokales `npm run dev` / `db:setup` gegen den Container den Port
+    # einkommentieren (oder in der gitignored docker-compose.override.yml setzen,
+    # die nicht aufs Deploy gelangt):
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gremio -d gremio"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Vorgebautes Image aus der GitHub Container Registry (ghcr.io, per CI gepusht).
+    # Tag optional über GREMIO_TAG pinnen (z. B. 1.0.0 oder eine Commit-SHA), sonst :latest.
+    image: ghcr.io/erikenglerdev/gremio:${GREMIO_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    # Erkennt einen hängenden Container (läuft, aber kaputt) — node bringt fetch
+    # mit, /api/health antwortet ohne DB-Zugriff mit 200.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      TZ: Europe/Berlin
+      DATABASE_URL: postgres://gremio:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in .env gesetzt sein}@db:5432/gremio
+      UPLOAD_DIR: /app/uploads
+      AUTH_TRUST_HOST: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Backchannel (token/jwks/userinfo) läuft über die öffentliche SSO-URL
+    # (OIDC_INTERNAL_ISSUER=https://limen.sturahsa.de). Damit der Container nicht
+    # auf NAT-Hairpin der öffentlichen IP angewiesen ist, zeigt der SSO-Hostname
+    # auf das Docker-Host-Gateway, wo das Host-nginx (Port 443) lauscht — TLS/SNI
+    # bleibt limen.sturahsa.de, das Let's-Encrypt-Zertifikat passt also weiterhin.
+    # host.docker.internal bleibt für lokale Dev-Setups erhalten (harmlos in Prod).
+    extra_hosts:
+      - "limen.sturahsa.de:host-gateway"
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      # Nur lokal exponiert — nginx (Host) terminiert SSL und proxyt hierher.
+      # Host-Port 3010 (3000 ist lokal vom SSO-Dev-Server belegt); Container bleibt 3000.
+      - "127.0.0.1:3010:3000"

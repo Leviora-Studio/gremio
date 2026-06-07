@@ -1,0 +1,1 @@
+ALTER TABLE "cards" ADD COLUMN "applicant_note" text;

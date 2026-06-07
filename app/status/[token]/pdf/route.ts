@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Erik Engler
+
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { cards } from "@/lib/db/schema";
+import { env } from "@/lib/env";
+import { buildConfirmationPdf } from "@/lib/pdf";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ token: string }> },
+) {
+  const { token } = await params;
+  const [antrag] = await db
+    .select()
+    .from(cards)
+    .where(eq(cards.token, token))
+    .limit(1);
+  if (!antrag) return new Response("Not found", { status: 404 });
+
+  const pdf = await buildConfirmationPdf({
+    title: antrag.title,
+    applicant: antrag.applicant,
+    eingang: antrag.createdAt,
+    statusLink: `${env.APP_BASE_URL}/status/${token}`,
+    number: antrag.number,
+  });
+
+  return new Response(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="eingangsbestaetigung.pdf"`,
+      // Enthält Antragsteller/Antragsnummer — nicht in Caches ablegen.
+      "Cache-Control": "private, no-store",
+    },
+  });
+}

@@ -1,0 +1,131 @@
+# Beispiel-nginx-Konfiguration: SSL-Termination + Reverse-Proxy zum Container.
+# Der App-Container liefert nur HTTP auf 127.0.0.1:3010 (Host-Port; Container 3000).
+#
+# Zwei vhosts auf DEMSELBEN Container (127.0.0.1:3010):
+#   - gremio.sturahsa.de  → interner Bereich; Start „/" leitet auf „/intern"
+#   - antrag.sturahsa.de  → öffentliches Antragsformular; Start „/" IST das Formular
+# Das Session-Cookie (gremio_session) ist host-only und damit automatisch auf
+# gremio.sturahsa.de beschränkt — die öffentliche Domain trägt keine Session.
+#
+# SICHERHEITSMODELL: Die App vertraut hinter GENAU EINEM nginx den Headern
+# Host / X-Forwarded-Host / X-Forwarded-Proto / X-Real-IP (für Secure-Cookies,
+# OIDC-Redirects, Server-Action-Origin-Prüfung und die Rate-Limit-IP). Damit
+# diese Annahme hält, MUSS nginx Anfragen mit fremdem/unbekanntem Host-Header
+# verwerfen — sonst könnte ein Angreifer per „Host: evil.com" die von der App
+# gebildeten absoluten URLs beeinflussen (Host-Header-Injection). Dafür sorgen
+# die default_server-Blöcke unten; erst danach ist `$host` weiter unten sicher.
+
+# --- Catch-all: unbekannte/fremde Hosts hart abweisen ----------------------
+# Nur EINMAL pro nginx-Host. Falls die Limen-Config (limen.sturahsa.de) auf
+# demselben nginx liegt, gehört dieser Block genau hierher (dort weglassen).
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;                  # Verbindung ohne Antwort schließen
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;     # kein Zertifikat für fremde Hosts (nginx >= 1.19.4)
+}
+
+# --- Gemeinsame Proxy-Einstellungen (per include in beide vhosts ziehbar) ---
+# Hier inline gehalten, damit die Datei eigenständig bleibt. Wer mag, lagert den
+# location-Block nach /etc/nginx/snippets/gremio_proxy.conf aus und bindet ihn
+# mit `include snippets/gremio_proxy.conf;` ein.
+
+# ===========================================================================
+# gremio.sturahsa.de — interner Bereich
+# ===========================================================================
+server {
+    listen 80;
+    server_name gremio.sturahsa.de;
+    return 301 https://gremio.sturahsa.de$request_uri;   # feste Domain, NICHT $host
+}
+
+server {
+    listen 443 ssl http2;
+    server_name gremio.sturahsa.de;
+    server_tokens off;
+
+    ssl_certificate     /etc/letsencrypt/live/gremio.sturahsa.de/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gremio.sturahsa.de/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Interne Anhänge/Uploads — großzügig (vgl. antrag-vhost-Kommentar).
+    client_max_body_size 105m;
+
+    # Direkteinstieg in den internen Bereich. Nur der exakte Root-Pfad wird
+    # umgeleitet; /intern, /admin, /api, /_next/… proxien normal weiter.
+    # Relativer Redirect → bleibt auf gremio.sturahsa.de.
+    location = / {
+        return 302 /intern;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3010;
+        proxy_http_version 1.1;
+
+        # Damit die App Schema/Host erkennt (Secure-Cookies, OIDC-Redirects,
+        # Server-Action-Origin-Check) und die echte Client-IP fürs Rate-Limit.
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE (Live-Board) zuverlässig: kein Connection-Upgrade erzwingen,
+        # langer Read-Timeout. Pufferung deaktiviert die App selbst per
+        # Header (X-Accel-Buffering: no).
+        proxy_set_header Connection "";
+        proxy_read_timeout 1h;
+    }
+}
+
+# ===========================================================================
+# antrag.sturahsa.de — öffentliches Antragsformular (Start = „/")
+# ===========================================================================
+server {
+    listen 80;
+    server_name antrag.sturahsa.de;
+    return 301 https://antrag.sturahsa.de$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name antrag.sturahsa.de;
+    server_tokens off;
+
+    ssl_certificate     /etc/letsencrypt/live/antrag.sturahsa.de/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/antrag.sturahsa.de/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Das öffentliche Formular sendet bis zu 4 Dateien (je max. 25 MB) in EINER
+    # Server-Action. Das Limit muss die Summe abdecken, sonst weist nginx die
+    # Anfrage mit 413 ab, BEVOR die App die freundliche Pro-Datei-Meldung liefern
+    # kann. ~105 MB = 4×25 MB + Overhead; bleibt unter dem App-Limit (150 MB,
+    # serverActions.bodySizeLimit).
+    client_max_body_size 105m;
+
+    # KEIN Root-Redirect: „/" ist hier direkt das öffentliche Formular.
+    # (Interne Pfade wie /intern wären technisch erreichbar, aber SSO-geschützt;
+    #  bewusst nicht gesperrt — „einfache" Trennung nur über den Start-Pfad.)
+    location / {
+        proxy_pass http://127.0.0.1:3010;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Connection "";
+        proxy_read_timeout 1h;
+    }
+}

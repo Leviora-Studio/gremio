@@ -1,0 +1,1 @@
+ALTER TABLE "cards" ADD COLUMN "decision_ref" text;

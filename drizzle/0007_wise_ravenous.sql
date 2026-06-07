@@ -1,0 +1,1 @@
+ALTER TABLE "board_card_fields" ADD COLUMN "position" integer DEFAULT 0 NOT NULL;
