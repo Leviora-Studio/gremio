@@ -18,6 +18,8 @@ export function Select({
   disabled,
   className,
   id,
+  searchable = false,
+  searchPlaceholder = "Suchen…",
 }: {
   options: SelectOption[];
   value?: string;
@@ -28,12 +30,16 @@ export function Select({
   disabled?: boolean;
   className?: string;
   id?: string;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const isControlled = value !== undefined;
   const [internal, setInternal] = useState(defaultValue ?? "");
   const current = isControlled ? value : internal;
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -51,6 +57,14 @@ export function Select({
     };
   }, [open]);
 
+  // Beim Öffnen: Suchfeld leeren und fokussieren.
+  useEffect(() => {
+    if (open && searchable) {
+      setQuery("");
+      searchRef.current?.focus();
+    }
+  }, [open, searchable]);
+
   function choose(val: string) {
     if (!isControlled) setInternal(val);
     onChange?.(val);
@@ -58,6 +72,11 @@ export function Select({
   }
 
   const selectedLabel = options.find((o) => o.value === current)?.label;
+  const q = query.trim().toLowerCase();
+  const visibleOptions =
+    searchable && q
+      ? options.filter((o) => o.label.toLowerCase().includes(q))
+      : options;
 
   return (
     <div ref={ref} className={clsx("relative", className)}>
@@ -97,27 +116,44 @@ export function Select({
       </button>
 
       {open && (
-        <ul
-          role="listbox"
-          className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg"
-        >
-          {options.map((o) => (
-            <li key={o.value}>
-              <button
-                type="button"
-                onClick={() => choose(o.value)}
-                className={clsx(
-                  "block w-full px-3 py-1.5 text-left hover:bg-brand-50",
-                  o.value === current
-                    ? "bg-brand-50 font-medium text-brand-700"
-                    : "text-slate-700",
-                )}
-              >
-                {o.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="absolute z-30 mt-1 w-full rounded-md border border-slate-200 bg-white text-sm shadow-lg">
+          {searchable && (
+            <div className="border-b border-slate-100 p-1.5">
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="h-8 w-full rounded border border-slate-300 px-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+          )}
+          <ul role="listbox" className="max-h-60 overflow-auto py-1">
+            {visibleOptions.length === 0 ? (
+              <li className="px-3 py-1.5 text-slate-400">
+                Keine Treffer
+              </li>
+            ) : (
+              visibleOptions.map((o) => (
+                <li key={o.value}>
+                  <button
+                    type="button"
+                    onClick={() => choose(o.value)}
+                    className={clsx(
+                      "block w-full px-3 py-1.5 text-left hover:bg-brand-50",
+                      o.value === current
+                        ? "bg-brand-50 font-medium text-brand-700"
+                        : "text-slate-700",
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );

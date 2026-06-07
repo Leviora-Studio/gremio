@@ -160,6 +160,8 @@ export default async function BoardSettingsPage({
               <Select
                 name="userId"
                 placeholder="Nutzer…"
+                searchable
+                searchPlaceholder="Nutzer suchen…"
                 options={allUsers.map((u) => ({
                   value: String(u.id),
                   label: u.username,
@@ -178,6 +180,8 @@ export default async function BoardSettingsPage({
               <Select
                 name="groupId"
                 placeholder="Gruppe…"
+                searchable
+                searchPlaceholder="Gruppe suchen…"
                 options={allGroups.map((g) => ({
                   value: String(g.id),
                   label: g.name,
