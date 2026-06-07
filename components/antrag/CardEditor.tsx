@@ -305,7 +305,7 @@ export function CardEditor({
       </div>
     ),
     notes: (
-      <div>
+      <div className="sm:col-span-2">
         <label className="label">Notizen</label>
         <AutoTextarea
           defaultValue={valuesRef.current.notes ?? ""}
