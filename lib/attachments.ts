@@ -60,6 +60,25 @@ export function resolveMime(file: File): string {
   return EXT_MIME[ext] ?? "application/octet-stream";
 }
 
+/**
+ * RFC-5987-konformer Content-Disposition-Wert. HTTP-Header-Werte sind Latin-1 —
+ * ein Dateiname mit Nicht-ASCII (z. B. „Ö") lässt `new Response(...)` sonst
+ * werfen (→ 500). Daher: reiner ASCII-Fallback (filename=) PLUS UTF-8-Variante
+ * (filename*=), sodass Browser den korrekten Originalnamen anzeigen.
+ */
+export function contentDisposition(
+  filename: string,
+  type: "inline" | "attachment" = "attachment",
+): string {
+  const ascii =
+    filename
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7E]/g, "") // alles außerhalb druckbarem ASCII raus
+      .replace(/["\\]/g, "_")
+      .trim() || "datei";
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
 /** Upload validieren. Gibt Fehlermeldung zurück oder null. */
 export function validateUpload(file: File, allowedMime: string[]): string | null {
   if (!file || file.size === 0) return "Keine Datei ausgewählt.";

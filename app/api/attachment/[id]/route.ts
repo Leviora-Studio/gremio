@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { cards, attachments } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
-import { absPath } from "@/lib/attachments";
+import { absPath, contentDisposition } from "@/lib/attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -47,11 +47,10 @@ export async function GET(
     return new Response("Datei fehlt", { status: 404 });
   }
 
-  const safeName = att.filename.replace(/[\r\n"\\]/g, "_");
   return new Response(new Uint8Array(buf), {
     headers: {
       "Content-Type": att.mime,
-      "Content-Disposition": `inline; filename="${safeName}"`,
+      "Content-Disposition": contentDisposition(att.filename, "inline"),
       "Content-Length": String(buf.length),
       "X-Content-Type-Options": "nosniff",
       // Interne Anhänge (inkl. Studierendenausweis) nie in Browser-/Proxy-Caches.

@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, attachments } from "@/lib/db/schema";
-import { absPath } from "@/lib/attachments";
+import { absPath, contentDisposition } from "@/lib/attachments";
 import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -43,11 +43,10 @@ export async function GET(
     return new Response("Datei fehlt", { status: 404 });
   }
 
-  const safeName = row.att.filename.replace(/[\r\n"\\]/g, "_");
   return new Response(new Uint8Array(buf), {
     headers: {
       "Content-Type": row.att.mime,
-      "Content-Disposition": `inline; filename="${safeName}"`,
+      "Content-Disposition": contentDisposition(row.att.filename, "inline"),
       "Content-Length": String(buf.length),
       "X-Content-Type-Options": "nosniff",
       // Token-gebundene Datei nie in Browser-/Proxy-Caches ablegen.
