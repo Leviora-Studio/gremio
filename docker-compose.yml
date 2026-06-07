@@ -52,14 +52,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Backchannel (token/jwks/userinfo) läuft über die öffentliche SSO-URL
-    # (OIDC_INTERNAL_ISSUER=https://limen.sturahsa.de). Damit der Container nicht
-    # auf NAT-Hairpin der öffentlichen IP angewiesen ist, zeigt der SSO-Hostname
-    # auf das Docker-Host-Gateway, wo das Host-nginx (Port 443) lauscht — TLS/SNI
-    # bleibt limen.sturahsa.de, das Let's-Encrypt-Zertifikat passt also weiterhin.
-    # host.docker.internal bleibt für lokale Dev-Setups erhalten (harmlos in Prod).
+    # host.docker.internal zeigt auf das Docker-Host-Gateway (nützlich für lokale
+    # Dev-Setups, harmlos in Prod).
+    #
+    # NAT-Hairpin-Hinweis: Läuft der SSO-Provider auf demselben Docker-Host hinter
+    # dem Host-nginx, erreicht der Container die öffentliche SSO-URL
+    # (OIDC_INTERNAL_ISSUER) evtl. nicht über die öffentliche IP. Dann den
+    # SSO-Hostnamen ebenfalls auf das Host-Gateway zeigen, wo das Host-nginx
+    # (Port 443) lauscht — TLS/SNI bleiben unverändert, das Zertifikat passt
+    # weiterhin. Am besten deployment-spezifisch in der (gitignored)
+    # docker-compose.override.yml, z. B.:
+    #   services:
+    #     app:
+    #       extra_hosts:
+    #         - "sso.example.org:host-gateway"
     extra_hosts:
-      - "limen.sturahsa.de:host-gateway"
       - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
