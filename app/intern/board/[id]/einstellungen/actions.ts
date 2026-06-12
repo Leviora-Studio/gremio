@@ -234,6 +234,30 @@ export async function setInstructionTriggerAction(
   return { success: "Anweisungsdatum-Trigger gespeichert." };
 }
 
+export async function setTransferTriggerAction(
+  boardId: number,
+  _prev: State,
+  formData: FormData,
+): Promise<State> {
+  await requireBoardManage(boardId);
+  const raw = formData.get("statusId");
+  const statusId = raw ? Number(raw) : null;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(boardStatuses)
+      .set({ isTransferTrigger: false })
+      .where(eq(boardStatuses.boardId, boardId));
+    if (statusId) {
+      await tx
+        .update(boardStatuses)
+        .set({ isTransferTrigger: true })
+        .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
+    }
+  });
+  rev(boardId);
+  return { success: "Überweisungsdatum-Trigger gespeichert." };
+}
+
 // --- Öffentliches Einreichen (Gates) -----------------------------------
 /** Prüft, ob die Status-ID zum Board gehört; sonst null. */
 async function validBoardStatus(

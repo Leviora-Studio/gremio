@@ -16,7 +16,7 @@ import { generateToken, isTokenConflict } from "@/lib/token";
 import { maybeArchive } from "@/lib/archive";
 import { logActivity } from "@/lib/activity";
 import { assignCardNumber } from "@/lib/numbering";
-import { maybeSetInstructionDate } from "@/lib/instruction";
+import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 
 export type State = { error?: string; success?: string };
@@ -121,7 +121,7 @@ export async function moveCardAction(
       "status",
       `${old?.name ?? "?"} → ${target.name}`,
     );
-    await maybeSetInstructionDate(cardId, statusId);
+    await maybeSetTriggerDates(cardId, statusId);
     await maybeArchive(cardId);
   }
   revalidatePath(`/intern/board/${card.boardId}`);

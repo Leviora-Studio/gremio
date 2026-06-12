@@ -229,7 +229,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /login                   → Login-Seite (SSO)
 /finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
-/finanzen/{id}/einstellungen → Name, betroffenes Konto, Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
+/finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich), Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
 /intern                  → Startseite: zugängliche Boards + Navigations-Buttons zu den Bereichen
 /intern/konto            → Eigenes Konto: Passwort ändern + Profilbild (Benutzername fest, nicht änderbar)
 /intern/board/neu        → Board erstellen (jeder eingeloggte Nutzer)
@@ -298,6 +298,7 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 | Genehmigter Betrag | Euro | `approved_amount` (Cent); Eingabe in Euro, Anzeige „… €" |
 | Tatsächliche Ausgaben | Euro | `actual_amount` (Cent); überschreibt in den Ausgaben-Views den genehmigten Betrag, sobald gesetzt |
 | Anweisungsdatum | Datum | `instruction_date`; auto-gesetzt beim Erreichen der pro Board wählbaren Trigger-Spalte (analog Archiv-Trigger), zusätzlich editierbar |
+| Überweisungsdatum | Datum | `transfer_date`; auto-gesetzt beim Erreichen der pro Board wählbaren Trigger-Spalte (analog Anweisungsdatum, eigener Trigger), zusätzlich editierbar; verwalter-exklusiv |
 | Konto | Auswahl | optionales Auswahlfeld; **Optionen frei vom Admin verwaltbar** (`/admin/accounts`, Tabelle `accounts`); `cards.account_id` FK→accounts (ON DELETE SET NULL) |
 | Finanzantrag | PDF | Dokument-Slot (= der per Formular hochgeladene Finanzantrag) |
 | Anlage A | PDF | Dokument-Slot |
@@ -321,7 +322,7 @@ attachments       (id, card_id FK→cards ON DELETE CASCADE,
 board_card_fields (board_id FK→boards ON DELETE CASCADE, field_key TEXT,
                    visible INTEGER DEFAULT 1, PRIMARY KEY(board_id, field_key))
 -- field_key: number|applicant|budget_title|approved_amount|actual_amount|creator|assignee|
---            deadline|meeting|decision_ref|instruction_date|priority|account|
+--            deadline|meeting|decision_ref|instruction_date|transfer_date|priority|account|
 --            finance_request|annex_a|annex_b|student_card|other_pdfs|notes
 -- "title" (Spalte title) ist IMMER sichtbar und NICHT abschaltbar.
 ```
@@ -383,7 +384,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **Finanz-Sichtbarkeit am Eigentümer:** Welche Quell-Boards in eine Finanzübersicht einfließen, entscheidet der **Finanzboard-Eigentümer** (Spec „Freigabe wie Boards"). Wer eine Übersicht freigegeben bekommt, sieht damit Karten-Finanzdaten auch von Boards ohne eigenen Zugriff — bewusste Informations-Freigabe.
 - **Archivierte Karten zählen in der Finanzauswertung mit** (Done-Archiv blendet nur die Board-/Aufgaben-Ansicht aus). Für „tatsächliche Ausgaben" sollen abgeschlossene Anträge mitzählen.
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
-- **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Verwalter-exklusiv bleiben nur Antragsnummer, Anweisungsdatum und Archiv-Status (UI **und** REST-API).
+- **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Verwalter-exklusiv bleiben nur Antragsnummer, Anweisungsdatum, Überweisungsdatum und Archiv-Status (UI **und** REST-API).
 - **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Zugriff via `canAccessBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
 - **Öffentliches Nachreichen ist append-only**, ohne Spalten-Gate/Frist (bis 30 PDFs je Karte) — gewollt; gegen Missbrauch zusätzlich ratenbegrenzt.
 - **Proxy-Header werden vertraut:** Hinter **genau einem** vertrauenswürdigen nginx werden `X-Forwarded-*`/`X-Real-IP` direkt genutzt (Schema/Host/Client-IP). `AUTH_TRUST_HOST` ist bei der eigenen iron-session-Auth ein No-op.

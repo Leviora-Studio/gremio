@@ -5,7 +5,9 @@ import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  accounts as accountsTable,
   financeBoardAccess,
+  financeBoardAccounts,
   financePlanItems,
   groups,
   users,
@@ -16,7 +18,6 @@ import { getAccounts } from "@/lib/accounts";
 import { centsToInput, formatCents } from "@/lib/money";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
-import { SelectSaveForm } from "@/components/SelectSaveForm";
 import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
@@ -26,14 +27,15 @@ import { PlanItemRow } from "@/components/finance/PlanItemRow";
 import {
   addFinanceAccessGroupAction,
   addFinanceAccessUserAction,
+  addFinanceAccountAction,
   addFinanceSourceAction,
   addPlanItemAction,
   editPlanItemAction,
   deletePlanItemAction,
   deleteFinanceBoardAction,
   removeFinanceAccessAction,
+  removeFinanceAccountAction,
   removeFinanceSourceAction,
-  setFinanceAccountAction,
   transferFinanceOwnerAction,
 } from "../../actions";
 
@@ -47,6 +49,15 @@ export default async function FinanceSettingsPage({
   const { user, fb } = await requireFinanceManage(fbId);
 
   const accounts = await getAccounts();
+  // Betroffene Konten (n:m) dieses Finanzboards.
+  const selectedAccounts = await db
+    .select({ id: accountsTable.id, name: accountsTable.name })
+    .from(financeBoardAccounts)
+    .innerJoin(accountsTable, eq(accountsTable.id, financeBoardAccounts.accountId))
+    .where(eq(financeBoardAccounts.financeBoardId, fbId))
+    .orderBy(accountsTable.name);
+  const selectedAccountIds = new Set(selectedAccounts.map((a) => a.id));
+  const availableAccounts = accounts.filter((a) => !selectedAccountIds.has(a.id));
   const allGroups = await db.select().from(groups).orderBy(groups.name);
   const activeUsers = await db
     .select({ id: users.id, username: users.username })
@@ -155,23 +166,51 @@ export default async function FinanceSettingsPage({
         />
       </CollapsibleSection>
 
-      {/* Betroffenes Konto */}
-      <CollapsibleSection title="Betroffenes Konto">
+      {/* Betroffene Konten */}
+      <CollapsibleSection title="Betroffene Konten">
         <p className="mb-3 text-sm text-slate-500">
-          Nur Karten der Quell-Boards mit diesem Konto (und gesetztem
-          Haushaltstitel) fließen in die Auswertung ein.
+          Nur Karten der Quell-Boards mit einem dieser Konten (und gesetztem
+          Haushaltstitel) fließen in die Auswertung ein. Mehrere Konten möglich.
         </p>
-        <SelectSaveForm
-          action={setFinanceAccountAction.bind(null, fbId)}
-          name="accountId"
-          label="Konto"
-          submitClassName="btn-primary"
-          initial={fb.accountId ? String(fb.accountId) : ""}
-          options={[
-            { value: "", label: "— kein Konto —" },
-            ...accounts.map((a) => ({ value: String(a.id), label: a.name })),
-          ]}
-        />
+        <div className="space-y-2">
+          {selectedAccounts.length === 0 && (
+            <p className="text-sm text-slate-500">Noch keine Konten gewählt.</p>
+          )}
+          {selectedAccounts.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm"
+            >
+              <span>{a.name}</span>
+              <form action={removeFinanceAccountAction.bind(null, fbId, a.id)}>
+                <SubmitButton className="btn-secondary btn-sm">
+                  Entfernen
+                </SubmitButton>
+              </form>
+            </div>
+          ))}
+        </div>
+        {availableAccounts.length > 0 && (
+          <form
+            action={addFinanceAccountAction.bind(null, fbId)}
+            className="mt-3 flex items-end gap-2"
+          >
+            <Select
+              name="accountId"
+              className="w-64"
+              searchable
+              searchPlaceholder="Konto suchen…"
+              options={[
+                { value: "", label: "— Konto wählen —" },
+                ...availableAccounts.map((a) => ({
+                  value: String(a.id),
+                  label: a.name,
+                })),
+              ]}
+            />
+            <SubmitButton className="btn-secondary">Hinzufügen</SubmitButton>
+          </form>
+        )}
       </CollapsibleSection>
 
       {/* Quell-Boards */}

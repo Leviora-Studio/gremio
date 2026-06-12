@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   accounts,
   cards,
+  financeBoardAccounts,
   financePlanItems,
   type FinanceBoard,
 } from "@/lib/db/schema";
@@ -30,12 +31,13 @@ export type AntragRow = {
   applicant: string;
   decisionRef: string | null;
   instructionDate: string | null;
+  transferDate: string | null;
   approvedAmount: number | null;
   actualAmount: number | null;
 };
 
 export type FinanceData = {
-  accountName: string | null;
+  accountNames: string[];
   accessibleCount: number;
   inaccessible: { id: number; name: string }[];
   incomeTops: PlanItem[];
@@ -100,9 +102,14 @@ export function buildRows(
 
 /** Lädt alle Daten der vier Finanz-Views (für Anzeige und Export). */
 export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
-  const [account] = fb.accountId
-    ? await db.select().from(accounts).where(eq(accounts.id, fb.accountId)).limit(1)
-    : [];
+  // Betroffene Konten (n:m) inkl. Namen — Karten mit EINEM dieser Konten zählen.
+  const accountRows = await db
+    .select({ id: accounts.id, name: accounts.name })
+    .from(financeBoardAccounts)
+    .innerJoin(accounts, eq(accounts.id, financeBoardAccounts.accountId))
+    .where(eq(financeBoardAccounts.financeBoardId, fb.id))
+    .orderBy(asc(accounts.name));
+  const accountIds = accountRows.map((a) => a.id);
 
   const { accessible, inaccessible } = await resolveSourceBoards(fb);
   const accessibleIds = accessible.map((s) => s.id);
@@ -118,7 +125,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   const expenseTops = tops.filter((i) => i.kind === "expense");
 
   const cardRows: AntragRow[] =
-    accessibleIds.length && fb.accountId
+    accessibleIds.length && accountIds.length
       ? await db
           .select({
             id: cards.id,
@@ -128,6 +135,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
             applicant: cards.applicant,
             decisionRef: cards.decisionRef,
             instructionDate: cards.instructionDate,
+            transferDate: cards.transferDate,
             approvedAmount: cards.approvedAmount,
             actualAmount: cards.actualAmount,
           })
@@ -135,7 +143,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
           .where(
             and(
               inArray(cards.boardId, accessibleIds),
-              eq(cards.accountId, fb.accountId),
+              inArray(cards.accountId, accountIds),
               isNotNull(cards.budgetTitle),
               ne(cards.budgetTitle, ""),
             ),
@@ -155,7 +163,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   }
 
   return {
-    accountName: account?.name ?? null,
+    accountNames: accountRows.map((a) => a.name),
     accessibleCount: accessible.length,
     inaccessible,
     incomeTops,

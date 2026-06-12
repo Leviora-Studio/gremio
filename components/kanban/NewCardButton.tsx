@@ -122,6 +122,7 @@ export function NewCardButton({
                 meeting: null,
                 decisionRef: null,
                 instructionDate: null,
+                transferDate: null,
                 approvedAmount: null,
                 actualAmount: null,
                 priorityId: null,

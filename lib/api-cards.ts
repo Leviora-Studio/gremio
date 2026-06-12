@@ -23,7 +23,7 @@ import {
 } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
-import { maybeSetInstructionDate } from "@/lib/instruction";
+import { maybeSetTriggerDates } from "@/lib/instruction";
 import { assignCardNumber } from "@/lib/numbering";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
@@ -60,6 +60,7 @@ export const cardWriteSchema = z
     meeting: date,
     decisionRef: z.string().max(200).nullish(),
     instructionDate: date,
+    transferDate: date,
     approvedAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     actualAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     notes: z.string().max(20000).nullish(),
@@ -97,7 +98,7 @@ async function buildCardValues(
   // Verwalter-exklusive Felder (wie in der UI): nur Board-Verwalter dürfen
   // Antragsnummer und Anweisungsdatum setzen.
   if (!canManage) {
-    for (const k of ["number", "instructionDate"] as const) {
+    for (const k of ["number", "instructionDate", "transferDate"] as const) {
       if (k in input) {
         return fail(403, `Feld '${k}' darf nur ein Board-Verwalter setzen.`);
       }
@@ -134,6 +135,7 @@ async function buildCardValues(
   if ("decisionRef" in input)
     v.decisionRef = input.decisionRef ? String(input.decisionRef).slice(0, 200) : null;
   if ("instructionDate" in input) v.instructionDate = input.instructionDate ?? null;
+  if ("transferDate" in input) v.transferDate = input.transferDate ?? null;
   if ("approvedAmountCents" in input)
     v.approvedAmount = input.approvedAmountCents ?? null;
   if ("actualAmountCents" in input) v.actualAmount = input.actualAmountCents ?? null;
@@ -353,7 +355,7 @@ export async function createCardViaApi(
   // Antragsnummer vergeben (falls Board-Nummerierung aktiv).
   await assignCardNumber(board.id, newId!);
   // Trigger-Spalten beim direkten Anlegen ebenfalls auslösen.
-  await maybeSetInstructionDate(newId!, statusId);
+  await maybeSetTriggerDates(newId!, statusId);
   await maybeArchive(newId!);
   return { ok: true, value: await freshCard(newId!) };
 }
@@ -432,7 +434,7 @@ export async function updateCardViaApi(
       "status",
       `${oldStatusName} → ${moveTo.name}`,
     );
-    await maybeSetInstructionDate(card.id, moveTo.id);
+    await maybeSetTriggerDates(card.id, moveTo.id);
     await maybeArchive(card.id);
   }
   if ("assigneeUserId" in update && update.assigneeUserId !== card.assigneeUserId) {

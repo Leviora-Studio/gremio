@@ -24,7 +24,7 @@ export default async function FinanceBoardPage({
   const manage = canManageFinanceBoard(user, fb);
 
   const {
-    accountName,
+    accountNames,
     accessibleCount,
     inaccessible,
     incomeTops,
@@ -128,8 +128,9 @@ export default async function FinanceBoardPage({
           </Link>
           <h1 className="text-2xl font-bold">{fb.name}</h1>
           <p className="text-sm text-slate-500">
-            Konto: {accountName ?? "— (in Einstellungen wählen)"} · Quell-Boards:{" "}
-            {accessibleCount}
+            {accountNames.length > 1 ? "Konten" : "Konto"}:{" "}
+            {accountNames.length ? accountNames.join(", ") : "— (in Einstellungen wählen)"} ·
+            Quell-Boards: {accessibleCount}
           </p>
         </div>
         {manage && (
@@ -139,10 +140,10 @@ export default async function FinanceBoardPage({
         )}
       </div>
 
-      {!fb.accountId && (
+      {accountNames.length === 0 && (
         <p className="rounded bg-amber-50 p-3 text-sm text-amber-700">
-          Bitte in den Einstellungen ein „betroffenes Konto" und Quell-Boards
-          wählen, damit Ausgaben geladen werden.
+          Bitte in den Einstellungen mindestens ein „betroffenes Konto" und
+          Quell-Boards wählen, damit Ausgaben geladen werden.
         </p>
       )}
       {inaccessible.length > 0 && (

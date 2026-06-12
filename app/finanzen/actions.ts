@@ -11,6 +11,7 @@ import {
   accounts,
   financeBoards,
   financeBoardAccess,
+  financeBoardAccounts,
   financeBoardSources,
   financePlanItems,
   financeTemplateItems,
@@ -178,28 +179,41 @@ export async function deleteFinanceBoardAdminAction(id: number): Promise<void> {
   revalidatePath("/admin/finanzboards");
 }
 
-export async function setFinanceAccountAction(
+/** Betroffenes Konto hinzufügen (n:m) — mehrere Konten je Finanzboard möglich. */
+export async function addFinanceAccountAction(
   id: number,
-  _prev: State,
   formData: FormData,
-): Promise<State> {
+): Promise<void> {
   await requireFinanceManage(id);
-  const raw = formData.get("accountId");
-  const accountId = raw ? Number(raw) : null;
-  if (accountId != null) {
-    const [acc] = await db
-      .select({ id: accounts.id })
-      .from(accounts)
-      .where(eq(accounts.id, accountId))
-      .limit(1);
-    if (!acc) return { error: "Konto nicht gefunden." };
-  }
+  const accountId = Number(formData.get("accountId"));
+  if (!accountId) return;
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1);
+  if (!acc) return; // ungültige accountId (manipuliert) → No-op statt FK-500
   await db
-    .update(financeBoards)
-    .set({ accountId })
-    .where(eq(financeBoards.id, id));
+    .insert(financeBoardAccounts)
+    .values({ financeBoardId: id, accountId })
+    .onConflictDoNothing();
   rev(id);
-  return { success: "Konto gespeichert." };
+}
+
+export async function removeFinanceAccountAction(
+  id: number,
+  accountId: number,
+): Promise<void> {
+  await requireFinanceManage(id);
+  await db
+    .delete(financeBoardAccounts)
+    .where(
+      and(
+        eq(financeBoardAccounts.financeBoardId, id),
+        eq(financeBoardAccounts.accountId, accountId),
+      ),
+    );
+  rev(id);
 }
 
 export async function addFinanceSourceAction(

@@ -123,6 +123,7 @@ export function serializeCard(
   if (show("meeting")) out.meeting = c.meeting;
   if (show("decision_ref")) out.decisionRef = c.decisionRef;
   if (show("instruction_date")) out.instructionDate = c.instructionDate;
+  if (show("transfer_date")) out.transferDate = c.transferDate;
   if (show("approved_amount")) out.approvedAmountCents = c.approvedAmount;
   if (show("actual_amount")) out.actualAmountCents = c.actualAmount;
   if (show("notes")) out.notes = c.notes;

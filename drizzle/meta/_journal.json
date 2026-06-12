@@ -197,6 +197,20 @@
       "when": 1780469676869,
       "tag": "0027_acoustic_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1781253342552,
+      "tag": "0028_slippery_thunderbolt_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781253944425,
+      "tag": "0029_neat_nebula",
+      "breakpoints": true
     }
   ]
 }

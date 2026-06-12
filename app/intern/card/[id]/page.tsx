@@ -224,6 +224,7 @@ export default async function AntragDetailPage({
             meeting: card.meeting,
             decisionRef: card.decisionRef,
             instructionDate: card.instructionDate,
+            transferDate: card.transferDate,
             approvedAmount: centsToInput(card.approvedAmount),
             actualAmount: centsToInput(card.actualAmount),
             priorityId: card.priorityId,

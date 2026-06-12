@@ -7,22 +7,34 @@ import { boardStatuses, cards } from "@/lib/db/schema";
 import { todayInBerlin } from "@/lib/dates";
 
 /**
- * Setzt das Anweisungsdatum auf heute, wenn die Zielspalte als
- * Anweisungs-Trigger markiert ist und die Karte noch kein Datum hat.
+ * Setzt Anweisungs- und/oder Überweisungsdatum auf heute, wenn die Zielspalte
+ * als jeweiliger Trigger markiert ist und die Karte das Datum noch nicht hat.
+ * Beide Trigger sind pro Board unabhängig konfigurierbar (board_statuses).
  */
-export async function maybeSetInstructionDate(
+export async function maybeSetTriggerDates(
   cardId: number,
   statusId: number,
 ): Promise<void> {
   const [st] = await db
-    .select({ trig: boardStatuses.isInstructionTrigger })
+    .select({
+      instr: boardStatuses.isInstructionTrigger,
+      transfer: boardStatuses.isTransferTrigger,
+    })
     .from(boardStatuses)
     .where(eq(boardStatuses.id, statusId))
     .limit(1);
-  if (!st?.trig) return;
+  if (!st) return;
   const today = todayInBerlin();
-  await db
-    .update(cards)
-    .set({ instructionDate: today })
-    .where(and(eq(cards.id, cardId), isNull(cards.instructionDate)));
+  if (st.instr) {
+    await db
+      .update(cards)
+      .set({ instructionDate: today })
+      .where(and(eq(cards.id, cardId), isNull(cards.instructionDate)));
+  }
+  if (st.transfer) {
+    await db
+      .update(cards)
+      .set({ transferDate: today })
+      .where(and(eq(cards.id, cardId), isNull(cards.transferDate)));
+  }
 }

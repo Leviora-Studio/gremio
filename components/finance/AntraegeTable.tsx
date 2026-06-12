@@ -15,6 +15,7 @@ type SortKey =
   | "applicant"
   | "decisionRef"
   | "instructionDate"
+  | "transferDate"
   | "approvedAmount"
   | "actualAmount";
 
@@ -30,6 +31,7 @@ const COLUMNS: {
   { key: "applicant", label: "Antragsteller" },
   { key: "decisionRef", label: "Beschlussreferenz" },
   { key: "instructionDate", label: "Anweisung" },
+  { key: "transferDate", label: "Überweisung" },
   { key: "approvedAmount", label: "Genehmigt", numeric: true, right: true },
   { key: "actualAmount", label: "Getätigt", numeric: true, right: true },
 ];
@@ -43,7 +45,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
     const term = q.trim().toLowerCase();
     const filtered = term
       ? rows.filter((c) =>
-          [c.number, c.budgetTitle, c.title, c.applicant, c.decisionRef, c.instructionDate]
+          [c.number, c.budgetTitle, c.title, c.applicant, c.decisionRef, c.instructionDate, c.transferDate]
             .some((v) => (v ?? "").toLowerCase().includes(term)),
         )
       : rows;
@@ -143,6 +145,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
                 <td className="py-2 pr-3">{c.applicant || "—"}</td>
                 <td className="py-2 pr-3">{c.decisionRef ?? "—"}</td>
                 <td className="py-2 pr-3">{c.instructionDate ?? "—"}</td>
+                <td className="py-2 pr-3">{c.transferDate ?? "—"}</td>
                 <td className="py-2 pr-3 text-right">
                   {c.approvedAmount != null ? formatCents(c.approvedAmount) : "—"}
                 </td>

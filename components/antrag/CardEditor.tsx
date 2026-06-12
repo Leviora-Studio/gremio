@@ -46,6 +46,7 @@ export function CardEditor({
     meeting: string | null;
     decisionRef: string | null;
     instructionDate: string | null;
+    transferDate: string | null;
     approvedAmount: string | null;
     actualAmount: string | null;
     priorityId: number | null;
@@ -70,6 +71,7 @@ export function CardEditor({
     meeting: initial.meeting,
     decisionRef: initial.decisionRef,
     instructionDate: initial.instructionDate,
+    transferDate: initial.transferDate,
     approvedAmount: initial.approvedAmount,
     actualAmount: initial.actualAmount,
     priorityId: initial.priorityId ?? null,
@@ -217,6 +219,21 @@ export function CardEditor({
         ) : (
           <div className="input flex h-10 items-center bg-slate-50 text-slate-600">
             {valuesRef.current.instructionDate || "—"}
+          </div>
+        )}
+      </div>
+    ),
+    transfer_date: (
+      <div>
+        <label className="label">Überweisungsdatum</label>
+        {canManage ? (
+          <DatePicker
+            defaultValue={valuesRef.current.transferDate ?? ""}
+            onChange={(v) => update({ transferDate: v || null }, true)}
+          />
+        ) : (
+          <div className="input flex h-10 items-center bg-slate-50 text-slate-600">
+            {valuesRef.current.transferDate || "—"}
           </div>
         )}
       </div>

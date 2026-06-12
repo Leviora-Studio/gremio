@@ -39,6 +39,7 @@ export const API_FIELD_TO_KEY: Record<string, string> = {
   meeting: "meeting",
   decisionRef: "decision_ref",
   instructionDate: "instruction_date",
+  transferDate: "transfer_date",
   approvedAmountCents: "approved_amount",
   actualAmountCents: "actual_amount",
   priorityId: "priority",

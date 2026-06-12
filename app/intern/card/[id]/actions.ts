@@ -34,7 +34,7 @@ import { deleteStoredFile, saveAntragFile, validateUpload } from "@/lib/attachme
 import { maybeArchive } from "@/lib/archive";
 import { logActivity } from "@/lib/activity";
 import { parseEuroToCents } from "@/lib/money";
-import { maybeSetInstructionDate } from "@/lib/instruction";
+import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 
 export type State = { error?: string; success?: string };
@@ -79,6 +79,7 @@ export type CardValues = {
   meeting: string | null;
   decisionRef: string | null;
   instructionDate: string | null;
+  transferDate: string | null;
   approvedAmount: string | null; // Euro-Eingabe (Rohstring)
   actualAmount: string | null; // Euro-Eingabe (Rohstring)
   priorityId: number | null;
@@ -163,6 +164,19 @@ export async function saveCardAction(
         error: "Anweisungsdatum ist kein gültiges Datum (JJJJ-MM-TT).",
       };
     update.instructionDate = values.instructionDate || null;
+  }
+  // Überweisungsdatum ist — wie das Anweisungsdatum — verwalter-exklusiv.
+  if (
+    visible.has("transfer_date") &&
+    "transferDate" in values &&
+    canManageBoard(user, board)
+  ) {
+    if (values.transferDate && !isValidDate(values.transferDate))
+      return {
+        ok: false,
+        error: "Überweisungsdatum ist kein gültiges Datum (JJJJ-MM-TT).",
+      };
+    update.transferDate = values.transferDate || null;
   }
   if (visible.has("approved_amount") && "approvedAmount" in values) {
     const cents = values.approvedAmount
@@ -303,7 +317,7 @@ export async function setCardStatusAction(
       "status",
       `${old?.name ?? "?"} → ${target.name}`,
     );
-    await maybeSetInstructionDate(card.id, statusId);
+    await maybeSetTriggerDates(card.id, statusId);
   }
   await maybeArchive(card.id);
   revalidatePath(`/intern/card/${card.id}`);

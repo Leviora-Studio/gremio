@@ -37,6 +37,7 @@ import {
   removeAccessAction,
   setArchiveTriggerAction,
   setInstructionTriggerAction,
+  setTransferTriggerAction,
   setResubmitStatusAction,
   setReceiptFromStatusAction,
   setReceiptToStatusAction,
@@ -119,6 +120,8 @@ export default async function BoardSettingsPage({
   const triggerId = statuses.find((s) => s.isArchiveTrigger)?.id ?? "";
   const instrTriggerId =
     statuses.find((s) => s.isInstructionTrigger)?.id ?? "";
+  const transferTriggerId =
+    statuses.find((s) => s.isTransferTrigger)?.id ?? "";
 
   const [archiveCfg] = await db
     .select()
@@ -294,6 +297,28 @@ export default async function BoardSettingsPage({
             label="Auslösende Spalte"
             submitLabel="Setzen"
             initial={instrTriggerId ? String(instrTriggerId) : ""}
+            options={[
+              { value: "", label: "— keine —" },
+              ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
+            ]}
+          />
+        </div>
+
+        {/* Überweisungsdatum */}
+        <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold text-slate-700">
+            Überweisungsdatum automatisch setzen
+          </h3>
+          <p className="text-xs text-slate-500">
+            Erreicht eine Karte diese Spalte, wird ihr Überweisungsdatum
+            automatisch auf den heutigen Tag gesetzt.
+          </p>
+          <SelectSaveForm
+            action={setTransferTriggerAction.bind(null, boardId)}
+            name="statusId"
+            label="Auslösende Spalte"
+            submitLabel="Setzen"
+            initial={transferTriggerId ? String(transferTriggerId) : ""}
             options={[
               { value: "", label: "— keine —" },
               ...statuses.map((s) => ({ value: String(s.id), label: s.name })),

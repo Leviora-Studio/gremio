@@ -11,7 +11,7 @@ import { MAX_PUBLIC_OTHER_FILES, PDF_MIME } from "@/lib/constants";
 import { saveAntragFile, validateUpload } from "@/lib/attachments";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
-import { maybeSetInstructionDate } from "@/lib/instruction";
+import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { allowRequest } from "@/lib/rate-limit";
 
@@ -182,7 +182,7 @@ export async function submitPublicAction(
       "status",
       `${from?.name ?? "?"} → ${to?.name ?? "?"} (öffentlich eingereicht)`,
     );
-    await maybeSetInstructionDate(card.id, target);
+    await maybeSetTriggerDates(card.id, target);
     await maybeArchive(card.id);
     revalidatePath(`/status/${token}`);
     revalidatePath(`/intern/board/${board.id}`);

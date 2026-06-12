@@ -158,6 +158,8 @@ export const boardStatuses = pgTable(
     isInstructionTrigger: boolean("is_instruction_trigger")
       .notNull()
       .default(false),
+    // Erreicht eine Karte diese Spalte, wird das Überweisungsdatum auto-gesetzt.
+    isTransferTrigger: boolean("is_transfer_trigger").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => ({
@@ -167,6 +169,9 @@ export const boardStatuses = pgTable(
     oneInstrTrigger: uniqueIndex("board_statuses_one_instr_trigger")
       .on(t.boardId)
       .where(sql`${t.isInstructionTrigger} = true`),
+    oneTransferTrigger: uniqueIndex("board_statuses_one_transfer_trigger")
+      .on(t.boardId)
+      .where(sql`${t.isTransferTrigger} = true`),
   }),
 );
 
@@ -255,6 +260,7 @@ export const cards = pgTable(
     // Freitext-Referenz auf den Gremienbeschluss (z. B. "Beschluss 12/2026").
     decisionRef: text("decision_ref"),
     instructionDate: text("instruction_date"), // YYYY-MM-DD, auto bei Trigger-Spalte
+    transferDate: text("transfer_date"), // YYYY-MM-DD, auto bei Überweisungs-Trigger-Spalte
     approvedAmount: integer("approved_amount"), // Genehmigter Betrag in Cent
     actualAmount: integer("actual_amount"), // Tatsächliche Ausgaben in Cent
     priorityId: integer("priority_id").references(() => priorities.id, {
@@ -432,12 +438,23 @@ export const financeBoards = pgTable("finance_boards", {
   ownerId: integer("owner_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
-  // Betroffenes Konto: nur Karten mit diesem Konto fließen ein.
-  accountId: integer("account_id").references(() => accounts.id, {
-    onDelete: "set null",
-  }),
   createdAt: createdAt(),
 });
+
+// Betroffene Konten (n:m): nur Karten mit EINEM dieser Konten (und aus einem
+// Quell-Board, mit gesetztem Haushaltstitel) fließen in die Auswertung ein.
+export const financeBoardAccounts = pgTable(
+  "finance_board_accounts",
+  {
+    financeBoardId: integer("finance_board_id")
+      .notNull()
+      .references(() => financeBoards.id, { onDelete: "cascade" }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.financeBoardId, t.accountId] }) }),
+);
 
 // Freigabe an genau einen Nutzer ODER eine Gruppe (wie board_access).
 export const financeBoardAccess = pgTable(

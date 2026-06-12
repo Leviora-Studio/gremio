@@ -153,6 +153,7 @@ function antraegeTable(data: FinanceData): Table {
         "",
         "",
         "",
+        "",
         eur(gApproved),
         eur(gActual),
       ],
@@ -167,6 +168,7 @@ function antraegeTable(data: FinanceData): Table {
           c.applicant || "—",
           dash(c.decisionRef),
           dash(c.instructionDate),
+          dash(c.transferDate),
           eur(c.approvedAmount),
           eur(c.actualAmount),
         ],
@@ -175,7 +177,7 @@ function antraegeTable(data: FinanceData): Table {
     }
   }
   rows.push({
-    cells: ["", "", "Summe", "", "", "", eur(totApproved), eur(totActual)],
+    cells: ["", "", "Summe", "", "", "", "", eur(totApproved), eur(totActual)],
     style: "total",
   });
 
@@ -188,6 +190,7 @@ function antraegeTable(data: FinanceData): Table {
       { header: "Antragsteller", width: 2.4 },
       { header: "Beschlussreferenz", width: 1.8 },
       { header: "Anweisung", width: 1.4 },
+      { header: "Überweisung", width: 1.4 },
       { header: "Genehmigt (€)", width: 1.6, money: true },
       { header: "Getätigt (€)", width: 1.6, money: true },
     ],
@@ -218,13 +221,14 @@ function antraegeByNumberTable(data: FinanceData): Table {
         c.applicant || "—",
         dash(c.decisionRef),
         dash(c.instructionDate),
+        dash(c.transferDate),
         eur(c.approvedAmount),
         eur(c.actualAmount),
       ],
     });
   }
   rows.push({
-    cells: ["", "", "Summe", "", "", "", eur(totApproved), eur(totActual)],
+    cells: ["", "", "Summe", "", "", "", "", eur(totApproved), eur(totActual)],
     style: "total",
   });
 
@@ -237,6 +241,7 @@ function antraegeByNumberTable(data: FinanceData): Table {
       { header: "Antragsteller", width: 2.4 },
       { header: "Beschlussreferenz", width: 1.8 },
       { header: "Anweisung", width: 1.4 },
+      { header: "Überweisung", width: 1.4 },
       { header: "Genehmigt (€)", width: 1.6, money: true },
       { header: "Getätigt (€)", width: 1.6, money: true },
     ],
