@@ -184,7 +184,7 @@ function antraegeTable(data: FinanceData): Table {
   return {
     title: "Anträge nach Haushaltstitel",
     columns: [
-      { header: "Antragsnr.", width: 1.5 },
+      { header: "Antragsnr.", width: 1.9 },
       HT,
       { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },
@@ -235,7 +235,7 @@ function antraegeByNumberTable(data: FinanceData): Table {
   return {
     title: "Anträge nach Antragsnummer",
     columns: [
-      { header: "Antragsnr.", width: 1.5 },
+      { header: "Antragsnr.", width: 1.9 },
       HT,
       { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },

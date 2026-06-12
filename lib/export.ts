@@ -89,7 +89,6 @@ export async function tablesToPdf(
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const W = 842; // A4 quer
   const H = 595;
   const M = 36;
   const size = 9;
@@ -102,6 +101,12 @@ export async function tablesToPdf(
 
   for (const t of tables) {
     const totalW = t.columns.reduce((s, c) => s + (c.width ?? 1), 0);
+    // Seitenbreite an die Spalten anpassen: breite Tabellen (viele Spalten)
+    // bekommen eine breitere Seite, damit KEINE Spalte abgeschnitten wird.
+    // Schmale Tabellen bleiben bei A4-quer (842 pt); ein Mindest-Platz pro
+    // Gewichtseinheit hält jede Spalte lesbar.
+    const PT_PER_UNIT = 50;
+    const W = Math.max(842, Math.round(totalW * PT_PER_UNIT) + 2 * M);
     const colW = t.columns.map((c) => ((c.width ?? 1) / totalW) * (W - 2 * M));
     const colX: number[] = [];
     let acc = M;
