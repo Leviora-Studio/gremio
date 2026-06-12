@@ -25,6 +25,8 @@ export default async function FinanceBoardPage({
 
   const {
     accountNames,
+    expenseAccountNames,
+    expenseAccountsOverridden,
     accessibleCount,
     inaccessible,
     incomeTops,
@@ -34,6 +36,14 @@ export default async function FinanceBoardPage({
     live,
     actual,
   } = await loadFinanceData(fb);
+
+  // Hinweis in den Ausgaben-Tabs, wenn ein abweichender Konten-Override gilt.
+  const expenseNote = expenseAccountsOverridden ? (
+    <p className="mb-3 rounded bg-blue-50 p-2 text-xs text-blue-700">
+      Berechnet nur aus {expenseAccountNames.length > 1 ? "Konten" : "Konto"}:{" "}
+      {expenseAccountNames.join(", ")} (eingeschränkt in den Einstellungen).
+    </p>
+  ) : null;
   const hasPlan = incomeTops.length + expenseTops.length > 0;
 
   // View 1: Haushaltsplan (read-only) — Einnahmen und Ausgaben klar getrennt.
@@ -186,6 +196,7 @@ export default async function FinanceBoardPage({
             content: (
               <>
                 <ExportButtons fbId={fbId} view="live" />
+                {expenseNote}
                 <ExpenseTree
                   rows={live.rows}
                   unmatched={live.unmatched}
@@ -200,6 +211,7 @@ export default async function FinanceBoardPage({
             content: (
               <>
                 <ExportButtons fbId={fbId} view="actual" />
+                {expenseNote}
                 <ExpenseTree
                   rows={actual.rows}
                   unmatched={actual.unmatched}

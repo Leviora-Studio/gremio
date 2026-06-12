@@ -211,6 +211,13 @@
       "when": 1781253944425,
       "tag": "0029_neat_nebula",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781259477070,
+      "tag": "0030_left_star_brand",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ import {
   financeBoards,
   financeBoardAccess,
   financeBoardAccounts,
+  financeBoardExpenseAccounts,
   financeBoardSources,
   financePlanItems,
   financeTemplateItems,
@@ -205,12 +206,69 @@ export async function removeFinanceAccountAction(
   accountId: number,
 ): Promise<void> {
   await requireFinanceManage(id);
-  await db
-    .delete(financeBoardAccounts)
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(financeBoardAccounts)
+      .where(
+        and(
+          eq(financeBoardAccounts.financeBoardId, id),
+          eq(financeBoardAccounts.accountId, accountId),
+        ),
+      );
+    // Aus Antragsübersicht entfernt → auch aus dem Ausgaben-Override entfernen
+    // (Override ist stets eine Teilmenge der betroffenen Konten).
+    await tx
+      .delete(financeBoardExpenseAccounts)
+      .where(
+        and(
+          eq(financeBoardExpenseAccounts.financeBoardId, id),
+          eq(financeBoardExpenseAccounts.accountId, accountId),
+        ),
+      );
+  });
+  rev(id);
+}
+
+/**
+ * Konto für die Ausgaben-Berechnung (Live & Tatsächlich) hinzufügen — nur
+ * Konten, die bereits betroffene Konten sind (Teilmenge). Leer = alle.
+ */
+export async function addFinanceExpenseAccountAction(
+  id: number,
+  formData: FormData,
+): Promise<void> {
+  await requireFinanceManage(id);
+  const accountId = Number(formData.get("accountId"));
+  if (!accountId) return;
+  const [belongs] = await db
+    .select({ accountId: financeBoardAccounts.accountId })
+    .from(financeBoardAccounts)
     .where(
       and(
         eq(financeBoardAccounts.financeBoardId, id),
         eq(financeBoardAccounts.accountId, accountId),
+      ),
+    )
+    .limit(1);
+  if (!belongs) return; // kein betroffenes Konto → No-op
+  await db
+    .insert(financeBoardExpenseAccounts)
+    .values({ financeBoardId: id, accountId })
+    .onConflictDoNothing();
+  rev(id);
+}
+
+export async function removeFinanceExpenseAccountAction(
+  id: number,
+  accountId: number,
+): Promise<void> {
+  await requireFinanceManage(id);
+  await db
+    .delete(financeBoardExpenseAccounts)
+    .where(
+      and(
+        eq(financeBoardExpenseAccounts.financeBoardId, id),
+        eq(financeBoardExpenseAccounts.accountId, accountId),
       ),
     );
   rev(id);

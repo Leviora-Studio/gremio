@@ -443,8 +443,25 @@ export const financeBoards = pgTable("finance_boards", {
 
 // Betroffene Konten (n:m): nur Karten mit EINEM dieser Konten (und aus einem
 // Quell-Board, mit gesetztem Haushaltstitel) fließen in die Auswertung ein.
+// Maßgeblich für die Antragsübersicht (und Default für die Ausgaben-Berechnung).
 export const financeBoardAccounts = pgTable(
   "finance_board_accounts",
+  {
+    financeBoardId: integer("finance_board_id")
+      .notNull()
+      .references(() => financeBoards.id, { onDelete: "cascade" }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.financeBoardId, t.accountId] }) }),
+);
+
+// Optionaler Konten-Override für die Ausgaben-Berechnung (Live & Tatsächlich):
+// Teilmenge von finance_board_accounts. Leer = alle betroffenen Konten zählen
+// (wie bisher); gesetzt = nur diese Konten fließen in die Ausgaben-Views ein.
+export const financeBoardExpenseAccounts = pgTable(
+  "finance_board_expense_accounts",
   {
     financeBoardId: integer("finance_board_id")
       .notNull()

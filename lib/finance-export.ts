@@ -186,9 +186,9 @@ function antraegeTable(data: FinanceData): Table {
     columns: [
       { header: "Antragsnr.", width: 1.5 },
       HT,
-      { header: "Titel", width: 4 },
+      { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },
-      { header: "Beschlussreferenz", width: 1.8 },
+      { header: "Beschlussreferenz", width: 2.6 },
       { header: "Anweisung", width: 1.4 },
       { header: "Überweisung", width: 1.4 },
       { header: "Genehmigt (€)", width: 1.6, money: true },
@@ -237,9 +237,9 @@ function antraegeByNumberTable(data: FinanceData): Table {
     columns: [
       { header: "Antragsnr.", width: 1.5 },
       HT,
-      { header: "Titel", width: 4 },
+      { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },
-      { header: "Beschlussreferenz", width: 1.8 },
+      { header: "Beschlussreferenz", width: 2.6 },
       { header: "Anweisung", width: 1.4 },
       { header: "Überweisung", width: 1.4 },
       { header: "Genehmigt (€)", width: 1.6, money: true },

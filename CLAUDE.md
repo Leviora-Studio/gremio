@@ -229,7 +229,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /login                   → Login-Seite (SSO)
 /finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
-/finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich), Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
+/finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich; optionaler Teilmengen-Override für die Ausgaben-Berechnung Live/Tatsächlich), Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
 /intern                  → Startseite: zugängliche Boards + Navigations-Buttons zu den Bereichen
 /intern/konto            → Eigenes Konto: Passwort ändern + Profilbild (Benutzername fest, nicht änderbar)
 /intern/board/neu        → Board erstellen (jeder eingeloggte Nutzer)

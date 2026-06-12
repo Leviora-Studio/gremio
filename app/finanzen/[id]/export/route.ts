@@ -34,10 +34,11 @@ export async function GET(
   const data = await loadFinanceData(fb);
   const table = buildFinanceTable(view, data);
   const stand = new Date().toLocaleDateString("de-DE");
-  const accountLabel = data.accountNames.length
-    ? data.accountNames.join(", ")
-    : "—";
-  table.subtitle = `${fb.name} · ${data.accountNames.length > 1 ? "Konten" : "Konto"}: ${accountLabel} · Stand: ${stand}`;
+  // Ausgaben-Views nutzen ggf. den eingeschränkten Konten-Override.
+  const isExpenseView = view === "live" || view === "actual";
+  const names = isExpenseView ? data.expenseAccountNames : data.accountNames;
+  const accountLabel = names.length ? names.join(", ") : "—";
+  table.subtitle = `${fb.name} · ${names.length > 1 ? "Konten" : "Konto"}: ${accountLabel} · Stand: ${stand}`;
 
   const base = `${slug(fb.name)}_${VIEW_TITLES[view] ?? view}`;
   const filename = `${slug(base)}.${format}`;

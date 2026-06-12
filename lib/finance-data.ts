@@ -7,6 +7,7 @@ import {
   accounts,
   cards,
   financeBoardAccounts,
+  financeBoardExpenseAccounts,
   financePlanItems,
   type FinanceBoard,
 } from "@/lib/db/schema";
@@ -34,10 +35,15 @@ export type AntragRow = {
   transferDate: string | null;
   approvedAmount: number | null;
   actualAmount: number | null;
+  accountId: number | null;
 };
 
 export type FinanceData = {
   accountNames: string[];
+  // Effektiv für die Ausgaben-Berechnung (Live & Tatsächlich) genutzte Konten.
+  expenseAccountNames: string[];
+  // true = eigener (abweichender) Konten-Override für die Ausgaben-Views aktiv.
+  expenseAccountsOverridden: boolean;
   accessibleCount: number;
   inaccessible: { id: number; name: string }[];
   incomeTops: PlanItem[];
@@ -110,6 +116,22 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
     .where(eq(financeBoardAccounts.financeBoardId, fb.id))
     .orderBy(asc(accounts.name));
   const accountIds = accountRows.map((a) => a.id);
+  const accountIdSet = new Set(accountIds);
+
+  // Optionaler Konten-Override für die Ausgaben-Views — nur Konten zählen, die
+  // weiterhin betroffene Konten sind (stale Einträge werden ignoriert). Ohne
+  // gültigen Override gelten alle betroffenen Konten (= bisheriges Verhalten).
+  const expenseAccountRows = await db
+    .select({ id: accounts.id, name: accounts.name })
+    .from(financeBoardExpenseAccounts)
+    .innerJoin(accounts, eq(accounts.id, financeBoardExpenseAccounts.accountId))
+    .where(eq(financeBoardExpenseAccounts.financeBoardId, fb.id))
+    .orderBy(asc(accounts.name));
+  const validOverride = expenseAccountRows.filter((a) => accountIdSet.has(a.id));
+  const expenseAccountsOverridden = validOverride.length > 0;
+  const expenseSet = new Set(
+    expenseAccountsOverridden ? validOverride.map((a) => a.id) : accountIds,
+  );
 
   const { accessible, inaccessible } = await resolveSourceBoards(fb);
   const accessibleIds = accessible.map((s) => s.id);
@@ -138,6 +160,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
             transferDate: cards.transferDate,
             approvedAmount: cards.approvedAmount,
             actualAmount: cards.actualAmount,
+            accountId: cards.accountId,
           })
           .from(cards)
           .where(
@@ -155,6 +178,8 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   for (const c of cardRows) {
     const t = c.budgetTitle ?? "";
     if (!t) continue;
+    // Ausgaben-Berechnung nur für die (ggf. eingeschränkten) Ausgaben-Konten.
+    if (c.accountId == null || !expenseSet.has(c.accountId)) continue;
     const live = c.actualAmount ?? c.approvedAmount ?? 0;
     liveByTitle.set(t, (liveByTitle.get(t) ?? 0) + live);
     if (c.actualAmount != null) {
@@ -164,6 +189,10 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
 
   return {
     accountNames: accountRows.map((a) => a.name),
+    expenseAccountNames: expenseAccountsOverridden
+      ? validOverride.map((a) => a.name)
+      : accountRows.map((a) => a.name),
+    expenseAccountsOverridden,
     accessibleCount: accessible.length,
     inaccessible,
     incomeTops,

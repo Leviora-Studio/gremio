@@ -8,6 +8,7 @@ import {
   accounts as accountsTable,
   financeBoardAccess,
   financeBoardAccounts,
+  financeBoardExpenseAccounts,
   financePlanItems,
   groups,
   users,
@@ -28,6 +29,7 @@ import {
   addFinanceAccessGroupAction,
   addFinanceAccessUserAction,
   addFinanceAccountAction,
+  addFinanceExpenseAccountAction,
   addFinanceSourceAction,
   addPlanItemAction,
   editPlanItemAction,
@@ -35,6 +37,7 @@ import {
   deleteFinanceBoardAction,
   removeFinanceAccessAction,
   removeFinanceAccountAction,
+  removeFinanceExpenseAccountAction,
   removeFinanceSourceAction,
   transferFinanceOwnerAction,
 } from "../../actions";
@@ -58,6 +61,23 @@ export default async function FinanceSettingsPage({
     .orderBy(accountsTable.name);
   const selectedAccountIds = new Set(selectedAccounts.map((a) => a.id));
   const availableAccounts = accounts.filter((a) => !selectedAccountIds.has(a.id));
+
+  // Optionaler Konten-Override für die Ausgaben-Berechnung (Teilmenge der oberen).
+  const expenseAccounts = await db
+    .select({ id: accountsTable.id, name: accountsTable.name })
+    .from(financeBoardExpenseAccounts)
+    .innerJoin(
+      accountsTable,
+      eq(accountsTable.id, financeBoardExpenseAccounts.accountId),
+    )
+    .where(eq(financeBoardExpenseAccounts.financeBoardId, fbId))
+    .orderBy(accountsTable.name);
+  const expenseAccountIds = new Set(expenseAccounts.map((a) => a.id));
+  // Auswählbar sind nur betroffene Konten, die noch nicht im Override stehen.
+  const availableExpenseAccounts = selectedAccounts.filter(
+    (a) => !expenseAccountIds.has(a.id),
+  );
+
   const allGroups = await db.select().from(groups).orderBy(groups.name);
   const activeUsers = await db
     .select({ id: users.id, username: users.username })
@@ -212,6 +232,61 @@ export default async function FinanceSettingsPage({
           </form>
         )}
       </CollapsibleSection>
+
+      {/* Konten für Ausgaben-Berechnung (Override) */}
+      {selectedAccounts.length > 0 && (
+        <CollapsibleSection title="Konten für Ausgaben-Berechnung">
+          <p className="mb-3 text-sm text-slate-500">
+            Optional: schränkt die Berechnung von „Live-Ausgaben" und
+            „Tatsächlichen Ausgaben" auf eine Teilmenge der betroffenen Konten
+            ein. <strong>Leer = alle betroffenen Konten</strong> zählen (wie die
+            Antragsübersicht). Die Antragsübersicht bleibt davon unberührt.
+          </p>
+          <div className="space-y-2">
+            {expenseAccounts.length === 0 && (
+              <p className="text-sm text-slate-500">
+                Keine Einschränkung — alle betroffenen Konten werden berücksichtigt.
+              </p>
+            )}
+            {expenseAccounts.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm"
+              >
+                <span>{a.name}</span>
+                <form
+                  action={removeFinanceExpenseAccountAction.bind(null, fbId, a.id)}
+                >
+                  <SubmitButton className="btn-secondary btn-sm">
+                    Entfernen
+                  </SubmitButton>
+                </form>
+              </div>
+            ))}
+          </div>
+          {availableExpenseAccounts.length > 0 && (
+            <form
+              action={addFinanceExpenseAccountAction.bind(null, fbId)}
+              className="mt-3 flex items-end gap-2"
+            >
+              <Select
+                name="accountId"
+                className="w-64"
+                searchable
+                searchPlaceholder="Konto suchen…"
+                options={[
+                  { value: "", label: "— Konto wählen —" },
+                  ...availableExpenseAccounts.map((a) => ({
+                    value: String(a.id),
+                    label: a.name,
+                  })),
+                ]}
+              />
+              <SubmitButton className="btn-secondary">Hinzufügen</SubmitButton>
+            </form>
+          )}
+        </CollapsibleSection>
+      )}
 
       {/* Quell-Boards */}
       <CollapsibleSection title="Quell-Boards">
