@@ -105,6 +105,10 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
     signingTime: new Date(),
     widgetRect,
     appName: "Gremio",
+    // Reservierter Platz für die CMS-Signatur. Default (8192) ist für echte
+    // Zertifikate mit Kette/größeren Schlüsseln zu klein ("Signature exceeds
+    // placeholder length"). 30000 Byte bieten reichlich Reserve.
+    signatureLength: 30000,
   });
 
   // @signpdf braucht die ByteRange/Contents im Klartext → keine Object Streams.
