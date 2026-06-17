@@ -270,6 +270,14 @@ export default function PdfEditor({
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          <a
+            href={src}
+            download={filename}
+            className="btn-secondary btn-sm"
+            title="PDF herunterladen"
+          >
+            ⤓ Herunterladen
+          </a>
           {editable && (
             <button
               type="button"
