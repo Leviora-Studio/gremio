@@ -191,6 +191,9 @@ export type FieldMeta = {
   gremioText?: boolean;
   // Radio-Buttons: pro Option ein Widget (eigene Seite/Position + Export-Wert).
   optionWidgets?: { value: string; page: number; rect: FieldRect }[];
+  // Alle Widgets eines Feldes (Text/Checkbox können MEHRERE haben, z. B. zwei
+  // synchronisierte „Antragsnummer"-Felder). Alle teilen denselben Wert.
+  widgets?: { page: number; rect: FieldRect }[];
 };
 
 /** Liest die ausfüllbaren AcroForm-Felder eines PDFs (für den Editor). */
@@ -242,6 +245,33 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
     } catch {
       return {};
     }
+  }
+
+  // Alle Widget-Rechtecke eines Feldes (für mehrfach platzierte Felder).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function widgetRects(field: any): NonNullable<FieldMeta["widgets"]> {
+    const out: NonNullable<FieldMeta["widgets"]> = [];
+    try {
+      for (const w of field.acroField.getWidgets()) {
+        const pageIndex = pageOfDict.get(w.dict);
+        if (pageIndex == null) continue;
+        const p = pages[pageIndex];
+        const { width: pw, height: ph } = p.getSize();
+        const r = w.getRectangle();
+        out.push({
+          page: pageIndex,
+          rect: {
+            xRatio: r.x / pw,
+            yRatio: (ph - (r.y + r.height)) / ph,
+            wRatio: r.width / pw,
+            hRatio: r.height / ph,
+          },
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
   }
 
   // Radio-Buttons: pro Options-Widget eigene Position + der Widget-On-State als
@@ -301,6 +331,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         readOnly,
         gremioText,
         ...placement(f),
+        widgets: widgetRects(f),
       });
     } else if (f instanceof PDFCheckBox) {
       out.push({
@@ -309,6 +340,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         value: f.isChecked(),
         readOnly,
         ...placement(f),
+        widgets: widgetRects(f),
       });
     } else if (f instanceof PDFDropdown) {
       out.push({

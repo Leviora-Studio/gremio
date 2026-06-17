@@ -58,6 +58,10 @@ type FieldMeta = {
     page: number;
     rect: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
   }[];
+  widgets?: {
+    page: number;
+    rect: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
+  }[];
 };
 
 type Rect = { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
@@ -274,23 +278,35 @@ export default function PdfEditor({
   // Echte (nicht von uns angelegte) Formularfelder direkt im PDF editieren:
   // Textfelder an fester Position, Haken/Auswahl/Radio als Steuerelemente.
   // Unsere Freitexte laufen über `texts`. Felder ohne Position → Panel (Fallback).
-  const positionedTexts = editable
-    ? fields.filter(
-        (f) =>
-          f.type === "text" &&
-          !f.gremioText &&
-          !f.readOnly &&
-          f.rect &&
-          f.page != null,
-      )
-    : [];
+  // Pro Feld können MEHRERE Widgets existieren (z. B. zwei synchrone
+  // „Antragsnummer"-Felder) → je Widget ein Steuerelement, alle an denselben
+  // Wert gebunden.
+  const widgetsOf = (f: FieldMeta) =>
+    f.widgets?.length
+      ? f.widgets
+      : f.rect && f.page != null
+        ? [{ page: f.page, rect: f.rect }]
+        : [];
 
+  const textWidgets: { name: string; page: number; rect: Rect; sizeRatio: number }[] =
+    [];
   const controls: Control[] = [];
   if (editable) {
     for (const f of fields) {
       if (f.readOnly || f.gremioText) continue;
-      if (f.type === "checkbox" && f.rect && f.page != null) {
-        controls.push({ kind: "checkbox", name: f.name, page: f.page, rect: f.rect });
+      if (f.type === "text") {
+        for (const w of widgetsOf(f)) {
+          textWidgets.push({
+            name: f.name,
+            page: w.page,
+            rect: w.rect,
+            sizeRatio: f.sizeRatio ?? 0.02,
+          });
+        }
+      } else if (f.type === "checkbox") {
+        for (const w of widgetsOf(f)) {
+          controls.push({ kind: "checkbox", name: f.name, page: w.page, rect: w.rect });
+        }
       } else if (
         (f.type === "dropdown" || f.type === "optionlist") &&
         f.rect &&
@@ -318,7 +334,7 @@ export default function PdfEditor({
   }
 
   const placedNames = new Set<string>([
-    ...positionedTexts.map((f) => f.name),
+    ...textWidgets.map((t) => t.name),
     ...controls.map((c) => c.name),
   ]);
   const panelFields = fields.filter(
@@ -440,7 +456,7 @@ export default function PdfEditor({
                   width={width}
                   tool={tool}
                   texts={texts.filter((t) => t.page === i)}
-                  fields={positionedTexts.filter((f) => f.page === i)}
+                  textWidgets={textWidgets.filter((t) => t.page === i)}
                   controls={controls.filter((c) => c.page === i)}
                   fieldValues={fieldValues}
                   onChangeField={onChangeField}
@@ -586,7 +602,7 @@ function PageLayer({
   width,
   tool,
   texts,
-  fields,
+  textWidgets,
   controls,
   fieldValues,
   onChangeField,
@@ -603,7 +619,7 @@ function PageLayer({
   width: number;
   tool: Tool;
   texts: TextItem[];
-  fields: FieldMeta[];
+  textWidgets: { name: string; page: number; rect: Rect; sizeRatio: number }[];
   controls: Control[];
   fieldValues: Record<string, string | boolean>;
   onChangeField: (name: string, value: string | boolean) => void;
@@ -733,15 +749,15 @@ function PageLayer({
           renderForms={editable}
         />
 
-        {/* Vorhandene Textfelder (auch zuvor gespeicherter Freitext) — in-place
-            editierbar; Position/Größe aus dem PDF. */}
-        {fields.map((f) => {
-          const r = f.rect!;
-          const v = fieldValues[f.name];
-          const fontPx = Math.max(8, (f.sizeRatio ?? 0.02) * h);
+        {/* Echte Formular-Textfelder — in-place editierbar; jedes Widget eines
+            Feldes wird gezeigt (mehrere teilen denselben Wert, wie in Acrobat). */}
+        {textWidgets.map((tw, idx) => {
+          const r = tw.rect;
+          const v = fieldValues[tw.name];
+          const fontPx = Math.max(8, tw.sizeRatio * h);
           return (
             <div
-              key={f.name}
+              key={`${tw.name}-${idx}`}
               className="absolute z-10 rounded-sm border border-emerald-400/70 bg-white/60"
               style={{
                 left: `${r.xRatio * 100}%`,
@@ -749,13 +765,13 @@ function PageLayer({
                 width: `${r.wRatio * 100}%`,
                 height: `${r.hRatio * 100}%`,
               }}
-              title={`Feld: ${f.name}`}
+              title={`Feld: ${tw.name}`}
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
               <textarea
                 value={typeof v === "string" ? v : ""}
-                onChange={(e) => onChangeField(f.name, e.target.value)}
+                onChange={(e) => onChangeField(tw.name, e.target.value)}
                 className="h-full w-full resize-none bg-transparent px-1 leading-tight outline-none"
                 style={{ fontSize: `${fontPx}px` }}
               />
