@@ -121,6 +121,24 @@ export async function saveAntragFile(
   };
 }
 
+/** Wie saveAntragFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */
+export async function saveAntragBuffer(
+  cardId: number,
+  filename: string,
+  buf: Buffer,
+  mime: string,
+): Promise<{ relPath: string; filename: string; mime: string; size: number }> {
+  const rel = join(
+    "cards",
+    String(cardId),
+    `${randomUUID()}-${sanitize(filename)}`,
+  );
+  const abs = absPath(rel);
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, buf);
+  return { relPath: rel, filename, mime, size: buf.length };
+}
+
 export async function deleteStoredFile(relPath: string): Promise<void> {
   try {
     await unlink(absPath(relPath));

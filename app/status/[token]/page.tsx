@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boards, boardStatuses, attachments } from "@/lib/db/schema";
+import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import { env } from "@/lib/env";
 import { formatDateTime } from "@/lib/dates";
 import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
@@ -170,27 +171,26 @@ export default async function StatusPage({
           <ul className="space-y-2 text-sm">
             {named.map((n) => (
               <li key={n.file!.id}>
-                <a
-                  href={`/api/status/${token}/attachment/${n.file!.id}`}
-                  target="_blank"
-                  rel="noopener"
+                <AttachmentLink
+                  id={n.file!.id}
+                  filename={n.file!.filename}
+                  label={n.label}
+                  mime={n.file!.mime}
+                  src={`/api/status/${token}/attachment/${n.file!.id}`}
                   className="text-brand-600 hover:underline"
-                >
-                  📄 {n.label}
-                </a>
+                />
                 <span className="text-slate-400"> — {n.file!.filename}</span>
               </li>
             ))}
             {others.map((a) => (
               <li key={a.id}>
-                <a
-                  href={`/api/status/${token}/attachment/${a.id}`}
-                  target="_blank"
-                  rel="noopener"
+                <AttachmentLink
+                  id={a.id}
+                  filename={a.filename}
+                  mime={a.mime}
+                  src={`/api/status/${token}/attachment/${a.id}`}
                   className="text-brand-600 hover:underline"
-                >
-                  📄 {a.filename}
-                </a>
+                />
               </li>
             ))}
           </ul>

@@ -166,6 +166,17 @@ export const PDF_MIME = ["application/pdf"];
 export const AUSWEIS_MIME = ["application/pdf", "image/png", "image/jpeg"];
 export const AVATAR_MIME = ["image/png", "image/jpeg", "image/webp"];
 
+// Signatur-Zertifikat (PKCS#12). Browser senden für .p12/.pfx uneinheitliche
+// MIME-Typen (oft leer/octet-stream) — daher wird zusätzlich die Endung geprüft.
+export const CERTIFICATE_MIME = [
+  "application/x-pkcs12",
+  "application/pkcs12",
+  "application/octet-stream",
+  "",
+];
+export const CERTIFICATE_EXT = [".p12", ".pfx"];
+export const MAX_CERTIFICATE_BYTES = 1 * 1024 * 1024; // 1 MB reicht für ein .p12 weit
+
 export const TOKEN_LENGTH = 30;
 export const TOKEN_ALPHABET =
   "0123456789abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";

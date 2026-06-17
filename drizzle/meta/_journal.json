@@ -218,6 +218,13 @@
       "when": 1781259477070,
       "tag": "0030_left_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1781695963706,
+      "tag": "0031_cute_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

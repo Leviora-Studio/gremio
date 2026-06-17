@@ -39,6 +39,14 @@ export const users = pgTable(
       .default("user"),
     isActive: boolean("is_active").notNull().default(true),
     avatarPath: text("avatar_path"),
+    // Persönliches Signatur-Zertifikat (PKCS#12 / .p12) für die PDF-Signierung.
+    // p12-Bytes (base64) UND Passphrase liegen AES-256-GCM-verschlüsselt
+    // (ENCRYPTION_KEY) in der DB — nie im Klartext. Metadaten nur zur Anzeige.
+    certP12Enc: text("cert_p12_enc"),
+    certPassEnc: text("cert_pass_enc"),
+    certSubject: text("cert_subject"), // Inhaber (CN) — Anzeige
+    certNotAfter: timestamp("cert_not_after", { withTimezone: true }), // Gültig bis
+    certUploadedAt: timestamp("cert_uploaded_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => ({

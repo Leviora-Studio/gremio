@@ -71,11 +71,13 @@ export default async function AntragDetailPage({
     .where(eq(attachments.cardId, card.id));
   const slot = (k: AttachmentKind) => {
     const a = atts.find((x) => x.kind === k);
-    return a ? { id: a.id, filename: a.filename } : null;
+    return a ? { id: a.id, filename: a.filename, mime: a.mime } : null;
   };
   const other = atts
     .filter((a) => a.kind === "other")
-    .map((a) => ({ id: a.id, filename: a.filename }));
+    .map((a) => ({ id: a.id, filename: a.filename, mime: a.mime }));
+  // Hat der eingeloggte Nutzer ein Signatur-Zertifikat? (für den Signieren-Button)
+  const hasCert = !!user.certP12Enc;
 
   // Ersteller/Zugewiesen-Namen
   const userIds = [card.creatorUserId, card.assigneeUserId].filter(
@@ -250,6 +252,7 @@ export default async function AntragDetailPage({
             label="Finanzantrag (PDF)"
             accept="application/pdf,.pdf"
             current={slot("finance_request")}
+            hasCert={hasCert}
           />
         )}
         {visible.includes("student_card") && (
@@ -259,6 +262,7 @@ export default async function AntragDetailPage({
             label="Studierendenausweis (PDF/PNG/JPG)"
             accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
             current={slot("student_card")}
+            hasCert={hasCert}
           />
         )}
         {visible.includes("annex_a") && (
@@ -268,6 +272,7 @@ export default async function AntragDetailPage({
             label="Anlage A (PDF)"
             accept="application/pdf,.pdf"
             current={slot("annex_a")}
+            hasCert={hasCert}
           />
         )}
         {visible.includes("annex_b") && (
@@ -277,10 +282,11 @@ export default async function AntragDetailPage({
             label="Anlage B (PDF)"
             accept="application/pdf,.pdf"
             current={slot("annex_b")}
+            hasCert={hasCert}
           />
         )}
         {visible.includes("other_pdfs") && (
-          <WeitereAttachments cardId={card.id} items={other} />
+          <WeitereAttachments cardId={card.id} items={other} hasCert={hasCert} />
         )}
       </section>
 

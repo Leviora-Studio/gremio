@@ -10,6 +10,7 @@ import { getAccessibleBoards } from "@/lib/authz";
 import { Avatar } from "@/components/Avatar";
 import { ApiTokens } from "@/components/ApiTokens";
 import { ResyncProfileButton } from "@/components/ResyncProfileButton";
+import { CertificateSettings } from "@/components/CertificateSettings";
 
 export const metadata = { title: "Mein Konto — Gremio" };
 
@@ -108,6 +109,22 @@ export default async function KontoPage() {
           <ResyncProfileButton />
         </div>
       </section>
+
+      <CertificateSettings
+        cert={
+          user.certP12Enc
+            ? {
+                subject: user.certSubject,
+                notAfter: user.certNotAfter
+                  ? user.certNotAfter.toISOString()
+                  : null,
+                uploadedAt: user.certUploadedAt
+                  ? user.certUploadedAt.toISOString()
+                  : null,
+              }
+            : null
+        }
+      />
 
       <ApiTokens tokens={tokens} boards={boardOptions} baseUrl={baseUrl} />
     </div>

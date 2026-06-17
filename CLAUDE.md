@@ -21,6 +21,8 @@ Die Boards sind **allgemeine Kanban-Boards** und auch **unabhängig vom öffentl
 - **Secrets:** Node-`crypto` (AES-256-GCM) zum Verschlüsseln der board-eigenen Nextcloud-Zugangsdaten (Schlüssel aus `.env`)
 - **Bilder:** `sharp` zum Zuschneiden/Verkleinern der Profilbilder
 - **Nextcloud:** `webdav`-Client (npm)
+- **PDF-Viewer/Editor:** `react-pdf` (pdf.js) rendert Anhänge **in-app** (Modal) statt im Browser-Tab; Bearbeitung (Freitext, Formularfelder) + Signatur werden serverseitig mit `pdf-lib` ins PDF geschrieben.
+- **PDF-Signatur (PAdES):** kryptografische, prüfbare Signatur über `@signpdf/signpdf` + `@signpdf/signer-p12` + `@signpdf/placeholder-pdf-lib` (CMS/PKCS#7 detached). `.p12`-Parsing mit `node-forge`. Läuft ausschließlich serverseitig (Privatschlüssel verlässt den Server nicht).
 - **Deployment:** Docker (Next.js Standalone-Server auf Node, persistente Volumes für DB + Uploads) — siehe „Deployment (Docker)"
 
 ---
@@ -226,6 +228,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /                        → Antragsformular (öffentlich)
 /status/{token}          → Statusseite für Antragsteller (öffentlich, nur per Token): Status ansehen, Dokumente ansehen, PDFs nachreichen
 /api/status/{token}/attachment/{id} → Öffentlicher Datei-Abruf per Token (nur finance_request/annex_a/annex_b/other; KEIN Studierendenausweis)
+/api/attachment/{id}/fields → Ausfüllbare AcroForm-Felder eines PDF-Anhangs (für den In-App-Editor; Board-Zugriff)
 /login                   → Login-Seite (SSO)
 /finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
@@ -394,11 +397,27 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **CSP** setzt nur `frame-ancestors 'none'` (+ `X-Frame-Options`, `nosniff`); **HSTS** terminiert nginx. Eine strikte `script-src`-CSP (Nonces) ist bewusst zurückgestellt.
 - **Upload-Validierung** prüft MIME/Endung (keine Magic-Bytes); ausgeliefert wird mit erzwungenem Content-Type + `nosniff` → kein Stored-XSS, Restrisiko nur „Müll-PDFs".
 - **Dependencies:** verbleibende `npm audit`-Funde (postcss, esbuild) sind **build-/dev-only** über Next.js bzw. drizzle-kit — kein Laufzeitrisiko.
+- **Signatur-Zertifikate liegen verschlüsselt am Nutzer:** `.p12` (Privatschlüssel) **und** Passphrase werden AES-256-GCM-verschlüsselt (ENCRYPTION_KEY) in `users` gespeichert, damit „einmal hinzufügen" genügt. Trade-off: Wer DB **und** `ENCRYPTION_KEY` hat, kann als der Nutzer signieren — bewusst gewählt für die Bequemlichkeit (Alternative wäre Passphrase je Signatur). Signiert wird nur serverseitig.
+
+---
+
+## PDF-Viewer, -Editor & digitale Signatur
+
+Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der Viewer ist zugleich Editor:
+- **Anzeigen:** `react-pdf` (pdf.js) rendert PDF-Seiten; Bilder (Studierendenausweis) werden als `<img>` gezeigt. Auf der **öffentlichen Statusseite** ist der Viewer **read-only**.
+- **Bearbeiten (intern, Board-Mitglieder):** Freitext per Klick platzieren und vorhandene **AcroForm-Formularfelder** über ein Seitenpanel ausfüllen. Beim Speichern werden die Änderungen serverseitig mit `pdf-lib` ins PDF geschrieben (`lib/pdf-edit.ts`).
+- **Signieren:** sichtbare Signatur-Box platzieren → serverseitige **PAdES-Signatur** mit dem persönlichen `.p12` des Nutzers (`lib/sign.ts`, `@signpdf`). Verlangt ein in den Konto-Einstellungen hinterlegtes Zertifikat (`lib/cert.ts`, `inspectP12`).
+- **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Zugriff erforderlich, Aktivitätseintrag.
+- **Feld-Metadaten:** `GET /api/attachment/{id}/fields` liefert die ausfüllbaren Felder fürs Seitenpanel.
+- **Zertifikatsverwaltung:** `/intern/konto` → Abschnitt „Signatur-Zertifikat" (`.p12` + Passwort hochladen/ersetzen/entfernen; Inhaber/Gültigkeit werden angezeigt). Spalten an `users`: `cert_p12_enc`, `cert_pass_enc`, `cert_subject`, `cert_not_after`, `cert_uploaded_at`.
+
+> Hinweis: pdf.js (v5) benötigt `Promise.withResolvers` (moderne Browser ≥ 2024). Der pdf.js-Worker wird als statisches Asset ausgeliefert (kein CDN).
 
 ---
 
 ## Hinweise
 - Credentials nicht in den Code committen → `.env`-Datei verwenden
 - Board-eigene Nextcloud-Zugangsdaten werden **verschlüsselt** in der DB gespeichert (AES-256-GCM, Schlüssel aus `.env`), nie im Klartext
+- Signatur-Zertifikate (`.p12` + Passphrase) werden ebenfalls **verschlüsselt** gespeichert (gleicher `ENCRYPTION_KEY`)
 - DSGVO: Token nur lokal anzeigen
 - Antragsteller-E-Mail wird nicht erfasst
