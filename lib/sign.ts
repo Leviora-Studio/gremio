@@ -82,10 +82,15 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
     }
 
     if (img) {
-      // Bild oben groß, darunter Name + Datum klein.
-      const captionH = fs * 2.1;
+      // Bild oben groß, darunter Name + Datum (+ Grund, falls gesetzt).
+      const reasonText = opts.reason
+        ? sanitizeWinAnsi(opts.reason).slice(0, 60)
+        : "";
+      const lineH = fs;
+      const lines = reasonText ? 3 : 2; // Name, Datum (+ Grund)
+      const captionH = pad + lines * lineH;
       const areaW = w - 2 * pad;
-      const areaH = h - captionH - pad;
+      const areaH = h - captionH;
       if (areaW > 4 && areaH > 4) {
         const s = Math.min(areaW / img.width, areaH / img.height);
         const iw = img.width * s;
@@ -97,19 +102,32 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
           height: ih,
         });
       }
-      page.drawText(name, {
-        x: x + pad,
-        y: y + captionH - fs * 0.95,
-        size: Math.max(6, fs - 1),
-        font: bold,
-        color: rgb(0.12, 0.28, 0.55),
-      });
+      // Zeilen von unten nach oben stapeln: ggf. Grund, dann Datum, dann Name.
+      let ty = y + pad * 0.6;
+      if (reasonText) {
+        page.drawText(reasonText, {
+          x: x + pad,
+          y: ty,
+          size: Math.max(5, fs - 2),
+          font,
+          color: rgb(0.4, 0.4, 0.4),
+        });
+        ty += lineH;
+      }
       page.drawText(dateText, {
         x: x + pad,
-        y: y + pad * 0.6,
+        y: ty,
         size: Math.max(5, fs - 2),
         font,
         color: rgb(0.35, 0.35, 0.35),
+      });
+      ty += lineH;
+      page.drawText(name, {
+        x: x + pad,
+        y: ty,
+        size: Math.max(6, fs - 1),
+        font: bold,
+        color: rgb(0.12, 0.28, 0.55),
       });
     } else {
       page.drawText("Digital signiert", {
