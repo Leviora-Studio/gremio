@@ -93,8 +93,11 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
             field.clear();
           }
         } else if (field instanceof PDFRadioGroup) {
-          if (typeof fe.value === "string" && fe.value) field.select(fe.value);
-          else field.clear();
+          if (typeof fe.value === "string" && fe.value) {
+            selectRadio(field, fe.value);
+          } else {
+            field.clear();
+          }
         }
       } catch (e) {
         console.warn(
@@ -241,19 +244,12 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
     }
   }
 
-  // Radio-Buttons: jedes Options-Widget eigene Position + Export-Wert.
+  // Radio-Buttons: pro Options-Widget eigene Position + der Widget-On-State als
+  // Wert (maßgeblich, auch wenn /Opt kaputt/uneindeutig ist).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function radioWidgets(field: any, options: string[]): NonNullable<FieldMeta["optionWidgets"]> {
+  function radioWidgets(field: any): NonNullable<FieldMeta["optionWidgets"]> {
     const out: NonNullable<FieldMeta["optionWidgets"]> = [];
     try {
-      // Mit /Opt-Array sind die Appearance-States numerische Indizes in `options`;
-      // ohne /Opt sind sie selbst die Export-Werte.
-      let hasOpt = false;
-      try {
-        hasOpt = field.acroField.dict.has(PDFName.of("Opt"));
-      } catch {
-        /* ignore */
-      }
       for (const w of field.acroField.getWidgets()) {
         const pageIndex = pageOfDict.get(w.dict);
         if (pageIndex == null) continue;
@@ -261,11 +257,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         const { width: pw, height: ph } = p.getSize();
         const r = w.getRectangle();
         const on = w.getOnValue?.();
-        const onName = on ? on.decodeText() : "";
-        const value =
-          hasOpt && /^\d+$/.test(onName)
-            ? (options[Number(onName)] ?? onName)
-            : onName;
+        const value = on ? on.decodeText() : "";
         if (!value) continue;
         out.push({
           value,
@@ -337,14 +329,13 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         ...placement(f),
       });
     } else if (f instanceof PDFRadioGroup) {
-      const options = safeOptions(() => f.getOptions());
       out.push({
         name,
         type: "radio",
-        value: f.getSelected() ?? "",
-        options,
+        value: radioOnValue(f),
+        options: radioOnOptions(f),
         readOnly,
-        optionWidgets: radioWidgets(f, options),
+        optionWidgets: radioWidgets(f),
       });
     } else {
       out.push({ name, type: "other", value: null, readOnly });
@@ -382,6 +373,53 @@ function selectChoice(field: PDFDropdown | PDFOptionList, value: string): void {
     /* Roh-Optionen nicht lesbar — Originalwert versuchen */
   }
   field.select(toSelect);
+}
+
+/** Aktuell gewählter Radio-Wert = der On-State im /V (maßgeblich, /Opt egal). */
+function radioOnValue(field: PDFRadioGroup): string {
+  try {
+    const v = field.acroField.dict.lookup(PDFName.of("V"));
+    return v instanceof PDFName ? v.decodeText() : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Radio-Optionen = die Widget-On-States (echte Werte, auch bei kaputtem /Opt). */
+function radioOnOptions(field: PDFRadioGroup): string[] {
+  try {
+    return field.acroField.getOnValues().map((n) => n.decodeText());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Radio robust setzen: pdf-lib .select() prüft gegen /Opt (kann kaputt/uneindeutig
+ * sein → wirft). Wir setzen direkt den Widget-On-State im /V. Fallbacks: Export-
+ * Wert aus /Opt per Index, sonst doch .select().
+ */
+function selectRadio(field: PDFRadioGroup, value: string): void {
+  const acro = field.acroField;
+  const onValues = acro.getOnValues();
+  const direct = onValues.find((n) => n.decodeText() === value);
+  if (direct) {
+    acro.setValue(direct);
+    return;
+  }
+  try {
+    const ev = acro.getExportValues?.();
+    if (ev) {
+      const idx = ev.findIndex((s) => s.decodeText() === value);
+      if (idx >= 0 && onValues[idx]) {
+        acro.setValue(onValues[idx]);
+        return;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  field.select(value);
 }
 
 /** Anzeige-Text der aktuellen Auswahl (damit er zu getOptions() passt). */
