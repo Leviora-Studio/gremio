@@ -676,6 +676,10 @@ function PageLayer({
           width={width}
           renderTextLayer={false}
           renderAnnotationLayer={false}
+          // Im Editor Formularfelder NICHT in die Canvas backen (sonst „Geister-
+          // text" hinter den editierbaren Overlays). In der read-only-Ansicht
+          // hingegen einbacken, damit Feldwerte sichtbar bleiben.
+          renderForms={editable}
         />
 
         {/* Vorhandene Textfelder (auch zuvor gespeicherter Freitext) — in-place
