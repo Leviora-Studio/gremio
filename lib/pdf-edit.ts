@@ -2,10 +2,12 @@
 // Copyright (C) 2026 Erik Engler
 
 import {
+  PDFBool,
   PDFDocument,
   PDFCheckBox,
   PDFDict,
   PDFDropdown,
+  PDFName,
   PDFOptionList,
   PDFRadioGroup,
   PDFSignature,
@@ -13,15 +15,30 @@ import {
   StandardFonts,
 } from "pdf-lib";
 
+// Markierung an „unseren" Freitextfeldern, damit sie sich von echten
+// Formularfeldern unterscheiden lassen (nur diese sind frei verschieb-/skalierbar).
+const GREMIO_TEXT_KEY = "GremioFreeText";
+
 // Freitext: Position als Anteil der Seitenmaße von OBEN-LINKS (wie der
 // Canvas-Overlay im Browser), Schriftgröße als Anteil der Seitenhöhe.
+// name gesetzt = bestehendes Freitextfeld aktualisieren; sonst neu anlegen.
 export type TextEdit = {
+  name?: string;
   page: number;
   xRatio: number;
   yRatio: number;
   text: string;
   sizeRatio?: number;
 };
+
+/** Box-Maße eines Freitextfelds aus Inhalt + Schriftgröße ableiten (Client & Server gleich). */
+function deriveBox(value: string, size: number, pageWidth: number) {
+  const lines = value.split(/\r?\n/);
+  const maxLen = Math.max(1, ...lines.map((l) => l.length));
+  const boxW = Math.min(pageWidth - 4, Math.max(40, maxLen * size * 0.55 + 10));
+  const boxH = Math.max(size * 1.5, lines.length * size * 1.32 + 6);
+  return { boxW, boxH };
+}
 
 export type FieldEdit = { name: string; value: string | boolean };
 export type PdfEdits = { texts?: TextEdit[]; fields?: FieldEdit[] };
@@ -81,7 +98,8 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
   if (edits.texts?.length) {
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const pages = doc.getPages();
-    const used = new Set(form.getFields().map((f) => f.getName()));
+    const byName = new Map(form.getFields().map((f) => [f.getName(), f]));
+    const used = new Set(byName.keys());
     let counter = 1;
     const nextName = () => {
       let n: string;
@@ -94,23 +112,35 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
 
     for (const t of edits.texts) {
       const page = pages[t.page];
-      if (!page || !t.text?.trim()) continue;
+      if (!page) continue;
       const { width, height } = page.getSize();
       const size = Math.max(6, Math.min(64, (t.sizeRatio ?? 0.02) * height));
-      const value = sanitizeWinAnsi(t.text);
-      const lines = value.split(/\r?\n/);
-      const maxLen = Math.max(1, ...lines.map((l) => l.length));
-      const boxW = Math.min(width - 4, Math.max(40, maxLen * size * 0.55 + 10));
-      const boxH = Math.max(size * 1.5, lines.length * size * 1.32 + 6);
+      const value = sanitizeWinAnsi(t.text ?? "");
+      const multiline = value.includes("\n");
+      const { boxW, boxH } = deriveBox(value, size, width);
       const x = Math.max(0, Math.min(width - 12, t.xRatio * width));
       const y = Math.max(0, height - t.yRatio * height - boxH);
 
-      const tf = form.createTextField(nextName());
-      if (lines.length > 1) tf.enableMultiline();
-      // addToPage zuerst — danach existiert die /DA-Angabe (für setFontSize nötig).
-      tf.addToPage(page, { x, y, width: boxW, height: boxH, font, borderWidth: 0 });
-      tf.setFontSize(size);
-      tf.setText(value);
+      const existing = t.name ? byName.get(t.name) : undefined;
+      if (existing instanceof PDFTextField) {
+        // Bestehendes Freitextfeld: Wert, Größe UND Position aktualisieren.
+        if (multiline) existing.enableMultiline();
+        const widget = existing.acroField.getWidgets()[0];
+        if (widget) widget.setRectangle({ x, y, width: boxW, height: boxH });
+        existing.setFontSize(size);
+        existing.setText(value);
+        existing.updateAppearances(font);
+      } else {
+        if (!value.trim()) continue; // keine leeren Felder neu anlegen
+        const tf = form.createTextField(nextName());
+        if (multiline) tf.enableMultiline();
+        // addToPage zuerst — danach existiert die /DA-Angabe (für setFontSize nötig).
+        tf.addToPage(page, { x, y, width: boxW, height: boxH, font, borderWidth: 0 });
+        tf.setFontSize(size);
+        tf.setText(value);
+        tf.acroField.dict.set(PDFName.of(GREMIO_TEXT_KEY), PDFBool.True);
+        tf.updateAppearances(font);
+      }
     }
   }
 
@@ -142,6 +172,8 @@ export type FieldMeta = {
   page?: number;
   rect?: FieldRect;
   sizeRatio?: number;
+  // true = von uns angelegter Freitext (frei verschieb-/skalierbar).
+  gremioText?: boolean;
 };
 
 /** Liest die ausfüllbaren AcroForm-Felder eines PDFs (für den Editor). */
@@ -207,11 +239,18 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
     const readOnly = f.isReadOnly();
     if (f instanceof PDFSignature) continue; // Signaturfelder nicht ausfüllbar
     if (f instanceof PDFTextField) {
+      let gremioText = /^Text \d+$/.test(name);
+      try {
+        if (f.acroField.dict.has(PDFName.of(GREMIO_TEXT_KEY))) gremioText = true;
+      } catch {
+        /* ignore */
+      }
       out.push({
         name,
         type: "text",
         value: f.getText() ?? "",
         readOnly,
+        gremioText,
         ...placement(f),
       });
     } else if (f instanceof PDFCheckBox) {

@@ -44,10 +44,15 @@ function sanitizeEdits(raw: SavePdfInput["edits"]): {
   const texts: TextEdit[] = Array.isArray(raw?.texts)
     ? raw.texts.slice(0, 200).flatMap((t) => {
         const text = typeof t?.text === "string" ? t.text.slice(0, 2000) : "";
-        if (!text.trim()) return [];
+        const name =
+          typeof t?.name === "string" && t.name ? t.name.slice(0, 200) : undefined;
+        // Neue, leere Texte ignorieren; bestehende (mit name) auch leer zulassen
+        // (→ Inhalt löschen).
+        if (!name && !text.trim()) return [];
         const page = Number.isInteger(t?.page) ? (t.page as number) : 0;
         return [
           {
+            name,
             page: Math.max(0, page),
             xRatio: clamp01(t?.xRatio),
             yRatio: clamp01(t?.yRatio),

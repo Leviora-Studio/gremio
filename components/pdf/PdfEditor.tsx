@@ -27,6 +27,7 @@ type Tool = "none" | "text" | "sign";
 
 type TextItem = {
   id: number;
+  fieldName?: string; // gesetzt = bestehendes Feld (Update), sonst neu
   page: number;
   xRatio: number;
   yRatio: number;
@@ -51,6 +52,7 @@ type FieldMeta = {
   page?: number;
   rect?: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
   sizeRatio?: number;
+  gremioText?: boolean;
 };
 
 export type PdfEditorProps = {
@@ -65,6 +67,18 @@ export type PdfEditorProps = {
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 let nextId = 1;
 
+// Normalisierte Form eines Textes für den „dirty"-Vergleich (gerundet, ohne id).
+function normText(t: TextItem) {
+  return {
+    f: t.fieldName ?? "",
+    p: t.page,
+    x: +t.xRatio.toFixed(3),
+    y: +t.yRatio.toFixed(3),
+    s: +t.sizeRatio.toFixed(4),
+    t: t.text,
+  };
+}
+
 export default function PdfEditor({
   src,
   filename,
@@ -75,6 +89,7 @@ export default function PdfEditor({
 }: PdfEditorProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  const initialTextsRef = useRef<string>("[]");
   const [numPages, setNumPages] = useState(0);
   const [baseWidth, setBaseWidth] = useState(800);
   const [zoom, setZoom] = useState(1);
@@ -115,8 +130,31 @@ export default function PdfEditor({
         if (!active) return;
         const fs = d.fields ?? [];
         setFields(fs);
+        // Unsere Freitextfelder als verschieb-/skalierbare Texte übernehmen.
+        const seeded: TextItem[] = fs
+          .filter(
+            (f) =>
+              f.type === "text" &&
+              f.gremioText &&
+              f.rect &&
+              f.page != null &&
+              !f.readOnly,
+          )
+          .map((f) => ({
+            id: nextId++,
+            fieldName: f.name,
+            page: f.page!,
+            xRatio: f.rect!.xRatio,
+            yRatio: f.rect!.yRatio,
+            text: typeof f.value === "string" ? f.value : "",
+            sizeRatio: f.sizeRatio ?? 0.02,
+          }));
+        setTexts(seeded);
+        initialTextsRef.current = JSON.stringify(seeded.map(normText));
+        // Restliche Felder fürs Panel / feste Overlays.
         const init: Record<string, string | boolean> = {};
         for (const f of fs) {
+          if (f.gremioText) continue;
           if (f.type === "checkbox") init[f.name] = Boolean(f.value);
           else init[f.name] = typeof f.value === "string" ? f.value : "";
         }
@@ -160,7 +198,8 @@ export default function PdfEditor({
   function changedFields() {
     const out: { name: string; value: string | boolean }[] = [];
     for (const f of fields) {
-      if (f.readOnly) continue;
+      // Freitextfelder laufen über `texts`, nicht über das Panel.
+      if (f.gremioText || f.readOnly) continue;
       const v = fieldValues[f.name];
       const orig = f.type === "checkbox" ? Boolean(f.value) : (f.value ?? "");
       if (v !== orig) out.push({ name: f.name, value: v });
@@ -168,15 +207,20 @@ export default function PdfEditor({
     return out;
   }
 
+  const textsJson = JSON.stringify(texts.map(normText));
+  const dirty =
+    textsJson !== initialTextsRef.current ||
+    !!sign ||
+    changedFields().length > 0;
+
   async function handleSave() {
     setError(null);
-    const fieldEdits = changedFields();
-    const wantsSign = !!sign;
-    if (!texts.length && !fieldEdits.length && !wantsSign) {
+    if (!dirty) {
       setError("Keine Änderungen zum Speichern.");
       return;
     }
-    if (wantsSign && !hasCert) {
+    const fieldEdits = changedFields();
+    if (sign && !hasCert) {
       setError(
         "Kein Signatur-Zertifikat hinterlegt — bitte zuerst in den Konto-Einstellungen hinzufügen.",
       );
@@ -187,6 +231,7 @@ export default function PdfEditor({
       mode: "replace", // immer das Original überschreiben
       edits: {
         texts: texts.map((t) => ({
+          name: t.fieldName,
           page: t.page,
           xRatio: t.xRatio,
           yRatio: t.yRatio,
@@ -215,17 +260,22 @@ export default function PdfEditor({
     }
   }
 
-  const dirty = texts.length > 0 || !!sign || changedFields().length > 0;
-
-  // Positionierte, in-place editierbare Textfelder (auch zuvor gespeicherter
-  // Freitext) vs. restliche Felder fürs Seitenpanel.
+  // Echte (nicht von uns angelegte) Formular-Textfelder bleiben an fester
+  // Position editierbar; unsere Freitexte laufen über `texts`. Rest → Panel.
   const positionedFields = editable
     ? fields.filter(
-        (f) => f.type === "text" && !f.readOnly && f.rect && f.page != null,
+        (f) =>
+          f.type === "text" &&
+          !f.gremioText &&
+          !f.readOnly &&
+          f.rect &&
+          f.page != null,
       )
     : [];
   const positionedNames = new Set(positionedFields.map((f) => f.name));
-  const panelFields = fields.filter((f) => !positionedNames.has(f.name));
+  const panelFields = fields.filter(
+    (f) => !f.gremioText && !positionedNames.has(f.name),
+  );
 
   const onChangeField = (name: string, value: string | boolean) =>
     setFieldValues((prev) => ({ ...prev, [name]: value }));
@@ -671,19 +721,25 @@ function PageLayer({
           />
         )}
 
-        {/* Freitext-Overlays (beginnen am Klickpunkt, verschiebbar) */}
-        {texts.map((t) => (
-          <div
-            key={t.id}
-            className="absolute z-10 rounded border border-brand-300 bg-white/70"
-            style={{ left: `${t.xRatio * 100}%`, top: `${t.yRatio * 100}%` }}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-stretch">
+        {/* Freitext-Overlays: am Klickpunkt, verschiebbar (Griff), wachsen mit
+            dem Inhalt mit; bleiben auch nach dem Speichern editierbar. */}
+        {texts.map((t) => {
+          const fontPx = Math.max(8, t.sizeRatio * h);
+          const lines = (t.text || "").split("\n");
+          const maxLen = Math.max(1, ...lines.map((l) => l.length));
+          const boxW = Math.max(40, maxLen * fontPx * 0.55 + 10);
+          const boxH = Math.max(fontPx * 1.5, lines.length * fontPx * 1.32 + 6);
+          return (
+            <div
+              key={t.id}
+              className="absolute z-10"
+              style={{ left: `${t.xRatio * 100}%`, top: `${t.yRatio * 100}%` }}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <span
                 onPointerDown={(e) => startTextDrag(e, t.id)}
-                className="flex cursor-move select-none items-center bg-brand-100 px-0.5 text-[10px] text-brand-700"
+                className="absolute -left-3 top-0 flex h-4 w-3 cursor-move select-none items-center justify-center rounded-l bg-brand-200 text-[9px] text-brand-700"
                 title="Verschieben"
               >
                 ⠿
@@ -691,21 +747,27 @@ function PageLayer({
               <textarea
                 value={t.text}
                 onChange={(e) => onChangeText(t.id, e.target.value)}
-                rows={1}
-                className="resize-none bg-transparent px-1 leading-tight outline-none"
-                style={{ fontSize: `${Math.max(8, t.sizeRatio * h)}px`, minWidth: 60 }}
+                className="block resize-none overflow-hidden rounded-sm border border-brand-300 bg-white/70 px-1 leading-tight outline-none"
+                style={{
+                  width: boxW,
+                  height: boxH,
+                  fontSize: fontPx,
+                  fontFamily: "Helvetica, Arial, sans-serif",
+                }}
               />
+              {!t.fieldName && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveText(t.id)}
+                  className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
+                  title="Text entfernen"
+                >
+                  ×
+                </button>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => onRemoveText(t.id)}
-              className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
-              title="Text entfernen"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Signatur-Bereich */}
         {sign && (
