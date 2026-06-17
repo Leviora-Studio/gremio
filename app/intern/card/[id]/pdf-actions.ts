@@ -19,6 +19,7 @@ import { logActivity } from "@/lib/activity";
 import { allowRequest } from "@/lib/rate-limit";
 import { applyPdfEdits, type FieldEdit, type TextEdit } from "@/lib/pdf-edit";
 import { decryptUserCert } from "@/lib/cert";
+import { readSignature } from "@/lib/signature";
 import { signPdf, type SignPlacement } from "@/lib/sign";
 
 export type SavePdfInput = {
@@ -162,6 +163,10 @@ export async function savePdfEditsAction(
         dateStyle: "medium",
         timeStyle: "short",
       }) + " Uhr";
+    // Optionales Unterschriftsbild (rein optisch) laden, falls hinterlegt.
+    const signatureImage = user.signaturePath
+      ? ((await readSignature(user.signaturePath)) ?? undefined)
+      : undefined;
     try {
       pdf = await signPdf(pdf, {
         p12: cert.p12,
@@ -170,6 +175,7 @@ export async function savePdfEditsAction(
         // der Gremio-Benutzername. Fallback nur, falls kein CN gelesen wurde.
         signerName: user.certSubject?.trim() || user.name || user.username,
         dateLabel,
+        signatureImage,
         reason:
           typeof input.signature.reason === "string"
             ? input.signature.reason.slice(0, 120)

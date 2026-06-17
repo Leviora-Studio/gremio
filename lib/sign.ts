@@ -24,6 +24,7 @@ export type SignOptions = {
   reason?: string;
   location?: string;
   placement?: SignPlacement; // fehlt → unsichtbare (nur kryptografische) Signatur
+  signatureImage?: Buffer; // optionales Unterschriftsbild (PNG/JPG), rein optisch
 };
 
 /**
@@ -64,35 +65,83 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
     const pad = 5;
     const fs = Math.max(7, Math.min(11, h / 4.2));
     const name = sanitizeWinAnsi(opts.signerName).slice(0, 60);
-    page.drawText("Digital signiert", {
-      x: x + pad,
-      y: y + h - pad - fs,
-      size: fs,
-      font: bold,
-      color: rgb(0.12, 0.28, 0.55),
-    });
-    page.drawText(name, {
-      x: x + pad,
-      y: y + h - pad - fs * 2.25,
-      size: fs,
-      font,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    page.drawText(sanitizeWinAnsi(opts.dateLabel).slice(0, 40), {
-      x: x + pad,
-      y: y + h - pad - fs * 3.5,
-      size: Math.max(6, fs - 1),
-      font,
-      color: rgb(0.35, 0.35, 0.35),
-    });
-    if (opts.reason) {
-      page.drawText(sanitizeWinAnsi(opts.reason).slice(0, 60), {
+    const dateText = sanitizeWinAnsi(opts.dateLabel).slice(0, 40);
+
+    // Optionales Unterschriftsbild einbetten (rein optisch).
+    let img = null;
+    if (opts.signatureImage) {
+      try {
+        img = await doc.embedPng(opts.signatureImage);
+      } catch {
+        try {
+          img = await doc.embedJpg(opts.signatureImage);
+        } catch {
+          img = null;
+        }
+      }
+    }
+
+    if (img) {
+      // Bild oben groß, darunter Name + Datum klein.
+      const captionH = fs * 2.1;
+      const areaW = w - 2 * pad;
+      const areaH = h - captionH - pad;
+      if (areaW > 4 && areaH > 4) {
+        const s = Math.min(areaW / img.width, areaH / img.height);
+        const iw = img.width * s;
+        const ih = img.height * s;
+        page.drawImage(img, {
+          x: x + (w - iw) / 2,
+          y: y + captionH + (areaH - ih) / 2,
+          width: iw,
+          height: ih,
+        });
+      }
+      page.drawText(name, {
         x: x + pad,
-        y: y + pad,
+        y: y + captionH - fs * 0.95,
+        size: Math.max(6, fs - 1),
+        font: bold,
+        color: rgb(0.12, 0.28, 0.55),
+      });
+      page.drawText(dateText, {
+        x: x + pad,
+        y: y + pad * 0.6,
+        size: Math.max(5, fs - 2),
+        font,
+        color: rgb(0.35, 0.35, 0.35),
+      });
+    } else {
+      page.drawText("Digital signiert", {
+        x: x + pad,
+        y: y + h - pad - fs,
+        size: fs,
+        font: bold,
+        color: rgb(0.12, 0.28, 0.55),
+      });
+      page.drawText(name, {
+        x: x + pad,
+        y: y + h - pad - fs * 2.25,
+        size: fs,
+        font,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+      page.drawText(dateText, {
+        x: x + pad,
+        y: y + h - pad - fs * 3.5,
         size: Math.max(6, fs - 1),
         font,
-        color: rgb(0.4, 0.4, 0.4),
+        color: rgb(0.35, 0.35, 0.35),
       });
+      if (opts.reason) {
+        page.drawText(sanitizeWinAnsi(opts.reason).slice(0, 60), {
+          x: x + pad,
+          y: y + pad,
+          size: Math.max(6, fs - 1),
+          font,
+          color: rgb(0.4, 0.4, 0.4),
+        });
+      }
     }
   }
 

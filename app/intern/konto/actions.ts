@@ -16,6 +16,10 @@ import { fetchUserInfo } from "@/lib/oidc";
 import { allowRequest } from "@/lib/rate-limit";
 import { CertError, encryptCert, inspectP12 } from "@/lib/cert";
 import { CERTIFICATE_EXT, MAX_CERTIFICATE_BYTES } from "@/lib/constants";
+import {
+  deleteSignatureFile,
+  processAndSaveSignature,
+} from "@/lib/signature";
 
 const MAX_TOKENS_PER_USER = 20;
 
@@ -208,6 +212,52 @@ export async function removeCertificateAction(): Promise<void> {
       certNotAfter: null,
       certUploadedAt: null,
     })
+    .where(eq(users.id, user.id));
+  revalidatePath("/intern/konto");
+}
+
+// --- Unterschriftsbild (optional, rein optisch) -------------------------
+export type SignatureState = { error?: string; success?: string };
+
+const MAX_SIGNATURE_BYTES = 5 * 1024 * 1024;
+
+export async function uploadSignatureAction(
+  _prev: SignatureState,
+  formData: FormData,
+): Promise<SignatureState> {
+  const user = await requireUser();
+  if (!(await allowRequest(`sig-upload:${user.id}`, 10, 60_000))) {
+    return { error: "Zu viele Versuche. Bitte kurz warten." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Keine Datei ausgewählt." };
+  }
+  if (file.size > MAX_SIGNATURE_BYTES) {
+    return { error: "Datei zu groß (max. 5 MB)." };
+  }
+  let rel: string;
+  try {
+    rel = await processAndSaveSignature(user.id, Buffer.from(await file.arrayBuffer()));
+  } catch {
+    return { error: "Bild konnte nicht verarbeitet werden (PNG/JPG)." };
+  }
+  const old = user.signaturePath;
+  await db
+    .update(users)
+    .set({ signaturePath: rel })
+    .where(eq(users.id, user.id));
+  if (old) await deleteSignatureFile(old);
+  revalidatePath("/intern/konto");
+  return { success: "Unterschriftsbild gespeichert." };
+}
+
+export async function removeSignatureAction(): Promise<void> {
+  const user = await requireUser();
+  if (user.signaturePath) await deleteSignatureFile(user.signaturePath);
+  await db
+    .update(users)
+    .set({ signaturePath: null })
     .where(eq(users.id, user.id));
   revalidatePath("/intern/konto");
 }

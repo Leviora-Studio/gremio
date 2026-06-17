@@ -47,6 +47,8 @@ export const users = pgTable(
     certSubject: text("cert_subject"), // Inhaber (CN) — Anzeige
     certNotAfter: timestamp("cert_not_after", { withTimezone: true }), // Gültig bis
     certUploadedAt: timestamp("cert_uploaded_at", { withTimezone: true }),
+    // Optionales Unterschriftsbild (PNG) — rein optisch in der Signatur-Box.
+    signaturePath: text("signature_path"),
     createdAt: createdAt(),
   },
   (t) => ({

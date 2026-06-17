@@ -11,6 +11,7 @@ import { Avatar } from "@/components/Avatar";
 import { ApiTokens } from "@/components/ApiTokens";
 import { ResyncProfileButton } from "@/components/ResyncProfileButton";
 import { CertificateSettings } from "@/components/CertificateSettings";
+import { SignatureSettings } from "@/components/SignatureSettings";
 
 export const metadata = { title: "Mein Konto — Gremio" };
 
@@ -124,6 +125,11 @@ export default async function KontoPage() {
               }
             : null
         }
+      />
+
+      <SignatureSettings
+        hasSignature={!!user.signaturePath}
+        version={user.signaturePath ?? ""}
       />
 
       <ApiTokens tokens={tokens} boards={boardOptions} baseUrl={baseUrl} />
