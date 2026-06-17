@@ -48,6 +48,9 @@ type FieldMeta = {
   value: string | boolean | null;
   options?: string[];
   readOnly: boolean;
+  page?: number;
+  rect?: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
+  sizeRatio?: number;
 };
 
 export type PdfEditorProps = {
@@ -214,6 +217,19 @@ export default function PdfEditor({
 
   const dirty = texts.length > 0 || !!sign || changedFields().length > 0;
 
+  // Positionierte, in-place editierbare Textfelder (auch zuvor gespeicherter
+  // Freitext) vs. restliche Felder fürs Seitenpanel.
+  const positionedFields = editable
+    ? fields.filter(
+        (f) => f.type === "text" && !f.readOnly && f.rect && f.page != null,
+      )
+    : [];
+  const positionedNames = new Set(positionedFields.map((f) => f.name));
+  const panelFields = fields.filter((f) => !positionedNames.has(f.name));
+
+  const onChangeField = (name: string, value: string | boolean) =>
+    setFieldValues((prev) => ({ ...prev, [name]: value }));
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
@@ -326,6 +342,9 @@ export default function PdfEditor({
                   width={width}
                   tool={tool}
                   texts={texts.filter((t) => t.page === i)}
+                  fields={positionedFields.filter((f) => f.page === i)}
+                  fieldValues={fieldValues}
+                  onChangeField={onChangeField}
                   sign={sign && sign.page === i ? sign : null}
                   editable={editable}
                   onAddText={addText}
@@ -346,8 +365,8 @@ export default function PdfEditor({
           )}
         </div>
 
-        {/* Seitenpanel: Signatur + Formularfelder */}
-        {editable && (fields.length > 0 || sign) && (
+        {/* Seitenpanel: Signatur + restliche Formularfelder */}
+        {editable && (panelFields.length > 0 || sign) && (
           <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-white p-3 text-sm">
             {sign && (
               <div className="mb-4">
@@ -372,11 +391,11 @@ export default function PdfEditor({
                 </button>
               </div>
             )}
-            {fields.length > 0 && (
+            {panelFields.length > 0 && (
               <div>
                 <h3 className="mb-1 font-semibold">Formularfelder</h3>
                 <div className="space-y-3">
-                  {fields.map((f) => (
+                  {panelFields.map((f) => (
                     <FieldInput
                       key={f.name}
                       field={f}
@@ -468,6 +487,9 @@ function PageLayer({
   width,
   tool,
   texts,
+  fields,
+  fieldValues,
+  onChangeField,
   sign,
   editable,
   onAddText,
@@ -481,6 +503,9 @@ function PageLayer({
   width: number;
   tool: Tool;
   texts: TextItem[];
+  fields: FieldMeta[];
+  fieldValues: Record<string, string | boolean>;
+  onChangeField: (name: string, value: string | boolean) => void;
   sign: SignItem | null;
   editable: boolean;
   onAddText: (page: number, x: number, y: number, hPx: number) => void;
@@ -602,6 +627,36 @@ function PageLayer({
           renderTextLayer={false}
           renderAnnotationLayer={false}
         />
+
+        {/* Vorhandene Textfelder (auch zuvor gespeicherter Freitext) — in-place
+            editierbar; Position/Größe aus dem PDF. */}
+        {fields.map((f) => {
+          const r = f.rect!;
+          const v = fieldValues[f.name];
+          const fontPx = Math.max(8, (f.sizeRatio ?? 0.02) * h);
+          return (
+            <div
+              key={f.name}
+              className="absolute z-10 rounded-sm border border-emerald-400/70 bg-white/60"
+              style={{
+                left: `${r.xRatio * 100}%`,
+                top: `${r.yRatio * 100}%`,
+                width: `${r.wRatio * 100}%`,
+                height: `${r.hRatio * 100}%`,
+              }}
+              title={`Feld: ${f.name}`}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <textarea
+                value={typeof v === "string" ? v : ""}
+                onChange={(e) => onChangeField(f.name, e.target.value)}
+                className="h-full w-full resize-none bg-transparent px-1 leading-tight outline-none"
+                style={{ fontSize: `${fontPx}px` }}
+              />
+            </div>
+          );
+        })}
 
         {/* Live-Vorschau beim Aufziehen */}
         {drawing && (
