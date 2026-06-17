@@ -350,6 +350,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         options: safeOptions(() => f.getOptions()),
         readOnly,
         ...placement(f),
+        widgets: widgetRects(f),
       });
     } else if (f instanceof PDFOptionList) {
       out.push({
@@ -359,6 +360,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         options: safeOptions(() => f.getOptions()),
         readOnly,
         ...placement(f),
+        widgets: widgetRects(f),
       });
     } else if (f instanceof PDFRadioGroup) {
       out.push({

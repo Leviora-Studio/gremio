@@ -307,18 +307,16 @@ export default function PdfEditor({
         for (const w of widgetsOf(f)) {
           controls.push({ kind: "checkbox", name: f.name, page: w.page, rect: w.rect });
         }
-      } else if (
-        (f.type === "dropdown" || f.type === "optionlist") &&
-        f.rect &&
-        f.page != null
-      ) {
-        controls.push({
-          kind: "select",
-          name: f.name,
-          page: f.page,
-          rect: f.rect,
-          options: f.options ?? [],
-        });
+      } else if (f.type === "dropdown" || f.type === "optionlist") {
+        for (const w of widgetsOf(f)) {
+          controls.push({
+            kind: "select",
+            name: f.name,
+            page: w.page,
+            rect: w.rect,
+            options: f.options ?? [],
+          });
+        }
       } else if (f.type === "radio" && f.optionWidgets?.length) {
         for (const ow of f.optionWidgets) {
           controls.push({
@@ -791,7 +789,7 @@ function PageLayer({
           if (c.kind === "checkbox") {
             return (
               <input
-                key={`cb-${c.name}`}
+                key={`cb-${c.name}-${idx}`}
                 type="checkbox"
                 checked={Boolean(fieldValues[c.name])}
                 onChange={(e) => onChangeField(c.name, e.target.checked)}
@@ -810,7 +808,7 @@ function PageLayer({
                 : "";
             return (
               <select
-                key={`sel-${c.name}`}
+                key={`sel-${c.name}-${idx}`}
                 value={val}
                 onChange={(e) => onChangeField(c.name, e.target.value)}
                 onClick={stop}
