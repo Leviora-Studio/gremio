@@ -71,7 +71,8 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
       try {
         field = form.getField(fe.name);
       } catch {
-        continue; // Feld existiert nicht (mehr)
+        console.warn("[pdf-edit] Feld nicht gefunden:", fe.name);
+        continue;
       }
       try {
         if (field instanceof PDFTextField) {
@@ -84,13 +85,24 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
           else field.uncheck();
         } else if (
           field instanceof PDFDropdown ||
-          field instanceof PDFOptionList ||
-          field instanceof PDFRadioGroup
+          field instanceof PDFOptionList
         ) {
+          if (typeof fe.value === "string" && fe.value) {
+            selectChoice(field, fe.value);
+          } else {
+            field.clear();
+          }
+        } else if (field instanceof PDFRadioGroup) {
           if (typeof fe.value === "string" && fe.value) field.select(fe.value);
+          else field.clear();
         }
-      } catch {
-        // ungültiger Wert (z. B. Option nicht vorhanden) — überspringen
+      } catch (e) {
+        console.warn(
+          "[pdf-edit] Feld konnte nicht gesetzt werden:",
+          fe.name,
+          JSON.stringify(fe.value),
+          e instanceof Error ? e.message : e,
+        );
       }
     }
   }
@@ -310,7 +322,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       out.push({
         name,
         type: "dropdown",
-        value: f.getSelected()[0] ?? "",
+        value: selectedDisplay(f),
         options: safeOptions(() => f.getOptions()),
         readOnly,
         ...placement(f),
@@ -319,7 +331,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       out.push({
         name,
         type: "optionlist",
-        value: f.getSelected()[0] ?? "",
+        value: selectedDisplay(f),
         options: safeOptions(() => f.getOptions()),
         readOnly,
         ...placement(f),
@@ -346,5 +358,45 @@ function safeOptions(fn: () => string[]): string[] {
     return fn();
   } catch {
     return [];
+  }
+}
+
+/**
+ * Auswahl-Wert robust setzen: getOptions() liefert Anzeige-Texte, getSelected()
+ * aber Export-Werte. Kommt der Wert als Export-Wert rein (z. B. „A" statt
+ * „Standort A"), wird er auf den passenden Anzeige-Text abgebildet, den pdf-lib
+ * bei .select() erwartet (sonst InvalidAcroFieldValueError bei Combo-Feldern).
+ */
+function selectChoice(field: PDFDropdown | PDFOptionList, value: string): void {
+  let toSelect = value;
+  try {
+    const raw = field.acroField.getOptions();
+    const isDisplay = raw.some(
+      (o) => (o.display ?? o.value).decodeText() === value,
+    );
+    if (!isDisplay) {
+      const byExport = raw.find((o) => o.value.decodeText() === value);
+      if (byExport) toSelect = (byExport.display ?? byExport.value).decodeText();
+    }
+  } catch {
+    /* Roh-Optionen nicht lesbar — Originalwert versuchen */
+  }
+  field.select(toSelect);
+}
+
+/** Anzeige-Text der aktuellen Auswahl (damit er zu getOptions() passt). */
+function selectedDisplay(field: PDFDropdown | PDFOptionList): string {
+  try {
+    const sel = field.getSelected()[0];
+    if (!sel) return "";
+    const raw = field.acroField.getOptions();
+    const byExport = raw.find((o) => o.value.decodeText() === sel);
+    return byExport ? (byExport.display ?? byExport.value).decodeText() : sel;
+  } catch {
+    try {
+      return field.getSelected()[0] ?? "";
+    } catch {
+      return "";
+    }
   }
 }
