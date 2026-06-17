@@ -166,7 +166,9 @@ export async function savePdfEditsAction(
       pdf = await signPdf(pdf, {
         p12: cert.p12,
         passphrase: cert.passphrase,
-        signerName: user.name ?? user.username,
+        // Auf dem PDF erscheint der Name AUS DEM ZERTIFIKAT (Subject/CN), nicht
+        // der Gremio-Benutzername. Fallback nur, falls kein CN gelesen wurde.
+        signerName: user.certSubject?.trim() || user.name || user.username,
         dateLabel,
         reason:
           typeof input.signature.reason === "string"
