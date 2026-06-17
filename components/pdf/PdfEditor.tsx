@@ -53,7 +53,18 @@ type FieldMeta = {
   rect?: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
   sizeRatio?: number;
   gremioText?: boolean;
+  optionWidgets?: {
+    value: string;
+    page: number;
+    rect: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
+  }[];
 };
+
+type Rect = { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
+type Control =
+  | { kind: "checkbox"; name: string; page: number; rect: Rect }
+  | { kind: "select"; name: string; page: number; rect: Rect; options: string[] }
+  | { kind: "radio"; name: string; page: number; rect: Rect; optionValue: string };
 
 export type PdfEditorProps = {
   src: string;
@@ -260,9 +271,10 @@ export default function PdfEditor({
     }
   }
 
-  // Echte (nicht von uns angelegte) Formular-Textfelder bleiben an fester
-  // Position editierbar; unsere Freitexte laufen über `texts`. Rest → Panel.
-  const positionedFields = editable
+  // Echte (nicht von uns angelegte) Formularfelder direkt im PDF editieren:
+  // Textfelder an fester Position, Haken/Auswahl/Radio als Steuerelemente.
+  // Unsere Freitexte laufen über `texts`. Felder ohne Position → Panel (Fallback).
+  const positionedTexts = editable
     ? fields.filter(
         (f) =>
           f.type === "text" &&
@@ -272,9 +284,45 @@ export default function PdfEditor({
           f.page != null,
       )
     : [];
-  const positionedNames = new Set(positionedFields.map((f) => f.name));
+
+  const controls: Control[] = [];
+  if (editable) {
+    for (const f of fields) {
+      if (f.readOnly || f.gremioText) continue;
+      if (f.type === "checkbox" && f.rect && f.page != null) {
+        controls.push({ kind: "checkbox", name: f.name, page: f.page, rect: f.rect });
+      } else if (
+        (f.type === "dropdown" || f.type === "optionlist") &&
+        f.rect &&
+        f.page != null
+      ) {
+        controls.push({
+          kind: "select",
+          name: f.name,
+          page: f.page,
+          rect: f.rect,
+          options: f.options ?? [],
+        });
+      } else if (f.type === "radio" && f.optionWidgets?.length) {
+        for (const ow of f.optionWidgets) {
+          controls.push({
+            kind: "radio",
+            name: f.name,
+            page: ow.page,
+            rect: ow.rect,
+            optionValue: ow.value,
+          });
+        }
+      }
+    }
+  }
+
+  const placedNames = new Set<string>([
+    ...positionedTexts.map((f) => f.name),
+    ...controls.map((c) => c.name),
+  ]);
   const panelFields = fields.filter(
-    (f) => !f.gremioText && !positionedNames.has(f.name),
+    (f) => !f.gremioText && !placedNames.has(f.name),
   );
 
   const onChangeField = (name: string, value: string | boolean) =>
@@ -392,7 +440,8 @@ export default function PdfEditor({
                   width={width}
                   tool={tool}
                   texts={texts.filter((t) => t.page === i)}
-                  fields={positionedFields.filter((f) => f.page === i)}
+                  fields={positionedTexts.filter((f) => f.page === i)}
+                  controls={controls.filter((c) => c.page === i)}
                   fieldValues={fieldValues}
                   onChangeField={onChangeField}
                   sign={sign && sign.page === i ? sign : null}
@@ -538,6 +587,7 @@ function PageLayer({
   tool,
   texts,
   fields,
+  controls,
   fieldValues,
   onChangeField,
   sign,
@@ -554,6 +604,7 @@ function PageLayer({
   tool: Tool;
   texts: TextItem[];
   fields: FieldMeta[];
+  controls: Control[];
   fieldValues: Record<string, string | boolean>;
   onChangeField: (name: string, value: string | boolean) => void;
   sign: SignItem | null;
@@ -709,6 +760,72 @@ function PageLayer({
                 style={{ fontSize: `${fontPx}px` }}
               />
             </div>
+          );
+        })}
+
+        {/* Echte Formularfelder: Haken / Auswahl / Radio direkt im PDF */}
+        {controls.map((c, idx) => {
+          const pos = {
+            left: `${c.rect.xRatio * 100}%`,
+            top: `${c.rect.yRatio * 100}%`,
+            width: `${c.rect.wRatio * 100}%`,
+            height: `${c.rect.hRatio * 100}%`,
+          };
+          const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+          if (c.kind === "checkbox") {
+            return (
+              <input
+                key={`cb-${c.name}`}
+                type="checkbox"
+                checked={Boolean(fieldValues[c.name])}
+                onChange={(e) => onChangeField(c.name, e.target.checked)}
+                onClick={stop}
+                onPointerDown={stop}
+                title={`Feld: ${c.name}`}
+                className="absolute z-10 m-0 cursor-pointer accent-brand-600"
+                style={pos}
+              />
+            );
+          }
+          if (c.kind === "select") {
+            const val =
+              typeof fieldValues[c.name] === "string"
+                ? (fieldValues[c.name] as string)
+                : "";
+            return (
+              <select
+                key={`sel-${c.name}`}
+                value={val}
+                onChange={(e) => onChangeField(c.name, e.target.value)}
+                onClick={stop}
+                onPointerDown={stop}
+                title={`Feld: ${c.name}`}
+                className="absolute z-10 rounded-sm border border-emerald-400/70 bg-white/90 px-0.5 text-xs"
+                style={pos}
+              >
+                <option value="">—</option>
+                {c.options.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+          // radio
+          return (
+            <input
+              key={`rd-${c.name}-${c.optionValue}-${idx}`}
+              type="radio"
+              name={`rg-${c.name}`}
+              checked={fieldValues[c.name] === c.optionValue}
+              onChange={() => onChangeField(c.name, c.optionValue)}
+              onClick={stop}
+              onPointerDown={stop}
+              title={`${c.name}: ${c.optionValue}`}
+              className="absolute z-10 m-0 cursor-pointer accent-brand-600"
+              style={pos}
+            />
           );
         })}
 

@@ -174,6 +174,8 @@ export type FieldMeta = {
   sizeRatio?: number;
   // true = von uns angelegter Freitext (frei verschieb-/skalierbar).
   gremioText?: boolean;
+  // Radio-Buttons: pro Option ein Widget (eigene Seite/Position + Export-Wert).
+  optionWidgets?: { value: string; page: number; rect: FieldRect }[];
 };
 
 /** Liest die ausfüllbaren AcroForm-Felder eines PDFs (für den Editor). */
@@ -227,6 +229,49 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
     }
   }
 
+  // Radio-Buttons: jedes Options-Widget eigene Position + Export-Wert.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function radioWidgets(field: any, options: string[]): NonNullable<FieldMeta["optionWidgets"]> {
+    const out: NonNullable<FieldMeta["optionWidgets"]> = [];
+    try {
+      // Mit /Opt-Array sind die Appearance-States numerische Indizes in `options`;
+      // ohne /Opt sind sie selbst die Export-Werte.
+      let hasOpt = false;
+      try {
+        hasOpt = field.acroField.dict.has(PDFName.of("Opt"));
+      } catch {
+        /* ignore */
+      }
+      for (const w of field.acroField.getWidgets()) {
+        const pageIndex = pageOfDict.get(w.dict);
+        if (pageIndex == null) continue;
+        const p = pages[pageIndex];
+        const { width: pw, height: ph } = p.getSize();
+        const r = w.getRectangle();
+        const on = w.getOnValue?.();
+        const onName = on ? on.decodeText() : "";
+        const value =
+          hasOpt && /^\d+$/.test(onName)
+            ? (options[Number(onName)] ?? onName)
+            : onName;
+        if (!value) continue;
+        out.push({
+          value,
+          page: pageIndex,
+          rect: {
+            xRatio: r.x / pw,
+            yRatio: (ph - (r.y + r.height)) / ph,
+            wRatio: r.width / pw,
+            hRatio: r.height / ph,
+          },
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
+  }
+
   const out: FieldMeta[] = [];
   let fields;
   try {
@@ -254,7 +299,13 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         ...placement(f),
       });
     } else if (f instanceof PDFCheckBox) {
-      out.push({ name, type: "checkbox", value: f.isChecked(), readOnly });
+      out.push({
+        name,
+        type: "checkbox",
+        value: f.isChecked(),
+        readOnly,
+        ...placement(f),
+      });
     } else if (f instanceof PDFDropdown) {
       out.push({
         name,
@@ -262,6 +313,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         value: f.getSelected()[0] ?? "",
         options: safeOptions(() => f.getOptions()),
         readOnly,
+        ...placement(f),
       });
     } else if (f instanceof PDFOptionList) {
       out.push({
@@ -270,14 +322,17 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         value: f.getSelected()[0] ?? "",
         options: safeOptions(() => f.getOptions()),
         readOnly,
+        ...placement(f),
       });
     } else if (f instanceof PDFRadioGroup) {
+      const options = safeOptions(() => f.getOptions());
       out.push({
         name,
         type: "radio",
         value: f.getSelected() ?? "",
-        options: safeOptions(() => f.getOptions()),
+        options,
         readOnly,
+        optionWidgets: radioWidgets(f, options),
       });
     } else {
       out.push({ name, type: "other", value: null, readOnly });
