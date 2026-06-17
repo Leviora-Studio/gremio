@@ -2,7 +2,22 @@
 const nextConfig = {
   output: "standalone",
   poweredByHeader: false, // kein "X-Powered-By: Next.js"-Leak
-  serverExternalPackages: ["pg"],
+  // node-forge / @signpdf NICHT bundlen: gebündelt bricht node-forge zur
+  // Laufzeit (Signieren schlägt fehl), obwohl der Build durchläuft. Als externe
+  // Pakete werden sie im Standalone-Server normal aus node_modules geladen.
+  serverExternalPackages: [
+    "pg",
+    "node-forge",
+    // pdf-lib MUSS extern sein: @signpdf/placeholder-pdf-lib nutzt sein eigenes
+    // pdf-lib aus node_modules. Würde unser pdf-lib gebündelt, gäbe es ZWEI
+    // pdf-lib-Instanzen → der Signatur-Platzhalter passt nicht zusammen
+    // ("No ByteRangeStrings found"). Extern = eine gemeinsame Instanz.
+    "pdf-lib",
+    "@signpdf/signpdf",
+    "@signpdf/signer-p12",
+    "@signpdf/placeholder-pdf-lib",
+    "@signpdf/utils",
+  ],
   experimental: {
     serverActions: {
       // Einzige bewusste Grenze ist MAX_UPLOAD_BYTES (25 MB pro Datei). Das

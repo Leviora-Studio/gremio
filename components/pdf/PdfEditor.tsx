@@ -59,6 +59,7 @@ export type PdfEditorProps = {
   onClose: () => void;
 };
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 let nextId = 1;
 
 export default function PdfEditor({
@@ -85,7 +86,6 @@ export default function PdfEditor({
     Record<string, string | boolean>
   >({});
 
-  const [mode, setMode] = useState<"new" | "replace">("new");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -125,30 +125,34 @@ export default function PdfEditor({
     };
   }, [attachmentId, editable]);
 
-  const onPageClick = useCallback(
+  const addText = useCallback(
     (page: number, xRatio: number, yRatio: number, pageHeightPx: number) => {
-      if (!editable) return;
-      if (tool === "text") {
-        setTexts((prev) => [
-          ...prev,
-          {
-            id: nextId++,
-            page,
-            xRatio,
-            yRatio,
-            text: "Text",
-            sizeRatio: 16 / Math.max(1, pageHeightPx),
-          },
-        ]);
-        setTool("none");
-      } else if (tool === "sign") {
-        const hRatio = 74 / Math.max(1, pageHeightPx);
-        setSign({ page, xRatio, yRatio, wRatio: 0.3, hRatio });
-        setTool("none");
-      }
+      setTexts((prev) => [
+        ...prev,
+        {
+          id: nextId++,
+          page,
+          xRatio,
+          yRatio,
+          text: "Text",
+          sizeRatio: 16 / Math.max(1, pageHeightPx),
+        },
+      ]);
+      setTool("none");
     },
-    [editable, tool],
+    [],
   );
+
+  const moveText = useCallback((id: number, xRatio: number, yRatio: number) => {
+    setTexts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, xRatio, yRatio } : t)),
+    );
+  }, []);
+
+  const drawSign = useCallback((s: SignItem) => {
+    setSign(s);
+    setTool("none");
+  }, []);
 
   function changedFields() {
     const out: { name: string; value: string | boolean }[] = [];
@@ -177,7 +181,7 @@ export default function PdfEditor({
     }
     const payload: SavePdfInput = {
       attachmentId,
-      mode,
+      mode: "replace", // immer das Original überschreiben
       edits: {
         texts: texts.map((t) => ({
           page: t.page,
@@ -249,7 +253,7 @@ export default function PdfEditor({
               onClick={() => setTool((t) => (t === "sign" ? "none" : "sign"))}
               title={
                 hasCert
-                  ? "Signatur platzieren"
+                  ? "Bereich für die Signatur aufziehen"
                   : "Kein Zertifikat hinterlegt (Konto-Einstellungen)"
               }
             >
@@ -258,8 +262,8 @@ export default function PdfEditor({
             {tool !== "none" && (
               <span className="text-xs text-brand-700">
                 {tool === "text"
-                  ? "Auf die Seite klicken, um Text zu setzen"
-                  : "Auf die Seite klicken, um die Signatur zu platzieren"}
+                  ? "Auf die Seite klicken, um Text zu setzen (danach verschiebbar)"
+                  : "Auf der Seite einen Bereich aufziehen"}
               </span>
             )}
           </>
@@ -267,24 +271,15 @@ export default function PdfEditor({
 
         <div className="ml-auto flex items-center gap-2">
           {editable && (
-            <>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as "new" | "replace")}
-                className="h-8 rounded border border-slate-300 bg-white px-2 text-sm"
-              >
-                <option value="new">Als neue Datei speichern</option>
-                <option value="replace">Original ersetzen</option>
-              </select>
-              <button
-                type="button"
-                className="btn-primary btn-sm"
-                disabled={saving || !dirty}
-                onClick={handleSave}
-              >
-                {saving ? "Speichert…" : "Speichern"}
-              </button>
-            </>
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              disabled={saving || !dirty}
+              onClick={handleSave}
+              title="Speichert die Änderungen ins Original"
+            >
+              {saving ? "Speichert…" : "Speichern"}
+            </button>
           )}
           <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
             Schließen
@@ -321,11 +316,12 @@ export default function PdfEditor({
                   key={i}
                   pageIndex={i}
                   width={width}
-                  cursorTool={tool}
+                  tool={tool}
                   texts={texts.filter((t) => t.page === i)}
                   sign={sign && sign.page === i ? sign : null}
                   editable={editable}
-                  onClick={onPageClick}
+                  onAddText={addText}
+                  onMoveText={moveText}
                   onChangeText={(id, value) =>
                     setTexts((prev) =>
                       prev.map((t) => (t.id === id ? { ...t, text: value } : t)),
@@ -334,6 +330,7 @@ export default function PdfEditor({
                   onRemoveText={(id) =>
                     setTexts((prev) => prev.filter((t) => t.id !== id))
                   }
+                  onDrawSign={drawSign}
                   onRemoveSign={() => setSign(null)}
                 />
               ))}
@@ -341,14 +338,14 @@ export default function PdfEditor({
           )}
         </div>
 
-        {/* Seitenpanel: Formularfelder + Signatur */}
+        {/* Seitenpanel: Signatur + Formularfelder */}
         {editable && (fields.length > 0 || sign) && (
           <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-white p-3 text-sm">
             {sign && (
               <div className="mb-4">
                 <h3 className="mb-1 font-semibold">Signatur</h3>
                 <p className="mb-2 text-xs text-slate-500">
-                  Platziert auf Seite {sign.page + 1}.
+                  Bereich auf Seite {sign.page + 1} aufgezogen.
                 </p>
                 <label className="label">Grund (optional)</label>
                 <input
@@ -461,28 +458,39 @@ function FieldInput({
 function PageLayer({
   pageIndex,
   width,
-  cursorTool,
+  tool,
   texts,
   sign,
   editable,
-  onClick,
+  onAddText,
+  onMoveText,
   onChangeText,
   onRemoveText,
+  onDrawSign,
   onRemoveSign,
 }: {
   pageIndex: number;
   width: number;
-  cursorTool: Tool;
+  tool: Tool;
   texts: TextItem[];
   sign: SignItem | null;
   editable: boolean;
-  onClick: (page: number, xRatio: number, yRatio: number, hPx: number) => void;
+  onAddText: (page: number, x: number, y: number, hPx: number) => void;
+  onMoveText: (id: number, x: number, y: number) => void;
   onChangeText: (id: number, value: string) => void;
   onRemoveText: (id: number) => void;
+  onDrawSign: (s: SignItem) => void;
   onRemoveSign: () => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [h, setH] = useState(0);
+  // Während des Aufziehens der Signatur-Box:
+  const [draw, setDraw] = useState<{
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  } | null>(null);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -493,22 +501,92 @@ function PageLayer({
     return () => ro.disconnect();
   }, [width]);
 
-  function handleClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!editable || cursorTool === "none") return;
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) return;
-    const xRatio = (e.clientX - rect.left) / rect.width;
-    const yRatio = (e.clientY - rect.top) / rect.height;
-    onClick(pageIndex, xRatio, yRatio, rect.height);
+  function ratio(e: { clientX: number; clientY: number }) {
+    const rect = wrapRef.current!.getBoundingClientRect();
+    return {
+      x: clamp01((e.clientX - rect.left) / rect.width),
+      y: clamp01((e.clientY - rect.top) / rect.height),
+      rect,
+    };
   }
+
+  // Text setzen (Klick).
+  function handleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!editable || tool !== "text") return;
+    const { x, y, rect } = ratio(e);
+    onAddText(pageIndex, x, y, rect.height);
+  }
+
+  // Signatur-Bereich aufziehen (Drag).
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!editable || tool !== "sign") return;
+    e.preventDefault();
+    const { x, y } = ratio(e);
+    setDraw({ x0: x, y0: y, x1: x, y1: y });
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!draw) return;
+    const { x, y } = ratio(e);
+    setDraw((d) => (d ? { ...d, x1: x, y1: y } : d));
+  }
+  function onPointerUp() {
+    if (!draw) return;
+    const x = Math.min(draw.x0, draw.x1);
+    const y = Math.min(draw.y0, draw.y1);
+    let w = Math.abs(draw.x1 - draw.x0);
+    let hh = Math.abs(draw.y1 - draw.y0);
+    setDraw(null);
+    // Zu kleiner Bereich (nur Klick) → sinnvolle Standardgröße.
+    if (w < 0.04 || hh < 0.02) {
+      w = 0.28;
+      hh = 74 / Math.max(1, h);
+    }
+    onDrawSign({ page: pageIndex, xRatio: x, yRatio: y, wRatio: w, hRatio: hh });
+  }
+
+  // Text-Box verschieben (Grip ziehen).
+  function startTextDrag(e: React.PointerEvent, id: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    const rect = wrapRef.current!.getBoundingClientRect();
+    const move = (ev: PointerEvent) => {
+      onMoveText(
+        id,
+        clamp01((ev.clientX - rect.left) / rect.width),
+        clamp01((ev.clientY - rect.top) / rect.height),
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  const drawing = draw
+    ? {
+        left: Math.min(draw.x0, draw.x1) * 100,
+        top: Math.min(draw.y0, draw.y1) * 100,
+        width: Math.abs(draw.x1 - draw.x0) * 100,
+        height: Math.abs(draw.y1 - draw.y0) * 100,
+      }
+    : null;
 
   return (
     <div className="mx-auto mb-4 w-fit shadow">
       <div
         ref={wrapRef}
         onClick={handleClick}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
         className="relative bg-white"
-        style={{ cursor: editable && cursorTool !== "none" ? "crosshair" : "default" }}
+        style={{
+          cursor: editable && tool !== "none" ? "crosshair" : "default",
+          touchAction: tool === "sign" ? "none" : undefined,
+        }}
       >
         <Page
           pageNumber={pageIndex + 1}
@@ -516,21 +594,45 @@ function PageLayer({
           renderTextLayer={false}
           renderAnnotationLayer={false}
         />
-        {/* Freitext-Overlays */}
+
+        {/* Live-Vorschau beim Aufziehen */}
+        {drawing && (
+          <div
+            className="pointer-events-none absolute z-20 border-2 border-brand-500 bg-brand-50/40"
+            style={{
+              left: `${drawing.left}%`,
+              top: `${drawing.top}%`,
+              width: `${drawing.width}%`,
+              height: `${drawing.height}%`,
+            }}
+          />
+        )}
+
+        {/* Freitext-Overlays (beginnen am Klickpunkt, verschiebbar) */}
         {texts.map((t) => (
           <div
             key={t.id}
-            className="absolute z-10 -translate-y-1 rounded border border-brand-300 bg-white/70"
+            className="absolute z-10 rounded border border-brand-300 bg-white/70"
             style={{ left: `${t.xRatio * 100}%`, top: `${t.yRatio * 100}%` }}
             onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            <textarea
-              value={t.text}
-              onChange={(e) => onChangeText(t.id, e.target.value)}
-              rows={1}
-              className="resize-none bg-transparent px-1 leading-tight outline-none"
-              style={{ fontSize: `${Math.max(8, t.sizeRatio * h)}px`, minWidth: 60 }}
-            />
+            <div className="flex items-stretch">
+              <span
+                onPointerDown={(e) => startTextDrag(e, t.id)}
+                className="flex cursor-move select-none items-center bg-brand-100 px-0.5 text-[10px] text-brand-700"
+                title="Verschieben"
+              >
+                ⠿
+              </span>
+              <textarea
+                value={t.text}
+                onChange={(e) => onChangeText(t.id, e.target.value)}
+                rows={1}
+                className="resize-none bg-transparent px-1 leading-tight outline-none"
+                style={{ fontSize: `${Math.max(8, t.sizeRatio * h)}px`, minWidth: 60 }}
+              />
+            </div>
             <button
               type="button"
               onClick={() => onRemoveText(t.id)}
@@ -541,10 +643,11 @@ function PageLayer({
             </button>
           </div>
         ))}
-        {/* Signatur-Overlay */}
+
+        {/* Signatur-Bereich */}
         {sign && (
           <div
-            className="absolute z-10 flex flex-col justify-center rounded border-2 border-brand-500 bg-brand-50/70 px-1 text-[10px] text-brand-800"
+            className="absolute z-10 flex flex-col justify-center overflow-hidden rounded border-2 border-brand-500 bg-brand-50/70 px-1 text-[10px] text-brand-800"
             style={{
               left: `${sign.xRatio * 100}%`,
               top: `${sign.yRatio * 100}%`,
@@ -552,8 +655,9 @@ function PageLayer({
               height: `${sign.hRatio * 100}%`,
             }}
             onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            <span className="font-semibold">✒ Signatur hier</span>
+            <span className="font-semibold">✒ Signatur</span>
             <button
               type="button"
               onClick={onRemoveSign}

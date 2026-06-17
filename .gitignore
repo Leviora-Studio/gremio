@@ -30,6 +30,7 @@ yarn-error.log*
 # data & uploads (persistente Volumes — nie ins Repo)
 /data
 /uploads
+/uploads-local
 /pgdata
 *.db
 *.db-journal

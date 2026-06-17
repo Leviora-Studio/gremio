@@ -137,7 +137,8 @@ export async function savePdfEditsAction(
   if (hasEdits) {
     try {
       pdf = await applyPdfEdits(pdf, edits);
-    } catch {
+    } catch (e) {
+      console.error("[pdf-edit] applyPdfEdits failed:", e);
       return { ok: false, error: "Die Bearbeitung konnte nicht angewendet werden." };
     }
   }
@@ -178,7 +179,8 @@ export async function savePdfEditsAction(
         placement: sanitizePlacement(input.signature.placement),
       });
       signed = true;
-    } catch {
+    } catch (e) {
+      console.error("[pdf-sign] signPdf failed:", e);
       return {
         ok: false,
         error: "Signieren fehlgeschlagen — Zertifikat oder Passwort prüfen.",
