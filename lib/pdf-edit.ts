@@ -237,10 +237,15 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         wRatio: r.width / pw,
         hRatio: r.height / ph,
       };
+      // Schriftgröße: explizite DA-Größe übernehmen; bei Auto-Größe (0 Tf) NICHT
+      // aus der Feldhöhe ableiten (sonst riesig bei großen Mehrzeilen-Feldern),
+      // sondern eine vernünftige Standardgröße — nur bei sehr flachen Feldern
+      // kleiner. Cap bei ~12 pt.
       const da: string | undefined = field.acroField.getDefaultAppearance?.();
       const m = da ? /(\d+(?:\.\d+)?)\s+Tf/.exec(da) : null;
       const fs = m ? parseFloat(m[1]) : 0;
-      const sizeRatio = fs > 0 ? fs / ph : Math.min(0.5, (r.height / ph) * 0.6);
+      const autoPt = Math.min(12, r.height * 0.7);
+      const sizeRatio = (fs > 0 ? fs : autoPt) / ph;
       return { page: pageIndex, rect, sizeRatio };
     } catch {
       return {};
