@@ -3,7 +3,7 @@
 
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { locations } from "@/lib/db/schema";
+import { formDocuments, locations } from "@/lib/db/schema";
 import { makeFormGuard } from "@/lib/antispam";
 import { PublicAntragForm } from "@/components/PublicAntragForm";
 
@@ -15,6 +15,10 @@ export default async function Home() {
     .from(locations)
     .where(eq(locations.enabled, true))
     .orderBy(asc(locations.position));
+  const docs = await db
+    .select({ id: formDocuments.id, filename: formDocuments.filename })
+    .from(formDocuments)
+    .orderBy(asc(formDocuments.position), asc(formDocuments.id));
   const guard = makeFormGuard();
 
   return (
@@ -34,6 +38,26 @@ export default async function Home() {
       ) : (
         <div className="card p-6">
           <PublicAntragForm locations={enabled} guard={guard} />
+        </div>
+      )}
+
+      {docs.length > 0 && (
+        <div className="card mt-6 p-6">
+          <h2 className="mb-3 text-lg font-semibold">Wichtige Dokumente</h2>
+          <ul className="space-y-2 text-sm">
+            {docs.map((d) => (
+              <li key={d.id}>
+                <a
+                  href={`/api/form-document/${d.id}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="text-brand-600 hover:underline"
+                >
+                  📄 {d.filename}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </main>

@@ -239,6 +239,13 @@
       "when": 1781790423061,
       "tag": "0033_lucky_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781795889658,
+      "tag": "0034_ordinary_magneto",
+      "breakpoints": true
     }
   ]
 }

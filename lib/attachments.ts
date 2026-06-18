@@ -121,6 +121,24 @@ export async function saveAntragFile(
   };
 }
 
+/** Generischer Datei-Upload in ein Unterverzeichnis (z. B. „form-documents"). */
+export async function saveNamedFile(
+  subdir: string,
+  file: File,
+): Promise<{ relPath: string; filename: string; mime: string; size: number }> {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const rel = join(subdir, `${randomUUID()}-${sanitize(file.name)}`);
+  const abs = absPath(rel);
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, buf);
+  return {
+    relPath: rel,
+    filename: file.name,
+    mime: resolveMime(file),
+    size: buf.length,
+  };
+}
+
 /** Wie saveAntragFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */
 export async function saveAntragBuffer(
   cardId: number,

@@ -416,6 +416,20 @@ export const cardActivity = pgTable("card_activity", {
 });
 
 // ---------------------------------------------------------------------------
+// Antragsformular-Dokumente: vom Admin verwaltete Dateien, die auf der
+// öffentlichen Antragsseite unter „Wichtige Dokumente" angezeigt werden.
+// ---------------------------------------------------------------------------
+export const formDocuments = pgTable("form_documents", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  path: text("path").notNull(), // relativer Pfad im UPLOAD_DIR
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  position: integer("position").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+// ---------------------------------------------------------------------------
 // Konten (frei vom Admin verwaltbare Auswahloptionen für das Kartenfeld "Konto")
 // ---------------------------------------------------------------------------
 export const accounts = pgTable("accounts", {
@@ -685,6 +699,7 @@ export type BoardTemplate = typeof boardTemplates.$inferSelect;
 export type BoardTemplateStatus = typeof boardTemplateStatuses.$inferSelect;
 export type PriorityRow = typeof priorities.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
+export type FormDocument = typeof formDocuments.$inferSelect;
 export type CardComment = typeof cardComments.$inferSelect;
 export type CardActivity = typeof cardActivity.$inferSelect;
 export type FinanceBoard = typeof financeBoards.$inferSelect;

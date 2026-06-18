@@ -16,6 +16,7 @@ const tabs = [
   { href: "/admin/standorte", label: "Standorte" },
   { href: "/admin/priorities", label: "Priorität" },
   { href: "/admin/accounts", label: "Konten" },
+  { href: "/admin/formular", label: "Antragsformular" },
 ];
 
 export function AdminTabs() {

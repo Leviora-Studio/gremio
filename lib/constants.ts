@@ -177,6 +177,29 @@ export const CERTIFICATE_MIME = [
 export const CERTIFICATE_EXT = [".p12", ".pfx"];
 export const MAX_CERTIFICATE_BYTES = 1 * 1024 * 1024; // 1 MB reicht für ein .p12 weit
 
+// Antragsformular-Dokumente (Admin): erlaubte Endungen (Whitelist). Bewusst
+// OHNE .html/.svg/.xml u. ä. (Skript-/XSS-Vektoren). Anzeige/Serving mit nosniff;
+// nur PDF/Bilder werden inline ausgeliefert, der Rest als Download.
+export const FORM_DOC_EXT = [
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".txt",
+  ".csv",
+];
+
 export const TOKEN_LENGTH = 30;
 export const TOKEN_ALPHABET =
   "0123456789abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";

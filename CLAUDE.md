@@ -252,6 +252,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /admin/standorte         → Standorte: anlegen/umbenennen/löschen + aktivieren/deaktivieren + Ziel-Board/-Spalte (nur Admin)
 /admin/priorities        → Prioritäten: Bezeichnung + Farbe je Stufe anpassen (nur Admin)
 /admin/accounts          → Konten: Auswahloptionen für das Kartenfeld „Konto" verwalten (nur Admin)
+/admin/formular          → Antragsformular: Dateien („Wichtige Dokumente") verwalten, die öffentlich auf der Antragsseite erscheinen (nur Admin)
 ```
 
 > Pfade = Next.js-App-Router-Routen (z.B. `app/status/[token]`, `app/intern`, `app/admin/...`). Interne APIs (z.B. Nutzer-Typeahead für Ersteller/Zugewiesen, Upload-Endpunkte) als Route Handlers unter `app/api/...` bzw. via Server Actions.
