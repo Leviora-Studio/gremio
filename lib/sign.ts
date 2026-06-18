@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  StandardFonts,
+  rgb,
+} from "pdf-lib";
 import { SignPdf } from "@signpdf/signpdf";
 import { P12Signer } from "@signpdf/signer-p12";
 import { pdflibAddPlaceholder } from "@signpdf/placeholder-pdf-lib";
@@ -28,12 +35,35 @@ export type SignOptions = {
 };
 
 /**
+ * Macht das AcroForm-`/Fields`-Array zu einem DIREKTEN Array, falls es als
+ * indirekte Referenz gespeichert ist (bei echten Acrobat-/LibreOffice-Formularen
+ * üblich). Hintergrund: `@signpdf/placeholder-pdf-lib` prüft `Fields instanceof
+ * PDFArray` über `acroForm.get(...)` (ohne Dereferenzieren). Bei indirektem
+ * `/Fields` schlägt der Test fehl → die Lib ERSETZT das Array durch ein neues mit
+ * nur dem Signaturfeld und löscht so alle Formularfelder. Die AcroForm wird
+ * inkonsistent (Feld-Widgets verwaist) und Adobe zeigt die Signatur nicht mehr
+ * an. Lösen wir die Referenz vorher auf, ERGÄNZT die Lib korrekt.
+ */
+function ensureDirectAcroFormFields(doc: PDFDocument): void {
+  try {
+    const acroForm = doc.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict);
+    if (!acroForm) return;
+    const fields = acroForm.lookupMaybe(PDFName.of("Fields"), PDFArray);
+    if (fields) acroForm.set(PDFName.of("Fields"), fields);
+  } catch {
+    // Defensiv: bei exotischen PDFs lieber ohne Normalisierung weiter signieren.
+  }
+}
+
+/**
  * Signiert ein PDF kryptografisch (PAdES, CMS/PKCS#7 detached) mit dem .p12 des
  * Nutzers. Bei gesetzter Platzierung wird zusätzlich eine sichtbare
  * Signatur-Box gezeichnet (das Signatur-Widget selbst zeichnet nichts).
  */
 export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
+  // Vorhandene Formularfelder vor dem Signatur-Platzhalter retten (s. Helfer).
+  ensureDirectAcroFormFields(doc);
   const pages = doc.getPages();
 
   let widgetRect: [number, number, number, number] = [0, 0, 0, 0];
