@@ -76,6 +76,19 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
       }
       try {
         if (field instanceof PDFTextField) {
+          // Mehrzeilen-Felder mit Auto-/absurd großer Schrift auf eine
+          // vernünftige feste Größe setzen — sonst bäckt pdf-lib beim Speichern
+          // eine riesige Größe ein (Fließtext-Felder sind dann unbrauchbar groß).
+          try {
+            if (field.isMultiline()) {
+              const da = field.acroField.getDefaultAppearance() ?? "";
+              const mm = /(\d+(?:\.\d+)?)\s+Tf/.exec(da);
+              const cur = mm ? parseFloat(mm[1]) : 0;
+              if (cur === 0 || cur > 14) field.setFontSize(11);
+            }
+          } catch {
+            /* ignore */
+          }
           // WinAnsi-sicher, sonst scheitert die Appearance-Erzeugung beim Speichern.
           field.setText(
             sanitizeWinAnsi(typeof fe.value === "string" ? fe.value : ""),
@@ -221,7 +234,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function placement(field: any): Pick<FieldMeta, "page" | "rect" | "sizeRatio"> {
+  function placement(field: any, multiline = false): Pick<FieldMeta, "page" | "rect" | "sizeRatio"> {
     try {
       const widgets = field.acroField.getWidgets();
       if (!widgets.length) return {};
@@ -237,16 +250,19 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         wRatio: r.width / pw,
         hRatio: r.height / ph,
       };
-      // Schriftgröße: explizite DA-Größe übernehmen; bei Auto-Größe (0 Tf) NICHT
-      // aus der Feldhöhe ableiten (sonst riesig bei großen Mehrzeilen-Feldern),
-      // sondern eine vernünftige Standardgröße — nur bei sehr flachen Feldern
-      // kleiner. Cap bei ~12 pt.
+      // Schriftgröße aus der DA-Angabe. Auto (0) ODER Mehrzeilen-Felder NICHT
+      // aus der Feldhöhe ableiten (sonst riesig) — Fließtext bleibt klein (≤12).
+      // pdf-lib bäckt bei Auto-Größe teils absurde Größen ins DA (z. B. 177 pt);
+      // bei Mehrzeilen-Feldern wird daher generell auf ≤12 pt gedeckelt.
       const da: string | undefined = field.acroField.getDefaultAppearance?.();
       const m = da ? /(\d+(?:\.\d+)?)\s+Tf/.exec(da) : null;
       const fs = m ? parseFloat(m[1]) : 0;
-      const autoPt = Math.min(12, r.height * 0.7);
-      const sizeRatio = (fs > 0 ? fs : autoPt) / ph;
-      return { page: pageIndex, rect, sizeRatio };
+      const pt = multiline
+        ? Math.min(12, fs > 0 ? fs : 12)
+        : fs > 0
+          ? fs
+          : Math.min(12, r.height * 0.7);
+      return { page: pageIndex, rect, sizeRatio: pt / ph };
     } catch {
       return {};
     }
@@ -329,13 +345,19 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       } catch {
         /* ignore */
       }
+      let multiline = false;
+      try {
+        multiline = f.isMultiline();
+      } catch {
+        /* ignore */
+      }
       out.push({
         name,
         type: "text",
         value: f.getText() ?? "",
         readOnly,
         gremioText,
-        ...placement(f),
+        ...placement(f, multiline),
         widgets: widgetRects(f),
       });
     } else if (f instanceof PDFCheckBox) {
