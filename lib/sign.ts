@@ -43,11 +43,14 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
   if (pl && pages[pl.page]) {
     const page = pages[pl.page];
     targetPage = page;
-    const { width, height } = page.getSize();
+    // MediaBox-Ursprung berücksichtigen (bei Ursprung 0,0 identisch zu getSize()).
+    const mb = page.getMediaBox();
+    const width = mb.width;
+    const height = mb.height;
     const w = Math.max(60, pl.wRatio * width);
     const h = Math.max(28, pl.hRatio * height);
-    const x = pl.xRatio * width;
-    const y = height - pl.yRatio * height - h; // oben-links → PDF unten-links
+    const x = mb.x + pl.xRatio * width;
+    const y = mb.y + height - pl.yRatio * height - h; // oben-links → PDF unten-links
     widgetRect = [x, y, x + w, y + h];
 
     // Sichtbare Erscheinung selbst zeichnen.

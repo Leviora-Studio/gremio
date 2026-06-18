@@ -8,6 +8,7 @@ import { attachments, cards } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { absPath, contentDisposition } from "@/lib/attachments";
+import { ZIP_MAX_TOTAL_BYTES } from "@/lib/constants";
 import { zip } from "@/lib/zip";
 
 export const dynamic = "force-dynamic";
@@ -69,9 +70,18 @@ export async function GET(
 
   const used = new Set<string>();
   const files: { name: string; data: Buffer }[] = [];
+  let total = 0;
   for (const a of atts) {
     try {
       const data = await readFile(absPath(a.path));
+      total += data.length;
+      if (total > ZIP_MAX_TOTAL_BYTES) {
+        // Alles wird im Speicher gepackt → Gesamtgröße deckeln (RAM-/Zip64-Schutz).
+        return new Response(
+          "Die Dokumente sind zu groß für ein gemeinsames ZIP.",
+          { status: 413 },
+        );
+      }
       files.push({ name: uniqueName(safeName(a.filename), used), data });
     } catch {
       // Datei fehlt physisch — überspringen
@@ -86,7 +96,14 @@ export async function GET(
       .replace(/[\\/:*?"<>|\r\n]+/g, "_")
       .slice(0, 120) || "Dokumente";
 
-  const zipBuf = zip(files);
+  let zipBuf: Buffer;
+  try {
+    zipBuf = zip(files);
+  } catch {
+    return new Response("ZIP konnte nicht erstellt werden (zu groß).", {
+      status: 413,
+    });
+  }
   return new Response(new Uint8Array(zipBuf), {
     headers: {
       "Content-Type": "application/zip",

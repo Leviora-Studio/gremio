@@ -200,6 +200,11 @@ export const FORM_DOC_EXT = [
   ".csv",
 ];
 
+// ZIP-Download aller Karten-Dokumente: Gesamtgröße begrenzen. Der Container wird
+// vollständig im Speicher gebaut (RAM-Schutz) und nutzt nur 32-Bit-Felder
+// (kein Zip64) — das Limit hält uns mit Sicherheitsabstand unter der 4-GB-Grenze.
+export const ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024; // 200 MB unkomprimiert
+
 export const TOKEN_LENGTH = 30;
 export const TOKEN_ALPHABET =
   "0123456789abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";

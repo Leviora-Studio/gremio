@@ -263,8 +263,15 @@ export default function PdfEditor({
     try {
       const res = await savePdfEditsAction(payload);
       if (res.ok) {
-        router.refresh();
-        onClose();
+        if (res.warning) {
+          // Teil-Erfolg: gespeichert, aber einzelne Felder gingen nicht — anzeigen
+          // und Modal offen lassen, damit der Nutzer es bemerkt.
+          setError(res.warning);
+          router.refresh();
+        } else {
+          router.refresh();
+          onClose();
+        }
       } else {
         setError(res.error);
       }
@@ -643,9 +650,14 @@ function PageLayer({
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setH(el.clientHeight));
+    // Nie auf 0 zurückfallen (sonst rendern Overlays kurz an der 8px-Untergrenze).
+    const ro = new ResizeObserver(() => {
+      const ch = el.clientHeight;
+      if (ch) setH(ch);
+    });
     ro.observe(el);
-    setH(el.clientHeight);
+    const ch0 = el.clientHeight;
+    if (ch0) setH(ch0);
     return () => ro.disconnect();
   }, [width]);
 
@@ -671,7 +683,9 @@ function PageLayer({
     e.preventDefault();
     const { x, y } = ratio(e);
     setDraw({ x0: x, y0: y, x1: x, y1: y });
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Auf der Wrap-Ebene capturen (nicht dem Klick-Kind), sonst kann der Capture
+    // beim Canvas-Repaint verloren gehen.
+    e.currentTarget.setPointerCapture?.(e.pointerId);
   }
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!draw) return;
@@ -697,8 +711,11 @@ function PageLayer({
   function startTextDrag(e: React.PointerEvent, id: number) {
     e.stopPropagation();
     e.preventDefault();
-    const rect = wrapRef.current!.getBoundingClientRect();
     const move = (ev: PointerEvent) => {
+      // Rechteck bei JEDEM Move neu lesen → korrekt auch, wenn zwischendurch
+      // gescrollt/gezoomt wird (sonst landet der Text versetzt).
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect || !rect.width || !rect.height) return;
       onMoveText(
         id,
         clamp01((ev.clientX - rect.left) / rect.width),
@@ -739,6 +756,12 @@ function PageLayer({
         <Page
           pageNumber={pageIndex + 1}
           width={width}
+          onLoadSuccess={(p) => {
+            // Höhe sofort aus dem Seitenverhältnis ableiten (vor dem Canvas-Paint)
+            // → kein Springen der Overlays von der 8px-Untergrenze.
+            const pg = p as unknown as { width: number; height: number };
+            if (pg.width > 0) setH(Math.round(width * (pg.height / pg.width)));
+          }}
           renderTextLayer={false}
           renderAnnotationLayer={false}
           // Im Editor Formularfelder NICHT in die Canvas backen (sonst „Geister-

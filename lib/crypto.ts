@@ -40,7 +40,10 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(payload: string): string {
   const parts = (payload ?? "").split(":");
-  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+  // parts[2] (Ciphertext) darf LEER sein: AES-GCM eines leeren Klartexts ergibt
+  // leeren Ciphertext mit gültigem Tag — z. B. eine .p12 OHNE Passphrase. Nur
+  // IV und Tag müssen vorhanden sein, sonst stimmt Format/Schlüssel nicht.
+  if (parts.length !== 3 || !parts[0] || !parts[1]) {
     throw new Error(
       "Ungültiger verschlüsselter Wert (Format/Schlüssel passt nicht).",
     );

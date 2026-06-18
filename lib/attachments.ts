@@ -60,6 +60,37 @@ export function resolveMime(file: File): string {
   return EXT_MIME[ext] ?? "application/octet-stream";
 }
 
+// Antragsformular-Dokumente werden mit einer aus der (bereits whitelisted)
+// ENDUNG abgeleiteten MIME gespeichert/ausgeliefert — NIE mit dem fälschbaren
+// Browser-Typ. So kann z. B. keine als „x.png" getarnte SVG als image/svg+xml
+// inline laufen (Stored-XSS). Unbekannt → octet-stream (Download).
+const FORM_DOC_MIME: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".odp": "application/vnd.oasis.opendocument.presentation",
+  ".txt": "text/plain; charset=utf-8",
+  ".csv": "text/csv; charset=utf-8",
+};
+
+/** Sichere MIME für Antragsformular-Dokumente aus der Endung (nicht dem Browser). */
+export function formDocMime(filename: string): string {
+  return FORM_DOC_MIME[extensionOf(filename)] ?? "application/octet-stream";
+}
+
 /**
  * RFC-5987-konformer Content-Disposition-Wert. HTTP-Header-Werte sind Latin-1 —
  * ein Dateiname mit Nicht-ASCII (z. B. „Ö") lässt `new Response(...)` sonst

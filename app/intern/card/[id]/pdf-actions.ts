@@ -18,7 +18,7 @@ import {
 import { logActivity } from "@/lib/activity";
 import { allowRequest } from "@/lib/rate-limit";
 import { applyPdfEdits, type FieldEdit, type TextEdit } from "@/lib/pdf-edit";
-import { decryptUserCert } from "@/lib/cert";
+import { decryptUserCert, inspectP12 } from "@/lib/cert";
 import { readSignature } from "@/lib/signature";
 import { signPdf, type SignPlacement } from "@/lib/sign";
 
@@ -30,7 +30,7 @@ export type SavePdfInput = {
 };
 
 export type SavePdfResult =
-  | { ok: true; attachmentId: number; signed: boolean }
+  | { ok: true; attachmentId: number; signed: boolean; warning?: string }
   | { ok: false; error: string };
 
 const clamp01 = (n: unknown): number =>
@@ -140,9 +140,12 @@ export async function savePdfEditsAction(
 
   const edits = sanitizeEdits(input.edits);
   const hasEdits = edits.texts.length > 0 || edits.fields.length > 0;
+  let failedFields: string[] = [];
   if (hasEdits) {
     try {
-      pdf = await applyPdfEdits(pdf, edits);
+      const res = await applyPdfEdits(pdf, edits);
+      pdf = res.pdf;
+      failedFields = res.failed;
     } catch (e) {
       console.error("[pdf-edit] applyPdfEdits failed:", e);
       return { ok: false, error: "Die Bearbeitung konnte nicht angewendet werden." };
@@ -151,7 +154,19 @@ export async function savePdfEditsAction(
 
   let signed = false;
   if (input.signature) {
-    const cert = decryptUserCert(user);
+    // Entschlüsseln kann werfen (z. B. beschädigter/leerer Geheimwert) → abfangen
+    // und freundlich melden statt 500.
+    let cert: { p12: Buffer; passphrase: string } | null;
+    try {
+      cert = decryptUserCert(user);
+    } catch (e) {
+      console.error("[pdf-sign] cert decrypt failed:", e);
+      return {
+        ok: false,
+        error:
+          "Signatur-Zertifikat konnte nicht entschlüsselt werden — bitte in den Konto-Einstellungen neu hinterlegen.",
+      };
+    }
     if (!cert) {
       return {
         ok: false,
@@ -159,8 +174,24 @@ export async function savePdfEditsAction(
           "Kein Signatur-Zertifikat hinterlegt — bitte zuerst in den Konto-Einstellungen hinzufügen.",
       };
     }
-    if (user.certNotAfter && user.certNotAfter <= new Date()) {
-      return { ok: false, error: "Dein Signatur-Zertifikat ist abgelaufen." };
+    // Gültigkeit FRISCH aus dem Zertifikat prüfen (notBefore UND notAfter, nicht
+    // nur die gespeicherte Spalte); validiert nebenbei die Passphrase.
+    try {
+      const info = inspectP12(cert.p12, cert.passphrase);
+      const now = new Date();
+      if (info.notBefore > now) {
+        return { ok: false, error: "Dein Signatur-Zertifikat ist noch nicht gültig." };
+      }
+      if (info.notAfter <= now) {
+        return { ok: false, error: "Dein Signatur-Zertifikat ist abgelaufen." };
+      }
+    } catch (e) {
+      console.error("[pdf-sign] cert inspect failed:", e);
+      return {
+        ok: false,
+        error:
+          "Signatur-Zertifikat oder Passwort ungültig — bitte in den Konto-Einstellungen prüfen.",
+      };
     }
     const dateLabel =
       new Date().toLocaleString("de-DE", {
@@ -206,6 +237,13 @@ export async function savePdfEditsAction(
   }
 
   const noun = signed ? "signiert" : "bearbeitet";
+  // Teil-Erfolg sichtbar machen: gespeichert, aber einzelne Felder gingen nicht.
+  const warning =
+    failedFields.length > 0
+      ? `Gespeichert, aber diese Formularfelder konnten nicht gesetzt werden: ${[
+          ...new Set(failedFields),
+        ].join(", ")}`
+      : undefined;
 
   if (mode === "replace") {
     const saved = await saveAntragBuffer(card.id, att.filename, pdf, "application/pdf");
@@ -231,7 +269,7 @@ export async function savePdfEditsAction(
       `PDF ${noun} (ersetzt): ${att.filename}`,
     );
     revalidatePath(`/intern/card/${card.id}`);
-    return { ok: true, attachmentId: att.id, signed };
+    return { ok: true, attachmentId: att.id, signed, warning };
   }
 
   const newName = withSuffix(att.filename, noun);
@@ -256,5 +294,5 @@ export async function savePdfEditsAction(
     `PDF ${noun} (neue Datei): ${newName}`,
   );
   revalidatePath(`/intern/card/${card.id}`);
-  return { ok: true, attachmentId: ins.id, signed };
+  return { ok: true, attachmentId: ins.id, signed, warning };
 }

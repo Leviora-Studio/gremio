@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { formDocuments } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { FORM_DOC_EXT, MAX_UPLOAD_BYTES } from "@/lib/constants";
-import { deleteStoredFile, saveNamedFile } from "@/lib/attachments";
+import { deleteStoredFile, formDocMime, saveNamedFile } from "@/lib/attachments";
 
 export type State = { error?: string; success?: string };
 
@@ -39,7 +39,8 @@ export async function uploadFormDocumentAction(
   await db.insert(formDocuments).values({
     filename: saved.filename,
     path: saved.relPath,
-    mime: saved.mime,
+    // MIME aus der (whitelisted) Endung — NICHT dem Browser-Typ vertrauen.
+    mime: formDocMime(saved.filename),
     size: saved.size,
     position: (row?.m ?? -1) + 1,
   });

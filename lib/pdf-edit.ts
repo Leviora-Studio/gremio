@@ -2,13 +2,16 @@
 // Copyright (C) 2026 Erik Engler
 
 import {
+  degrees,
   PDFBool,
   PDFDocument,
   PDFCheckBox,
   PDFDict,
   PDFDropdown,
+  PDFField,
   PDFName,
   PDFOptionList,
+  PDFPage,
   PDFRadioGroup,
   PDFSignature,
   PDFTextField,
@@ -18,6 +21,108 @@ import {
 // Markierung an „unseren" Freitextfeldern, damit sie sich von echten
 // Formularfeldern unterscheiden lassen (nur diese sind frei verschieb-/skalierbar).
 const GREMIO_TEXT_KEY = "GremioFreeText";
+
+/** Trägt ein Feld unsere Freitext-Markierung? Nur solche dürfen verschoben/überschrieben werden. */
+function isGremioText(field: PDFField): boolean {
+  try {
+    return field.acroField.dict.has(PDFName.of(GREMIO_TEXT_KEY));
+  } catch {
+    return false;
+  }
+}
+
+// ── Seitengeometrie: MediaBox-Ursprung + Seitenrotation berücksichtigen ───────
+// Der Browser (pdf.js) rendert Seiten bereits ROTIERT, mit Ursprung oben-links
+// der sichtbaren Fläche; Ratios vom Client beziehen sich also auf die SICHTBARE
+// Seite. PDF-Nutzerkoordinaten haben dagegen ihren Ursprung unten-links der
+// unrotierten MediaBox (ggf. mit Offset). Diese Helfer rechnen exakt zwischen
+// beiden Welten um — bei rot=0 und Ursprung (0,0) sind sie die Identität.
+type PageGeom = {
+  ox: number;
+  oy: number;
+  mw: number;
+  mh: number;
+  rot: 0 | 90 | 180 | 270;
+  vw: number; // sichtbare Breite (rotiert)
+  vh: number; // sichtbare Höhe (rotiert)
+};
+
+function pageGeom(page: PDFPage): PageGeom {
+  const mb = page.getMediaBox();
+  const raw = page.getRotation().angle || 0;
+  const rot = (((((Math.round(raw / 90) * 90) % 360) + 360) % 360) || 0) as
+    | 0
+    | 90
+    | 180
+    | 270;
+  const swap = rot === 90 || rot === 270;
+  return {
+    ox: mb.x,
+    oy: mb.y,
+    mw: mb.width,
+    mh: mb.height,
+    rot,
+    vw: swap ? mb.height : mb.width,
+    vh: swap ? mb.width : mb.height,
+  };
+}
+
+/** Unrotiert-normiert (u: links→rechts, v: unten→oben) → sichtbar-normiert (links/oben). */
+function toView(u: number, v: number, rot: number): { rx: number; ry: number } {
+  switch (rot) {
+    case 90:
+      return { rx: v, ry: u };
+    case 180:
+      return { rx: 1 - u, ry: v };
+    case 270:
+      return { rx: 1 - v, ry: 1 - u };
+    default:
+      return { rx: u, ry: 1 - v };
+  }
+}
+
+/** Sichtbar-normiert (links/oben) → unrotiert-normiert (u/v). */
+function fromView(rx: number, ry: number, rot: number): { u: number; v: number } {
+  switch (rot) {
+    case 90:
+      return { u: ry, v: rx };
+    case 180:
+      return { u: 1 - rx, v: ry };
+    case 270:
+      return { u: 1 - ry, v: 1 - rx };
+    default:
+      return { u: rx, v: 1 - ry };
+  }
+}
+
+/** PDF-Widget-Rechteck (Nutzerkoordinaten, absolut) → sichtbare Ratios (links/oben). */
+function rectPdfToView(
+  g: PageGeom,
+  r: { x: number; y: number; width: number; height: number },
+): FieldRect {
+  const a = toView((r.x - g.ox) / g.mw, (r.y - g.oy) / g.mh, g.rot);
+  const b = toView(
+    (r.x + r.width - g.ox) / g.mw,
+    (r.y + r.height - g.oy) / g.mh,
+    g.rot,
+  );
+  return {
+    xRatio: Math.min(a.rx, b.rx),
+    yRatio: Math.min(a.ry, b.ry),
+    wRatio: Math.abs(a.rx - b.rx),
+    hRatio: Math.abs(a.ry - b.ry),
+  };
+}
+
+/** Sichtbarer Punkt (in Punkten, oben-links) → PDF-Nutzerkoordinaten (absolut). */
+function pointViewToPdf(
+  g: PageGeom,
+  vpx: number,
+  vpy: number,
+): { x: number; y: number } {
+  const { u, v } = fromView(vpx / g.vw, vpy / g.vh, g.rot);
+  return { x: g.ox + u * g.mw, y: g.oy + v * g.mh };
+}
 
 // Freitext: Position als Anteil der Seitenmaße von OBEN-LINKS (wie der
 // Canvas-Overlay im Browser), Schriftgröße als Anteil der Seitenhöhe.
@@ -61,9 +166,15 @@ export function sanitizeWinAnsi(s: string): string {
  * gezeichnet), damit er nach dem Speichern WEITER editierbar bleibt. Bestehende
  * Felder (auch zuvor angelegte Texte) werden per Wert aktualisiert.
  */
-export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffer> {
+export async function applyPdfEdits(
+  pdf: Buffer,
+  edits: PdfEdits,
+): Promise<{ pdf: Buffer; failed: string[] }> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
   const form = doc.getForm();
+  // Felder, die NICHT gesetzt werden konnten — der Aufrufer meldet sie statt sie
+  // still zu verschlucken (sonst „gespeichert" trotz Datenverlust).
+  const failed: string[] = [];
 
   if (edits.fields?.length) {
     for (const fe of edits.fields) {
@@ -72,6 +183,13 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
         field = form.getField(fe.name);
       } catch {
         console.warn("[pdf-edit] Feld nicht gefunden:", fe.name);
+        failed.push(fe.name);
+        continue;
+      }
+      if (field.isReadOnly()) {
+        // Schreibgeschützte Felder serverseitig NICHT überschreiben (die UI blendet
+        // sie ohnehin aus) — sonst täte das RPC mehr als die Oberfläche zulässt.
+        console.warn("[pdf-edit] Schreibgeschütztes Feld übersprungen:", fe.name);
         continue;
       }
       try {
@@ -119,6 +237,7 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
           JSON.stringify(fe.value),
           e instanceof Error ? e.message : e,
         );
+        failed.push(fe.name);
       }
     }
   }
@@ -141,20 +260,38 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
     for (const t of edits.texts) {
       const page = pages[t.page];
       if (!page) continue;
-      const { width, height } = page.getSize();
-      const size = Math.max(6, Math.min(64, (t.sizeRatio ?? 0.02) * height));
+      const g = pageGeom(page);
+      const size = Math.max(6, Math.min(64, (t.sizeRatio ?? 0.02) * g.vh));
       const value = sanitizeWinAnsi(t.text ?? "");
       const multiline = value.includes("\n");
-      const { boxW, boxH } = deriveBox(value, size, width);
-      const x = Math.max(0, Math.min(width - 12, t.xRatio * width));
-      const y = Math.max(0, height - t.yRatio * height - boxH);
+      // Box-Maße in SICHTBAREN Punkten ableiten, dann ins (ggf. rotierte/
+      // versetzte) PDF-Koordinatensystem abbilden.
+      const { boxW, boxH } = deriveBox(value, size, g.vw);
+      const vx = Math.max(0, Math.min(g.vw - 12, t.xRatio * g.vw));
+      const vy = Math.max(0, Math.min(Math.max(0, g.vh - boxH), t.yRatio * g.vh));
+      const c1 = pointViewToPdf(g, vx, vy);
+      const c2 = pointViewToPdf(g, vx + boxW, vy + boxH);
+      const rect = {
+        x: Math.min(c1.x, c2.x),
+        y: Math.min(c1.y, c2.y),
+        width: Math.abs(c1.x - c2.x),
+        height: Math.abs(c1.y - c2.y),
+      };
 
       const existing = t.name ? byName.get(t.name) : undefined;
-      if (existing instanceof PDFTextField) {
-        // Bestehendes Freitextfeld: Wert, Größe UND Position aktualisieren.
+      if (existing) {
+        // Nur EIGENE Freitextfelder (mit Marker) dürfen verschoben/überschrieben
+        // werden — ein manipuliertes `name` darf kein echtes Formularfeld kapern.
+        if (!(existing instanceof PDFTextField) || !isGremioText(existing)) {
+          console.warn(
+            "[pdf-edit] Freitext-Update auf fremdes Feld ignoriert:",
+            t.name,
+          );
+          continue;
+        }
         if (multiline) existing.enableMultiline();
         const widget = existing.acroField.getWidgets()[0];
-        if (widget) widget.setRectangle({ x, y, width: boxW, height: boxH });
+        if (widget) widget.setRectangle(rect);
         existing.setFontSize(size);
         existing.setText(value);
         existing.updateAppearances(font);
@@ -163,7 +300,17 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
         const tf = form.createTextField(nextName());
         if (multiline) tf.enableMultiline();
         // addToPage zuerst — danach existiert die /DA-Angabe (für setFontSize nötig).
-        tf.addToPage(page, { x, y, width: boxW, height: boxH, font, borderWidth: 0 });
+        // Auf rotierten Seiten das Widget mitdrehen (bei rot=0 ein No-op), damit
+        // der Text aufrecht erscheint.
+        tf.addToPage(page, {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          font,
+          borderWidth: 0,
+          rotate: degrees(g.rot),
+        });
         tf.setFontSize(size);
         tf.setText(value);
         tf.acroField.dict.set(PDFName.of(GREMIO_TEXT_KEY), PDFBool.True);
@@ -172,7 +319,7 @@ export async function applyPdfEdits(pdf: Buffer, edits: PdfEdits): Promise<Buffe
     }
   }
 
-  return Buffer.from(await doc.save());
+  return { pdf: Buffer.from(await doc.save()), failed };
 }
 
 export type FieldType =
@@ -241,15 +388,9 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       const w = widgets[0];
       const pageIndex = pageOfDict.get(w.dict);
       if (pageIndex == null) return {};
-      const p = pages[pageIndex];
-      const { width: pw, height: ph } = p.getSize();
+      const g = pageGeom(pages[pageIndex]);
       const r = w.getRectangle();
-      const rect: FieldRect = {
-        xRatio: r.x / pw,
-        yRatio: (ph - (r.y + r.height)) / ph,
-        wRatio: r.width / pw,
-        hRatio: r.height / ph,
-      };
+      const rect = rectPdfToView(g, r);
       // Schriftgröße aus der DA-Angabe. Auto (0) ODER Mehrzeilen-Felder NICHT
       // aus der Feldhöhe ableiten (sonst riesig) — Fließtext bleibt klein (≤12).
       // pdf-lib bäckt bei Auto-Größe teils absurde Größen ins DA (z. B. 177 pt);
@@ -262,7 +403,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         : fs > 0
           ? fs
           : Math.min(12, r.height * 0.7);
-      return { page: pageIndex, rect, sizeRatio: pt / ph };
+      return { page: pageIndex, rect, sizeRatio: pt / g.vh };
     } catch {
       return {};
     }
@@ -276,18 +417,8 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       for (const w of field.acroField.getWidgets()) {
         const pageIndex = pageOfDict.get(w.dict);
         if (pageIndex == null) continue;
-        const p = pages[pageIndex];
-        const { width: pw, height: ph } = p.getSize();
-        const r = w.getRectangle();
-        out.push({
-          page: pageIndex,
-          rect: {
-            xRatio: r.x / pw,
-            yRatio: (ph - (r.y + r.height)) / ph,
-            wRatio: r.width / pw,
-            hRatio: r.height / ph,
-          },
-        });
+        const g = pageGeom(pages[pageIndex]);
+        out.push({ page: pageIndex, rect: rectPdfToView(g, w.getRectangle()) });
       }
     } catch {
       /* ignore */
@@ -304,21 +435,14 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
       for (const w of field.acroField.getWidgets()) {
         const pageIndex = pageOfDict.get(w.dict);
         if (pageIndex == null) continue;
-        const p = pages[pageIndex];
-        const { width: pw, height: ph } = p.getSize();
-        const r = w.getRectangle();
         const on = w.getOnValue?.();
         const value = on ? on.decodeText() : "";
         if (!value) continue;
+        const g = pageGeom(pages[pageIndex]);
         out.push({
           value,
           page: pageIndex,
-          rect: {
-            xRatio: r.x / pw,
-            yRatio: (ph - (r.y + r.height)) / ph,
-            wRatio: r.width / pw,
-            hRatio: r.height / ph,
-          },
+          rect: rectPdfToView(g, w.getRectangle()),
         });
       }
     } catch {
@@ -339,12 +463,9 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
     const readOnly = f.isReadOnly();
     if (f instanceof PDFSignature) continue; // Signaturfelder nicht ausfüllbar
     if (f instanceof PDFTextField) {
-      let gremioText = /^Text \d+$/.test(name);
-      try {
-        if (f.acroField.dict.has(PDFName.of(GREMIO_TEXT_KEY))) gremioText = true;
-      } catch {
-        /* ignore */
-      }
+      // Ausschließlich am Marker erkennen — KEIN Namensmuster wie „Text 1", das
+      // auch echte Formularfelder fälschlich als verschiebbaren Freitext einstufte.
+      const gremioText = isGremioText(f);
       let multiline = false;
       try {
         multiline = f.isMultiline();
@@ -421,6 +542,7 @@ function safeOptions(fn: () => string[]): string[] {
  */
 function selectChoice(field: PDFDropdown | PDFOptionList, value: string): void {
   let toSelect = value;
+  let resolved = true; // konnte der Wert einer Option zugeordnet werden?
   try {
     const raw = field.acroField.getOptions();
     const isDisplay = raw.some(
@@ -429,9 +551,21 @@ function selectChoice(field: PDFDropdown | PDFOptionList, value: string): void {
     if (!isDisplay) {
       const byExport = raw.find((o) => o.value.decodeText() === value);
       if (byExport) toSelect = (byExport.display ?? byExport.value).decodeText();
+      else resolved = false;
     }
   } catch {
     /* Roh-Optionen nicht lesbar — Originalwert versuchen */
+    resolved = true;
+  }
+  if (!resolved) {
+    // Editierbares Combo-Feld darf beliebigen Freitext führen; sonst gehört der
+    // Wert zu keiner Option → NICHT setzen (würde pdf-lib werfen / Editier-Flag
+    // erzwingen). Als Fehlschlag weiterreichen, damit es gemeldet wird.
+    if (field instanceof PDFDropdown && field.isEditable()) {
+      field.select(value);
+      return;
+    }
+    throw new Error(`Unbekannte Auswahl-Option: ${value}`);
   }
   field.select(toSelect);
 }

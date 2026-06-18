@@ -31,6 +31,11 @@ export function zip(files: { name: string; data: Buffer }[]): Buffer {
   const central: Buffer[] = [];
   let offset = 0;
   for (const f of files) {
+    // 32-Bit-Offset-Schutz: ohne Zip64 sind Offsets auf 4 GB begrenzt. Sollte ein
+    // Aufrufer das je erreichen, lieber klar scheitern als einen kaputten ZIP bauen.
+    if (offset > 0xffffffff) {
+      throw new Error("ZIP zu groß (über 4 GB, Zip64 nicht unterstützt).");
+    }
     const nameBuf = Buffer.from(f.name, "utf8");
     const crc = crc32(f.data);
     const comp = deflateRawSync(f.data);

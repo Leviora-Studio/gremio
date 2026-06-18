@@ -37,8 +37,17 @@ export async function GET(
     return new Response("Datei fehlt", { status: 404 });
   }
 
-  const inline =
-    doc.mime === "application/pdf" || doc.mime.startsWith("image/");
+  // Nur sichere, NICHT skriptfähige Typen inline anzeigen. SVG/HTML/XML würden
+  // bei Inline-Auslieferung Skripte ausführen (nosniff hilft nicht, wenn der Typ
+  // ehrlich als svg deklariert ist) → immer als Download.
+  const INLINE_OK = new Set([
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+  ]);
+  const inline = INLINE_OK.has(doc.mime);
   return new Response(new Uint8Array(buf), {
     headers: {
       "Content-Type": doc.mime || "application/octet-stream",
