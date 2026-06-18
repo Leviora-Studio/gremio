@@ -1,0 +1,1 @@
+DROP INDEX "board_statuses_one_trigger";

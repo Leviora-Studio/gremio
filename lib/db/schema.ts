@@ -173,9 +173,8 @@ export const boardStatuses = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
-    oneTrigger: uniqueIndex("board_statuses_one_trigger")
-      .on(t.boardId)
-      .where(sql`${t.isArchiveTrigger} = true`),
+    // Archiv-Trigger: bewusst KEIN Unique-Index mehr — pro Board sind bis zu
+    // ZWEI Trigger-Spalten erlaubt (App-Logik begrenzt auf max. 2).
     oneInstrTrigger: uniqueIndex("board_statuses_one_instr_trigger")
       .on(t.boardId)
       .where(sql`${t.isInstructionTrigger} = true`),

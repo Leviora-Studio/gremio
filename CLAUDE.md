@@ -77,8 +77,9 @@ board_access   (id, board_id FK→boards ON DELETE CASCADE,
 
 board_statuses (id, board_id FK→boards ON DELETE CASCADE, name,
                 position INTEGER, is_archive_trigger INTEGER DEFAULT 0, created_at)
--- max. ein Archiv-Trigger je Board:
--- CREATE UNIQUE INDEX ix_one_trigger ON board_statuses(board_id) WHERE is_archive_trigger = 1;
+-- Archiv-Trigger: bis zu ZWEI Spalten je Board möglich (kein Unique-Index; die
+-- App begrenzt auf max. 2). Erreicht ein Antrag EINE der Trigger-Spalten und ist
+-- die Nextcloud-Archivierung aktiv, wird archiviert.
 
 -- Nextcloud-Archiv pro Board (1:1), eigene Verbindung je Board:
 board_archive  (board_id PK FK→boards ON DELETE CASCADE,

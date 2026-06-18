@@ -232,6 +232,13 @@
       "when": 1781702598556,
       "tag": "0032_orange_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781790423061,
+      "tag": "0033_lucky_cannonball",
+      "breakpoints": true
     }
   ]
 }

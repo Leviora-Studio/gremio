@@ -27,6 +27,7 @@ import { CardFieldsForm } from "@/components/board/CardFieldsForm";
 import { BoardNumberingForm } from "@/components/board/BoardNumberingForm";
 import { SelectSaveForm } from "@/components/SelectSaveForm";
 import { ArchiveSettings } from "@/components/board/ArchiveSettings";
+import { ArchiveTriggerForm } from "@/components/board/ArchiveTriggerForm";
 import { DoneColumnForm } from "@/components/board/DoneColumnForm";
 import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import {
@@ -117,7 +118,9 @@ export default async function BoardSettingsPage({
     .from(groups)
     .orderBy(groups.name);
 
-  const triggerId = statuses.find((s) => s.isArchiveTrigger)?.id ?? "";
+  const archiveTriggerIds = statuses
+    .filter((s) => s.isArchiveTrigger)
+    .map((s) => s.id);
   const instrTriggerId =
     statuses.find((s) => s.isInstructionTrigger)?.id ?? "";
   const transferTriggerId =
@@ -425,22 +428,17 @@ export default async function BoardSettingsPage({
       <CollapsibleSection title="Nextcloud-Archiv">
         <div className="mb-4 space-y-1 border-b border-slate-100 pb-4">
           <h3 className="text-sm font-semibold text-slate-700">
-            Nextcloud-Trigger-Spalte
+            Nextcloud-Trigger-Spalten
           </h3>
           <p className="text-xs text-slate-500">
-            Erreicht ein Antrag diese Spalte und ist die Archivierung unten
-            aktiv, werden alle Anhänge automatisch hochgeladen.
+            Erreicht ein Antrag eine dieser Spalten und ist die Archivierung
+            unten aktiv, werden alle Anhänge automatisch hochgeladen. Optional
+            lassen sich bis zu zwei Spalten festlegen.
           </p>
-          <SelectSaveForm
+          <ArchiveTriggerForm
             action={setArchiveTriggerAction.bind(null, boardId)}
-            name="statusId"
-            label="Auslösende Spalte"
-            submitLabel="Setzen"
-            initial={triggerId ? String(triggerId) : ""}
-            options={[
-              { value: "", label: "— keine —" },
-              ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
-            ]}
+            statuses={statuses.map((s) => ({ id: s.id, name: s.name }))}
+            initial={archiveTriggerIds}
           />
         </div>
         <ArchiveSettings
