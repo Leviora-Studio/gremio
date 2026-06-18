@@ -244,7 +244,18 @@ export default async function AntragDetailPage({
 
       {/* Anhänge */}
       <section className="card space-y-4 p-5">
-        <h2 className="text-lg font-semibold">Anhänge</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Anhänge</h2>
+          {atts.length > 0 && (
+            <a
+              href={`/api/card/${card.id}/zip`}
+              className="btn-secondary btn-sm"
+              title="Alle Dokumente dieses Antrags als ZIP herunterladen"
+            >
+              ⬇ Alle als ZIP
+            </a>
+          )}
+        </div>
         {visible.includes("finance_request") && (
           <AttachmentSlot
             cardId={card.id}
