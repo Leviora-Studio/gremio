@@ -35,23 +35,34 @@ export type SignOptions = {
 };
 
 /**
- * Macht das AcroForm-`/Fields`-Array zu einem DIREKTEN Array, falls es als
- * indirekte Referenz gespeichert ist (bei echten Acrobat-/LibreOffice-Formularen
- * üblich). Hintergrund: `@signpdf/placeholder-pdf-lib` prüft `Fields instanceof
- * PDFArray` über `acroForm.get(...)` (ohne Dereferenzieren). Bei indirektem
- * `/Fields` schlägt der Test fehl → die Lib ERSETZT das Array durch ein neues mit
- * nur dem Signaturfeld und löscht so alle Formularfelder. Die AcroForm wird
- * inkonsistent (Feld-Widgets verwaist) und Adobe zeigt die Signatur nicht mehr
- * an. Lösen wir die Referenz vorher auf, ERGÄNZT die Lib korrekt.
+ * Bereitet die AcroForm eines bestehenden Formulars fürs Signieren vor, damit
+ * Adobe die Signatur erkennt:
+ *
+ * 1) `/Fields` zu einem DIREKTEN Array machen. `@signpdf/placeholder-pdf-lib`
+ *    prüft `Fields instanceof PDFArray` über `acroForm.get(...)` (ohne zu
+ *    dereferenzieren). Bei indirektem `/Fields` (echte Acrobat-/LibreOffice-
+ *    Formulare) schlägt der Test fehl → die Lib ERSETZT das Array durch ein neues
+ *    mit nur dem Signaturfeld und löscht alle Formularfelder. Vorher auflösen →
+ *    die Lib ERGÄNZT korrekt.
+ *
+ * 2) `/NeedAppearances` entfernen. Steht es auf `true` (typisch bei mit Adobe
+ *    Sign erzeugten Formularen), würde Adobe beim Öffnen ALLE Feld-Darstellungen
+ *    neu generieren — also das Dokument NACH der Signatur verändern — und zeigt
+ *    die Signatur deshalb GAR NICHT an (poppler/qpdf sind hier nachlässiger). Die
+ *    Feldwerte haben bereits eigene Appearance-Streams, daher ist das Entfernen
+ *    optisch unkritisch.
  */
-function ensureDirectAcroFormFields(doc: PDFDocument): void {
+function prepareAcroFormForSigning(doc: PDFDocument): void {
   try {
     const acroForm = doc.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict);
     if (!acroForm) return;
     const fields = acroForm.lookupMaybe(PDFName.of("Fields"), PDFArray);
     if (fields) acroForm.set(PDFName.of("Fields"), fields);
+    if (acroForm.has(PDFName.of("NeedAppearances"))) {
+      acroForm.delete(PDFName.of("NeedAppearances"));
+    }
   } catch {
-    // Defensiv: bei exotischen PDFs lieber ohne Normalisierung weiter signieren.
+    // Defensiv: bei exotischen PDFs lieber ohne Vorbereitung weiter signieren.
   }
 }
 
@@ -62,8 +73,9 @@ function ensureDirectAcroFormFields(doc: PDFDocument): void {
  */
 export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
-  // Vorhandene Formularfelder vor dem Signatur-Platzhalter retten (s. Helfer).
-  ensureDirectAcroFormFields(doc);
+  // AcroForm fürs Signieren vorbereiten: Felder retten + NeedAppearances entfernen
+  // (sonst zeigt Adobe die Signatur bei Formularen nicht an — s. Helfer).
+  prepareAcroFormForSigning(doc);
   const pages = doc.getPages();
 
   let widgetRect: [number, number, number, number] = [0, 0, 0, 0];
