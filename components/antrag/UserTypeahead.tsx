@@ -3,7 +3,12 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Avatar } from "@/components/Avatar";
 
 type U = {
@@ -36,10 +41,38 @@ export function UserTypeahead({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<U[]>([]);
   const [open, setOpen] = useState(false);
+  // Per Pfeiltasten hervorgehobener Treffer.
+  const [active, setActive] = useState(0);
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   function choose(user: U | null) {
     setSelected(user);
     onChange?.(user);
+  }
+
+  function pick(u: U) {
+    choose(u);
+    setOpen(false);
+    setQuery("");
+  }
+
+  // Tastatursteuerung: ↑/↓ navigieren, Enter bestätigt, Esc schließt.
+  function handleKey(e: ReactKeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) setOpen(true);
+      else setActive((a) => Math.min(a + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(a - 1, 0));
+    } else if (e.key === "Enter") {
+      if (open && results[active]) {
+        e.preventDefault();
+        pick(results[active]);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
   }
 
   useEffect(() => {
@@ -64,6 +97,12 @@ export function UserTypeahead({
       ctrl.abort();
     };
   }, [query, open, boardId]);
+
+  // Hervorhebung bei neuen Treffern zurücksetzen und ins Sichtfeld scrollen.
+  useEffect(() => setActive(0), [results]);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   return (
     <div className="relative">
@@ -96,19 +135,21 @@ export function UserTypeahead({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            onKeyDown={handleKey}
           />
           {open && results.length > 0 && (
             <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
-              {results.map((u) => (
+              {results.map((u, idx) => (
                 <li key={u.id}>
                   <button
+                    ref={idx === active ? activeRef : null}
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50"
-                    onClick={() => {
-                      choose(u);
-                      setOpen(false);
-                      setQuery("");
-                    }}
+                    className={
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm" +
+                      (idx === active ? " bg-brand-50" : " hover:bg-slate-50")
+                    }
+                    onMouseEnter={() => setActive(idx)}
+                    onClick={() => pick(u)}
                   >
                     <Avatar username={label(u)} src={avatarSrc(u)} size={22} />
                     {label(u)}

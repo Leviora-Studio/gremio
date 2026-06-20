@@ -21,7 +21,7 @@ import {
   getBoardById,
   getBoardMemberUsers,
 } from "@/lib/authz";
-import { logActivity } from "@/lib/activity";
+import { deadlineActivityDetail, logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { assignCardNumber } from "@/lib/numbering";
@@ -446,6 +446,14 @@ export async function updateCardViaApi(
       user.id,
       "assignee",
       name ? `Zugewiesen an ${name}` : "Zuweisung entfernt",
+    );
+  }
+  if ("deadline" in update && (update.deadline ?? null) !== (card.deadline ?? null)) {
+    await logActivity(
+      card.id,
+      user.id,
+      "deadline",
+      deadlineActivityDetail(card.deadline, update.deadline ?? null),
     );
   }
 

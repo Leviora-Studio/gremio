@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { UserRow } from "@/components/admin/UserRow";
+import { FilterableList } from "@/components/FilterableList";
 
 export default async function UsersPage() {
   const me = await requireAdmin();
@@ -26,28 +27,36 @@ export default async function UsersPage() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Nutzer ({allUsers.length})</h2>
-        {allUsers.length === 0 && (
+        {allUsers.length === 0 ? (
           <p className="text-sm text-slate-500">
             Noch keine Nutzer — sobald sich jemand per SSO anmeldet, erscheint er
             hier.
           </p>
-        )}
-        {allUsers.map((u) => (
-          <UserRow
-            key={u.id}
-            user={{
-              id: u.id,
-              username: u.username,
-              name: u.name,
-              email: u.email,
-              role: u.role,
-              isActive: u.isActive,
-              avatarPath: u.avatarPath,
-            }}
-            meId={me.id}
-            adminCount={adminCount}
+        ) : (
+          <FilterableList
+            placeholder="Nutzer suchen…"
+            emptyText="Keine passenden Nutzer."
+            items={allUsers.map((u) => ({
+              key: u.id,
+              search: `${u.username} ${u.name ?? ""} ${u.email ?? ""}`,
+              element: (
+                <UserRow
+                  user={{
+                    id: u.id,
+                    username: u.username,
+                    name: u.name,
+                    email: u.email,
+                    role: u.role,
+                    isActive: u.isActive,
+                    avatarPath: u.avatarPath,
+                  }}
+                  meId={me.id}
+                  adminCount={adminCount}
+                />
+              ),
+            }))}
           />
-        ))}
+        )}
       </section>
     </div>
   );

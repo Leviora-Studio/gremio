@@ -75,6 +75,8 @@ export default async function GroupDetailPage({
             name="userId"
             className="w-64"
             placeholder="Nutzer auswählen…"
+            searchable
+            searchPlaceholder="Nutzer suchen…"
             options={candidates.map((u) => ({
               value: String(u.id),
               label: u.username,

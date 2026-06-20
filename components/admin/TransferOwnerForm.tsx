@@ -49,6 +49,8 @@ export function TransferOwnerForm({
           value={ownerId}
           onChange={setOwnerId}
           options={options}
+          searchable
+          searchPlaceholder="Nutzer suchen…"
         />
         {requireTyped && (
           <input

@@ -32,7 +32,7 @@ import {
 } from "@/lib/constants";
 import { deleteStoredFile, saveAntragFile, validateUpload } from "@/lib/attachments";
 import { maybeArchive } from "@/lib/archive";
-import { logActivity } from "@/lib/activity";
+import { deadlineActivityDetail, logActivity } from "@/lib/activity";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
@@ -246,6 +246,15 @@ export async function saveCardAction(
       user.id,
       "assignee",
       name ? `Zugewiesen an ${name}` : "Zuweisung entfernt",
+    );
+  }
+
+  if ("deadline" in update && (update.deadline ?? null) !== (card.deadline ?? null)) {
+    await logActivity(
+      card.id,
+      user.id,
+      "deadline",
+      deadlineActivityDetail(card.deadline, update.deadline ?? null),
     );
   }
 

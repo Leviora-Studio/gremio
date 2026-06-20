@@ -3,7 +3,12 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { clsx } from "clsx";
 
 export type SelectOption = { value: string; label: string };
@@ -40,6 +45,9 @@ export function Select({
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Per Pfeiltasten hervorgehobener Eintrag (Index in visibleOptions).
+  const [active, setActive] = useState(0);
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +73,12 @@ export function Select({
     }
   }, [open, searchable]);
 
+  // Hervorhebung bei Öffnen/Filtern zurücksetzen und ins Sichtfeld scrollen.
+  useEffect(() => setActive(0), [open, query]);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   function choose(val: string) {
     if (!isControlled) setInternal(val);
     onChange?.(val);
@@ -78,6 +92,24 @@ export function Select({
       ? options.filter((o) => o.label.toLowerCase().includes(q))
       : options;
 
+  // Tastatursteuerung: ↑/↓ navigieren, Enter bestätigt, Esc schließt.
+  function handleKey(e: ReactKeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((a) => Math.min(a + 1, visibleOptions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((a) => Math.max(a - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = visibleOptions[active];
+      if (opt) choose(opt.value);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+    }
+  }
+
   return (
     <div ref={ref} className={clsx("relative", className)}>
       {name && <input type="hidden" name={name} value={current} />}
@@ -85,7 +117,26 @@ export function Select({
         type="button"
         id={id}
         disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        // Maus-Klick klappt auf/zu. Tastatur-„Klicks" (Enter/Space erzeugen einen
+        // synthetischen Klick mit e.detail===0) ignorieren — die behandelt
+        // onKeyDown, sonst würde direkt wieder auf-/zugeklappt.
+        onClick={(e) => {
+          if (e.detail === 0) return;
+          if (!disabled) setOpen((o) => !o);
+        }}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (!open) {
+            if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setOpen(true);
+            }
+          } else {
+            // Bei searchable liegt der Fokus im Suchfeld; ohne Suche navigiert/
+            // bestätigt die Tastatur direkt hier auf dem Button.
+            handleKey(e);
+          }
+        }}
         className={clsx(
           "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 text-left text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
           disabled && "cursor-not-allowed bg-slate-50 opacity-60",
@@ -124,6 +175,7 @@ export function Select({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKey}
                 placeholder={searchPlaceholder}
                 className="h-8 w-full rounded border border-slate-300 px-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
@@ -135,15 +187,18 @@ export function Select({
                 Keine Treffer
               </li>
             ) : (
-              visibleOptions.map((o) => (
+              visibleOptions.map((o, idx) => (
                 <li key={o.value}>
                   <button
+                    ref={idx === active ? activeRef : null}
                     type="button"
                     onClick={() => choose(o.value)}
+                    onMouseEnter={() => setActive(idx)}
                     className={clsx(
-                      "block w-full px-3 py-1.5 text-left hover:bg-brand-50",
+                      "block w-full px-3 py-1.5 text-left",
+                      idx === active && "bg-brand-50",
                       o.value === current
-                        ? "bg-brand-50 font-medium text-brand-700"
+                        ? "font-medium text-brand-700"
                         : "text-slate-700",
                     )}
                   >
