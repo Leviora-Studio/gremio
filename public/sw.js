@@ -2,8 +2,10 @@
 // Copyright (C) 2026 Erik Engler
 //
 // Bewusst minimaler, sicherer Service Worker für eine server-zentrierte App:
-// - Es werden NUR unveränderliche, content-gehashte Assets gecacht
-//   (/_next/static, /icons) → kein Risiko veralteter dynamischer Inhalte.
+// - Gecacht wird NUR der kleine, feste Satz unter /icons (für die Offline-Seite).
+//   /_next/static bewusst NICHT: Next liefert diese content-gehashten Dateien
+//   bereits mit `immutable` (Browser-HTTP-Cache reicht), und ein SW-Cache würde
+//   mit jedem Deploy unbegrenzt wachsen, weil alte Hashes nie geräumt werden.
 // - Navigationen (HTML) laufen network-first; offline → statische Fallbackseite.
 // - POST/Server-Actions/API werden nie gecacht.
 // Cache-Version bei SW-Änderungen erhöhen, um alte Caches zu verwerfen.
@@ -37,11 +39,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // nur eigene Origin
 
-  // Unveränderliche Assets: cache-first (Dateinamen sind content-gehasht).
-  if (
-    url.pathname.startsWith("/_next/static/") ||
-    url.pathname.startsWith("/icons/")
-  ) {
+  // Icons: cache-first (kleine, feste Menge; werden auch von der Offline-Seite
+  // gebraucht). /_next/static absichtlich NICHT (siehe Kopf).
+  if (url.pathname.startsWith("/icons/")) {
     event.respondWith(
       caches.match(request).then(
         (cached) =>

@@ -9,7 +9,7 @@ import { requireBoardAccess } from "@/lib/authz";
 import { getAssigneeIdsForCards } from "@/lib/assignees";
 import { getPriorities } from "@/lib/priorities";
 import { formatCents } from "@/lib/money";
-import { todayInBerlin } from "@/lib/dates";
+import { todayInBerlin, berlinYearMonth } from "@/lib/dates";
 import { priorityBadgeClass } from "@/lib/constants";
 
 const MONTHS = [
@@ -149,22 +149,25 @@ export default async function BoardStatsPage({
   ).length;
   const maxAssignee = Math.max(1, ...assigneeCounts.map((x) => x.count), noAssignee);
 
-  // Neue Karten je Monat (letzte 6 Monate)
-  const now = new Date();
+  // Neue Karten je Monat (letzte 6 Monate). Monatsgrenzen in Europe/Berlin
+  // (unabhängig von der Server-Zeitzone) über Jahr-Monat-Schlüssel "YYYY-MM".
+  const [curYear, curMonth1] = berlinYearMonth().split("-").map(Number); // Monat 1–12
+  const monthKeyAgo = (i: number): string => {
+    const t = curYear * 12 + (curMonth1 - 1) - i; // ganzzahlige Monatsarithmetik
+    return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+  };
+
   const buckets: { key: string; label: string; count: number }[] = [];
   for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const key = monthKeyAgo(i);
     buckets.push({
       key,
-      label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
+      label: `${MONTHS[Number(key.slice(5, 7)) - 1]} ${key.slice(2, 4)}`,
       count: 0,
     });
   }
   for (const r of rows) {
-    const d = new Date(r.createdAt);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const b = buckets.find((x) => x.key === key);
+    const b = buckets.find((x) => x.key === berlinYearMonth(r.createdAt));
     if (b) b.count++;
   }
   const maxMonth = Math.max(1, ...buckets.map((b) => b.count));
@@ -172,18 +175,18 @@ export default async function BoardStatsPage({
   // Erledigt: Karten mit gesetztem doneSince (= in Done-Spalte ODER archiviert).
   // doneSince ist der Zeitpunkt des Erledigens und überlebt das Archivieren.
   // Pro Zugewiesenem gezählt (Karte mit mehreren Zugewiesenen zählt bei jedem).
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  // Monatszuordnung ebenfalls über den Berlin-Jahr-Monat.
+  const thisMonthKey = monthKeyAgo(0);
+  const lastMonthKey = monthKeyAgo(1);
 
   // Board-weit: wie viele KARTEN wurden erledigt (jede Karte einmal gezählt).
   const completedRows = rows.filter((r) => r.doneSince != null);
   const doneTotal = completedRows.length;
   const doneThisMonth = completedRows.filter(
-    (r) => r.doneSince! >= thisMonthStart && r.doneSince! < nextMonthStart,
+    (r) => berlinYearMonth(r.doneSince!) === thisMonthKey,
   ).length;
   const doneLastMonth = completedRows.filter(
-    (r) => r.doneSince! >= lastMonthStart && r.doneSince! < thisMonthStart,
+    (r) => berlinYearMonth(r.doneSince!) === lastMonthKey,
   ).length;
 
   type Done = { total: number; thisMonth: number; lastMonth: number };
@@ -192,11 +195,11 @@ export default async function BoardStatsPage({
   const doneNobody = newDone();
   for (const r of rows) {
     if (!r.doneSince) continue;
-    const d = r.doneSince;
+    const ym = berlinYearMonth(r.doneSince);
     const bump = (e: Done) => {
       e.total++;
-      if (d >= thisMonthStart && d < nextMonthStart) e.thisMonth++;
-      else if (d >= lastMonthStart && d < thisMonthStart) e.lastMonth++;
+      if (ym === thisMonthKey) e.thisMonth++;
+      else if (ym === lastMonthKey) e.lastMonth++;
     };
     const ids = assigneeMap.get(r.id) ?? [];
     if (ids.length === 0) bump(doneNobody);

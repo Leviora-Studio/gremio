@@ -11,8 +11,17 @@ import { useEffect } from "react";
  */
 export function ServiceWorkerRegister() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") return;
     if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production") {
+      // Im Dev keinen SW registrieren — UND einen evtl. von einem früheren
+      // Prod-Build auf demselben Origin (z. B. localhost) hinterlassenen SW
+      // aktiv abmelden, sonst stört er HMR durch gecachte Assets.
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((rs) => rs.forEach((r) => r.unregister()))
+        .catch(() => {});
+      return;
+    }
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* Registrierung fehlgeschlagen — App funktioniert trotzdem (nur ohne PWA-Cache). */
     });

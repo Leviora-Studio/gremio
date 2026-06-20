@@ -40,6 +40,19 @@ export function UserMultiTypeahead({
   onChange: (users: U[]) => void;
 }) {
   const [selected, setSelected] = useState<U[]>(initial);
+  // Liefert der Server eine andere Zuweisungsliste (Reload/externe Änderung),
+  // lokale Auswahl nachziehen. Schlüssel = sortierte IDs; ändert sich der nicht,
+  // bleiben laufende Bearbeitungen unangetastet (auch nach Save+Revalidate, da
+  // der Server dann genau die gerade gewählte Liste zurückgibt).
+  const initialKey = initial
+    .map((u) => u.id)
+    .sort((a, b) => a - b)
+    .join(",");
+  const [syncedKey, setSyncedKey] = useState(initialKey);
+  if (initialKey !== syncedKey) {
+    setSyncedKey(initialKey);
+    setSelected(initial);
+  }
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<U[]>([]);
   const [open, setOpen] = useState(false);

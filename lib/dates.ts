@@ -12,6 +12,14 @@ export function todayInBerlin(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: TIME_ZONE });
 }
 
+/**
+ * Jahr-Monat als "YYYY-MM" in Europe/Berlin (nicht UTC). Für Monats-Buckets,
+ * damit die Zuordnung an Monatsgrenzen unabhängig von der Server-Zeitzone ist.
+ */
+export function berlinYearMonth(d: Date | string | number = new Date()): string {
+  return new Date(d).toLocaleDateString("en-CA", { timeZone: TIME_ZONE }).slice(0, 7);
+}
+
 export function formatDateTime(
   d: Date | string | number,
   dateStyle: "full" | "long" | "medium" | "short" = "long",

@@ -90,26 +90,36 @@ export async function setCardAssignees(
   userIds: number[],
 ): Promise<{ added: number[]; removed: number[] }> {
   const target = [...new Set(userIds)];
-  const current = await getAssigneeIds(cardId);
-  const curSet = new Set(current);
-  const tgtSet = new Set(target);
-  const added = target.filter((id) => !curSet.has(id));
-  const removed = current.filter((id) => !tgtSet.has(id));
-  if (removed.length) {
-    await db
-      .delete(cardAssignees)
-      .where(
-        and(
-          eq(cardAssignees.cardId, cardId),
-          inArray(cardAssignees.userId, removed),
-        ),
-      );
-  }
-  if (added.length) {
-    await db
-      .insert(cardAssignees)
-      .values(added.map((userId) => ({ cardId, userId })))
-      .onConflictDoNothing();
-  }
-  return { added, removed };
+  // Lesen + Löschen + Einfügen atomar, sonst könnten zwei gleichzeitige
+  // Speichervorgänge auf derselben Karte verschränken und einen Endzustand
+  // erzeugen, der zu keiner der beiden Anfragen passt.
+  return db.transaction(async (tx) => {
+    const current = (
+      await tx
+        .select({ userId: cardAssignees.userId })
+        .from(cardAssignees)
+        .where(eq(cardAssignees.cardId, cardId))
+    ).map((r) => r.userId);
+    const curSet = new Set(current);
+    const tgtSet = new Set(target);
+    const added = target.filter((id) => !curSet.has(id));
+    const removed = current.filter((id) => !tgtSet.has(id));
+    if (removed.length) {
+      await tx
+        .delete(cardAssignees)
+        .where(
+          and(
+            eq(cardAssignees.cardId, cardId),
+            inArray(cardAssignees.userId, removed),
+          ),
+        );
+    }
+    if (added.length) {
+      await tx
+        .insert(cardAssignees)
+        .values(added.map((userId) => ({ cardId, userId })))
+        .onConflictDoNothing();
+    }
+    return { added, removed };
+  });
 }

@@ -145,7 +145,7 @@ export function SortableBoardGrid({
 
   return (
     <DndContext
-      id="dnd-board-grid"
+      id={`dnd-board-grid-${hrefBase.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`}
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
