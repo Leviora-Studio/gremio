@@ -56,3 +56,16 @@ details.collapsible > summary::-webkit-details-marker {
 details.collapsible[open] > summary .chev {
   transform: rotate(180deg);
 }
+
+/* iOS Safari zoomt beim Fokussieren von Feldern mit Schriftgröße < 16px
+   automatisch hinein — in der installierten App bleibt die Ansicht danach
+   „reingezoomt". Auf kleinen Screens daher alle Formularfelder ≥ 16px; das
+   unterbindet den Auto-Zoom, lässt Pinch-Zoom aber erlaubt. Unlayered →
+   gewinnt gegen Tailwinds text-sm ohne !important. Desktop bleibt unberührt. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
