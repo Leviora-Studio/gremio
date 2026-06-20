@@ -77,6 +77,8 @@ export default async function BoardStatsPage({
       locationId: cards.locationId,
       approvedAmount: cards.approvedAmount,
       actualAmount: cards.actualAmount,
+      archivedAt: cards.archivedAt,
+      doneSince: cards.doneSince,
     })
     .from(cards)
     .where(eq(cards.boardId, boardId));
@@ -102,37 +104,47 @@ export default async function BoardStatsPage({
 
   const total = rows.length;
   const today = todayInBerlin();
-  const overdue = rows.filter((r) => r.deadline && r.deadline < today).length;
+  // „Aktiv" = NICHT archiviert UND NICHT in der Done-Spalte. Erledigte Karten
+  // zählen bei „Überfällig" und „Zugewiesen" nicht mit (auch wenn ihre Deadline
+  // längst vergangen ist).
+  const isActive = (r: (typeof rows)[number]) =>
+    r.archivedAt == null && r.statusId !== board.doneStatusId;
+  const activeRows = rows.filter(isActive);
+  const overdue = activeRows.filter((r) => r.deadline && r.deadline < today).length;
   const fromForm = rows.filter((r) => r.locationId != null).length;
   const manual = total - fromForm;
   const approvedSum = rows.reduce((s, r) => s + (r.approvedAmount ?? 0), 0);
   const actualSum = rows.reduce((s, r) => s + (r.actualAmount ?? 0), 0);
 
-  // Nach Spalte
-  const byStatus = statuses.map((s) => ({
-    name: s.name,
-    count: rows.filter((r) => r.statusId === s.id).length,
-  }));
+  // Nach Spalte — die Done-Spalte ausblenden (dafür gibt es „Erledigt").
+  const byStatus = statuses
+    .filter((s) => s.id !== board.doneStatusId)
+    .map((s) => ({
+      name: s.name,
+      count: rows.filter((r) => r.statusId === s.id).length,
+    }));
   const maxStatus = Math.max(1, ...byStatus.map((x) => x.count));
 
-  // Nach Priorität (+ ohne)
+  // Nach Priorität (+ ohne) — nur aktive Karten (nicht archiviert/Done).
   const byPriority = priorities.map((p) => ({
     label: p.label,
     color: p.color,
-    count: rows.filter((r) => r.priorityId === p.id).length,
+    count: activeRows.filter((r) => r.priorityId === p.id).length,
   }));
-  const noPriority = rows.filter((r) => r.priorityId == null).length;
+  const noPriority = activeRows.filter((r) => r.priorityId == null).length;
   const maxPriority = Math.max(1, ...byPriority.map((x) => x.count), noPriority);
 
   // Zugewiesen (Top 8 + ohne)
   const assigneeCounts = assigneeIds
     .map((aid) => ({
       label: nameOf.get(aid) ?? "?",
-      count: rows.filter((r) => (assigneeMap.get(r.id) ?? []).includes(aid)).length,
+      count: activeRows.filter((r) => (assigneeMap.get(r.id) ?? []).includes(aid))
+        .length,
     }))
+    .filter((x) => x.count > 0)
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
-  const noAssignee = rows.filter(
+  const noAssignee = activeRows.filter(
     (r) => (assigneeMap.get(r.id) ?? []).length === 0,
   ).length;
   const maxAssignee = Math.max(1, ...assigneeCounts.map((x) => x.count), noAssignee);
@@ -156,6 +168,48 @@ export default async function BoardStatsPage({
     if (b) b.count++;
   }
   const maxMonth = Math.max(1, ...buckets.map((b) => b.count));
+
+  // Erledigt: Karten mit gesetztem doneSince (= in Done-Spalte ODER archiviert).
+  // doneSince ist der Zeitpunkt des Erledigens und überlebt das Archivieren.
+  // Pro Zugewiesenem gezählt (Karte mit mehreren Zugewiesenen zählt bei jedem).
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  // Board-weit: wie viele KARTEN wurden erledigt (jede Karte einmal gezählt).
+  const completedRows = rows.filter((r) => r.doneSince != null);
+  const doneTotal = completedRows.length;
+  const doneThisMonth = completedRows.filter(
+    (r) => r.doneSince! >= thisMonthStart && r.doneSince! < nextMonthStart,
+  ).length;
+  const doneLastMonth = completedRows.filter(
+    (r) => r.doneSince! >= lastMonthStart && r.doneSince! < thisMonthStart,
+  ).length;
+
+  type Done = { total: number; thisMonth: number; lastMonth: number };
+  const newDone = (): Done => ({ total: 0, thisMonth: 0, lastMonth: 0 });
+  const doneByUser = new Map<number, Done>();
+  const doneNobody = newDone();
+  for (const r of rows) {
+    if (!r.doneSince) continue;
+    const d = r.doneSince;
+    const bump = (e: Done) => {
+      e.total++;
+      if (d >= thisMonthStart && d < nextMonthStart) e.thisMonth++;
+      else if (d >= lastMonthStart && d < thisMonthStart) e.lastMonth++;
+    };
+    const ids = assigneeMap.get(r.id) ?? [];
+    if (ids.length === 0) bump(doneNobody);
+    else
+      for (const uid of ids) {
+        const e = doneByUser.get(uid) ?? newDone();
+        bump(e);
+        doneByUser.set(uid, e);
+      }
+  }
+  const doneStats = [...doneByUser.entries()]
+    .map(([uid, c]) => ({ uid, label: nameOf.get(uid) ?? "?", ...c }))
+    .sort((a, b) => b.total - a.total || b.thisMonth - a.thisMonth);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 py-2">
@@ -227,6 +281,77 @@ export default async function BoardStatsPage({
               ))}
               <Bar label="ohne Zuweisung" count={noAssignee} max={maxAssignee} />
             </div>
+          </Section>
+
+          <Section title="Erledigt">
+            <div className="mb-4 grid grid-cols-3 gap-4">
+              {[
+                { label: "Gesamt", value: doneTotal },
+                { label: "Dieser Monat", value: doneThisMonth },
+                { label: "Letzter Monat", value: doneLastMonth },
+              ].map((kpi) => (
+                <div
+                  key={kpi.label}
+                  className="rounded-md border border-slate-200 p-3"
+                >
+                  <div className="text-2xl font-bold text-brand-700">
+                    {kpi.value}
+                  </div>
+                  <div className="text-xs text-slate-500">{kpi.label}</div>
+                </div>
+              ))}
+            </div>
+            <h3 className="mb-2 text-sm font-medium text-slate-600">Je Nutzer</h3>
+            {doneStats.length === 0 && doneNobody.total === 0 ? (
+              <p className="text-sm text-slate-500">
+                Noch keine erledigten Karten.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                    <th className="py-1.5 pr-2 font-medium">Nutzer</th>
+                    <th className="px-2 py-1.5 text-right font-medium">Gesamt</th>
+                    <th className="px-2 py-1.5 text-right font-medium">
+                      Dieser Monat
+                    </th>
+                    <th className="py-1.5 pl-2 text-right font-medium">
+                      Letzter Monat
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {doneStats.map((c) => (
+                    <tr key={c.uid} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-2">{c.label}</td>
+                      <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                        {c.total}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {c.thisMonth}
+                      </td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums">
+                        {c.lastMonth}
+                      </td>
+                    </tr>
+                  ))}
+                  {doneNobody.total > 0 && (
+                    <tr className="text-slate-500">
+                      <td className="py-1.5 pr-2">ohne Zuweisung</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {doneNobody.total}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {doneNobody.thisMonth}
+                      </td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums">
+                        {doneNobody.lastMonth}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </Section>
 
           <Section title="Neue Karten je Monat (letzte 6)">
