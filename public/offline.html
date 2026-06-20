@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1d4ed8" />
+    <title>Offline — Gremio</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f8fafc;
+        color: #1e293b;
+      }
+      main {
+        max-width: 24rem;
+        text-align: center;
+      }
+      .logo {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 1.25rem;
+        border-radius: 16px;
+      }
+      h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+      p { margin: 0 0 1.5rem; color: #64748b; font-size: 0.95rem; line-height: 1.5; }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 8px;
+        background: #1d4ed8;
+        color: #fff;
+        font-size: 0.95rem;
+        font-weight: 500;
+        padding: 0.6rem 1.25rem;
+        cursor: pointer;
+      }
+      button:hover { background: #1e40af; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="logo" src="/icons/icon-192.png" alt="Gremio" />
+      <h1>Keine Verbindung</h1>
+      <p>
+        Gremio braucht eine Internetverbindung. Bitte prüfe dein Netzwerk und
+        versuche es erneut.
+      </p>
+      <button onclick="location.reload()">Erneut versuchen</button>
+    </main>
+  </body>
+</html>
