@@ -5,22 +5,42 @@ import Link from "next/link";
 import type { User } from "@/lib/db/schema";
 import { logoutAction } from "@/lib/auth/actions";
 import { Avatar } from "./Avatar";
+import { BottomNav } from "./BottomNav";
 
 export function Nav({ user }: { user: User }) {
   // Anzeigename aus dem SSO (konstant), Fallback auf Benutzername.
   const displayName = user.name?.trim() || user.username;
   return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex w-full items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        <Link
-          href="/intern"
-          className="flex items-center gap-2 text-lg font-bold text-slate-900"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Gremio Logo" className="h-7 w-auto" />
-          <span>Gremio</span>
-        </Link>
-        <nav className="flex items-center gap-4 text-sm">
+    <>
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white md:static">
+        {/* Mobil (< md): kompakte App-Kopfleiste (Logo + Konto). Die eigentliche
+            Navigation läuft über die untere Tab-Leiste (BottomNav). */}
+        <div className="flex h-14 items-center justify-between px-4 md:hidden">
+          <Link
+            href="/intern"
+            className="flex items-center gap-2 text-lg font-bold text-slate-900"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Gremio Logo" className="h-7 w-auto" />
+            <span>Gremio</span>
+          </Link>
+          <Link href="/intern/konto" aria-label="Konto">
+            <Avatar username={displayName} src={avatarUrl(user)} size={32} />
+          </Link>
+        </div>
+
+        {/* Desktop (md+): volle Leiste, unverändert. */}
+        <div className="mx-auto hidden w-full items-center justify-between px-4 py-3 sm:px-6 lg:px-8 md:flex">
+          <Link
+            href="/intern"
+            className="flex items-center gap-2 text-lg font-bold text-slate-900"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Gremio Logo" className="h-7 w-auto" />
+            <span>Gremio</span>
+          </Link>
+
+          <nav className="flex items-center gap-4 text-sm">
           <Link
             href="/intern"
             className="font-medium text-slate-600 hover:text-brand-600"
@@ -73,9 +93,17 @@ export function Nav({ user }: { user: User }) {
               Logout
             </button>
           </form>
-        </nav>
-      </div>
-    </header>
+          </nav>
+        </div>
+      </header>
+
+      {/* Mobil (< md): untere Tab-Leiste im App-Stil. */}
+      <BottomNav
+        role={user.role}
+        displayName={displayName}
+        avatarSrc={avatarUrl(user)}
+      />
+    </>
   );
 }
 

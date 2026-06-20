@@ -17,7 +17,7 @@ export default async function FinanzenPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Finanzübersichten</h1>
         <Link href="/finanzen/neu" className="btn-primary">
           + Neue Finanzübersicht

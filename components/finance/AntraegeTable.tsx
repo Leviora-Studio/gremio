@@ -77,7 +77,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <input
-          className="input w-64"
+          className="input sm:w-64"
           placeholder="Anträge durchsuchen …"
           value={q}
           onChange={(e) => setQ(e.target.value)}

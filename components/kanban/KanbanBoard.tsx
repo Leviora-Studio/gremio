@@ -254,7 +254,7 @@ export function KanbanBoard({
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-end gap-2">
-        <div className="w-56">
+        <div className="w-full sm:w-56">
           <label className="label">Suche</label>
           <input
             className="input"
@@ -264,7 +264,7 @@ export function KanbanBoard({
           />
         </div>
         {showAssigneeFilter && (
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             <label className="label">Zugewiesen</label>
             <Select
               value={fAssignee}
@@ -280,32 +280,38 @@ export function KanbanBoard({
             />
           </div>
         )}
-        {showPriorityFilter && (
-          <div className="w-40">
-            <label className="label">Priorität</label>
-            <Select
-              value={fPriority}
-              onChange={setFPriority}
-              options={[
-                { value: "", label: "Alle" },
-                ...priorities.map((p) => ({
-                  value: String(p.id),
-                  label: p.label,
-                })),
-              ]}
-            />
+        {/* Priorität + „Nur überfällig" auf Mobil nebeneinander; ab sm: löst sich
+            der Wrapper per display:contents auf → Desktop-Layout unverändert. */}
+        {(showPriorityFilter || showOverdueFilter) && (
+          <div className="flex w-full items-end gap-2 sm:contents">
+            {showPriorityFilter && (
+              <div className="flex-1 sm:w-40 sm:flex-none">
+                <label className="label">Priorität</label>
+                <Select
+                  value={fPriority}
+                  onChange={setFPriority}
+                  options={[
+                    { value: "", label: "Alle" },
+                    ...priorities.map((p) => ({
+                      value: String(p.id),
+                      label: p.label,
+                    })),
+                  ]}
+                />
+              </div>
+            )}
+            {showOverdueFilter && (
+              <label className="btn-secondary shrink-0 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={fOverdue}
+                  onChange={(e) => setFOverdue(e.target.checked)}
+                />
+                Nur überfällig
+              </label>
+            )}
           </div>
-        )}
-        {showOverdueFilter && (
-          <label className="btn-secondary cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="mr-2"
-              checked={fOverdue}
-              onChange={(e) => setFOverdue(e.target.checked)}
-            />
-            Nur überfällig
-          </label>
         )}
         {filtersActive && (
           <button

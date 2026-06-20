@@ -13,7 +13,9 @@ export default async function InternLayout({
   return (
     <div className="min-h-screen">
       <Nav user={user} />
-      <main className="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="mx-auto w-full px-4 pb-24 pt-6 sm:px-6 lg:px-8 md:pb-6">
+        {children}
+      </main>
     </div>
   );
 }

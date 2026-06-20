@@ -16,7 +16,7 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen">
       <Nav user={user} />
-      <div className="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full px-4 pb-24 pt-6 sm:px-6 lg:px-8 md:pb-6">
         <h1 className="mb-4 text-2xl font-bold">Admin Panel</h1>
         <AdminTabs />
         {children}

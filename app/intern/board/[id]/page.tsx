@@ -131,7 +131,7 @@ export default async function BoardPage({
             <p className="text-sm text-slate-500">{board.description}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-1.5 overflow-x-auto sm:w-auto sm:flex-wrap sm:gap-2 sm:overflow-visible">
           <NewCardButton
             boardId={boardId}
             visible={visible}
@@ -149,21 +149,21 @@ export default async function BoardPage({
           {board.doneStatusId != null && (
             <Link
               href={`/intern/board/${boardId}/archiv`}
-              className="btn-secondary"
+              className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
             >
               🗄 Archiv
             </Link>
           )}
           <Link
             href={`/intern/board/${boardId}/statistik`}
-            className="btn-secondary"
+            className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
           >
             📊 Statistik
           </Link>
           {manage && (
             <Link
               href={`/intern/board/${boardId}/einstellungen`}
-              className="btn-secondary"
+              className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
             >
               ⚙ Einstellungen
             </Link>

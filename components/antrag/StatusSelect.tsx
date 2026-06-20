@@ -20,7 +20,7 @@ export function StatusSelect({
   return (
     <div className="flex items-center gap-2">
       <Select
-        className="w-64"
+        className="w-full sm:w-64"
         defaultValue={String(current)}
         disabled={saving}
         options={statuses.map((s) => ({ value: String(s.id), label: s.name }))}

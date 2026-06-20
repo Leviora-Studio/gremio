@@ -352,39 +352,49 @@ export default function PdfEditor({
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-        <span className="mr-2 max-w-[16rem] truncate font-medium" title={filename}>
+      <div className="grid grid-cols-3 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm sm:flex sm:flex-wrap">
+        {/* Dateiname nur auf Desktop — auf Mobil ist der Platz für die
+            Bedienelemente reserviert (welche Datei ist aus dem Kontext klar). */}
+        <span
+          className="mr-1 hidden max-w-[16rem] truncate font-medium sm:block"
+          title={filename}
+        >
           {filename}
         </span>
-        <button
-          type="button"
-          className="btn-secondary btn-sm"
-          onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}
-        >
-          −
-        </button>
-        <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
-        <button
-          type="button"
-          className="btn-secondary btn-sm"
-          onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}
-        >
-          +
-        </button>
+        {/* Zoom bleibt als Einheit zusammen (bricht nicht zwischen − % + um). */}
+        <div className="flex items-center justify-between gap-1 sm:justify-start">
+          <button
+            type="button"
+            className="btn-secondary btn-sm px-2 sm:px-3"
+            onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))}
+          >
+            −
+          </button>
+          <span className="w-10 text-center tabular-nums sm:w-11">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            className="btn-secondary btn-sm px-2 sm:px-3"
+            onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))}
+          >
+            +
+          </button>
+        </div>
 
         {editable && (
           <>
-            <span className="mx-1 h-5 w-px bg-slate-300" />
+            <span className="mx-1 hidden h-5 w-px bg-slate-300 sm:block" />
             <button
               type="button"
-              className={tool === "text" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
+              className={`${tool === "text" ? "btn-primary" : "btn-secondary"} btn-sm`}
               onClick={() => setTool((t) => (t === "text" ? "none" : "text"))}
             >
               ✎ Text
             </button>
             <button
               type="button"
-              className={tool === "sign" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
+              className={`${tool === "sign" ? "btn-primary" : "btn-secondary"} btn-sm`}
               onClick={() => setTool((t) => (t === "sign" ? "none" : "sign"))}
               title={
                 hasCert
@@ -395,7 +405,7 @@ export default function PdfEditor({
               ✒ Signieren
             </button>
             {tool !== "none" && (
-              <span className="text-xs text-brand-700">
+              <span className="hidden text-xs text-brand-700 sm:inline">
                 {tool === "text"
                   ? "Auf die Seite klicken, um Text zu setzen (danach verschiebbar)"
                   : "Auf der Seite einen Bereich aufziehen"}
@@ -404,7 +414,10 @@ export default function PdfEditor({
           </>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        {/* Auf Mobil lösen sich diese drei per display:contents in das 3-Spalten-
+            Grid auf (gleich große Zellen wie Zoom/Text/Signieren). Ab sm: wieder
+            als rechtsbündige Gruppe. */}
+        <div className="contents sm:ml-auto sm:flex sm:items-center sm:gap-2">
           <a
             href={src}
             download={filename}
@@ -424,7 +437,11 @@ export default function PdfEditor({
               {saving ? "Speichert…" : "Speichern"}
             </button>
           )}
-          <button type="button" className="btn-secondary btn-sm" onClick={onClose}>
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={onClose}
+          >
             Schließen
           </button>
         </div>
@@ -436,7 +453,7 @@ export default function PdfEditor({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Seiten */}
         <div ref={containerRef} className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3">
           {loadError ? (
@@ -487,7 +504,7 @@ export default function PdfEditor({
 
         {/* Seitenpanel: Signatur + restliche Formularfelder */}
         {editable && (panelFields.length > 0 || sign) && (
-          <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-white p-3 text-sm">
+          <aside className="max-h-[45vh] w-full shrink-0 overflow-auto border-t border-slate-200 bg-white p-3 text-sm md:max-h-none md:w-72 md:border-l md:border-t-0">
             {sign && (
               <div className="mb-4">
                 <h3 className="mb-1 font-semibold">Signatur</h3>

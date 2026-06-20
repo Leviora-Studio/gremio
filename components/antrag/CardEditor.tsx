@@ -349,26 +349,25 @@ export function CardEditor({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-end">
-        <SaveIndicator status={status} errorMsg={errorMsg} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className="label">Titel *</label>
-          <input
-            defaultValue={valuesRef.current.title}
-            className="input"
-            placeholder="Titel der Karte"
-            onChange={(e) => update({ title: e.target.value })}
-            onBlur={flushNow}
-          />
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="relative sm:col-span-2">
+        {/* Auto-Speichern-Status in der Ecke — verbraucht keine eigene Zeile,
+            damit die Felder direkt unter der Überschrift beginnen. */}
+        <div className="absolute right-0 top-0 z-10">
+          <SaveIndicator status={status} errorMsg={errorMsg} />
         </div>
-        {visible.map((k) =>
-          fieldNodes[k] ? <Fragment key={k}>{fieldNodes[k]}</Fragment> : null,
-        )}
+        <label className="label">Titel *</label>
+        <input
+          defaultValue={valuesRef.current.title}
+          className="input"
+          placeholder="Titel der Karte"
+          onChange={(e) => update({ title: e.target.value })}
+          onBlur={flushNow}
+        />
       </div>
+      {visible.map((k) =>
+        fieldNodes[k] ? <Fragment key={k}>{fieldNodes[k]}</Fragment> : null,
+      )}
     </div>
   );
 }

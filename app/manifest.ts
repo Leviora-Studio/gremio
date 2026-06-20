@@ -7,7 +7,7 @@ import type { MetadataRoute } from "next";
 // <head>. Macht Gremio auf Android UND Desktop (Chrome/Edge) installierbar.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Gremio — Anträge verwalten",
+    name: "Gremio",
     short_name: "Gremio",
     description:
       "Anträge in Gremien verwalten — Kanban-Boards, Finanzübersichten und Archiv.",
@@ -25,7 +25,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: "/icons/icon-512.png",
+        src: "/icons/icon-512-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

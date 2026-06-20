@@ -186,7 +186,7 @@ export default async function AntragDetailPage({
         )}
         <div className="sm:col-span-2">
           <span className="text-slate-500">Status-Link:</span>{" "}
-          <a href={statusLink} className="text-brand-600 hover:underline" target="_blank" rel="noopener">
+          <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
             {statusLink}
           </a>
         </div>
@@ -204,7 +204,7 @@ export default async function AntragDetailPage({
 
       {/* Felder (Auto-Speichern) */}
       <section className="card p-5">
-        <h2 className="mb-4 text-lg font-semibold">Felder</h2>
+        <h2 className="mb-2 text-lg font-semibold">Felder</h2>
         <CardEditor
           cardId={card.id}
           boardId={board.id}
@@ -345,7 +345,7 @@ export default async function AntragDetailPage({
             {activity.map((a) => (
               <li
                 key={a.id}
-                className="flex items-center gap-2 text-slate-600"
+                className="flex flex-wrap items-start gap-x-2 gap-y-1 text-slate-600 sm:items-center"
               >
                 <Avatar
                   username={a.username ?? "System"}
@@ -353,12 +353,13 @@ export default async function AntragDetailPage({
                     a.userId && a.avatarPath ? `/api/avatar/${a.userId}` : null
                   }
                   size={20}
+                  className="mt-0.5 shrink-0 sm:mt-0"
                 />
-                <span className="font-medium text-slate-700">
+                <span className="shrink-0 font-medium text-slate-700">
                   {a.username ?? "System"}
                 </span>
-                <span>{a.detail}</span>
-                <span className="ml-auto text-xs text-slate-400">
+                <span className="min-w-0 flex-1 break-words">{a.detail}</span>
+                <span className="basis-full pl-7 text-xs text-slate-400 sm:ml-auto sm:basis-auto sm:pl-0">
                   {fmt(a.createdAt)}
                 </span>
               </li>

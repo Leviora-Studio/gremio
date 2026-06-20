@@ -71,7 +71,10 @@ export function ExpenseTree({
   }
 
   return (
-    <div className="space-y-3">
+    // Mobil: drei feste Betragsspalten (3×w-28) passen nicht neben den Titel →
+    // horizontal scrollbar mit Mindestbreite. Auf Desktop ohne Wirkung.
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="min-w-[34rem] space-y-3">
       {/* Spaltenkopf */}
       <div className="flex items-center gap-2 border border-transparent px-3 text-xs uppercase text-slate-400">
         <span className="flex-1">Haushaltstitel / Bezeichnung</span>
@@ -143,6 +146,7 @@ export function ExpenseTree({
         >
           {formatCents(plannedTotal - spentTotal)}
         </span>
+      </div>
       </div>
     </div>
   );

@@ -88,7 +88,11 @@ export function NewCardButton({
 
   return (
     <>
-      <button onClick={start} disabled={busy} className="btn-primary">
+      <button
+        onClick={start}
+        disabled={busy}
+        className="btn-primary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
+      >
         {"+ Neue Karte"}
       </button>
 

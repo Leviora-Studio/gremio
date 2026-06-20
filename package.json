@@ -1,10 +1,10 @@
 {
   "name": "gremio",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

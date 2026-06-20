@@ -16,7 +16,7 @@ export default async function VorlagenLayout({
   return (
     <div className="min-h-screen">
       <Nav user={user} />
-      <div className="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full px-4 pb-24 pt-6 sm:px-6 lg:px-8 md:pb-6">
         <h1 className="mb-1 text-2xl font-bold">Vorlagen</h1>
         <p className="mb-4 text-sm text-slate-500">
           Board- und Finanz-Templates verwalten.

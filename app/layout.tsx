@@ -17,6 +17,9 @@ export const viewport: Viewport = {
   themeColor: "#1d4ed8",
   width: "device-width",
   initialScale: 1,
+  // Damit env(safe-area-inset-*) auf Geräten mit Notch/Home-Indikator greift
+  // (untere Tab-Leiste). Auf Desktop ohne Wirkung.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

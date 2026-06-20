@@ -79,7 +79,7 @@ export default async function InternHome() {
     : [];
   const boardsNode = (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-2xl font-bold">Deine Boards</h2>
         <Link href="/intern/board/neu" className="btn-primary">
           + Neues Board
@@ -111,7 +111,7 @@ export default async function InternHome() {
   );
   const financesNode = (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-2xl font-bold">Finanzübersichten</h2>
         <Link href="/finanzen/neu" className="btn-primary">
           + Neue Finanzübersicht
