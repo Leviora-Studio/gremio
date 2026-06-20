@@ -2,14 +2,9 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  cards,
-  boardCardFields,
-  boardStatuses,
-  users,
-} from "@/lib/db/schema";
+import { cards, boardCardFields, boardStatuses } from "@/lib/db/schema";
 import {
   canManageBoard,
   getBoardMemberUsers,
@@ -17,6 +12,7 @@ import {
 } from "@/lib/authz";
 import { getPriorities } from "@/lib/priorities";
 import { getAccounts } from "@/lib/accounts";
+import { getAssigneesForCards } from "@/lib/assignees";
 import { formatCents } from "@/lib/money";
 import { KanbanBoard, type KanbanCard } from "@/components/kanban/KanbanBoard";
 import { NewCardButton } from "@/components/kanban/NewCardButton";
@@ -62,16 +58,20 @@ export default async function BoardPage({
       approvedAmount: cards.approvedAmount,
       actualAmount: cards.actualAmount,
       accountId: cards.accountId,
-      assigneeId: users.id,
-      assigneeName: sql<string | null>`coalesce(${users.name}, ${users.username})`,
-      assigneeAvatarPath: users.avatarPath,
     })
     .from(cards)
-    .leftJoin(users, eq(users.id, cards.assigneeUserId))
     .where(and(eq(cards.boardId, boardId), isNull(cards.archivedAt)))
     .orderBy(asc(cards.position), asc(cards.id));
 
+  // Zugewiesene (mehrere) je Karte in EINER Query nachladen.
+  const assigneeMap = await getAssigneesForCards(cardRows.map((r) => r.id));
+
   const kanbanCards: KanbanCard[] = cardRows.map((r) => {
+    const assignees = (assigneeMap.get(r.id) ?? []).map((a) => ({
+      id: a.id,
+      name: a.name || a.username,
+      avatarPath: a.avatarPath,
+    }));
     // Durchsuchbarer Text aus ALLEN Feldern (lowercase, serverseitig).
     const searchText = [
       r.title,
@@ -83,7 +83,7 @@ export default async function BoardPage({
       r.meeting,
       r.instructionDate,
       r.transferDate,
-      r.assigneeName,
+      assignees.map((a) => a.name).join(" "),
       r.priorityId != null ? priorityLabel.get(r.priorityId) : null,
       r.accountId != null ? accountLabel.get(r.accountId) : null,
       statusLabel.get(r.statusId),
@@ -103,9 +103,7 @@ export default async function BoardPage({
       resubmitted: r.resubmittedAt != null,
       deadline: r.deadline,
       meeting: r.meeting,
-      assigneeId: r.assigneeId,
-      assigneeName: r.assigneeName,
-      assigneeAvatarPath: r.assigneeAvatarPath,
+      assignees,
       searchText,
     };
   });

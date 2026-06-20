@@ -32,7 +32,12 @@ import {
 } from "@/lib/constants";
 import { deleteStoredFile, saveAntragFile, validateUpload } from "@/lib/attachments";
 import { maybeArchive } from "@/lib/archive";
-import { deadlineActivityDetail, logActivity } from "@/lib/activity";
+import {
+  assigneeActivityDetail,
+  deadlineActivityDetail,
+  logActivity,
+} from "@/lib/activity";
+import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
@@ -74,7 +79,7 @@ export type CardValues = {
   budgetTitle: string | null;
   number: string | null;
   creatorUserId: number | null;
-  assigneeUserId: number | null;
+  assigneeUserIds: number[];
   deadline: string | null;
   meeting: string | null;
   decisionRef: string | null;
@@ -128,9 +133,19 @@ export async function saveCardAction(
     const v = values.creatorUserId ?? null;
     update.creatorUserId = v && memberIds.has(v) ? v : null;
   }
-  if (visible.has("assignee") && "assigneeUserId" in values) {
-    const v = values.assigneeUserId ?? null;
-    update.assigneeUserId = v && memberIds.has(v) ? v : null;
+  // Zuweisungen (mehrere) liegen in card_assignees, nicht in der cards-Spalte —
+  // nach dem Karten-Update separat synchronisieren (s. unten).
+  let targetAssignees: number[] | null = null;
+  if (visible.has("assignee") && "assigneeUserIds" in values) {
+    targetAssignees = Array.isArray(values.assigneeUserIds)
+      ? [
+          ...new Set(
+            values.assigneeUserIds.filter(
+              (n) => Number.isInteger(n) && memberIds.has(n),
+            ),
+          ),
+        ]
+      : [];
   }
   // Datums-/Betragsfelder: eine NICHT-leere, aber ungültige Eingabe wird NICHT
   // still zu null geschrieben (sonst löscht ein Tippfehler heimlich einen Wert
@@ -237,16 +252,12 @@ export async function saveCardAction(
 
   await db.update(cards).set(update).where(eq(cards.id, card.id));
 
-  if ("assigneeUserId" in update && update.assigneeUserId !== card.assigneeUserId) {
-    const name = update.assigneeUserId
-      ? (members.find((m) => m.id === update.assigneeUserId)?.username ?? "?")
-      : null;
-    await logActivity(
-      card.id,
-      user.id,
-      "assignee",
-      name ? `Zugewiesen an ${name}` : "Zuweisung entfernt",
-    );
+  if (targetAssignees) {
+    const { added, removed } = await setCardAssignees(card.id, targetAssignees);
+    const nameOf = (id: number) =>
+      members.find((m) => m.id === id)?.username ?? "?";
+    const detail = assigneeActivityDetail(added.map(nameOf), removed.map(nameOf));
+    if (detail) await logActivity(card.id, user.id, "assignee", detail);
   }
 
   if ("deadline" in update && (update.deadline ?? null) !== (card.deadline ?? null)) {

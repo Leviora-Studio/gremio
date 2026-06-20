@@ -10,6 +10,7 @@ import { Select } from "@/components/Select";
 import { DatePicker } from "@/components/DatePicker";
 import { AutoTextarea } from "@/components/AutoTextarea";
 import { UserTypeahead } from "./UserTypeahead";
+import { UserMultiTypeahead } from "./UserMultiTypeahead";
 import {
   saveCardAction,
   type CardValues,
@@ -29,7 +30,7 @@ export function CardEditor({
   visible,
   initial,
   creator,
-  assignee,
+  assignees,
   priorities,
   accounts,
   canManage,
@@ -55,7 +56,7 @@ export function CardEditor({
     applicantNote: string | null;
   };
   creator: U | null;
-  assignee: U | null;
+  assignees: U[];
   priorities: PriorityOption[];
   accounts: AccountOption[];
   canManage: boolean;
@@ -66,7 +67,7 @@ export function CardEditor({
     budgetTitle: initial.budgetTitle,
     number: initial.number,
     creatorUserId: creator?.id ?? null,
-    assigneeUserId: assignee?.id ?? null,
+    assigneeUserIds: assignees.map((a) => a.id),
     deadline: initial.deadline,
     meeting: initial.meeting,
     decisionRef: initial.decisionRef,
@@ -251,10 +252,10 @@ export function CardEditor({
     assignee: (
       <div>
         <label className="label">Zugewiesen zu</label>
-        <UserTypeahead
+        <UserMultiTypeahead
           boardId={boardId}
-          initial={assignee}
-          onChange={(u) => update({ assigneeUserId: u?.id ?? null }, true)}
+          initial={assignees}
+          onChange={(us) => update({ assigneeUserIds: us.map((u) => u.id) }, true)}
         />
       </div>
     ),

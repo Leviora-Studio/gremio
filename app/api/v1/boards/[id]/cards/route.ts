@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { cardWriteSchema, createCardViaApi } from "@/lib/api-cards";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { getAssigneeIds, getAssigneeIdsForCards } from "@/lib/assignees";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,9 +54,17 @@ export async function GET(
     .orderBy(asc(boardStatuses.position), asc(cards.position), asc(cards.id));
 
   const visible = await getVisibleFieldKeys(board.id);
+  const assigneeMap = await getAssigneeIdsForCards(rows.map((r) => r.card.id));
   return NextResponse.json({
     cards: rows.map((r) =>
-      serializeCard(r.card, { statusName: r.statusName }, visible),
+      serializeCard(
+        r.card,
+        {
+          statusName: r.statusName,
+          assigneeUserIds: assigneeMap.get(r.card.id) ?? [],
+        },
+        visible,
+      ),
     ),
   });
 }
@@ -98,7 +107,13 @@ export async function POST(
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(board.id);
   return NextResponse.json(
-    { card: serializeCard(result.value, undefined, visible) },
+    {
+      card: serializeCard(
+        result.value,
+        { assigneeUserIds: await getAssigneeIds(result.value.id) },
+        visible,
+      ),
+    },
     { status: 201 },
   );
 }

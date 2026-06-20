@@ -34,7 +34,7 @@ export const API_FIELD_TO_KEY: Record<string, string> = {
   budgetTitle: "budget_title",
   number: "number",
   creatorUserId: "creator",
-  assigneeUserId: "assignee",
+  assigneeUserIds: "assignee",
   deadline: "deadline",
   meeting: "meeting",
   decisionRef: "decision_ref",

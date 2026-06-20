@@ -21,7 +21,12 @@ import {
   getBoardById,
   getBoardMemberUsers,
 } from "@/lib/authz";
-import { deadlineActivityDetail, logActivity } from "@/lib/activity";
+import {
+  assigneeActivityDetail,
+  deadlineActivityDetail,
+  logActivity,
+} from "@/lib/activity";
+import { setCardAssignees } from "@/lib/assignees";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { assignCardNumber } from "@/lib/numbering";
@@ -54,7 +59,7 @@ export const cardWriteSchema = z
     position: z.number().int().min(0).optional(),
     priorityId: z.number().int().positive().nullish(),
     accountId: z.number().int().positive().nullish(),
-    assigneeUserId: z.number().int().positive().nullish(),
+    assigneeUserIds: z.array(z.number().int().positive()).max(50).optional(),
     creatorUserId: z.number().int().positive().nullish(),
     deadline: date,
     meeting: date,
@@ -94,7 +99,7 @@ async function buildCardValues(
   input: CardWriteInput,
   memberIds: Set<number>,
   canManage: boolean,
-): Promise<ApiResult<CardColumns>> {
+): Promise<ApiResult<{ value: CardColumns; assigneeUserIds?: number[] }>> {
   // Verwalter-exklusive Felder (wie in der UI): nur Board-Verwalter dürfen
   // Antragsnummer und Anweisungsdatum setzen.
   if (!canManage) {
@@ -197,14 +202,14 @@ async function buildCardValues(
     }
   }
 
-  if ("assigneeUserId" in input) {
-    if (input.assigneeUserId == null) v.assigneeUserId = null;
-    else if (!memberIds.has(input.assigneeUserId))
-      return fail(
-        400,
-        `assigneeUserId ${input.assigneeUserId} hat keinen Zugriff auf dieses Board.`,
-      );
-    else v.assigneeUserId = input.assigneeUserId;
+  let assigneeUserIds: number[] | undefined;
+  if ("assigneeUserIds" in input && input.assigneeUserIds) {
+    const ids = [...new Set(input.assigneeUserIds)];
+    for (const id of ids) {
+      if (!memberIds.has(id))
+        return fail(400, `assigneeUserId ${id} hat keinen Zugriff auf dieses Board.`);
+    }
+    assigneeUserIds = ids;
   }
 
   if ("creatorUserId" in input) {
@@ -217,7 +222,7 @@ async function buildCardValues(
     else v.creatorUserId = input.creatorUserId;
   }
 
-  return { ok: true, value: v };
+  return { ok: true, value: { value: v, assigneeUserIds } };
 }
 
 /**
@@ -297,7 +302,7 @@ export async function createCardViaApi(
     canManageBoard(user, board),
   );
   if (!built.ok) return built;
-  const v = built.value;
+  const { value: v, assigneeUserIds } = built.value;
 
   // Zielspalte: explizit oder erste Spalte des Boards.
   let statusId = v.statusId;
@@ -352,6 +357,7 @@ export async function createCardViaApi(
     }
   }
 
+  if (assigneeUserIds?.length) await setCardAssignees(newId!, assigneeUserIds);
   // Antragsnummer vergeben (falls Board-Nummerierung aktiv).
   await assignCardNumber(board.id, newId!);
   // Trigger-Spalten beim direkten Anlegen ebenfalls auslösen.
@@ -378,7 +384,8 @@ export async function updateCardViaApi(
     canManageBoard(user, board),
   );
   if (!built.ok) return built;
-  const update: CardColumns = { ...built.value };
+  const { value: builtCols, assigneeUserIds } = built.value;
+  const update: CardColumns = { ...builtCols };
 
   // Statuswechsel erkennen (für Aktivität/Trigger).
   let moveTo: { id: number; name: string } | null = null;
@@ -437,16 +444,12 @@ export async function updateCardViaApi(
     await maybeSetTriggerDates(card.id, moveTo.id);
     await maybeArchive(card.id);
   }
-  if ("assigneeUserId" in update && update.assigneeUserId !== card.assigneeUserId) {
-    const name = update.assigneeUserId
-      ? (members.find((m) => m.id === update.assigneeUserId)?.username ?? "?")
-      : null;
-    await logActivity(
-      card.id,
-      user.id,
-      "assignee",
-      name ? `Zugewiesen an ${name}` : "Zuweisung entfernt",
-    );
+  if (assigneeUserIds) {
+    const { added, removed } = await setCardAssignees(card.id, assigneeUserIds);
+    const nameOf = (id: number) =>
+      members.find((m) => m.id === id)?.username ?? "?";
+    const detail = assigneeActivityDetail(added.map(nameOf), removed.map(nameOf));
+    if (detail) await logActivity(card.id, user.id, "assignee", detail);
   }
   if ("deadline" in update && (update.deadline ?? null) !== (card.deadline ?? null)) {
     await logActivity(

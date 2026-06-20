@@ -131,7 +131,7 @@ export function NewCardButton({
                 applicantNote: null,
               }}
               creator={currentUser}
-              assignee={null}
+              assignees={[]}
               priorities={priorities}
               accounts={accounts}
               canManage={canManage}

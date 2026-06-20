@@ -6,6 +6,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boardStatuses, users } from "@/lib/db/schema";
 import { requireBoardManage } from "@/lib/authz";
+import { getAssigneeIdsForCards } from "@/lib/assignees";
 import { getPriorities } from "@/lib/priorities";
 import { formatCents } from "@/lib/money";
 import { todayInBerlin } from "@/lib/dates";
@@ -68,9 +69,9 @@ export default async function BoardStatsPage({
 
   const rows = await db
     .select({
+      id: cards.id,
       statusId: cards.statusId,
       priorityId: cards.priorityId,
-      assigneeUserId: cards.assigneeUserId,
       deadline: cards.deadline,
       createdAt: cards.createdAt,
       locationId: cards.locationId,
@@ -88,9 +89,9 @@ export default async function BoardStatsPage({
 
   const priorities = await getPriorities();
 
-  const assigneeIds = [
-    ...new Set(rows.map((r) => r.assigneeUserId).filter((x): x is number => x != null)),
-  ];
+  // Zugewiesene je Karte (n:m) — eine Karte zählt bei JEDEM Zugewiesenen mit.
+  const assigneeMap = await getAssigneeIdsForCards(rows.map((r) => r.id));
+  const assigneeIds = [...new Set([...assigneeMap.values()].flat())];
   const assigneeRows = assigneeIds.length
     ? await db
         .select({ id: users.id, username: users.username })
@@ -127,11 +128,13 @@ export default async function BoardStatsPage({
   const assigneeCounts = assigneeIds
     .map((aid) => ({
       label: nameOf.get(aid) ?? "?",
-      count: rows.filter((r) => r.assigneeUserId === aid).length,
+      count: rows.filter((r) => (assigneeMap.get(r.id) ?? []).includes(aid)).length,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
-  const noAssignee = rows.filter((r) => r.assigneeUserId == null).length;
+  const noAssignee = rows.filter(
+    (r) => (assigneeMap.get(r.id) ?? []).length === 0,
+  ).length;
   const maxAssignee = Math.max(1, ...assigneeCounts.map((x) => x.count), noAssignee);
 
   // Neue Karten je Monat (letzte 6 Monate)

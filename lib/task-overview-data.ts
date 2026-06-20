@@ -3,7 +3,7 @@
 
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { boardStatuses, cards, type User } from "@/lib/db/schema";
+import { boardStatuses, cardAssignees, cards, type User } from "@/lib/db/schema";
 import { getAccessibleBoards } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
 import { getPriorities } from "@/lib/priorities";
@@ -88,7 +88,14 @@ export async function loadTaskOverviewData(
         .from(cards)
         .where(
           and(
-            eq(cards.assigneeUserId, user.id),
+            // Karten, in denen der Nutzer zu den Zugewiesenen gehört (n:m).
+            inArray(
+              cards.id,
+              db
+                .select({ id: cardAssignees.cardId })
+                .from(cardAssignees)
+                .where(eq(cardAssignees.userId, user.id)),
+            ),
             isNull(cards.archivedAt),
             inArray(cards.boardId, boardIds),
           ),

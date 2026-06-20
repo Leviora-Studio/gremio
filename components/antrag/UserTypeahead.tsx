@@ -44,6 +44,18 @@ export function UserTypeahead({
   // Per Pfeiltasten hervorgehobener Treffer.
   const [active, setActive] = useState(0);
   const activeRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Beim Klick außerhalb schließen.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   function choose(user: U | null) {
     setSelected(user);
@@ -105,7 +117,7 @@ export function UserTypeahead({
   }, [active]);
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       {name && <input type="hidden" name={name} value={selected?.id ?? ""} />}
       {selected ? (
         <div className="flex items-center gap-2">

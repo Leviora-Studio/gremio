@@ -34,6 +34,20 @@ export function deadlineActivityDetail(
   return `Deadline geändert: ${deDate(oldVal)} → ${deDate(newVal)}`;
 }
 
+/**
+ * Vorgerenderter Text für eine Zuweisungs-Änderung (mehrere Nutzer möglich).
+ * null = keine Änderung → kein Log-Eintrag.
+ */
+export function assigneeActivityDetail(
+  addedNames: string[],
+  removedNames: string[],
+): string | null {
+  const parts: string[] = [];
+  if (addedNames.length) parts.push(`Zugewiesen: ${addedNames.join(", ")}`);
+  if (removedNames.length) parts.push(`Entfernt: ${removedNames.join(", ")}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** Schreibt einen Aktivitäts-Eintrag (rein intern, nie öffentlich sichtbar). */
 export async function logActivity(
   cardId: number,

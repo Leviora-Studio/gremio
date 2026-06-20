@@ -19,6 +19,7 @@ import { requireUser } from "@/lib/auth";
 import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { getPriorities } from "@/lib/priorities";
 import { getAccounts } from "@/lib/accounts";
+import { getCardAssignees } from "@/lib/assignees";
 import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { env } from "@/lib/env";
@@ -79,10 +80,10 @@ export default async function AntragDetailPage({
   // Hat der eingeloggte Nutzer ein Signatur-Zertifikat? (für den Signieren-Button)
   const hasCert = !!user.certP12Enc;
 
-  // Ersteller/Zugewiesen-Namen
-  const userIds = [card.creatorUserId, card.assigneeUserId].filter(
-    (x): x is number => !!x,
-  );
+  // Zugewiesene (mehrere) separat aus card_assignees laden.
+  const assignees = await getCardAssignees(card.id);
+  // Ersteller-Name
+  const userIds = [card.creatorUserId].filter((x): x is number => !!x);
   const userMap = new Map<
     number,
     { username: string; name: string | null; avatarPath: string | null }
@@ -113,15 +114,6 @@ export default async function AntragDetailPage({
         avatarPath: userMap.get(card.creatorUserId)?.avatarPath ?? null,
       }
     : null;
-  const assignee = card.assigneeUserId
-    ? {
-        id: card.assigneeUserId,
-        username: userMap.get(card.assigneeUserId)?.username ?? "?",
-        name: userMap.get(card.assigneeUserId)?.name ?? null,
-        avatarPath: userMap.get(card.assigneeUserId)?.avatarPath ?? null,
-      }
-    : null;
-
   const location = card.locationId
     ? (
         await db
@@ -235,7 +227,7 @@ export default async function AntragDetailPage({
             applicantNote: card.applicantNote,
           }}
           creator={creator}
-          assignee={assignee}
+          assignees={assignees}
           priorities={priorities}
           accounts={accounts}
           canManage={manage}

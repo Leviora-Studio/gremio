@@ -48,9 +48,7 @@ export type KanbanCard = {
   resubmitted: boolean;
   deadline: string | null;
   meeting: string | null;
-  assigneeId: number | null;
-  assigneeName: string | null;
-  assigneeAvatarPath: string | null;
+  assignees: { id: number; name: string; avatarPath: string | null }[];
   searchText: string; // serverseitig: alle durchsuchbaren Felder, lowercase
 };
 
@@ -136,8 +134,9 @@ export function KanbanBoard({
     if (fPriority && String(card.priorityId ?? "") !== fPriority) return false;
     if (fAssignee) {
       if (fAssignee === "none") {
-        if (card.assigneeId !== null) return false;
-      } else if (String(card.assigneeId) !== fAssignee) return false;
+        if (card.assignees.length > 0) return false;
+      } else if (!card.assignees.some((a) => String(a.id) === fAssignee))
+        return false;
     }
     if (fOverdue) {
       if (!card.deadline || card.deadline >= today) return false;
@@ -520,20 +519,20 @@ function CardView({
             📅 {card.meeting}
           </span>
         )}
-        {visibleSet.has("assignee") && card.assigneeName && (
-          <span className="inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-700">
-            <Avatar
-              username={card.assigneeName}
-              src={
-                card.assigneeId && card.assigneeAvatarPath
-                  ? `/api/avatar/${card.assigneeId}`
-                  : null
-              }
-              size={16}
-            />
-            {card.assigneeName}
-          </span>
-        )}
+        {visibleSet.has("assignee") &&
+          card.assignees.map((a) => (
+            <span
+              key={a.id}
+              className="inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-700"
+            >
+              <Avatar
+                username={a.name}
+                src={a.avatarPath ? `/api/avatar/${a.id}` : null}
+                size={16}
+              />
+              {a.name}
+            </span>
+          ))}
       </div>
     </div>
   );

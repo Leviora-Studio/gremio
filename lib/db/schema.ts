@@ -261,9 +261,8 @@ export const cards = pgTable(
     creatorUserId: integer("creator_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    assigneeUserId: integer("assignee_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
+    // Zugewiesene Nutzer: n:m über card_assignees (mehrere möglich), NICHT als
+    // Spalte hier.
     deadline: text("deadline"), // YYYY-MM-DD
     meeting: text("meeting"), // YYYY-MM-DD
     // Freitext-Referenz auf den Gremienbeschluss (z. B. "Beschluss 12/2026").
@@ -304,6 +303,23 @@ export const cards = pgTable(
     }),
     archiveLastError: text("archive_last_error"),
   },
+);
+
+// ---------------------------------------------------------------------------
+// card_assignees — „Zugewiesen zu" (n:m): eine Karte kann mehreren Nutzern
+// zugewiesen sein. Mitgliedschaft = Board-Zugriff prüft die App-Logik.
+// ---------------------------------------------------------------------------
+export const cardAssignees = pgTable(
+  "card_assignees",
+  {
+    cardId: integer("card_id")
+      .notNull()
+      .references(() => cards.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.cardId, t.userId] }) }),
 );
 
 // ---------------------------------------------------------------------------

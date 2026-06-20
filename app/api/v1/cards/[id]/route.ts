@@ -20,6 +20,7 @@ import {
   updateCardViaApi,
 } from "@/lib/api-cards";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { getAssigneeIds } from "@/lib/assignees";
 import type { Board, Card } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,11 @@ export async function GET(
   return NextResponse.json({
     card: serializeCard(
       r.card,
-      { statusName: status?.name ?? "", boardName: r.board.name },
+      {
+        statusName: status?.name ?? "",
+        boardName: r.board.name,
+        assigneeUserIds: await getAssigneeIds(r.card.id),
+      },
       visible,
     ),
   });
@@ -96,7 +101,13 @@ export async function PATCH(
   const result = await updateCardViaApi(r.ctx.user, r.board, r.card, parsed.data);
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(r.board.id);
-  return NextResponse.json({ card: serializeCard(result.value, undefined, visible) });
+  return NextResponse.json({
+    card: serializeCard(
+      result.value,
+      { assigneeUserIds: await getAssigneeIds(result.value.id) },
+      visible,
+    ),
+  });
 }
 
 export async function DELETE(

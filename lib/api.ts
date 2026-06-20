@@ -92,7 +92,7 @@ export function serializeStatus(s: BoardStatus, canManage = false) {
  */
 export function serializeCard(
   c: Card,
-  extra?: { statusName?: string; boardName?: string },
+  extra?: { statusName?: string; boardName?: string; assigneeUserIds?: number[] },
   visible?: Set<string>,
 ) {
   const show = (key: string) => visible == null || visible.has(key);
@@ -117,7 +117,7 @@ export function serializeCard(
   if (show("budget_title")) out.budgetTitle = c.budgetTitle;
   if (show("priority")) out.priorityId = c.priorityId;
   if (show("account")) out.accountId = c.accountId;
-  if (show("assignee")) out.assigneeUserId = c.assigneeUserId;
+  if (show("assignee")) out.assigneeUserIds = extra?.assigneeUserIds ?? [];
   if (show("creator")) out.creatorUserId = c.creatorUserId;
   if (show("deadline")) out.deadline = c.deadline;
   if (show("meeting")) out.meeting = c.meeting;
