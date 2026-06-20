@@ -154,21 +154,19 @@ export default async function BoardPage({
               🗄 Archiv
             </Link>
           )}
+          <Link
+            href={`/intern/board/${boardId}/statistik`}
+            className="btn-secondary"
+          >
+            📊 Statistik
+          </Link>
           {manage && (
-            <>
-              <Link
-                href={`/intern/board/${boardId}/statistik`}
-                className="btn-secondary"
-              >
-                📊 Statistik
-              </Link>
-              <Link
-                href={`/intern/board/${boardId}/einstellungen`}
-                className="btn-secondary"
-              >
-                ⚙ Einstellungen
-              </Link>
-            </>
+            <Link
+              href={`/intern/board/${boardId}/einstellungen`}
+              className="btn-secondary"
+            >
+              ⚙ Einstellungen
+            </Link>
           )}
         </div>
       </div>

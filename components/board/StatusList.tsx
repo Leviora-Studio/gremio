@@ -58,6 +58,7 @@ export function StatusList({
 
   return (
     <DndContext
+      id="dnd-board-statuses"
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={() => {

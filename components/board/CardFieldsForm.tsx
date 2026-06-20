@@ -151,6 +151,7 @@ export function CardFieldsForm({
           Felder (zum Sortieren ziehen)
         </p>
         <DndContext
+          id="dnd-card-fields"
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragEnd={onDragEnd}

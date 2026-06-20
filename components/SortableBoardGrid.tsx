@@ -145,6 +145,7 @@ export function SortableBoardGrid({
 
   return (
     <DndContext
+      id="dnd-board-grid"
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}

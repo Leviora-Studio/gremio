@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState, useTransition } from "react";
 import { Select } from "@/components/Select";
 import {
   setDoneColumnAction,
@@ -19,11 +19,27 @@ export function DoneColumnForm({
   statuses: { id: number; name: string }[];
   config: { doneStatusId: number | null; doneSweepTime: string | null };
 }) {
+  // Reiner lokaler State + imperativer Action-Aufruf (kein <form action>), damit
+  // React 19 das Formular nach dem Speichern NICHT automatisch zurücksetzt —
+  // sonst entkoppelt sich der kontrollierte Haken kurz (Flackern). Gleiches
+  // Muster wie BoardNumberingForm.
   const [enabled, setEnabled] = useState(config.doneStatusId != null);
-  const [state, action, pending] = useActionState(
-    setDoneColumnAction.bind(null, boardId),
-    {} as State,
+  const [statusId, setStatusId] = useState(
+    config.doneStatusId ? String(config.doneStatusId) : "",
   );
+  const [time, setTime] = useState(config.doneSweepTime ?? "03:00");
+  const [pending, startTransition] = useTransition();
+  const [msg, setMsg] = useState<State>({});
+
+  function save() {
+    const fd = new FormData();
+    if (enabled) fd.set("enabled", "on");
+    fd.set("statusId", statusId);
+    fd.set("time", time);
+    startTransition(async () => {
+      setMsg(await setDoneColumnAction(boardId, {} as State, fd));
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -35,11 +51,10 @@ export function DoneColumnForm({
         <strong>Archiv</strong> des Boards und kannst sie von dort zurückholen.
       </p>
 
-      <form action={action} className="space-y-3">
+      <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input
             type="checkbox"
-            name="enabled"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
             className="h-4 w-4"
@@ -52,10 +67,8 @@ export function DoneColumnForm({
             <div>
               <label className="label">Done-Spalte</label>
               <Select
-                name="statusId"
-                defaultValue={
-                  config.doneStatusId ? String(config.doneStatusId) : ""
-                }
+                value={statusId}
+                onChange={setStatusId}
                 placeholder="— Spalte wählen —"
                 options={[
                   { value: "", label: "— Spalte wählen —" },
@@ -70,24 +83,29 @@ export function DoneColumnForm({
               <label className="label">Archivieren täglich um</label>
               <input
                 type="time"
-                name="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
                 className="input"
-                defaultValue={config.doneSweepTime ?? "03:00"}
               />
             </div>
           </div>
         )}
 
         <div className="flex items-center gap-3">
-          <button type="submit" disabled={pending} className="btn-primary">
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="btn-primary"
+          >
             Speichern
           </button>
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.success && (
-            <span className="text-sm text-green-600">{state.success}</span>
+          {msg.error && <span className="text-sm text-red-600">{msg.error}</span>}
+          {msg.success && (
+            <span className="text-sm text-green-600">{msg.success}</span>
           )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }

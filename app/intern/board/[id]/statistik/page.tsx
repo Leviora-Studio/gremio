@@ -5,7 +5,7 @@ import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boardStatuses, users } from "@/lib/db/schema";
-import { requireBoardManage } from "@/lib/authz";
+import { requireBoardAccess } from "@/lib/authz";
 import { getAssigneeIdsForCards } from "@/lib/assignees";
 import { getPriorities } from "@/lib/priorities";
 import { formatCents } from "@/lib/money";
@@ -65,7 +65,7 @@ export default async function BoardStatsPage({
 }) {
   const { id } = await params;
   const boardId = Number(id);
-  const { board } = await requireBoardManage(boardId);
+  const { board } = await requireBoardAccess(boardId);
 
   const rows = await db
     .select({

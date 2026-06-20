@@ -57,6 +57,7 @@ export function TemplateStatusList({
 
   return (
     <DndContext
+      id="dnd-template-statuses"
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={() => {

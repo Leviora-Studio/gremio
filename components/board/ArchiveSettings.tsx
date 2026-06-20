@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -49,10 +49,18 @@ export function ArchiveSettings({
     folderSeparator: string;
   };
 }) {
-  const [state, action, pending] = useActionState(
-    setArchiveConfigAction.bind(null, boardId),
-    {} as State,
-  );
+  // Imperativer Action-Aufruf (kein <form action>), damit React 19 das Formular
+  // nach dem Speichern nicht zurücksetzt — sonst entkoppeln sich die
+  // kontrollierten Ordnernamen-Haken kurz (Flackern). Muster wie BoardNumberingForm.
+  const [archiveEnabled, setArchiveEnabled] = useState(config.enabled);
+  const [ncUrl, setNcUrl] = useState(config.ncUrl ?? "");
+  const [ncUsername, setNcUsername] = useState(config.ncUsername ?? "");
+  const [ncPassword, setNcPassword] = useState("");
+  const [targetFolder, setTargetFolder] = useState(config.targetFolder ?? "");
+  const [pending, startTransition] = useTransition();
+  const [msg, setMsg] = useState<State>({});
+
+  // „Verbindung testen" hat keine Eingaben → harmlos als eigenes Action-Formular.
   const [testState, testAction, testing] = useActionState(
     testArchiveAction.bind(null, boardId),
     {} as State,
@@ -91,6 +99,20 @@ export function ArchiveSettings({
     enabledOrdered.map((k) => FIELD_EXAMPLE.get(k)).join(effSep) ||
     "(leer → Titel)";
 
+  function save() {
+    const fd = new FormData();
+    if (archiveEnabled) fd.set("enabled", "on");
+    fd.set("ncUrl", ncUrl);
+    fd.set("ncUsername", ncUsername);
+    fd.set("ncPassword", ncPassword);
+    fd.set("targetFolder", targetFolder);
+    fd.set("folderFields", folderFieldsValue);
+    fd.set("folderSeparator", sep);
+    startTransition(async () => {
+      setMsg(await setArchiveConfigAction(boardId, {} as State, fd));
+    });
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
@@ -100,12 +122,12 @@ export function ArchiveSettings({
         gespeichert (Empfehlung: Nextcloud-App-Passwort).
       </p>
 
-      <form action={action} className="space-y-3">
+      <div className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input
             type="checkbox"
-            name="enabled"
-            defaultChecked={config.enabled}
+            checked={archiveEnabled}
+            onChange={(e) => setArchiveEnabled(e.target.checked)}
             className="h-4 w-4"
           />
           Archivierung für dieses Board aktiv
@@ -113,8 +135,8 @@ export function ArchiveSettings({
         <div>
           <label className="label">WebDAV-URL</label>
           <input
-            name="ncUrl"
-            defaultValue={config.ncUrl ?? ""}
+            value={ncUrl}
+            onChange={(e) => setNcUrl(e.target.value)}
             className="input"
             placeholder="https://cloud.example.org/remote.php/dav/files/USER/"
           />
@@ -123,8 +145,8 @@ export function ArchiveSettings({
           <div>
             <label className="label">Benutzername</label>
             <input
-              name="ncUsername"
-              defaultValue={config.ncUsername ?? ""}
+              value={ncUsername}
+              onChange={(e) => setNcUsername(e.target.value)}
               className="input"
             />
           </div>
@@ -133,8 +155,9 @@ export function ArchiveSettings({
               Passwort {config.hasPassword && "(gesetzt — leer lassen zum Behalten)"}
             </label>
             <input
-              name="ncPassword"
               type="password"
+              value={ncPassword}
+              onChange={(e) => setNcPassword(e.target.value)}
               className="input"
               placeholder={config.hasPassword ? "••••••••" : ""}
               autoComplete="new-password"
@@ -144,8 +167,8 @@ export function ArchiveSettings({
         <div>
           <label className="label">Zielordner</label>
           <input
-            name="targetFolder"
-            defaultValue={config.targetFolder ?? ""}
+            value={targetFolder}
+            onChange={(e) => setTargetFolder(e.target.value)}
             className="input"
             placeholder="/Archiv"
           />
@@ -159,10 +182,8 @@ export function ArchiveSettings({
             Reihenfolge. Leere Felder werden übersprungen.
           </p>
 
-          {/* Reihenfolge + Auswahl gehen als CSV mit ins Formular. */}
-          <input type="hidden" name="folderFields" value={folderFieldsValue} />
-
           <DndContext
+            id="dnd-archive-folder"
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={onDragEnd}
@@ -195,7 +216,6 @@ export function ArchiveSettings({
             </label>
             <input
               id="folderSeparator"
-              name="folderSeparator"
               value={sep}
               onChange={(e) => setSep(e.target.value)}
               maxLength={5}
@@ -213,15 +233,20 @@ export function ArchiveSettings({
         </div>
 
         <div className="flex items-center gap-3">
-          <button type="submit" disabled={pending} className="btn-primary">
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="btn-primary"
+          >
             {"Speichern"}
           </button>
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.success && (
-            <span className="text-sm text-green-600">{state.success}</span>
+          {msg.error && <span className="text-sm text-red-600">{msg.error}</span>}
+          {msg.success && (
+            <span className="text-sm text-green-600">{msg.success}</span>
           )}
         </div>
-      </form>
+      </div>
 
       <form action={testAction} className="flex items-center gap-3 border-t border-slate-100 pt-3">
         <button type="submit" disabled={testing} className="btn-secondary">

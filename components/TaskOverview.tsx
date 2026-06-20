@@ -242,6 +242,7 @@ export function TaskOverview({
             <strong>Klicke ein Board</strong>, um Spalten &amp; Felder zu wählen.
           </p>
           <DndContext
+            id="dnd-task-overview"
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={onBoardDragEnd}
