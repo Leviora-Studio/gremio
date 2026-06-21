@@ -17,6 +17,12 @@ export const viewport: Viewport = {
   themeColor: "#1d4ed8",
   width: "device-width",
   initialScale: 1,
+  // Zoom auf Touch-Geräten komplett sperren: verhindert den iOS-Auto-Zoom beim
+  // Fokussieren von Feldern UND manuelles Pinch-Zoom — damit niemand die untere
+  // Tab-Navigation der installierten App wegzoomen kann. In der Standalone-PWA
+  // wird das respektiert. Desktop-Browser-Zoom (Strg +/−) bleibt unberührt.
+  maximumScale: 1,
+  userScalable: false,
   // Damit env(safe-area-inset-*) auf Geräten mit Notch/Home-Indikator greift
   // (untere Tab-Leiste). Auf Desktop ohne Wirkung.
   viewportFit: "cover",
