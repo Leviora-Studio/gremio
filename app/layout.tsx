@@ -23,6 +23,11 @@ export const viewport: Viewport = {
   // wird das respektiert. Desktop-Browser-Zoom (Strg +/−) bleibt unberührt.
   maximumScale: 1,
   userScalable: false,
+  // Bildschirmtastatur verkleinert nur den SICHTBAREN Viewport, nicht das
+  // Layout. So bleibt `window.innerHeight` konstant (die VisualViewport-
+  // Erkennung in BottomNav greift damit auch auf Android zuverlässig) und die
+  // feste Tab-Leiste wird nicht über die Tastatur nach oben geschoben.
+  interactiveWidget: "resizes-visual",
   // Damit env(safe-area-inset-*) auf Geräten mit Notch/Home-Indikator greift
   // (untere Tab-Leiste). Auf Desktop ohne Wirkung.
   viewportFit: "cover",

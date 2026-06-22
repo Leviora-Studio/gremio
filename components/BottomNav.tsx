@@ -79,6 +79,20 @@ export function BottomNav({
   const pathname = usePathname() ?? "";
   const [moreOpen, setMoreOpen] = useState(false);
 
+  // Bei offener Bildschirmtastatur die feste Leiste ausblenden — sonst schiebt
+  // iOS sie über die Tastatur nach oben. Erkannt über die VisualViewport-Höhe
+  // (die URL-Leiste < 150px löst nicht aus; in der Standalone-PWA gibt es sie
+  // ohnehin nicht).
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setKeyboardOpen(window.innerHeight - vv.height > 150);
+    vv.addEventListener("resize", onResize);
+    onResize();
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+
   // Bei jedem Seitenwechsel das „Mehr"-Sheet schließen.
   useEffect(() => {
     setMoreOpen(false);
@@ -153,8 +167,12 @@ export function BottomNav({
         </div>
       )}
 
-      {/* Tab-Leiste */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+      {/* Tab-Leiste — bei offener Tastatur ausgeblendet (s. keyboardOpen). */}
+      <nav
+        className={`fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] ${
+          keyboardOpen ? "hidden" : ""
+        }`}
+      >
         <div className="flex">
           {TABS.map((t) => {
             const active = t.match(pathname);
