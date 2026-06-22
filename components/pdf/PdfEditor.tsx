@@ -793,10 +793,17 @@ function PageLayer({
           const r = tw.rect;
           const v = fieldValues[tw.name];
           const fontPx = Math.max(8, tw.sizeRatio * h);
+          // iOS hebt bei gesperrtem Zoom (maximum-scale=1) die Schriftgröße von
+          // Formularfeldern auf min. 16px an → der Text quillt aus kleinen
+          // Feldern nach unten. Lösung: das Feld logisch mit 16px rendern (iOS
+          // greift dann nicht ein) und per transform exakt auf die Zielgröße
+          // herunterskalieren. Nur nötig, wenn die Zielgröße < 16px liegt;
+          // visuell identisch zu fontPx (auch auf Desktop).
+          const k = fontPx < 16 ? fontPx / 16 : 1;
           return (
             <div
               key={`${tw.name}-${idx}`}
-              className="absolute z-10 rounded-sm border border-emerald-400/70 bg-white/60"
+              className="absolute z-10 overflow-hidden rounded-sm border border-emerald-400/70 bg-white/60"
               style={{
                 left: `${r.xRatio * 100}%`,
                 top: `${r.yRatio * 100}%`,
@@ -810,8 +817,18 @@ function PageLayer({
               <textarea
                 value={typeof v === "string" ? v : ""}
                 onChange={(e) => onChangeField(tw.name, e.target.value)}
-                className="h-full w-full resize-none bg-transparent px-1 leading-tight outline-none"
-                style={{ fontSize: `${fontPx}px` }}
+                className="resize-none bg-transparent px-1 leading-tight outline-none"
+                style={
+                  k < 1
+                    ? {
+                        fontSize: "16px",
+                        width: `${100 / k}%`,
+                        height: `${100 / k}%`,
+                        transform: `scale(${k})`,
+                        transformOrigin: "top left",
+                      }
+                    : { fontSize: `${fontPx}px`, width: "100%", height: "100%" }
+                }
               />
             </div>
           );
