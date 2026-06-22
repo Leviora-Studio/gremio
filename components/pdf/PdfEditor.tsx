@@ -792,7 +792,12 @@ function PageLayer({
         {textWidgets.map((tw, idx) => {
           const r = tw.rect;
           const v = fieldValues[tw.name];
-          const fontPx = Math.max(8, tw.sizeRatio * h);
+          // Schrift an die (oft sehr knappe) Feldhöhe anpassen: eine Textzeile
+          // belegt ~1.15× der Schriftgröße. Passt die natürliche Größe nicht in
+          // die Feldhöhe, wird sie gekappt, damit unten nichts abgeschnitten
+          // wird — sonst nimmt sie die echte Größe. Kein fixer 8px-Boden (der
+          // verschöbe das Verhältnis beim Rauszoomen). 1px schützt vor /0.
+          const fontPx = Math.max(1, Math.min(tw.sizeRatio * h, (r.hRatio * h) / 1.15));
           // iOS hebt bei gesperrtem Zoom (maximum-scale=1) die Schriftgröße von
           // Formularfeldern auf min. 16px an → der Text quillt aus kleinen
           // Feldern nach unten. Lösung: das Feld logisch mit 16px rendern (iOS
@@ -803,7 +808,7 @@ function PageLayer({
           return (
             <div
               key={`${tw.name}-${idx}`}
-              className="absolute z-10 overflow-hidden rounded-sm border border-emerald-400/70 bg-white/60"
+              className="absolute z-10 overflow-hidden rounded-sm bg-white/60 ring-1 ring-inset ring-emerald-400/70"
               style={{
                 left: `${r.xRatio * 100}%`,
                 top: `${r.yRatio * 100}%`,
@@ -817,7 +822,7 @@ function PageLayer({
               <textarea
                 value={typeof v === "string" ? v : ""}
                 onChange={(e) => onChangeField(tw.name, e.target.value)}
-                className="resize-none bg-transparent px-1 leading-tight outline-none"
+                className="resize-none bg-transparent px-1 py-0 leading-none outline-none"
                 style={
                   k < 1
                     ? {
