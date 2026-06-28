@@ -20,6 +20,8 @@ const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "category", label: "Kategorie" },
   { key: "location", label: "Standort" },
   { key: "loan_status", label: "Status" },
+  { key: "current_holder", label: "Aktuell bei" },
+  { key: "loan_period", label: "Entliehen bis" },
   { key: "price", label: "Preis" },
   { key: "purchase_date", label: "Kaufdatum" },
   { key: "vendor", label: "Händler" },
@@ -51,9 +53,7 @@ export function InventoryBoardView({
 }) {
   const router = useRouter();
   const [options, setOptions] = useState<GroupedOpts>(initialOptions);
-  const [modal, setModal] = useState<
-    { open: false } | { open: true; item: InventoryItemView | null }
-  >({ open: false });
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [query, setQuery] = useState("");
   const [fCategory, setFCategory] = useState<number | null>(null);
@@ -79,7 +79,7 @@ export function InventoryBoardView({
   }, [items, query, fCategory, fLocation, fStatus]);
 
   function onSaved() {
-    setModal({ open: false });
+    setCreateOpen(false);
     router.refresh();
   }
   function onOptionAdded(kind: OptionKind, opt: Opt) {
@@ -130,7 +130,7 @@ export function InventoryBoardView({
         )}
         <button
           type="button"
-          onClick={() => setModal({ open: true, item: null })}
+          onClick={() => setCreateOpen(true)}
           className="btn-primary ml-auto h-9 py-1.5"
         >
           + Neuer Gegenstand
@@ -157,7 +157,7 @@ export function InventoryBoardView({
               {filtered.map((it) => (
                 <tr
                   key={it.id}
-                  onClick={() => setModal({ open: true, item: it })}
+                  onClick={() => router.push(`/intern/inventar/item/${it.id}`)}
                   className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                 >
                   {cols.map((c) => (
@@ -182,14 +182,14 @@ export function InventoryBoardView({
         </div>
       )}
 
-      {modal.open && (
+      {createOpen && (
         <ItemFormModal
           boardId={boardId}
-          item={modal.item}
+          item={null}
           visibleFields={visibleFields}
           options={options}
           numberingEnabled={numberingEnabled}
-          onClose={() => setModal({ open: false })}
+          onClose={() => setCreateOpen(false)}
           onSaved={onSaved}
           onOptionAdded={onOptionAdded}
         />
@@ -201,7 +201,29 @@ export function InventoryBoardView({
 function renderCell(key: string, it: InventoryItemView) {
   switch (key) {
     case "name":
-      return <span className="font-medium text-slate-800">{it.name || "—"}</span>;
+      return (
+        <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
+          {it.name || "—"}
+          {it.openDefects > 0 && (
+            <span
+              title={`${it.openDefects} offene(r) Mangel/Mängel`}
+              className="rounded bg-amber-100 px-1 py-0.5 text-xs font-medium text-amber-700"
+            >
+              ⚠ {it.openDefects}
+            </span>
+          )}
+        </span>
+      );
+    case "current_holder":
+      return it.activeBorrower ?? "—";
+    case "loan_period":
+      return it.activeUntil ? (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
+          bis {formatDate(it.activeUntil)}
+        </span>
+      ) : (
+        "—"
+      );
     case "number":
       return it.number ?? "—";
     case "category":

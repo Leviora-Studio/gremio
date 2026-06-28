@@ -29,16 +29,17 @@ export async function updateInventoryFieldsAction(formData: FormData) {
   const boardId = Number(formData.get("boardId"));
   await requireInventoryBoardManage(boardId);
   const checked = new Set(formData.getAll("visible").map(String));
-  for (const key of INVENTORY_FIELD_KEYS) {
+  // Upsert: ältere Boards haben evtl. noch keine Zeile für neu hinzugekommene
+  // Feld-Schlüssel — dann anlegen statt nur updaten.
+  for (let i = 0; i < INVENTORY_FIELD_KEYS.length; i++) {
+    const key = INVENTORY_FIELD_KEYS[i];
     await db
-      .update(inventoryBoardFields)
-      .set({ visible: checked.has(key) })
-      .where(
-        and(
-          eq(inventoryBoardFields.boardId, boardId),
-          eq(inventoryBoardFields.fieldKey, key),
-        ),
-      );
+      .insert(inventoryBoardFields)
+      .values({ boardId, fieldKey: key, visible: checked.has(key), position: i })
+      .onConflictDoUpdate({
+        target: [inventoryBoardFields.boardId, inventoryBoardFields.fieldKey],
+        set: { visible: checked.has(key) },
+      });
   }
   revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
   revalidatePath(`/intern/inventar/${boardId}`);

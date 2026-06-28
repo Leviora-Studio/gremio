@@ -843,6 +843,40 @@ export const inventoryNumbering = pgTable("inventory_numbering", {
   next: integer("next").notNull().default(1),
 });
 
+// Entleihvorgänge je Gegenstand (Historie). Der aktuell „offene" Vorgang
+// (returnedAt IS NULL) bestimmt „aktuell bei" + laufenden Entleihzeitraum.
+export const inventoryLoans = pgTable("inventory_loans", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id")
+    .notNull()
+    .references(() => inventoryItems.id, { onDelete: "cascade" }),
+  borrower: text("borrower").notNull(), // Entleiher
+  borrowerEmail: text("borrower_email"), // optional (öffentliche Anfrage)
+  purpose: text("purpose"), // Verwendungsort/Zweck
+  startDate: text("start_date"), // YYYY-MM-DD
+  endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
+  returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
+  notes: text("notes"),
+  createdAt: createdAt(),
+  createdBy: integer("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+});
+
+// Mängel je Gegenstand (Historie). resolvedAt IS NULL = bekannter offener Mangel.
+export const inventoryDefects = pgTable("inventory_defects", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id")
+    .notNull()
+    .references(() => inventoryItems.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }), // null = offen
+  createdAt: createdAt(),
+  createdBy: integer("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
@@ -879,3 +913,5 @@ export type InventoryItem = typeof inventoryItems.$inferSelect;
 export type NewInventoryItem = typeof inventoryItems.$inferInsert;
 export type InventoryBoardField = typeof inventoryBoardFields.$inferSelect;
 export type InventoryNumbering = typeof inventoryNumbering.$inferSelect;
+export type InventoryLoan = typeof inventoryLoans.$inferSelect;
+export type InventoryDefect = typeof inventoryDefects.$inferSelect;

@@ -13,6 +13,7 @@ import {
   type InventoryOption,
 } from "@/lib/db/schema";
 import { buildCardNumber } from "@/lib/numbering";
+import { getActiveLoanMap, getOpenDefectCountMap } from "@/lib/inventory-loans";
 
 // Drizzle-Transaktionshandle (für „in bestehender Transaktion mitlaufen").
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -141,6 +142,10 @@ export type InventoryItemView = InventoryItem & {
   categoryNames: string[];
   locationName: string | null;
   loanStatusName: string | null;
+  // abgeleitet aus dem laufenden Entleihvorgang (null = nicht entliehen)
+  activeBorrower: string | null;
+  activeUntil: string | null;
+  openDefects: number;
 };
 
 /** Alle Gegenstände eines Boards inkl. aufgelöster Options-Namen. */
@@ -172,8 +177,14 @@ export async function listInventoryItems(
     byItem.set(c.itemId, arr);
   }
 
+  const [activeLoans, defectCounts] = await Promise.all([
+    getActiveLoanMap(itemIds),
+    getOpenDefectCountMap(itemIds),
+  ]);
+
   return items.map((it) => {
     const categoryIds = byItem.get(it.id) ?? [];
+    const loan = activeLoans.get(it.id);
     return {
       ...it,
       categoryIds,
@@ -184,6 +195,9 @@ export async function listInventoryItems(
       loanStatusName: it.loanStatusId
         ? optName.get(it.loanStatusId) ?? null
         : null,
+      activeBorrower: loan?.borrower ?? null,
+      activeUntil: loan?.endDate ?? null,
+      openDefects: defectCounts.get(it.id) ?? 0,
     };
   });
 }
@@ -198,6 +212,43 @@ export async function getInventoryItemById(
     .where(eq(inventoryItems.id, id))
     .limit(1);
   return row;
+}
+
+/** Einzelner Gegenstand inkl. Kategorien, Options-Namen und laufendem Vorgang. */
+export async function getInventoryItemView(
+  id: number,
+): Promise<InventoryItemView | undefined> {
+  const item = await getInventoryItemById(id);
+  if (!item) return undefined;
+  const opts = await db
+    .select()
+    .from(inventoryOptions)
+    .where(eq(inventoryOptions.boardId, item.boardId));
+  const optName = new Map(opts.map((o) => [o.id, o.name]));
+  const cats = await db
+    .select()
+    .from(inventoryItemCategories)
+    .where(eq(inventoryItemCategories.itemId, id));
+  const categoryIds = cats.map((c) => c.optionId);
+  const [loanMap, defectMap] = await Promise.all([
+    getActiveLoanMap([id]),
+    getOpenDefectCountMap([id]),
+  ]);
+  const loan = loanMap.get(id);
+  return {
+    ...item,
+    categoryIds,
+    categoryNames: categoryIds
+      .map((cid) => optName.get(cid))
+      .filter((n): n is string => !!n),
+    locationName: item.locationId ? optName.get(item.locationId) ?? null : null,
+    loanStatusName: item.loanStatusId
+      ? optName.get(item.loanStatusId) ?? null
+      : null,
+    activeBorrower: loan?.borrower ?? null,
+    activeUntil: loan?.endDate ?? null,
+    openDefects: defectMap.get(id) ?? 0,
+  };
 }
 
 export type ItemInput = {
