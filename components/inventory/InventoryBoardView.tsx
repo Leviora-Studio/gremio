@@ -102,7 +102,7 @@ export function InventoryBoardView({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Suche (Bezeichnung, Nummer, Händler) …"
-          className="input h-9 max-w-xs flex-1 py-1.5"
+          className="input max-w-xs flex-1"
         />
         {showCat && (
           <FilterSelect
@@ -137,7 +137,7 @@ export function InventoryBoardView({
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="btn-primary ml-auto h-9 py-1.5"
+          className="btn-primary ml-auto"
         >
           + Neuer Gegenstand
         </button>

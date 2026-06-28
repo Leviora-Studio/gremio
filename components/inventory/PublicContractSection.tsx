@@ -3,8 +3,9 @@
 
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import {
   uploadSignedContractAction,
@@ -33,8 +34,12 @@ export function PublicContractSection({
     {} as PublicContractState,
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const [resetKey, setResetKey] = useState(0);
   useEffect(() => {
-    if (state.ok) formRef.current?.reset();
+    if (state.ok) {
+      formRef.current?.reset();
+      setResetKey((k) => k + 1);
+    }
   }, [state.ok]);
 
   return (
@@ -74,15 +79,14 @@ export function PublicContractSection({
 
       <form ref={formRef} action={action} className="space-y-2">
         <p className="label">Unterschriebenen Vertrag hochladen (PDF/Foto)</p>
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
+        <div className="flex flex-wrap items-center gap-2">
+          <FileInput
+            key={resetKey}
             name="file"
             accept=".pdf,.png,.jpg,.jpeg"
             required
-            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-200"
           />
-          <SubmitButton className="btn-primary shrink-0 px-3 py-1.5 text-sm">
+          <SubmitButton className="btn-primary shrink-0">
             Hochladen
           </SubmitButton>
         </div>

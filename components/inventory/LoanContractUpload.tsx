@@ -3,9 +3,10 @@
 
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
@@ -34,8 +35,12 @@ export function LoanContractUpload({
     {} as AttachmentState,
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const [resetKey, setResetKey] = useState(0);
   useEffect(() => {
-    if (state.ok) formRef.current?.reset();
+    if (state.ok) {
+      formRef.current?.reset();
+      setResetKey((k) => k + 1);
+    }
   }, [state.ok]);
 
   return (
@@ -75,25 +80,23 @@ export function LoanContractUpload({
           ))}
         </ul>
       )}
-      <form ref={formRef} action={action} className="flex items-center gap-2">
+      <form
+        ref={formRef}
+        action={action}
+        className="flex flex-wrap items-center gap-2"
+      >
         <input type="hidden" name="loanId" value={loanId} />
         <Select
           name="kind"
           defaultValue="loan_contract"
-          className="w-auto"
+          className="w-44"
           options={[
             { value: "loan_contract", label: "Leihvertrag" },
             { value: "loan_request", label: "Leihantrag" },
           ]}
         />
-        <input
-          type="file"
-          name="file"
-          accept=".pdf"
-          required
-          className="block w-full text-xs text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-xs hover:file:bg-slate-200"
-        />
-        <SubmitButton className="btn-secondary shrink-0 px-2 py-1 text-xs">
+        <FileInput key={resetKey} name="file" accept=".pdf" required />
+        <SubmitButton className="btn-secondary shrink-0">
           Hochladen
         </SubmitButton>
       </form>

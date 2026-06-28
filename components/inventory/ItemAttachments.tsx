@@ -3,8 +3,9 @@
 
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
@@ -78,9 +79,13 @@ function AttachmentKindSection({
     {} as AttachmentState,
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
-    if (state.ok) formRef.current?.reset();
+    if (state.ok) {
+      formRef.current?.reset();
+      setResetKey((k) => k + 1);
+    }
   }, [state.ok]);
 
   const accept = kind === "receipt" ? ".pdf,.png,.jpg,.jpeg" : ".pdf";
@@ -122,17 +127,15 @@ function AttachmentKindSection({
         <p className="mb-2 text-sm text-slate-400">Noch keine Dateien.</p>
       )}
 
-      <form ref={formRef} action={action} className="flex items-center gap-2">
+      <form
+        ref={formRef}
+        action={action}
+        className="flex flex-wrap items-center gap-2"
+      >
         <input type="hidden" name="itemId" value={itemId} />
         <input type="hidden" name="kind" value={kind} />
-        <input
-          type="file"
-          name="file"
-          accept={accept}
-          required
-          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-200"
-        />
-        <SubmitButton className="btn-secondary shrink-0 px-3 py-1.5 text-sm">
+        <FileInput key={resetKey} name="file" accept={accept} required />
+        <SubmitButton className="btn-secondary shrink-0">
           Hochladen
         </SubmitButton>
       </form>

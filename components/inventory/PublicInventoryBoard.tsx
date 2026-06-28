@@ -69,7 +69,7 @@ export function PublicInventoryBoard({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Suche (Bezeichnung, Nummer) …"
-          className="input h-9 max-w-xs flex-1 py-1.5"
+          className="input max-w-xs flex-1"
         />
         {showCat && (
           <FilterSelect

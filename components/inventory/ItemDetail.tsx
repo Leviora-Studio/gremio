@@ -227,7 +227,7 @@ export function ItemDetail({
                     <strong>{l.borrower}</strong> · {period(l.startDate, l.endDate)}
                   </span>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
+                    className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
                   >
                     {l.status === "returned"
                       ? `zurück am ${fmtDateTime(l.returnedAt)}`

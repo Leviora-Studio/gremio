@@ -114,7 +114,7 @@ export default async function InventoryRequestStatusPage({
 
         <div>
           <span
-            className={`inline-block rounded-full px-3 py-1 text-sm font-medium ${s.cls}`}
+            className={`inline-block rounded px-3 py-1 text-sm font-medium ${s.cls}`}
           >
             {s.label}
           </span>

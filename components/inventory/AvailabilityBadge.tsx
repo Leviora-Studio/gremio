@@ -22,20 +22,20 @@ export function AvailabilityBadge({
 }) {
   if (availability === "not_lendable") {
     return (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
         nicht entleihbar
       </span>
     );
   }
   if (availability === "lent") {
     return (
-      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+      <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
         entliehen{until ? ` bis ${fmtDate(until)}` : ""}
       </span>
     );
   }
   return (
-    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+    <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
       verfügbar
     </span>
   );

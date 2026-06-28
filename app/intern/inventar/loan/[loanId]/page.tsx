@@ -70,7 +70,7 @@ export default async function InventoryLoanPage({
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold">
           Vorgang: {loan.borrower}
           <span
-            className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${loanStageClass(loan.status)}`}
+            className={`rounded px-2.5 py-0.5 text-sm font-medium ${loanStageClass(loan.status)}`}
           >
             {loanStageLabel(loan.status)}
           </span>

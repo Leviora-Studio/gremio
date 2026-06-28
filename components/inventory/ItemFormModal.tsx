@@ -374,7 +374,7 @@ function ChipMultiSelect({
                 key={o.id}
                 type="button"
                 onClick={() => onToggle(o.id)}
-                className={`rounded-full border px-2.5 py-1 text-sm transition ${
+                className={`rounded border px-2.5 py-1 text-sm transition ${
                   active
                     ? "border-brand-500 bg-brand-50 text-brand-700"
                     : "border-slate-200 text-slate-600 hover:border-slate-300"
@@ -415,8 +415,8 @@ function AddOption({
   }
 
   return (
-    <div className="mt-1">
-      <div className="flex gap-1.5">
+    <div className="mt-2">
+      <div className="flex gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -427,18 +427,18 @@ function AddOption({
             }
           }}
           placeholder={placeholder}
-          className="input h-8 py-1 text-sm"
+          className="input flex-1"
         />
         <button
           type="button"
           onClick={submit}
           disabled={busy || !name.trim()}
-          className="btn-secondary h-8 px-2 py-1 text-sm"
+          className="btn-secondary shrink-0"
         >
-          +
+          Hinzufügen
         </button>
       </div>
-      {err && <p className="mt-0.5 text-xs text-red-600">{err}</p>}
+      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
     </div>
   );
 }
