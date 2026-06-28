@@ -59,7 +59,7 @@ export function PublicInventoryBoard({
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.name} ${it.number ?? ""}`.toLowerCase();
+        const hay = `${it.name} ${it.number ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;
@@ -273,7 +273,12 @@ function RequestModal({
             <label htmlFor="rq-borrower" className="label">
               Dein Name
             </label>
-            <input id="rq-borrower" name="borrower" className="input" required />
+            <input
+              id="rq-borrower"
+              name="borrower"
+              className="input"
+              defaultValue={state.values?.borrower ?? ""}
+            />
           </div>
           <div>
             <label htmlFor="rq-email" className="label">
@@ -284,7 +289,7 @@ function RequestModal({
               name="email"
               type="email"
               className="input"
-              required
+              defaultValue={state.values?.email ?? ""}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -292,20 +297,37 @@ function RequestModal({
               <label htmlFor="rq-start" className="label">
                 Von
               </label>
-              <input id="rq-start" name="startDate" type="date" className="input" />
+              <input
+                id="rq-start"
+                name="startDate"
+                type="date"
+                className="input"
+                defaultValue={state.values?.startDate ?? ""}
+              />
             </div>
             <div>
               <label htmlFor="rq-end" className="label">
                 Bis
               </label>
-              <input id="rq-end" name="endDate" type="date" className="input" />
+              <input
+                id="rq-end"
+                name="endDate"
+                type="date"
+                className="input"
+                defaultValue={state.values?.endDate ?? ""}
+              />
             </div>
           </div>
           <div>
             <label htmlFor="rq-purpose" className="label">
               Verwendungsort / Zweck
             </label>
-            <input id="rq-purpose" name="purpose" className="input" />
+            <input
+              id="rq-purpose"
+              name="purpose"
+              className="input"
+              defaultValue={state.values?.purpose ?? ""}
+            />
           </div>
 
           {state.error && <p className="text-sm text-red-600">{state.error}</p>}

@@ -68,7 +68,7 @@ export function InventoryBoardView({
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.name} ${it.number ?? ""} ${it.vendor ?? ""}`.toLowerCase();
+        const hay = `${it.name} ${it.number ?? ""} ${it.vendor ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;

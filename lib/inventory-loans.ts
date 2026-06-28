@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   inventoryDefects,
   inventoryLoans,
+  users,
   type InventoryDefect,
   type InventoryLoan,
 } from "@/lib/db/schema";
@@ -174,12 +175,16 @@ export async function getActiveLoanMap(
 // Mängel
 // ---------------------------------------------------------------------------
 
-export async function listDefects(itemId: number): Promise<InventoryDefect[]> {
-  return db
-    .select()
+export type DefectView = InventoryDefect & { creatorName: string | null };
+
+export async function listDefects(itemId: number): Promise<DefectView[]> {
+  const rows = await db
+    .select({ d: inventoryDefects, creatorName: users.username })
     .from(inventoryDefects)
+    .leftJoin(users, eq(users.id, inventoryDefects.createdBy))
     .where(eq(inventoryDefects.itemId, itemId))
     .orderBy(desc(inventoryDefects.createdAt));
+  return rows.map((r) => ({ ...r.d, creatorName: r.creatorName }));
 }
 
 export async function getDefectById(

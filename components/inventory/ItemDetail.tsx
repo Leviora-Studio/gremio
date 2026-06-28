@@ -6,12 +6,9 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type {
-  InventoryAttachment,
-  InventoryDefect,
-  InventoryLoan,
-} from "@/lib/db/schema";
+import type { InventoryAttachment, InventoryLoan } from "@/lib/db/schema";
 import type { InventoryItemView } from "@/lib/inventory-items";
+import type { DefectView } from "@/lib/inventory-loans";
 import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ItemAttachments } from "./ItemAttachments";
@@ -77,7 +74,7 @@ export function ItemDetail({
   options: GroupedOpts;
   numberingEnabled: boolean;
   loans: InventoryLoan[];
-  defects: InventoryDefect[];
+  defects: DefectView[];
   attachments: Record<InventoryAttachmentKind, InventoryAttachment[]>;
 }) {
   const router = useRouter();
@@ -245,7 +242,7 @@ export function ItemDetail({
             <form action={returnLoanAction} className="mt-2">
               <input type="hidden" name="loanId" value={activeLoan.id} />
               <SubmitButton className="btn-secondary px-3 py-1 text-sm">
-                Zurücknehmen
+                Rückgabe erfolgt
               </SubmitButton>
             </form>
             <LoanContractUpload
@@ -364,13 +361,19 @@ export function ItemDetail({
                     : "border-amber-200 bg-amber-50"
                 }`}
               >
-                <span className={d.resolvedAt ? "line-through" : ""}>
-                  {d.description}
+                <span>
+                  <span className={d.resolvedAt ? "line-through" : ""}>
+                    {d.description}
+                  </span>
                   {d.resolvedAt && (
-                    <span className="ml-1 no-underline">
+                    <span className="ml-1">
                       (behoben am {fmtDateTime(d.resolvedAt)})
                     </span>
                   )}
+                  <span className="ml-1 block text-xs text-slate-400">
+                    gemeldet von {d.creatorName ?? "—"} am{" "}
+                    {fmtDateTime(d.createdAt)}
+                  </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <form action={toggleDefectAction}>
