@@ -12,7 +12,10 @@ import {
   getInventoryBoardById,
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
-import { getLoanById } from "@/lib/inventory-loans";
+import {
+  advanceLoanToContractProvided,
+  getLoanById,
+} from "@/lib/inventory-loans";
 import {
   addInventoryAttachment,
   deleteInventoryAttachment,
@@ -101,6 +104,10 @@ export async function uploadLoanContractAction(
     await addInventoryAttachment(loan.itemId, kind, file, access.userId, loan.id);
   } catch {
     return { error: "Upload fehlgeschlagen. Bitte erneut versuchen." };
+  }
+  // Leihvertrag bereitgestellt → Vorgang einen Schritt weiterstellen.
+  if (kind === "loan_contract") {
+    await advanceLoanToContractProvided(loan.id);
   }
   revalidatePath(`/intern/inventar/item/${loan.itemId}`);
   return { ok: true };

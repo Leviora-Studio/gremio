@@ -65,10 +65,9 @@ function parseCategoryIds(formData: FormData): number[] {
 function readFields(formData: FormData, visible: Set<string>) {
   const out: ItemPatch = {};
   if (visible.has("number")) out.number = parseText(formData.get("number"));
+  if (visible.has("lendable")) out.lendable = formData.get("lendable") === "1";
   if (visible.has("location"))
     out.locationId = parseOptionId(formData.get("locationId"));
-  if (visible.has("loan_status"))
-    out.loanStatusId = parseOptionId(formData.get("loanStatusId"));
   if (visible.has("price")) out.price = parseEuroToCents(formData.get("price"));
   if (visible.has("purchase_date"))
     out.purchaseDate = parseDate(formData.get("purchaseDate"));
@@ -107,8 +106,8 @@ export async function createInventoryItemAction(
   const data: ItemInput = {
     name,
     number: fields.number ?? null,
+    lendable: fields.lendable ?? true,
     locationId: fields.locationId ?? null,
-    loanStatusId: fields.loanStatusId ?? null,
     price: fields.price ?? null,
     purchaseDate: fields.purchaseDate ?? null,
     vendor: fields.vendor ?? null,

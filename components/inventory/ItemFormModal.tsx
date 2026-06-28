@@ -58,9 +58,7 @@ export function ItemFormModal({
   const [locationId, setLocationId] = useState<number | null>(
     item?.locationId ?? null,
   );
-  const [loanStatusId, setLoanStatusId] = useState<number | null>(
-    item?.loanStatusId ?? null,
-  );
+  const [lendable, setLendable] = useState<boolean>(item?.lendable ?? true);
   const [categoryIds, setCategoryIds] = useState<number[]>(
     item?.categoryIds ?? [],
   );
@@ -78,7 +76,6 @@ export function ItemFormModal({
     onOptionAdded(kind, { id: res.id, name: res.name });
     if (kind === "category") setCategoryIds((ids) => [...ids, res.id]);
     if (kind === "location") setLocationId(res.id);
-    if (kind === "loan_status") setLoanStatusId(res.id);
     return null;
   }
 
@@ -172,14 +169,21 @@ export function ItemFormModal({
                 onAdd={(name) => addOption("location", name)}
               />
             )}
-            {show("loan_status") && (
-              <SingleSelect
-                label="Entleihstatus"
-                options={options.loan_status}
-                value={loanStatusId}
-                onChange={setLoanStatusId}
-                onAdd={(name) => addOption("loan_status", name)}
-              />
+            {show("lendable") && (
+              <div>
+                <span className="label">Entleihbar</span>
+                <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={lendable}
+                    onChange={(e) => setLendable(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm text-slate-700">
+                    Gegenstand ist entleihbar (sonst öffentlich nicht sichtbar)
+                  </span>
+                </label>
+              </div>
             )}
           </div>
 
@@ -247,12 +251,8 @@ export function ItemFormModal({
           {show("location") && (
             <input type="hidden" name="locationId" value={locationId ?? ""} />
           )}
-          {show("loan_status") && (
-            <input
-              type="hidden"
-              name="loanStatusId"
-              value={loanStatusId ?? ""}
-            />
+          {show("lendable") && (
+            <input type="hidden" name="lendable" value={lendable ? "1" : "0"} />
           )}
           {show("category") &&
             categoryIds.map((id) => (

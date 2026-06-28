@@ -92,11 +92,59 @@ export async function createLoanRequest(
   throw new Error("Konnte keinen eindeutigen Token erzeugen.");
 }
 
-/** Anfrage annehmen → laufender Vorgang. */
+// Zustände einer noch nicht angenommenen/abgeschlossenen Anfrage.
+export const PENDING_LOAN_STATUSES = [
+  "requested",
+  "contract_provided",
+  "contract_signed",
+] as const;
+
+/** Anfrage annehmen → laufender Vorgang (nur aus einem Pending-Zustand). */
 export async function approveLoan(loanId: number): Promise<void> {
   await db
     .update(inventoryLoans)
     .set({ status: "active" })
+    .where(
+      and(
+        eq(inventoryLoans.id, loanId),
+        inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+      ),
+    );
+}
+
+/** Anfrage ablehnen (jederzeit vor der Annahme möglich). */
+export async function rejectLoan(loanId: number): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ status: "rejected" })
+    .where(
+      and(
+        eq(inventoryLoans.id, loanId),
+        inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+      ),
+    );
+}
+
+/** Anfrage vom Einreicher zurückziehen (öffentlich). */
+export async function withdrawLoan(loanId: number): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ status: "withdrawn" })
+    .where(
+      and(
+        eq(inventoryLoans.id, loanId),
+        inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+      ),
+    );
+}
+
+/** Auto: Vertrag bereitgestellt (intern hochgeladen). */
+export async function advanceLoanToContractProvided(
+  loanId: number,
+): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ status: "contract_provided" })
     .where(
       and(
         eq(inventoryLoans.id, loanId),
@@ -105,15 +153,17 @@ export async function approveLoan(loanId: number): Promise<void> {
     );
 }
 
-/** Anfrage ablehnen. */
-export async function rejectLoan(loanId: number): Promise<void> {
+/** Auto: Vertrag unterschrieben (vom Einreicher hochgeladen). */
+export async function advanceLoanToContractSigned(
+  loanId: number,
+): Promise<void> {
   await db
     .update(inventoryLoans)
-    .set({ status: "rejected" })
+    .set({ status: "contract_signed" })
     .where(
       and(
         eq(inventoryLoans.id, loanId),
-        eq(inventoryLoans.status, "requested"),
+        inArray(inventoryLoans.status, ["requested", "contract_provided"]),
       ),
     );
 }

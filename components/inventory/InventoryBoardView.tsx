@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { InventoryItemView } from "@/lib/inventory-items";
+import { AvailabilityBadge } from "./AvailabilityBadge";
 import {
   ItemFormModal,
   type GroupedOpts,
@@ -19,9 +20,8 @@ const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "number", label: "Inv.-Nr." },
   { key: "category", label: "Kategorie" },
   { key: "location", label: "Standort" },
-  { key: "loan_status", label: "Status" },
   { key: "current_holder", label: "Aktuell bei" },
-  { key: "loan_period", label: "Entliehen bis" },
+  { key: "availability", label: "Verfügbarkeit" },
   { key: "price", label: "Preis" },
   { key: "purchase_date", label: "Kaufdatum" },
   { key: "vendor", label: "Händler" },
@@ -58,7 +58,7 @@ export function InventoryBoardView({
   const [query, setQuery] = useState("");
   const [fCategory, setFCategory] = useState<number | null>(null);
   const [fLocation, setFLocation] = useState<number | null>(null);
-  const [fStatus, setFStatus] = useState<number | null>(null);
+  const [fAvail, setFAvail] = useState<string>("");
 
   const cols = COLUMNS.filter(
     (c) => c.always || visibleFields.includes(c.key),
@@ -73,10 +73,10 @@ export function InventoryBoardView({
       }
       if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;
       if (fLocation != null && it.locationId !== fLocation) return false;
-      if (fStatus != null && it.loanStatusId !== fStatus) return false;
+      if (fAvail && it.availability !== fAvail) return false;
       return true;
     });
-  }, [items, query, fCategory, fLocation, fStatus]);
+  }, [items, query, fCategory, fLocation, fAvail]);
 
   function onSaved() {
     setCreateOpen(false);
@@ -91,8 +91,7 @@ export function InventoryBoardView({
 
   const showCat = visibleFields.includes("category") && options.category.length > 0;
   const showLoc = visibleFields.includes("location") && options.location.length > 0;
-  const showStat =
-    visibleFields.includes("loan_status") && options.loan_status.length > 0;
+  const showAvail = visibleFields.includes("availability");
 
   return (
     <div className="space-y-4">
@@ -120,13 +119,18 @@ export function InventoryBoardView({
             onChange={setFLocation}
           />
         )}
-        {showStat && (
-          <FilterSelect
-            label="Status"
-            options={options.loan_status}
-            value={fStatus}
-            onChange={setFStatus}
-          />
+        {showAvail && (
+          <select
+            className="input h-9 w-auto py-1.5 text-sm"
+            value={fAvail}
+            onChange={(e) => setFAvail(e.target.value)}
+            aria-label="Verfügbarkeit"
+          >
+            <option value="">Verfügbarkeit: alle</option>
+            <option value="available">verfügbar</option>
+            <option value="lent">entliehen</option>
+            <option value="not_lendable">nicht entleihbar</option>
+          </select>
         )}
         <button
           type="button"
@@ -216,13 +220,9 @@ function renderCell(key: string, it: InventoryItemView) {
       );
     case "current_holder":
       return it.activeBorrower ?? "—";
-    case "loan_period":
-      return it.activeUntil ? (
-        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
-          bis {formatDate(it.activeUntil)}
-        </span>
-      ) : (
-        "—"
+    case "availability":
+      return (
+        <AvailabilityBadge availability={it.availability} until={it.activeUntil} />
       );
     case "number":
       return it.number ?? "—";
@@ -243,14 +243,6 @@ function renderCell(key: string, it: InventoryItemView) {
       );
     case "location":
       return it.locationName ?? "—";
-    case "loan_status":
-      return it.loanStatusName ? (
-        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-          {it.loanStatusName}
-        </span>
-      ) : (
-        "—"
-      );
     case "price":
       return formatPrice(it.price);
     case "purchase_date":

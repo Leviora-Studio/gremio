@@ -11,6 +11,7 @@ import type { InventoryItemView } from "@/lib/inventory-items";
 import type { DefectView } from "@/lib/inventory-loans";
 import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
+import { AvailabilityBadge } from "./AvailabilityBadge";
 import { ItemAttachments } from "./ItemAttachments";
 import { LoanContractUpload } from "./LoanContractUpload";
 import {
@@ -30,6 +31,16 @@ import {
 } from "@/app/intern/inventar/item/[itemId]/actions";
 
 type OptionKind = keyof GroupedOpts;
+
+const LOAN_STAGE: Record<string, string> = {
+  requested: "Anfrage eingegangen",
+  contract_provided: "Vertrag bereitgestellt",
+  contract_signed: "Vertrag unterschrieben",
+  active: "läuft",
+  returned: "zurückgegeben",
+  rejected: "abgelehnt",
+  withdrawn: "zurückgezogen",
+};
 
 function fmtDate(s: string | null): string | null {
   if (!s) return null;
@@ -83,7 +94,8 @@ export function ItemDetail({
 
   const show = (k: string) => visibleFields.includes(k);
   const activeLoan = loans.find((l) => l.status === "active");
-  const requests = loans.filter((l) => l.status === "requested");
+  const PENDING = ["requested", "contract_provided", "contract_signed"];
+  const requests = loans.filter((l) => PENDING.includes(l.status));
   const openDefects = defects.filter((d) => !d.resolvedAt);
 
   // Vertrags-/Antragsdateien, die an einen konkreten Vorgang gebunden sind.
@@ -122,8 +134,21 @@ export function ItemDetail({
     });
   if (show("location"))
     stamm.push({ label: "Standort", value: item.locationName || "—" });
-  if (show("loan_status"))
-    stamm.push({ label: "Entleihstatus", value: item.loanStatusName || "—" });
+  if (show("lendable"))
+    stamm.push({
+      label: "Entleihbar",
+      value: item.lendable ? "ja" : "nein",
+    });
+  if (show("availability"))
+    stamm.push({
+      label: "Verfügbarkeit",
+      value: (
+        <AvailabilityBadge
+          availability={item.availability}
+          until={item.activeUntil}
+        />
+      ),
+    });
   if (show("price"))
     stamm.push({ label: "Kaufpreis", value: fmtCents(item.price) });
   if (show("purchase_date"))
@@ -210,13 +235,18 @@ export function ItemDetail({
                   {period(r.startDate, r.endDate)}
                   {r.purpose ? ` · ${r.purpose}` : ""}
                 </p>
+                <p className="mt-1 text-xs font-medium text-blue-700">
+                  {LOAN_STAGE[r.status] ?? r.status}
+                </p>
                 <div className="mt-2 flex gap-2">
-                  <form action={approveLoanAction}>
-                    <input type="hidden" name="loanId" value={r.id} />
-                    <SubmitButton className="btn-primary px-3 py-1 text-sm">
-                      Annehmen
-                    </SubmitButton>
-                  </form>
+                  {r.status === "contract_signed" && (
+                    <form action={approveLoanAction}>
+                      <input type="hidden" name="loanId" value={r.id} />
+                      <SubmitButton className="btn-primary px-3 py-1 text-sm">
+                        Annehmen
+                      </SubmitButton>
+                    </form>
+                  )}
                   <form action={rejectLoanAction}>
                     <input type="hidden" name="loanId" value={r.id} />
                     <SubmitButton className="btn-secondary px-3 py-1 text-sm text-red-600">
@@ -224,6 +254,12 @@ export function ItemDetail({
                     </SubmitButton>
                   </form>
                 </div>
+                {r.status !== "contract_signed" && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Annehmen ist möglich, sobald der unterschriebene Vertrag
+                    vorliegt.
+                  </p>
+                )}
                 <LoanContractUpload loanId={r.id} docs={loanDocs(r.id)} />
               </div>
             ))}
@@ -302,21 +338,24 @@ export function ItemDetail({
                   <span>
                     <strong>{l.borrower}</strong> ·{" "}
                     {period(l.startDate, l.endDate)}
-                    {l.status === "returned" ? (
-                      <span className="ml-1 text-slate-500">
-                        (zurück am {fmtDateTime(l.returnedAt)})
-                      </span>
-                    ) : l.status === "active" ? (
-                      <span className="ml-1 font-medium text-amber-700">
-                        (läuft)
-                      </span>
-                    ) : l.status === "requested" ? (
-                      <span className="ml-1 font-medium text-blue-700">
-                        (Anfrage)
-                      </span>
-                    ) : (
-                      <span className="ml-1 text-slate-400">(abgelehnt)</span>
-                    )}
+                    <span
+                      className={`ml-1 font-medium ${
+                        l.status === "active"
+                          ? "text-amber-700"
+                          : l.status === "returned"
+                            ? "text-slate-500"
+                            : l.status === "rejected" ||
+                                l.status === "withdrawn"
+                              ? "text-slate-400"
+                              : "text-blue-700"
+                      }`}
+                    >
+                      (
+                      {l.status === "returned"
+                        ? `zurück am ${fmtDateTime(l.returnedAt)}`
+                        : (LOAN_STAGE[l.status] ?? l.status)}
+                      )
+                    </span>
                   </span>
                   <form action={deleteLoanAction}>
                     <input type="hidden" name="loanId" value={l.id} />

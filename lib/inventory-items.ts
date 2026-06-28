@@ -137,6 +137,8 @@ async function assignInventoryNumberTx(
 // Gegenstände
 // ---------------------------------------------------------------------------
 
+export type InventoryAvailability = "available" | "lent" | "not_lendable";
+
 export type InventoryItemView = InventoryItem & {
   categoryIds: number[];
   categoryNames: string[];
@@ -146,7 +148,17 @@ export type InventoryItemView = InventoryItem & {
   activeBorrower: string | null;
   activeUntil: string | null;
   openDefects: number;
+  // automatischer Status: nicht entleihbar / verfügbar / entliehen
+  availability: InventoryAvailability;
 };
+
+function availabilityOf(
+  lendable: boolean,
+  activeBorrower: string | null,
+): InventoryAvailability {
+  if (!lendable) return "not_lendable";
+  return activeBorrower != null ? "lent" : "available";
+}
 
 /** Alle Gegenstände eines Boards inkl. aufgelöster Options-Namen. */
 export async function listInventoryItems(
@@ -198,6 +210,7 @@ export async function listInventoryItems(
       activeBorrower: loan?.borrower ?? null,
       activeUntil: loan?.endDate ?? null,
       openDefects: defectCounts.get(it.id) ?? 0,
+      availability: availabilityOf(it.lendable, loan?.borrower ?? null),
     };
   });
 }
@@ -248,14 +261,15 @@ export async function getInventoryItemView(
     activeBorrower: loan?.borrower ?? null,
     activeUntil: loan?.endDate ?? null,
     openDefects: defectMap.get(id) ?? 0,
+    availability: availabilityOf(item.lendable, loan?.borrower ?? null),
   };
 }
 
 export type ItemInput = {
   name: string;
   number: string | null;
+  lendable: boolean;
   locationId: number | null;
-  loanStatusId: number | null;
   price: number | null;
   purchaseDate: string | null;
   vendor: string | null;
@@ -279,8 +293,8 @@ export async function createInventoryItem(
         boardId,
         name: data.name,
         number: data.number,
+        lendable: data.lendable,
         locationId: data.locationId,
-        loanStatusId: data.loanStatusId,
         price: data.price,
         purchaseDate: data.purchaseDate,
         vendor: data.vendor,

@@ -16,9 +16,9 @@ export const INVENTORY_FIELD_KEYS = [
   "number", // Inventarnummer
   "category", // Kategorie (Multiselect)
   "location", // Standort
-  "loan_status", // Entleihstatus (manuelles Select)
-  "current_holder", // „Aktuell bei" (abgeleitet vom laufenden Entleihvorgang)
-  "loan_period", // „Entliehen bis" (abgeleitet vom laufenden Entleihvorgang)
+  "lendable", // „Entleihbar" (ja/nein) — editierbar
+  "current_holder", // „Aktuell bei" (abgeleitet vom laufenden Vorgang)
+  "availability", // „Verfügbarkeit" (verfügbar/entliehen/nicht entleihbar)
   "price", // Kaufpreis
   "purchase_date", // Kaufdatum
   "vendor", // Händler
@@ -31,9 +31,9 @@ export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
   number: "Inventarnummer",
   category: "Kategorie",
   location: "Standort",
-  loan_status: "Entleihstatus",
+  lendable: "Entleihbar",
   current_holder: "Aktuell bei",
-  loan_period: "Entliehen bis",
+  availability: "Verfügbarkeit",
   price: "Kaufpreis (€)",
   purchase_date: "Kaufdatum",
   vendor: "Händler",
@@ -41,10 +41,10 @@ export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
 };
 
 // Abgeleitete (read-only) Felder — werden nicht im Bearbeiten-Formular
-// gerendert, sondern aus dem laufenden Entleihvorgang berechnet.
+// gerendert, sondern automatisch berechnet.
 export const INVENTORY_DERIVED_FIELD_KEYS = [
   "current_holder",
-  "loan_period",
+  "availability",
 ] as const;
 
 /**

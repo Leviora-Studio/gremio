@@ -8,15 +8,16 @@ import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
 import {
   getInventoryOptions,
   listInventoryItems,
+  type InventoryAvailability,
 } from "@/lib/inventory-items";
 
 // Öffentlich zeigbare Felder — bewusste Whitelist. NICHT enthalten: Preis,
-// Händler, Kaufdatum, Belege, „aktuell bei" (Person) und Verträge.
+// Händler, Kaufdatum, Belege, „aktuell bei" (Person) und Verträge. Die
+// Verfügbarkeit (verfügbar / entliehen bis) wird immer angezeigt.
 export const PUBLIC_INVENTORY_FIELD_KEYS = [
   "number",
   "category",
   "location",
-  "loan_status",
 ] as const;
 
 export type PublicInventoryItem = {
@@ -27,9 +28,7 @@ export type PublicInventoryItem = {
   categoryNames: string[];
   locationId: number | null;
   locationName: string | null;
-  loanStatusId: number | null;
-  loanStatusName: string | null;
-  isLent: boolean; // läuft ein aktiver Entleihvorgang?
+  availability: InventoryAvailability; // available | lent (nie not_lendable öffentlich)
   lentUntil: string | null; // nur das Enddatum — KEINE Person
 };
 
@@ -62,7 +61,7 @@ export async function getPublicInventoryBoardById(
 export async function getPublicBoardData(boardId: number): Promise<{
   publicFields: string[];
   items: PublicInventoryItem[];
-  options: { category: PublicOpt[]; location: PublicOpt[]; loan_status: PublicOpt[] };
+  options: { category: PublicOpt[]; location: PublicOpt[] };
 }> {
   const [visible, full, options] = await Promise.all([
     getVisibleInventoryFieldKeys(boardId),
@@ -72,19 +71,20 @@ export async function getPublicBoardData(boardId: number): Promise<{
   const publicFields = PUBLIC_INVENTORY_FIELD_KEYS.filter((k) =>
     visible.has(k),
   );
-  const items: PublicInventoryItem[] = full.map((it) => ({
-    id: it.id,
-    name: it.name,
-    number: it.number,
-    categoryIds: it.categoryIds,
-    categoryNames: it.categoryNames,
-    locationId: it.locationId,
-    locationName: it.locationName,
-    loanStatusId: it.loanStatusId,
-    loanStatusName: it.loanStatusName,
-    isLent: it.activeBorrower != null,
-    lentUntil: it.activeUntil,
-  }));
+  // Nicht-entleihbare Gegenstände sind öffentlich gar nicht sichtbar.
+  const items: PublicInventoryItem[] = full
+    .filter((it) => it.lendable)
+    .map((it) => ({
+      id: it.id,
+      name: it.name,
+      number: it.number,
+      categoryIds: it.categoryIds,
+      categoryNames: it.categoryNames,
+      locationId: it.locationId,
+      locationName: it.locationName,
+      availability: it.availability,
+      lentUntil: it.activeUntil,
+    }));
   const toOpts = (rows: { id: number; name: string }[]) =>
     rows.map((r) => ({ id: r.id, name: r.name }));
   return {
@@ -93,7 +93,6 @@ export async function getPublicBoardData(boardId: number): Promise<{
     options: {
       category: toOpts(options.category),
       location: toOpts(options.location),
-      loan_status: toOpts(options.loan_status),
     },
   };
 }

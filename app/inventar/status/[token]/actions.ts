@@ -7,7 +7,11 @@ import { revalidatePath } from "next/cache";
 import { allowRequest } from "@/lib/rate-limit";
 import { AUSWEIS_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
-import { getLoanByToken } from "@/lib/inventory-loans";
+import {
+  advanceLoanToContractSigned,
+  getLoanByToken,
+  withdrawLoan,
+} from "@/lib/inventory-loans";
 import {
   addInventoryAttachment,
   listLoanAttachments,
@@ -49,6 +53,16 @@ export async function uploadSignedContractAction(
   }
 
   await addInventoryAttachment(loan.itemId, "loan_contract", file, null, loan.id);
+  // Unterschriebener Vertrag hochgeladen → Vorgang weiterstellen.
+  await advanceLoanToContractSigned(loan.id);
   revalidatePath(`/inventar/status/${token}`);
   return { ok: true };
+}
+
+/** Einreicher zieht seine Anfrage zurück (nur solange noch nicht angenommen). */
+export async function withdrawRequestAction(token: string): Promise<void> {
+  const loan = await getLoanByToken(token);
+  if (!loan) return;
+  await withdrawLoan(loan.id);
+  revalidatePath(`/inventar/status/${token}`);
 }

@@ -8,6 +8,7 @@ import type {
   PublicInventoryItem,
   PublicOpt,
 } from "@/lib/inventory-public";
+import { AvailabilityBadge } from "./AvailabilityBadge";
 import {
   createInventoryLoanRequestAction,
   type RequestState,
@@ -18,19 +19,11 @@ const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "number", label: "Inv.-Nr." },
   { key: "category", label: "Kategorie" },
   { key: "location", label: "Standort" },
-  { key: "loan_status", label: "Status" },
 ];
-
-function fmtDate(s: string | null): string {
-  if (!s) return "";
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
-}
 
 type Options = {
   category: PublicOpt[];
   location: PublicOpt[];
-  loan_status: PublicOpt[];
 };
 
 export function PublicInventoryBoard({
@@ -125,15 +118,10 @@ export function PublicInventoryBoard({
                     </td>
                   ))}
                   <td className="px-3 py-2 align-top">
-                    {it.isLent ? (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                        entliehen{it.lentUntil ? ` bis ${fmtDate(it.lentUntil)}` : ""}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
-                        verfügbar
-                      </span>
-                    )}
+                    <AvailabilityBadge
+                      availability={it.availability}
+                      until={it.lentUntil}
+                    />
                   </td>
                   <td className="px-3 py-2 text-right align-top">
                     <button
@@ -194,8 +182,6 @@ function renderCell(key: string, it: PublicInventoryItem) {
       );
     case "location":
       return it.locationName ?? "—";
-    case "loan_status":
-      return it.loanStatusName ?? "—";
     default:
       return "—";
   }

@@ -2,10 +2,14 @@
 // Copyright (C) 2026 Erik Engler
 
 import { notFound } from "next/navigation";
-import { getLoanByToken } from "@/lib/inventory-loans";
+import {
+  getLoanByToken,
+  PENDING_LOAN_STATUSES,
+} from "@/lib/inventory-loans";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import { listLoanAttachments } from "@/lib/inventory-attachments";
 import { PublicContractSection } from "@/components/inventory/PublicContractSection";
+import { withdrawRequestAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Anfrage-Status — Inventar" };
@@ -15,6 +19,16 @@ const STATUS: Record<string, { label: string; cls: string; hint: string }> = {
     label: "Angefragt – wird geprüft",
     cls: "bg-blue-50 text-blue-700",
     hint: "Deine Anfrage liegt zur Prüfung vor. Du wirst über das weitere Vorgehen informiert.",
+  },
+  contract_provided: {
+    label: "Vertrag bereitgestellt",
+    cls: "bg-blue-50 text-blue-700",
+    hint: "Der Leihvertrag steht unten zum Herunterladen bereit. Bitte unterschreibe ihn und lade den Scan wieder hoch.",
+  },
+  contract_signed: {
+    label: "Vertrag unterschrieben – wird geprüft",
+    cls: "bg-blue-50 text-blue-700",
+    hint: "Danke! Dein unterschriebener Vertrag liegt vor und wird geprüft.",
   },
   active: {
     label: "Angenommen – ausgeliehen",
@@ -30,6 +44,11 @@ const STATUS: Record<string, { label: string; cls: string; hint: string }> = {
     label: "Leider abgelehnt",
     cls: "bg-red-50 text-red-700",
     hint: "Deine Anfrage wurde leider abgelehnt.",
+  },
+  withdrawn: {
+    label: "Zurückgezogen",
+    cls: "bg-slate-100 text-slate-600",
+    hint: "Du hast diese Anfrage zurückgezogen.",
   },
 };
 
@@ -62,6 +81,9 @@ export default async function InventoryRequestStatusPage({
     .map((d) => ({ id: d.id, filename: d.filename }));
 
   const s = STATUS[loan.status] ?? STATUS.requested;
+  const pending = (PENDING_LOAN_STATUSES as readonly string[]).includes(
+    loan.status,
+  );
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
 
@@ -118,9 +140,23 @@ export default async function InventoryRequestStatusPage({
             </div>
           )}
         </dl>
+
+        {pending && (
+          <form
+            action={withdrawRequestAction.bind(null, token)}
+            className="border-t border-slate-100 pt-4"
+          >
+            <button
+              type="submit"
+              className="text-sm font-medium text-red-600 hover:underline"
+            >
+              Anfrage zurückziehen
+            </button>
+          </form>
+        )}
       </div>
 
-      {loan.status !== "rejected" && (
+      {pending && (
         <PublicContractSection
           token={token}
           provided={provided}

@@ -782,9 +782,15 @@ export const inventoryItems = pgTable("inventory_items", {
     .references(() => inventoryBoards.id, { onDelete: "cascade" }),
   number: text("number"), // Inventarnummer (board-spezifisch, optional/auto)
   name: text("name").notNull().default(""), // Bezeichnung
+  // Ist der Gegenstand prinzipiell entleihbar? Nicht-entleihbare sind öffentlich
+  // unsichtbar. Der laufende Status (verfügbar/entliehen) ergibt sich automatisch
+  // aus den Entleihvorgängen.
+  lendable: boolean("lendable").notNull().default(true),
   locationId: integer("location_id").references(() => inventoryOptions.id, {
     onDelete: "set null",
   }),
+  // Altes manuelles „Entleihstatus"-Select — wird nicht mehr verwendet (Status
+  // ist jetzt automatisch). Spalte bleibt für Bestandsdaten erhalten.
   loanStatusId: integer("loan_status_id").references(() => inventoryOptions.id, {
     onDelete: "set null",
   }),
@@ -853,7 +859,9 @@ export const inventoryLoans = pgTable(
     itemId: integer("item_id")
       .notNull()
       .references(() => inventoryItems.id, { onDelete: "cascade" }),
-    status: text("status").notNull().default("active"), // requested|active|returned|rejected
+    // requested → contract_provided → contract_signed → active → returned;
+    // rejected/withdrawn sind Endzustände vor der Annahme.
+    status: text("status").notNull().default("active"),
     token: text("token"), // öffentlicher Status-Link bei Anfragen (sonst NULL)
     borrower: text("borrower").notNull(), // Entleiher
     borrowerEmail: text("borrower_email"), // bei öffentlicher Anfrage Pflicht
@@ -870,7 +878,7 @@ export const inventoryLoans = pgTable(
   (t) => ({
     statusCheck: check(
       "inventory_loans_status",
-      sql`${t.status} in ('requested','active','returned','rejected')`,
+      sql`${t.status} in ('requested','contract_provided','contract_signed','active','returned','rejected','withdrawn')`,
     ),
     tokenUq: uniqueIndex("inventory_loans_token_uq").on(t.token),
   }),

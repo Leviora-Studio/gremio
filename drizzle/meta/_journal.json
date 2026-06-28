@@ -288,6 +288,20 @@
       "when": 1782661027736,
       "tag": "0040_worthless_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782665956767,
+      "tag": "0041_dry_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782665991495,
+      "tag": "0042_mighty_silver_surfer",
+      "breakpoints": true
     }
   ]
 }
