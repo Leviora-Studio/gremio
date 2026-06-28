@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { InventoryItemView } from "@/lib/inventory-items";
+import { Select } from "@/components/Select";
 import { AvailabilityBadge } from "./AvailabilityBadge";
 import {
   ItemFormModal,
@@ -120,17 +121,18 @@ export function InventoryBoardView({
           />
         )}
         {showAvail && (
-          <select
-            className="input h-9 w-auto py-1.5 text-sm"
+          <Select
+            className="w-auto"
+            placeholder="Verfügbarkeit: alle"
             value={fAvail}
-            onChange={(e) => setFAvail(e.target.value)}
-            aria-label="Verfügbarkeit"
-          >
-            <option value="">Verfügbarkeit: alle</option>
-            <option value="available">verfügbar</option>
-            <option value="lent">entliehen</option>
-            <option value="not_lendable">nicht entleihbar</option>
-          </select>
+            onChange={setFAvail}
+            options={[
+              { value: "", label: "Verfügbarkeit: alle" },
+              { value: "available", label: "verfügbar" },
+              { value: "lent", label: "entliehen" },
+              { value: "not_lendable", label: "nicht entleihbar" },
+            ]}
+          />
         )}
         <button
           type="button"
@@ -266,18 +268,16 @@ function FilterSelect({
   onChange: (v: number | null) => void;
 }) {
   return (
-    <select
-      className="input h-9 w-auto py-1.5 text-sm"
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      aria-label={label}
-    >
-      <option value="">{label}: alle</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </select>
+    <Select
+      className="w-auto"
+      placeholder={`${label}: alle`}
+      searchable={options.length > 8}
+      value={value == null ? "" : String(value)}
+      onChange={(v) => onChange(v ? Number(v) : null)}
+      options={[
+        { value: "", label: `${label}: alle` },
+        ...options.map((o) => ({ value: String(o.id), label: o.name })),
+      ]}
+    />
   );
 }

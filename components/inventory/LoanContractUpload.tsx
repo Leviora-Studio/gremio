@@ -4,6 +4,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
@@ -68,14 +69,15 @@ export function LoanContractUpload({
       )}
       <form ref={formRef} action={action} className="flex items-center gap-2">
         <input type="hidden" name="loanId" value={loanId} />
-        <select
+        <Select
           name="kind"
           defaultValue="loan_contract"
-          className="input h-8 w-auto py-1 text-sm"
-        >
-          <option value="loan_contract">Leihvertrag</option>
-          <option value="loan_request">Leihantrag</option>
-        </select>
+          className="w-auto"
+          options={[
+            { value: "loan_contract", label: "Leihvertrag" },
+            { value: "loan_request", label: "Leihantrag" },
+          ]}
+        />
         <input
           type="file"
           name="file"

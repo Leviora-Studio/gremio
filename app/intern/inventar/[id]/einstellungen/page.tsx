@@ -16,6 +16,7 @@ import { getInventoryNumbering } from "@/lib/inventory-items";
 import { Avatar } from "@/components/Avatar";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { DeleteInventoryBoardButton } from "@/components/inventory/DeleteInventoryBoardButton";
 import {
   addInventoryAccessGroupAction,
@@ -66,7 +67,7 @@ export default async function InventoryBoardSettingsPage({
   );
 
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-4 py-2">
       <div>
         <Link
           href={`/intern/inventar/${board.id}`}
@@ -78,47 +79,45 @@ export default async function InventoryBoardSettingsPage({
       </div>
 
       {/* Allgemein */}
-      <form action={renameInventoryBoardAction} className="card space-y-4 p-6">
-        <h2 className="font-semibold">Allgemein</h2>
-        <input type="hidden" name="boardId" value={board.id} />
-        <div>
-          <label htmlFor="b-name" className="label">
-            Name
-          </label>
-          <input
-            id="b-name"
-            name="name"
-            className="input"
-            required
-            defaultValue={board.name}
-          />
-        </div>
-        <div>
-          <label htmlFor="b-desc" className="label">
-            Beschreibung
-          </label>
-          <textarea
-            id="b-desc"
-            name="description"
-            className="input"
-            rows={2}
-            defaultValue={board.description ?? ""}
-          />
-        </div>
-        <button type="submit" className="btn-primary">
-          Speichern
-        </button>
-      </form>
+      <CollapsibleSection title="Allgemein" defaultOpen>
+        <form action={renameInventoryBoardAction} className="space-y-4">
+          <input type="hidden" name="boardId" value={board.id} />
+          <div>
+            <label htmlFor="b-name" className="label">
+              Name
+            </label>
+            <input
+              id="b-name"
+              name="name"
+              className="input"
+              required
+              defaultValue={board.name}
+            />
+          </div>
+          <div>
+            <label htmlFor="b-desc" className="label">
+              Beschreibung
+            </label>
+            <textarea
+              id="b-desc"
+              name="description"
+              className="input"
+              rows={2}
+              defaultValue={board.description ?? ""}
+            />
+          </div>
+          <button type="submit" className="btn-primary">
+            Speichern
+          </button>
+        </form>
+      </CollapsibleSection>
 
       {/* Freigaben */}
-      <div className="card space-y-4 p-6">
-        <div>
-          <h2 className="font-semibold">Freigaben</h2>
-          <p className="text-sm text-slate-500">
-            Lege fest, welche Nutzer und Gruppen dieses Inventar sehen und
-            bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
-          </p>
-        </div>
+      <CollapsibleSection title="Freigaben">
+        <p className="mb-3 text-sm text-slate-500">
+          Lege fest, welche Nutzer und Gruppen dieses Inventar sehen und
+          bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form
             action={addInventoryAccessUserAction.bind(null, board.id)}
@@ -161,7 +160,7 @@ export default async function InventoryBoardSettingsPage({
           </form>
         </div>
 
-        <div className="space-y-2">
+        <div className="mt-4 space-y-2">
           {access.length === 0 && (
             <p className="text-sm text-slate-500">
               Noch keine Freigaben (nur Eigentümer & Admins haben Zugriff).
@@ -196,19 +195,17 @@ export default async function InventoryBoardSettingsPage({
             </div>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* Felder */}
-      <form action={updateInventoryFieldsAction} className="card space-y-4 p-6">
-        <div>
-          <h2 className="font-semibold">Felder</h2>
+      <CollapsibleSection title="Felder">
+        <form action={updateInventoryFieldsAction} className="space-y-4">
           <p className="text-sm text-slate-500">
             Welche Felder bei den Gegenständen erscheinen. Die Bezeichnung ist
             immer sichtbar.
           </p>
-        </div>
-        <input type="hidden" name="boardId" value={board.id} />
-        <div className="grid gap-2 sm:grid-cols-2">
+          <input type="hidden" name="boardId" value={board.id} />
+          <div className="grid gap-2 sm:grid-cols-2">
           {INVENTORY_FIELD_KEYS.map((key) => (
             <label
               key={key}
@@ -227,26 +224,22 @@ export default async function InventoryBoardSettingsPage({
             </label>
           ))}
         </div>
-        <button type="submit" className="btn-primary">
-          Felder speichern
-        </button>
-      </form>
+          <button type="submit" className="btn-primary">
+            Felder speichern
+          </button>
+        </form>
+      </CollapsibleSection>
 
       {/* Inventarnummer */}
-      <form
-        action={updateInventoryNumberingAction}
-        className="card space-y-4 p-6"
-      >
-        <div>
-          <h2 className="font-semibold">Inventarnummer</h2>
+      <CollapsibleSection title="Automatische Inventarnummer">
+        <form action={updateInventoryNumberingAction} className="space-y-4">
           <p className="text-sm text-slate-500">
             Automatisch vergebene Nummer beim Anlegen eines Gegenstands. Format:
             Präfix + Zähler, dann Jahr und Kürzel (leere Teile werden
             übersprungen).
           </p>
-        </div>
-        <input type="hidden" name="boardId" value={board.id} />
-        <label className="flex items-center gap-2">
+          <input type="hidden" name="boardId" value={board.id} />
+          <label className="flex items-center gap-2">
           <input
             type="checkbox"
             name="enabled"
@@ -294,19 +287,21 @@ export default async function InventoryBoardSettingsPage({
             defaultValue={String(numbering?.next ?? 1)}
           />
         </div>
-        <button type="submit" className="btn-primary">
-          Nummerierung speichern
-        </button>
-      </form>
+          <button type="submit" className="btn-primary">
+            Nummerierung speichern
+          </button>
+        </form>
+      </CollapsibleSection>
 
       {/* Löschen */}
-      <div className="card space-y-3 border-red-200 p-6">
-        <h2 className="font-semibold text-red-700">Gefahrenzone</h2>
+      <CollapsibleSection title="Gefahrenzone">
         <p className="text-sm text-slate-500">
           Löscht das Inventar mit allen Gegenständen, Optionen und Einstellungen.
         </p>
-        <DeleteInventoryBoardButton boardId={board.id} />
-      </div>
+        <div className="mt-3">
+          <DeleteInventoryBoardButton boardId={board.id} />
+        </div>
+      </CollapsibleSection>
     </div>
   );
 }

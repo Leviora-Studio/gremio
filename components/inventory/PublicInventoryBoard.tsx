@@ -8,6 +8,7 @@ import type {
   PublicInventoryItem,
   PublicOpt,
 } from "@/lib/inventory-public";
+import { Select } from "@/components/Select";
 import { AvailabilityBadge } from "./AvailabilityBadge";
 import {
   createInventoryLoanRequestAction,
@@ -199,19 +200,17 @@ function FilterSelect({
   onChange: (v: number | null) => void;
 }) {
   return (
-    <select
-      className="input h-9 w-auto py-1.5 text-sm"
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      aria-label={label}
-    >
-      <option value="">{label}: alle</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.name}
-        </option>
-      ))}
-    </select>
+    <Select
+      className="w-auto"
+      placeholder={`${label}: alle`}
+      searchable={options.length > 8}
+      value={value == null ? "" : String(value)}
+      onChange={(v) => onChange(v ? Number(v) : null)}
+      options={[
+        { value: "", label: `${label}: alle` },
+        ...options.map((o) => ({ value: String(o.id), label: o.name })),
+      ]}
+    />
   );
 }
 

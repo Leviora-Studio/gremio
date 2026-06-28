@@ -4,6 +4,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { Select } from "@/components/Select";
 import {
   addInventoryOptionAction,
   createInventoryItemAction,
@@ -333,20 +334,16 @@ function SingleSelect({
   return (
     <div>
       <label className="label">{label}</label>
-      <select
-        className="input"
-        value={value ?? ""}
-        onChange={(e) =>
-          onChange(e.target.value ? Number(e.target.value) : null)
-        }
-      >
-        <option value="">— keine —</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
+      <Select
+        placeholder="— keine —"
+        searchable={options.length > 8}
+        value={value == null ? "" : String(value)}
+        onChange={(v) => onChange(v ? Number(v) : null)}
+        options={[
+          { value: "", label: "— keine —" },
+          ...options.map((o) => ({ value: String(o.id), label: o.name })),
+        ]}
+      />
       <AddOption placeholder={`Neuer ${label} …`} onAdd={onAdd} />
     </div>
   );
