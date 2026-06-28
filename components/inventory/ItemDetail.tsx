@@ -9,38 +9,29 @@ import { useRouter } from "next/navigation";
 import type { InventoryAttachment, InventoryLoan } from "@/lib/db/schema";
 import type { InventoryItemView } from "@/lib/inventory-items";
 import type { DefectView } from "@/lib/inventory-loans";
+import {
+  LOAN_STAGE_LABEL,
+  loanStageClass,
+} from "@/lib/inventory-loan-stage";
 import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
 import { AvailabilityBadge } from "./AvailabilityBadge";
 import { ItemAttachments } from "./ItemAttachments";
-import { LoanContractUpload } from "./LoanContractUpload";
 import {
   ItemFormModal,
   type GroupedOpts,
   type Opt,
 } from "./ItemFormModal";
 import {
-  approveLoanAction,
   createDefectAction,
   createLoanAction,
   deleteDefectAction,
-  deleteLoanAction,
-  rejectLoanAction,
-  returnLoanAction,
   toggleDefectAction,
 } from "@/app/intern/inventar/item/[itemId]/actions";
 
 type OptionKind = keyof GroupedOpts;
 
-const LOAN_STAGE: Record<string, string> = {
-  requested: "Anfrage eingegangen",
-  contract_provided: "Vertrag bereitgestellt",
-  contract_signed: "Vertrag unterschrieben",
-  active: "läuft",
-  returned: "zurückgegeben",
-  rejected: "abgelehnt",
-  withdrawn: "zurückgezogen",
-};
+const LOAN_STAGE = LOAN_STAGE_LABEL;
 
 function fmtDate(s: string | null): string | null {
   if (!s) return null;
@@ -93,16 +84,9 @@ export function ItemDetail({
   const [editing, setEditing] = useState(false);
 
   const show = (k: string) => visibleFields.includes(k);
-  const activeLoan = loans.find((l) => l.status === "active");
   const PENDING = ["requested", "contract_provided", "contract_signed"];
   const requests = loans.filter((l) => PENDING.includes(l.status));
   const openDefects = defects.filter((d) => !d.resolvedAt);
-
-  // Vertrags-/Antragsdateien, die an einen konkreten Vorgang gebunden sind.
-  const loanDocs = (loanId: number) =>
-    [...attachments.loan_contract, ...attachments.loan_request].filter(
-      (a) => a.loanId === loanId,
-    );
 
   function onOptionAdded(kind: OptionKind, opt: Opt) {
     setOptions((prev) => ({
@@ -213,91 +197,54 @@ export function ItemDetail({
         </div>
       )}
 
-      {/* Entleihe */}
+      {/* Entleih-Vorgänge — jede Anfrage/Entleihe ist ein aufklickbarer Vorgang */}
       <section className="card p-5">
-        <h2 className="mb-3 font-semibold">Entleihe</h2>
+        <h2 className="mb-3 font-semibold">Entleih-Vorgänge</h2>
 
         {requests.length > 0 && (
-          <div className="mb-4 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-blue-700">
-              Offene Anfragen ({requests.length})
-            </p>
-            {requests.map((r) => (
-              <div
-                key={r.id}
-                className="rounded-lg border border-blue-200 bg-blue-50 p-3"
-              >
-                <p className="text-sm">
-                  <strong>{r.borrower}</strong>
-                  {r.borrowerEmail ? ` · ${r.borrowerEmail}` : ""}
-                </p>
-                <p className="text-sm text-slate-600">
-                  {period(r.startDate, r.endDate)}
-                  {r.purpose ? ` · ${r.purpose}` : ""}
-                </p>
-                <p className="mt-1 text-xs font-medium text-blue-700">
-                  {LOAN_STAGE[r.status] ?? r.status}
-                </p>
-                <div className="mt-2 flex gap-2">
-                  {r.status === "contract_signed" && (
-                    <form action={approveLoanAction}>
-                      <input type="hidden" name="loanId" value={r.id} />
-                      <SubmitButton className="btn-primary px-3 py-1 text-sm">
-                        Annehmen
-                      </SubmitButton>
-                    </form>
-                  )}
-                  <form action={rejectLoanAction}>
-                    <input type="hidden" name="loanId" value={r.id} />
-                    <SubmitButton className="btn-secondary px-3 py-1 text-sm text-red-600">
-                      Ablehnen
-                    </SubmitButton>
-                  </form>
-                </div>
-                {r.status !== "contract_signed" && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Annehmen ist möglich, sobald der unterschriebene Vertrag
-                    vorliegt.
-                  </p>
-                )}
-                <LoanContractUpload loanId={r.id} docs={loanDocs(r.id)} />
-              </div>
-            ))}
-          </div>
+          <p className="mb-3 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            {requests.length} offene{" "}
+            {requests.length === 1 ? "Anfrage" : "Anfragen"} — zum Bearbeiten den
+            Vorgang öffnen.
+          </p>
         )}
 
-        {activeLoan ? (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm">
-              Aktuell bei <strong>{activeLoan.borrower}</strong>
-            </p>
-            <p className="text-sm text-slate-600">
-              Zeitraum: {period(activeLoan.startDate, activeLoan.endDate)}
-              {activeLoan.purpose ? ` · ${activeLoan.purpose}` : ""}
-            </p>
-            <form action={returnLoanAction} className="mt-2">
-              <input type="hidden" name="loanId" value={activeLoan.id} />
-              <SubmitButton className="btn-secondary px-3 py-1 text-sm">
-                Rückgabe erfolgt
-              </SubmitButton>
-            </form>
-            <LoanContractUpload
-              loanId={activeLoan.id}
-              docs={loanDocs(activeLoan.id)}
-            />
-          </div>
+        {loans.length > 0 ? (
+          <ul className="space-y-1.5">
+            {loans.map((l) => (
+              <li key={l.id}>
+                <Link
+                  href={`/intern/inventar/loan/${l.id}`}
+                  className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition hover:bg-slate-50 ${
+                    PENDING.includes(l.status)
+                      ? "border-blue-200 bg-blue-50/40"
+                      : "border-slate-100"
+                  }`}
+                >
+                  <span>
+                    <strong>{l.borrower}</strong> · {period(l.startDate, l.endDate)}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
+                  >
+                    {l.status === "returned"
+                      ? `zurück am ${fmtDateTime(l.returnedAt)}`
+                      : LOAN_STAGE[l.status]}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <p className="mb-4 text-sm text-slate-500">
-            Aktuell nicht entliehen.
-          </p>
+          <p className="text-sm text-slate-500">Noch keine Vorgänge.</p>
         )}
 
         <form
           action={createLoanAction}
-          className="space-y-3 rounded-lg border border-slate-200 p-3"
+          className="mt-4 space-y-3 rounded-lg border border-slate-200 p-3"
         >
           <input type="hidden" name="itemId" value={item.id} />
-          <p className="text-sm font-medium">Neuer Entleihvorgang</p>
+          <p className="text-sm font-medium">Manueller Entleihvorgang</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="label">Entleiher</label>
@@ -323,51 +270,6 @@ export function ItemDetail({
           </div>
           <SubmitButton className="btn-primary">Entleihen</SubmitButton>
         </form>
-
-        {loans.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">
-              Historie
-            </p>
-            <ul className="space-y-1.5">
-              {loans.map((l) => (
-                <li
-                  key={l.id}
-                  className="flex items-center justify-between gap-2 rounded border border-slate-100 px-3 py-2 text-sm"
-                >
-                  <span>
-                    <strong>{l.borrower}</strong> ·{" "}
-                    {period(l.startDate, l.endDate)}
-                    <span
-                      className={`ml-1 font-medium ${
-                        l.status === "active"
-                          ? "text-amber-700"
-                          : l.status === "returned"
-                            ? "text-slate-500"
-                            : l.status === "rejected" ||
-                                l.status === "withdrawn"
-                              ? "text-slate-400"
-                              : "text-blue-700"
-                      }`}
-                    >
-                      (
-                      {l.status === "returned"
-                        ? `zurück am ${fmtDateTime(l.returnedAt)}`
-                        : (LOAN_STAGE[l.status] ?? l.status)}
-                      )
-                    </span>
-                  </span>
-                  <form action={deleteLoanAction}>
-                    <input type="hidden" name="loanId" value={l.id} />
-                    <SubmitButton className="text-xs text-slate-400 hover:text-red-600">
-                      löschen
-                    </SubmitButton>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </section>
 
       {/* Mängel */}

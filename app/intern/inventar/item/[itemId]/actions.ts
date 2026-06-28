@@ -4,6 +4,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import {
   canAccessInventoryBoard,
@@ -86,6 +87,7 @@ export async function deleteLoanAction(fd: FormData): Promise<void> {
   const { item } = await assertItemAccess(loan.itemId);
   await deleteLoan(loan.id);
   revItem(item);
+  redirect(`/intern/inventar/item/${item.id}`);
 }
 
 export async function approveLoanAction(fd: FormData): Promise<void> {

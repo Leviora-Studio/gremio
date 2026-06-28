@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   inventoryDefects,
+  inventoryItems,
   inventoryLoans,
   users,
   type InventoryDefect,
@@ -166,6 +167,26 @@ export async function advanceLoanToContractSigned(
         inArray(inventoryLoans.status, ["requested", "contract_provided"]),
       ),
     );
+}
+
+export type LoanWithItem = InventoryLoan & { itemName: string };
+
+/** Alle offenen Anfragen (Pending) eines Boards — für die zentrale Übersicht. */
+export async function listBoardPendingLoans(
+  boardId: number,
+): Promise<LoanWithItem[]> {
+  const rows = await db
+    .select({ l: inventoryLoans, itemName: inventoryItems.name })
+    .from(inventoryLoans)
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
+    .where(
+      and(
+        eq(inventoryItems.boardId, boardId),
+        inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+      ),
+    )
+    .orderBy(desc(inventoryLoans.createdAt));
+  return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
 }
 
 export async function getLoanByToken(

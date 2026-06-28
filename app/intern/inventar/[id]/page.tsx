@@ -12,6 +12,11 @@ import {
   getInventoryOptions,
   listInventoryItems,
 } from "@/lib/inventory-items";
+import { listBoardPendingLoans } from "@/lib/inventory-loans";
+import {
+  loanStageClass,
+  loanStageLabel,
+} from "@/lib/inventory-loan-stage";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
@@ -24,11 +29,12 @@ export default async function InventoryBoardPage({
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const manage = canManageInventoryBoard(user, board);
 
-  const [visible, options, numbering, items] = await Promise.all([
+  const [visible, options, numbering, items, pending] = await Promise.all([
     getVisibleInventoryFieldKeys(board.id),
     getInventoryOptions(board.id),
     getInventoryNumbering(board.id),
     listInventoryItems(board.id),
+    listBoardPendingLoans(board.id),
   ]);
 
   const toOpts = (rows: { id: number; name: string }[]) =>
@@ -56,6 +62,34 @@ export default async function InventoryBoardPage({
           </Link>
         )}
       </div>
+
+      {pending.length > 0 && (
+        <div className="card border-blue-200 bg-blue-50/40 p-4">
+          <h2 className="mb-2 text-sm font-semibold text-blue-800">
+            Offene Anfragen ({pending.length})
+          </h2>
+          <ul className="space-y-1.5">
+            {pending.map((l) => (
+              <li key={l.id}>
+                <Link
+                  href={`/intern/inventar/loan/${l.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm transition hover:bg-blue-50"
+                >
+                  <span>
+                    <strong>{l.itemName}</strong> · {l.borrower}
+                    {l.borrowerEmail ? ` · ${l.borrowerEmail}` : ""}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
+                  >
+                    {loanStageLabel(l.status)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <InventoryBoardView
         boardId={board.id}
