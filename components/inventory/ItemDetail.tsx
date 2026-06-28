@@ -15,6 +15,7 @@ import type { InventoryItemView } from "@/lib/inventory-items";
 import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ItemAttachments } from "./ItemAttachments";
+import { LoanContractUpload } from "./LoanContractUpload";
 import {
   ItemFormModal,
   type GroupedOpts,
@@ -87,6 +88,12 @@ export function ItemDetail({
   const activeLoan = loans.find((l) => l.status === "active");
   const requests = loans.filter((l) => l.status === "requested");
   const openDefects = defects.filter((d) => !d.resolvedAt);
+
+  // Vertrags-/Antragsdateien, die an einen konkreten Vorgang gebunden sind.
+  const loanDocs = (loanId: number) =>
+    [...attachments.loan_contract, ...attachments.loan_request].filter(
+      (a) => a.loanId === loanId,
+    );
 
   function onOptionAdded(kind: OptionKind, opt: Opt) {
     setOptions((prev) => ({
@@ -220,6 +227,7 @@ export function ItemDetail({
                     </SubmitButton>
                   </form>
                 </div>
+                <LoanContractUpload loanId={r.id} docs={loanDocs(r.id)} />
               </div>
             ))}
           </div>
@@ -240,6 +248,10 @@ export function ItemDetail({
                 Zurücknehmen
               </SubmitButton>
             </form>
+            <LoanContractUpload
+              loanId={activeLoan.id}
+              docs={loanDocs(activeLoan.id)}
+            />
           </div>
         ) : (
           <p className="mb-4 text-sm text-slate-500">

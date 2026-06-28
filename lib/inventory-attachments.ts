@@ -44,6 +44,18 @@ export async function listInventoryAttachments(
   return grouped;
 }
 
+/** Dateien, die an einen konkreten Entleihvorgang/Anfrage gebunden sind. */
+export async function listLoanAttachments(
+  loanId: number,
+): Promise<InventoryAttachment[]> {
+  if (!Number.isInteger(loanId)) return [];
+  return db
+    .select()
+    .from(inventoryAttachments)
+    .where(eq(inventoryAttachments.loanId, loanId))
+    .orderBy(desc(inventoryAttachments.uploadedAt));
+}
+
 export async function getInventoryAttachmentById(
   id: number,
 ): Promise<InventoryAttachment | undefined> {

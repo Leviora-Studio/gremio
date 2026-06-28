@@ -12,6 +12,7 @@ import {
   getInventoryBoardById,
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
+import { getLoanById } from "@/lib/inventory-loans";
 import {
   addInventoryAttachment,
   deleteInventoryAttachment,
@@ -66,6 +67,42 @@ export async function uploadInventoryAttachmentAction(
     return { error: "Upload fehlgeschlagen. Bitte erneut versuchen." };
   }
   revalidatePath(`/intern/inventar/item/${itemId}`);
+  return { ok: true };
+}
+
+/**
+ * Leihvertrag (oder Leihantrag) für einen konkreten Entleihvorgang bereitstellen.
+ * Wird über die Statusseite vom Entleiher heruntergeladen + unterschrieben.
+ */
+export async function uploadLoanContractAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  const loan = await getLoanById(Number(formData.get("loanId")));
+  if (!loan) return { error: "Vorgang nicht gefunden." };
+  const kind = String(formData.get("kind")) as InventoryAttachmentKind;
+  if (kind !== "loan_contract" && kind !== "loan_request") {
+    return { error: "Ungültige Dateiart." };
+  }
+
+  let access;
+  try {
+    access = await assertItemAccess(loan.itemId);
+  } catch {
+    return { error: "Kein Zugriff." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { error: "Keine Datei ausgewählt." };
+  const err = validateUpload(file, PDF_MIME);
+  if (err) return { error: err };
+
+  try {
+    await addInventoryAttachment(loan.itemId, kind, file, access.userId, loan.id);
+  } catch {
+    return { error: "Upload fehlgeschlagen. Bitte erneut versuchen." };
+  }
+  revalidatePath(`/intern/inventar/item/${loan.itemId}`);
   return { ok: true };
 }
 

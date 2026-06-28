@@ -4,6 +4,8 @@
 import { notFound } from "next/navigation";
 import { getLoanByToken } from "@/lib/inventory-loans";
 import { getInventoryItemById } from "@/lib/inventory-items";
+import { listLoanAttachments } from "@/lib/inventory-attachments";
+import { PublicContractSection } from "@/components/inventory/PublicContractSection";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Anfrage-Status — Inventar" };
@@ -46,6 +48,18 @@ export default async function InventoryRequestStatusPage({
   const loan = await getLoanByToken(token);
   if (!loan) notFound();
   const item = await getInventoryItemById(loan.itemId);
+
+  const loanDocs = await listLoanAttachments(loan.id);
+  const provided = loanDocs
+    .filter(
+      (d) =>
+        d.uploadedBy != null &&
+        (d.kind === "loan_contract" || d.kind === "loan_request"),
+    )
+    .map((d) => ({ id: d.id, filename: d.filename, kind: d.kind }));
+  const signed = loanDocs
+    .filter((d) => d.uploadedBy == null && d.kind === "loan_contract")
+    .map((d) => ({ id: d.id, filename: d.filename }));
 
   const s = STATUS[loan.status] ?? STATUS.requested;
   const from = fmtDate(loan.startDate);
@@ -105,6 +119,14 @@ export default async function InventoryRequestStatusPage({
           )}
         </dl>
       </div>
+
+      {loan.status !== "rejected" && (
+        <PublicContractSection
+          token={token}
+          provided={provided}
+          signed={signed}
+        />
+      )}
     </main>
   );
 }
