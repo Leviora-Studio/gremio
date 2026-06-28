@@ -21,12 +21,15 @@ import {
   loanStageLabel,
 } from "@/lib/inventory-loan-stage";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
+  const [datePart, timePart] = s.split("T");
+  const [y, m, d] = datePart.split("-");
+  const date = d ? `${d}.${m}.${y}` : datePart;
+  return timePart ? `${date}, ${timePart} Uhr` : date;
 }
 
 export default async function InventoryBoardPage({
@@ -75,16 +78,17 @@ export default async function InventoryBoardPage({
       </div>
 
       {pending.length > 0 && (
-        <div className="card border-blue-200 bg-blue-50/40 p-4">
-          <h2 className="mb-2 text-sm font-semibold text-blue-800">
-            Offene Anfragen ({pending.length})
-          </h2>
+        <CollapsibleSection
+          title={`Offene Anfragen (${pending.length})`}
+          className="border-blue-200"
+          defaultOpen
+        >
           <ul className="space-y-1.5">
             {pending.map((l) => (
               <li key={l.id}>
                 <Link
                   href={`/intern/inventar/loan/${l.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm transition hover:bg-blue-50"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/40 px-3 py-2 text-sm transition hover:bg-blue-50"
                 >
                   <span>
                     <strong>{l.itemName}</strong> · {l.borrower}
@@ -99,20 +103,21 @@ export default async function InventoryBoardPage({
               </li>
             ))}
           </ul>
-        </div>
+        </CollapsibleSection>
       )}
 
       {activeLoans.length > 0 && (
-        <div className="card border-amber-200 bg-amber-50/40 p-4">
-          <h2 className="mb-2 text-sm font-semibold text-amber-800">
-            Laufende Ausleihe ({activeLoans.length})
-          </h2>
+        <CollapsibleSection
+          title={`Laufende Ausleihe (${activeLoans.length})`}
+          className="border-amber-200"
+          defaultOpen
+        >
           <ul className="space-y-1.5">
             {activeLoans.map((l) => (
               <li key={l.id}>
                 <Link
                   href={`/intern/inventar/loan/${l.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm transition hover:bg-amber-50"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm transition hover:bg-amber-50"
                 >
                   <span>
                     <strong>{l.itemName}</strong> · {l.borrower}
@@ -125,7 +130,7 @@ export default async function InventoryBoardPage({
               </li>
             ))}
           </ul>
-        </div>
+        </CollapsibleSection>
       )}
 
       <InventoryBoardView

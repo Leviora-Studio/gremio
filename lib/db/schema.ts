@@ -929,6 +929,21 @@ export const inventoryAttachments = pgTable(
   }),
 );
 
+// Persönliche Reihenfolge der Inventar-Boards je Nutzer (wie user_board_order).
+export const userInventoryBoardOrder = pgTable(
+  "user_inventory_board_order",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.userId, t.boardId] }) }),
+);
+
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------

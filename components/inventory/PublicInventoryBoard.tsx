@@ -277,27 +277,27 @@ function RequestModal({
               defaultValue={state.values?.email ?? ""}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="rq-start" className="label">
-                Von
+                Von (Datum + Uhrzeit)
               </label>
               <input
                 id="rq-start"
                 name="startDate"
-                type="date"
+                type="datetime-local"
                 className="input"
                 defaultValue={state.values?.startDate ?? ""}
               />
             </div>
             <div>
               <label htmlFor="rq-end" className="label">
-                Bis
+                Bis (Datum + Uhrzeit)
               </label>
               <input
                 id="rq-end"
                 name="endDate"
-                type="date"
+                type="datetime-local"
                 className="input"
                 defaultValue={state.values?.endDate ?? ""}
               />

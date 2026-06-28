@@ -19,7 +19,8 @@ export type RequestValues = {
 };
 export type RequestState = { error?: string; values?: RequestValues };
 
-const isDate = (s: string) => s === "" || /^\d{4}-\d{2}-\d{2}$/.test(s);
+// Datum + Uhrzeit (datetime-local) — Pflicht.
+const isDateTime = (s: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s);
 
 /** Öffentliche Entleih-Anfrage zu einem Gegenstand. Leitet zur Statusseite weiter. */
 export async function createInventoryLoanRequestAction(
@@ -41,14 +42,15 @@ export async function createInventoryLoanRequestAction(
     };
   }
 
-  // Alle fehlenden/ungültigen Felder sammeln (Eingaben bleiben erhalten).
+  // Alle Felder sind Pflicht — fehlende/ungültige sammeln (Eingaben bleiben).
   const missing: string[] = [];
   if (!values.borrower) missing.push("Name");
   if (!values.email) missing.push("E-Mail");
   else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.email))
     missing.push("gültige E-Mail-Adresse");
-  if (!isDate(values.startDate) || !isDate(values.endDate))
-    missing.push("gültiges Datum");
+  if (!values.purpose) missing.push("Verwendungsort / Zweck");
+  if (!isDateTime(values.startDate)) missing.push("Von (Datum + Uhrzeit)");
+  if (!isDateTime(values.endDate)) missing.push("Bis (Datum + Uhrzeit)");
   if (missing.length) {
     return { error: `Bitte ergänze: ${missing.join(", ")}.`, values };
   }

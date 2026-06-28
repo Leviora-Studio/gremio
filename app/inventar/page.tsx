@@ -24,12 +24,12 @@ export default async function PublicInventoryHome() {
           Aktuell ist kein Inventar öffentlich verfügbar.
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-3">
           {boards.map((b) => (
             <Link
               key={b.id}
               href={`/inventar/${b.id}`}
-              className="card flex flex-col gap-1 p-4 transition hover:border-brand-300"
+              className="card flex w-full flex-col gap-1 p-4 transition hover:border-brand-300"
             >
               <span className="font-semibold text-slate-800">{b.name}</span>
               {b.description && (

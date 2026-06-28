@@ -4,9 +4,15 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { db } from "@/lib/db";
+import { userInventoryBoardOrder } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { createInventoryBoard } from "@/lib/inventory";
+import {
+  createInventoryBoard,
+  getAccessibleInventoryBoards,
+} from "@/lib/inventory";
 
 export type State = { error?: string };
 
@@ -33,4 +39,30 @@ export async function createInventoryBoardAction(
     parsed.data.description ?? null,
   );
   redirect(`/intern/inventar/${id}`);
+}
+
+/** Persönliche Inventar-Reihenfolge speichern (nur zugängliche Boards). */
+export async function reorderInventoryBoardsAction(
+  orderedIds: number[],
+): Promise<void> {
+  const user = await requireUser();
+  const accessible = new Set(
+    (await getAccessibleInventoryBoards(user)).map((b) => b.id),
+  );
+  const valid = orderedIds.filter((id) => accessible.has(id));
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < valid.length; i++) {
+      await tx
+        .insert(userInventoryBoardOrder)
+        .values({ userId: user.id, boardId: valid[i], position: i })
+        .onConflictDoUpdate({
+          target: [
+            userInventoryBoardOrder.userId,
+            userInventoryBoardOrder.boardId,
+          ],
+          set: { position: i },
+        });
+    }
+  });
+  revalidatePath("/intern/inventar");
 }

@@ -25,8 +25,10 @@ const PENDING = ["requested", "contract_provided", "contract_signed"];
 
 function fmtDate(s: string | null): string | null {
   if (!s) return null;
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
+  const [datePart, timePart] = s.split("T");
+  const [y, m, d] = datePart.split("-");
+  const date = d ? `${d}.${m}.${y}` : datePart;
+  return timePart ? `${date}, ${timePart} Uhr` : date;
 }
 
 export default async function InventoryLoanPage({
@@ -61,12 +63,18 @@ export default async function InventoryLoanPage({
       <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
 
       <div>
-        <Link
-          href={`/intern/inventar/item/${item.id}`}
-          className="text-sm text-brand-600"
-        >
-          ← {item.name || "Gegenstand"}
-        </Link>
+        <div className="flex flex-wrap items-center gap-1.5 text-sm">
+          <Link href={`/intern/inventar/${board.id}`} className="text-brand-600">
+            ← {board.name}
+          </Link>
+          <span className="text-slate-300">/</span>
+          <Link
+            href={`/intern/inventar/item/${item.id}`}
+            className="text-brand-600"
+          >
+            {item.name || "Gegenstand"}
+          </Link>
+        </div>
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold">
           Vorgang: {loan.borrower}
           <span

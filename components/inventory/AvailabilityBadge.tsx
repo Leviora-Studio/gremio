@@ -5,8 +5,10 @@ import type { InventoryAvailability } from "@/lib/inventory-items";
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
+  const [datePart, timePart] = s.split("T");
+  const [y, m, d] = datePart.split("-");
+  const date = d ? `${d}.${m}.${y}` : datePart;
+  return timePart ? `${date}, ${timePart} Uhr` : date;
 }
 
 /**

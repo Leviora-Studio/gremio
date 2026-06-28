@@ -4,12 +4,18 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleInventoryBoards } from "@/lib/inventory";
+import { sortByUserInventoryBoardOrder } from "@/lib/board-order";
+import { SortableBoardGrid } from "@/components/SortableBoardGrid";
+import { reorderInventoryBoardsAction } from "./actions";
 
 export const metadata = { title: "Inventar — Gremio" };
 
 export default async function InventarPage() {
   const user = await requireUser();
-  const boards = await getAccessibleInventoryBoards(user);
+  const boards = await sortByUserInventoryBoardOrder(
+    user.id,
+    await getAccessibleInventoryBoards(user),
+  );
 
   return (
     <div className="space-y-6">
@@ -33,34 +39,21 @@ export default async function InventarPage() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {boards.map((b) => (
-            <Link
-              key={b.id}
-              href={`/intern/inventar/${b.id}`}
-              className="card flex flex-col gap-1 p-4 transition hover:border-brand-300"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-800">{b.name}</span>
-                {b.ownerId === user.id && (
-                  <span className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-700">
-                    Eigentümer
-                  </span>
-                )}
-                {b.isPublic && (
-                  <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
-                    Öffentlich
-                  </span>
-                )}
-              </div>
-              {b.description && (
-                <p className="line-clamp-2 text-sm text-slate-500">
-                  {b.description}
-                </p>
-              )}
-            </Link>
-          ))}
-        </div>
+        <>
+          <p className="text-xs text-slate-400">
+            Tipp: Karten am Griff (⠿) ziehen, um deine Reihenfolge festzulegen.
+          </p>
+          <SortableBoardGrid
+            hrefBase="/intern/inventar/"
+            action={reorderInventoryBoardsAction}
+            boards={boards.map((b) => ({
+              id: b.id,
+              name: b.name,
+              description: b.description,
+              isOwner: b.ownerId === user.id,
+            }))}
+          />
+        </>
       )}
     </div>
   );

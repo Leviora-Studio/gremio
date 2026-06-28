@@ -248,6 +248,23 @@ export function ItemFormModal({
             </div>
           )}
 
+          {/* Kaufbelege direkt beim Anlegen (nur im Erstellen-Modus). */}
+          {!isEdit && (
+            <div>
+              <label htmlFor="it-receipts" className="label">
+                Kaufbelege (optional, mehrere möglich)
+              </label>
+              <input
+                id="it-receipts"
+                type="file"
+                name="receiptFiles"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg"
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-slate-50"
+              />
+            </div>
+          )}
+
           {/* versteckte Felder für die Custom-Selects */}
           {show("location") && (
             <input type="hidden" name="locationId" value={locationId ?? ""} />

@@ -55,8 +55,10 @@ const STATUS: Record<string, { label: string; cls: string; hint: string }> = {
 
 function fmtDate(s: string | null): string | null {
   if (!s) return null;
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
+  const [datePart, timePart] = s.split("T");
+  const [y, m, d] = datePart.split("-");
+  const date = d ? `${d}.${m}.${y}` : datePart;
+  return timePart ? `${date}, ${timePart} Uhr` : date;
 }
 
 export default async function InventoryRequestStatusPage({

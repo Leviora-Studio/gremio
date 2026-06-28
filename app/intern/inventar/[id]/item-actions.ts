@@ -22,6 +22,9 @@ import {
   type ItemPatch,
   type OptionKind,
 } from "@/lib/inventory-items";
+import { addInventoryAttachment } from "@/lib/inventory-attachments";
+import { AUSWEIS_MIME } from "@/lib/constants";
+import { validateUpload } from "@/lib/attachments";
 
 export type ItemActionState = { error?: string; ok?: boolean };
 
@@ -114,7 +117,22 @@ export async function createInventoryItemAction(
     notes: fields.notes ?? null,
     categoryIds: fields.categoryIds ?? [],
   };
-  await createInventoryItem(boardId, user.id, data);
+  const itemId = await createInventoryItem(boardId, user.id, data);
+
+  // Kaufbelege, die direkt beim Anlegen hochgeladen wurden (optional, max. 10).
+  const receipts = formData
+    .getAll("receiptFiles")
+    .filter((f): f is File => f instanceof File && f.size > 0)
+    .slice(0, 10);
+  for (const file of receipts) {
+    if (validateUpload(file, AUSWEIS_MIME)) continue; // ungültige überspringen
+    try {
+      await addInventoryAttachment(itemId, "receipt", file, user.id);
+    } catch {
+      /* einzelnen fehlgeschlagenen Beleg ignorieren */
+    }
+  }
+
   revalidatePath(`/intern/inventar/${boardId}`);
   return { ok: true };
 }

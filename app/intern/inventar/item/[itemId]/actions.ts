@@ -50,7 +50,9 @@ function text(fd: FormData, k: string, max = 500): string | null {
 }
 function date(fd: FormData, k: string): string | null {
   const v = fd.get(k);
-  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())
+  // akzeptiert Datum (YYYY-MM-DD) und Datum+Uhrzeit (datetime-local)
+  return typeof v === "string" &&
+    /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(v.trim())
     ? v.trim()
     : null;
 }

@@ -35,8 +35,10 @@ const LOAN_STAGE = LOAN_STAGE_LABEL;
 
 function fmtDate(s: string | null): string | null {
   if (!s) return null;
-  const [y, m, d] = s.split("-");
-  return d ? `${d}.${m}.${y}` : s;
+  const [datePart, timePart] = s.split("T");
+  const [y, m, d] = datePart.split("-");
+  const date = d ? `${d}.${m}.${y}` : datePart;
+  return timePart ? `${date}, ${timePart} Uhr` : date;
 }
 function fmtCents(c: number | null): string {
   if (c == null) return "—";
@@ -262,12 +264,12 @@ export function ItemDetail({
               <input name="purpose" className="input" />
             </div>
             <div>
-              <label className="label">Von</label>
-              <input name="startDate" type="date" className="input" />
+              <label className="label">Von (Datum + Uhrzeit)</label>
+              <input name="startDate" type="datetime-local" className="input" />
             </div>
             <div>
-              <label className="label">Bis</label>
-              <input name="endDate" type="date" className="input" />
+              <label className="label">Bis (Datum + Uhrzeit)</label>
+              <input name="endDate" type="datetime-local" className="input" />
             </div>
           </div>
           <SubmitButton className="btn-primary">Entleihen</SubmitButton>
