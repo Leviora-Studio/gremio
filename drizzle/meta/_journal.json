@@ -274,6 +274,13 @@
       "when": 1782659866997,
       "tag": "0038_young_matthew_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1782660556379,
+      "tag": "0039_fuzzy_rogue",
+      "breakpoints": true
     }
   ]
 }

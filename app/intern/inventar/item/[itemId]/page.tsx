@@ -11,6 +11,7 @@ import {
   getInventoryOptions,
 } from "@/lib/inventory-items";
 import { listDefects, listLoans } from "@/lib/inventory-loans";
+import { listInventoryAttachments } from "@/lib/inventory-attachments";
 import { ItemDetail } from "@/components/inventory/ItemDetail";
 
 export default async function InventoryItemPage({
@@ -24,14 +25,16 @@ export default async function InventoryItemPage({
   if (!item) notFound();
   const { board } = await requireInventoryBoardAccess(item.boardId);
 
-  const [view, options, visible, numbering, loans, defects] = await Promise.all([
-    getInventoryItemView(id),
-    getInventoryOptions(board.id),
-    getVisibleInventoryFieldKeys(board.id),
-    getInventoryNumbering(board.id),
-    listLoans(id),
-    listDefects(id),
-  ]);
+  const [view, options, visible, numbering, loans, defects, attachments] =
+    await Promise.all([
+      getInventoryItemView(id),
+      getInventoryOptions(board.id),
+      getVisibleInventoryFieldKeys(board.id),
+      getInventoryNumbering(board.id),
+      listLoans(id),
+      listDefects(id),
+      listInventoryAttachments(id),
+    ]);
   if (!view) notFound();
 
   const toOpts = (rows: { id: number; name: string }[]) =>
@@ -50,6 +53,7 @@ export default async function InventoryItemPage({
       numberingEnabled={numbering?.enabled ?? false}
       loans={loans}
       defects={defects}
+      attachments={attachments}
     />
   );
 }

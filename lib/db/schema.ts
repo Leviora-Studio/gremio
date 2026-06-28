@@ -877,6 +877,37 @@ export const inventoryDefects = pgTable("inventory_defects", {
   }),
 });
 
+// Dateien je Gegenstand (append-only Historie): Kaufbelege, Leihanträge,
+// Leihverträge. Nie automatisch gelöscht → Nachvollziehbarkeit. loanId
+// verknüpft Leihantrag/-vertrag optional mit dem konkreten Entleihvorgang.
+export const inventoryAttachments = pgTable(
+  "inventory_attachments",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    loanId: integer("loan_id").references(() => inventoryLoans.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(), // receipt | loan_request | loan_contract | other
+    filename: text("filename").notNull(),
+    path: text("path").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    uploadedAt: createdAt(),
+    uploadedBy: integer("uploaded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    kindCheck: check(
+      "inventory_attachments_kind",
+      sql`${t.kind} in ('receipt','loan_request','loan_contract','other')`,
+    ),
+  }),
+);
+
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
@@ -915,3 +946,4 @@ export type InventoryBoardField = typeof inventoryBoardFields.$inferSelect;
 export type InventoryNumbering = typeof inventoryNumbering.$inferSelect;
 export type InventoryLoan = typeof inventoryLoans.$inferSelect;
 export type InventoryDefect = typeof inventoryDefects.$inferSelect;
+export type InventoryAttachment = typeof inventoryAttachments.$inferSelect;

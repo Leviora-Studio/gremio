@@ -6,9 +6,15 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { InventoryDefect, InventoryLoan } from "@/lib/db/schema";
+import type {
+  InventoryAttachment,
+  InventoryDefect,
+  InventoryLoan,
+} from "@/lib/db/schema";
 import type { InventoryItemView } from "@/lib/inventory-items";
+import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ItemAttachments } from "./ItemAttachments";
 import {
   ItemFormModal,
   type GroupedOpts,
@@ -60,6 +66,7 @@ export function ItemDetail({
   numberingEnabled,
   loans,
   defects,
+  attachments,
 }: {
   item: InventoryItemView;
   boardName: string;
@@ -68,6 +75,7 @@ export function ItemDetail({
   numberingEnabled: boolean;
   loans: InventoryLoan[];
   defects: InventoryDefect[];
+  attachments: Record<InventoryAttachmentKind, InventoryAttachment[]>;
 }) {
   const router = useRouter();
   const [options, setOptions] = useState<GroupedOpts>(initialOptions);
@@ -324,6 +332,9 @@ export function ItemDetail({
           </ul>
         )}
       </section>
+
+      {/* Dateien: Belege, Leihanträge, Leihverträge (mit Historie) */}
+      <ItemAttachments itemId={item.id} attachments={attachments} />
 
       {editing && (
         <ItemFormModal
