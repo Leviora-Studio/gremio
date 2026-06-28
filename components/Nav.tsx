@@ -65,6 +65,12 @@ export function Nav({ user }: { user: User }) {
           >
             Finanzen
           </Link>
+          <Link
+            href="/intern/inventar"
+            className="font-medium text-slate-600 hover:text-brand-600"
+          >
+            Inventar
+          </Link>
           {(user.role === "admin" || user.role === "template_manager") && (
             <Link
               href="/vorlagen"

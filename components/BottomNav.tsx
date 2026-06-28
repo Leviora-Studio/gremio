@@ -111,9 +111,11 @@ export function BottomNav({
   const moreActive =
     pathname.startsWith("/admin") ||
     pathname.startsWith("/vorlagen") ||
+    pathname.startsWith("/intern/inventar") ||
     pathname.startsWith("/intern/konto");
 
   const moreLinks = [
+    { href: "/intern/inventar", label: "Inventar" },
     ...(role === "admin" || role === "template_manager"
       ? [{ href: "/vorlagen", label: "Vorlagen" }]
       : []),

@@ -697,6 +697,55 @@ export const userTaskPrefs = pgTable("user_task_prefs", {
 });
 
 // ---------------------------------------------------------------------------
+// Inventar- & Entleihsystem
+// ---------------------------------------------------------------------------
+// Inventar-Boards: eigenständige Listen (z. B. je StuRa-Standort oder Fach-
+// bereich). Zugriff intern wie bei Kanban-Boards: Eigentümer + Freigaben
+// (inventory_board_access). `isPublic` (nur Admin) steuert, ob das Board im
+// öffentlichen Bereich /inventar erscheint.
+export const inventoryBoards = pgTable("inventory_boards", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ownerId: integer("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  isPublic: boolean("is_public").notNull().default(false),
+  createdAt: createdAt(),
+});
+
+// Freigabe eines Inventar-Boards an Nutzer ODER Gruppe (binär), wie board_access.
+export const inventoryBoardAccess = pgTable(
+  "inventory_board_access",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    groupId: integer("group_id").references(() => groups.id, {
+      onDelete: "cascade",
+    }),
+  },
+  (t) => ({
+    oneSubject: check(
+      "inventory_board_access_one_subject",
+      sql`(${t.userId} is null) <> (${t.groupId} is null)`,
+    ),
+    uqUser: uniqueIndex("inventory_board_access_board_user_uq").on(
+      t.boardId,
+      t.userId,
+    ),
+    uqGroup: uniqueIndex("inventory_board_access_board_group_uq").on(
+      t.boardId,
+      t.groupId,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
 export type User = typeof users.$inferSelect;
@@ -725,3 +774,5 @@ export type FinanceTemplateItem = typeof financeTemplateItems.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;
+export type InventoryBoard = typeof inventoryBoards.$inferSelect;
+export type InventoryBoardAccess = typeof inventoryBoardAccess.$inferSelect;
