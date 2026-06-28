@@ -12,13 +12,22 @@ import {
   getInventoryOptions,
   listInventoryItems,
 } from "@/lib/inventory-items";
-import { listBoardPendingLoans } from "@/lib/inventory-loans";
+import {
+  listBoardActiveLoans,
+  listBoardPendingLoans,
+} from "@/lib/inventory-loans";
 import {
   loanStageClass,
   loanStageLabel,
 } from "@/lib/inventory-loan-stage";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
 import { LiveRefresh } from "@/components/LiveRefresh";
+
+function fmtDate(s: string | null): string {
+  if (!s) return "";
+  const [y, m, d] = s.split("-");
+  return d ? `${d}.${m}.${y}` : s;
+}
 
 export default async function InventoryBoardPage({
   params,
@@ -29,13 +38,15 @@ export default async function InventoryBoardPage({
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const manage = canManageInventoryBoard(user, board);
 
-  const [visible, options, numbering, items, pending] = await Promise.all([
-    getVisibleInventoryFieldKeys(board.id),
-    getInventoryOptions(board.id),
-    getInventoryNumbering(board.id),
-    listInventoryItems(board.id),
-    listBoardPendingLoans(board.id),
-  ]);
+  const [visible, options, numbering, items, pending, activeLoans] =
+    await Promise.all([
+      getVisibleInventoryFieldKeys(board.id),
+      getInventoryOptions(board.id),
+      getInventoryNumbering(board.id),
+      listInventoryItems(board.id),
+      listBoardPendingLoans(board.id),
+      listBoardActiveLoans(board.id),
+    ]);
 
   const toOpts = (rows: { id: number; name: string }[]) =>
     rows.map((r) => ({ id: r.id, name: r.name }));
@@ -83,6 +94,32 @@ export default async function InventoryBoardPage({
                     className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
                   >
                     {loanStageLabel(l.status)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {activeLoans.length > 0 && (
+        <div className="card border-amber-200 bg-amber-50/40 p-4">
+          <h2 className="mb-2 text-sm font-semibold text-amber-800">
+            Laufende Ausleihe ({activeLoans.length})
+          </h2>
+          <ul className="space-y-1.5">
+            {activeLoans.map((l) => (
+              <li key={l.id}>
+                <Link
+                  href={`/intern/inventar/loan/${l.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm transition hover:bg-amber-50"
+                >
+                  <span>
+                    <strong>{l.itemName}</strong> · {l.borrower}
+                    {l.endDate ? ` · bis ${fmtDate(l.endDate)}` : ""}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    entliehen
                   </span>
                 </Link>
               </li>

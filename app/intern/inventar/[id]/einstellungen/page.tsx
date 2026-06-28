@@ -16,13 +16,16 @@ import { getInventoryNumbering } from "@/lib/inventory-items";
 import { Avatar } from "@/components/Avatar";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
+import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
-import { DeleteInventoryBoardButton } from "@/components/inventory/DeleteInventoryBoardButton";
 import {
   addInventoryAccessGroupAction,
   addInventoryAccessUserAction,
+  deleteInventoryBoardConfirmedAction,
   removeInventoryAccessAction,
   renameInventoryBoardAction,
+  transferInventoryOwnerAction,
   updateInventoryFieldsAction,
   updateInventoryNumberingAction,
 } from "./actions";
@@ -293,14 +296,30 @@ export default async function InventoryBoardSettingsPage({
         </form>
       </CollapsibleSection>
 
-      {/* Löschen */}
-      <CollapsibleSection title="Gefahrenzone">
-        <p className="text-sm text-slate-500">
-          Löscht das Inventar mit allen Gegenständen, Optionen und Einstellungen.
-        </p>
-        <div className="mt-3">
-          <DeleteInventoryBoardButton boardId={board.id} />
+      {/* Eigentum & Löschen */}
+      <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
+        <div className="mb-4">
+          <label className="label">Eigentum übertragen an</label>
+          <p className="mb-2 text-xs text-slate-500">
+            Zum Schutz erst „ÜBERTRAGEN" eingeben; danach bestätigen.
+          </p>
+          <TransferOwnerForm
+            action={transferInventoryOwnerAction.bind(null, board.id)}
+            options={allUsers.map((u) => ({
+              value: String(u.id),
+              label: u.username,
+            }))}
+            currentOwnerId={String(board.ownerId)}
+            entityLabel={`Inventar „${board.name}"`}
+            requireTyped="ÜBERTRAGEN"
+          />
         </div>
+        <DeleteConfirm
+          action={deleteInventoryBoardConfirmedAction.bind(null, board.id)}
+          buttonLabel="Inventar löschen"
+          title={`Inventar „${board.name}" löschen`}
+          message="Das Inventar wird inkl. aller Gegenstände, Vorgänge und Dateien unwiderruflich gelöscht."
+        />
       </CollapsibleSection>
     </div>
   );

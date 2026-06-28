@@ -189,6 +189,24 @@ export async function listBoardPendingLoans(
   return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
 }
 
+/** Alle laufenden Ausleihen (status='active') eines Boards. */
+export async function listBoardActiveLoans(
+  boardId: number,
+): Promise<LoanWithItem[]> {
+  const rows = await db
+    .select({ l: inventoryLoans, itemName: inventoryItems.name })
+    .from(inventoryLoans)
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
+    .where(
+      and(
+        eq(inventoryItems.boardId, boardId),
+        eq(inventoryLoans.status, "active"),
+      ),
+    )
+    .orderBy(desc(inventoryLoans.createdAt));
+  return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
+}
+
 export async function getLoanByToken(
   token: string,
 ): Promise<InventoryLoan | undefined> {
