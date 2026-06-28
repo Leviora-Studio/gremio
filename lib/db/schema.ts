@@ -745,6 +745,104 @@ export const inventoryBoardAccess = pgTable(
   }),
 );
 
+// Erweiterbare Auswahloptionen je Inventar-Board: Kategorien, Standorte,
+// Entleihstatus — eine Tabelle, unterschieden über `kind`. Direkt beim Erfassen
+// eines Gegenstands erweiterbar (neue Option anlegen).
+export const inventoryOptions = pgTable(
+  "inventory_options",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // category | location | loan_status
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    kindCheck: check(
+      "inventory_options_kind",
+      sql`${t.kind} in ('category','location','loan_status')`,
+    ),
+    uq: uniqueIndex("inventory_options_board_kind_name_uq").on(
+      t.boardId,
+      t.kind,
+      t.name,
+    ),
+  }),
+);
+
+// Gegenstände eines Inventar-Boards. Entleih-/Mängel-Historie und Belege folgen
+// in einer späteren Phase (eigene Tabellen) — hier die Stammdaten.
+export const inventoryItems = pgTable("inventory_items", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id")
+    .notNull()
+    .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  number: text("number"), // Inventarnummer (board-spezifisch, optional/auto)
+  name: text("name").notNull().default(""), // Bezeichnung
+  locationId: integer("location_id").references(() => inventoryOptions.id, {
+    onDelete: "set null",
+  }),
+  loanStatusId: integer("loan_status_id").references(() => inventoryOptions.id, {
+    onDelete: "set null",
+  }),
+  price: integer("price"), // Kaufpreis in Cent
+  purchaseDate: text("purchase_date"), // YYYY-MM-DD
+  vendor: text("vendor"), // Händler
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  creatorUserId: integer("creator_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+});
+
+// n:m Gegenstand ↔ Kategorie-Option (Multiselect).
+export const inventoryItemCategories = pgTable(
+  "inventory_item_categories",
+  {
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    optionId: integer("option_id")
+      .notNull()
+      .references(() => inventoryOptions.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.itemId, t.optionId] }) }),
+);
+
+// Sichtbare/konfigurierbare Felder je Inventar-Board (wie board_card_fields).
+export const inventoryBoardFields = pgTable(
+  "inventory_board_fields",
+  {
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    fieldKey: text("field_key").notNull(),
+    visible: boolean("visible").notNull().default(true),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.boardId, t.fieldKey] }) }),
+);
+
+// Auto-Inventarnummer je Board (wie board_numbering).
+export const inventoryNumbering = pgTable("inventory_numbering", {
+  boardId: integer("board_id")
+    .primaryKey()
+    .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  prefix: text("prefix").notNull().default(""),
+  year: text("year").notNull().default(""),
+  code: text("code").notNull().default(""),
+  separator: text("separator").notNull().default("_"),
+  padding: integer("padding").notNull().default(0),
+  next: integer("next").notNull().default(1),
+});
+
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
@@ -776,3 +874,8 @@ export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;
 export type InventoryBoard = typeof inventoryBoards.$inferSelect;
 export type InventoryBoardAccess = typeof inventoryBoardAccess.$inferSelect;
+export type InventoryOption = typeof inventoryOptions.$inferSelect;
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+export type NewInventoryItem = typeof inventoryItems.$inferInsert;
+export type InventoryBoardField = typeof inventoryBoardFields.$inferSelect;
+export type InventoryNumbering = typeof inventoryNumbering.$inferSelect;

@@ -2,7 +2,17 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { requireInventoryBoardAccess, canManageInventoryBoard } from "@/lib/inventory";
+import {
+  requireInventoryBoardAccess,
+  canManageInventoryBoard,
+} from "@/lib/inventory";
+import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
+import {
+  getInventoryNumbering,
+  getInventoryOptions,
+  listInventoryItems,
+} from "@/lib/inventory-items";
+import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
 
 export default async function InventoryBoardPage({
   params,
@@ -12,6 +22,16 @@ export default async function InventoryBoardPage({
   const { id } = await params;
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const manage = canManageInventoryBoard(user, board);
+
+  const [visible, options, numbering, items] = await Promise.all([
+    getVisibleInventoryFieldKeys(board.id),
+    getInventoryOptions(board.id),
+    getInventoryNumbering(board.id),
+    listInventoryItems(board.id),
+  ]);
+
+  const toOpts = (rows: { id: number; name: string }[]) =>
+    rows.map((r) => ({ id: r.id, name: r.name }));
 
   return (
     <div className="space-y-5">
@@ -35,10 +55,17 @@ export default async function InventoryBoardPage({
         )}
       </div>
 
-      <div className="card p-8 text-center text-slate-500">
-        Noch keine Gegenstände. Das Erfassen von Gegenständen (Felder, Kategorien,
-        Standorte, Entleihstatus …) kommt im nächsten Schritt.
-      </div>
+      <InventoryBoardView
+        boardId={board.id}
+        visibleFields={Array.from(visible)}
+        numberingEnabled={numbering?.enabled ?? false}
+        initialOptions={{
+          category: toOpts(options.category),
+          location: toOpts(options.location),
+          loan_status: toOpts(options.loan_status),
+        }}
+        items={items}
+      />
     </div>
   );
 }

@@ -6,12 +6,15 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
   inventoryBoardAccess,
+  inventoryBoardFields,
   inventoryBoards,
+  inventoryNumbering,
   type InventoryBoard,
   type User,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
 import { getUserGroupIds } from "@/lib/authz";
+import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
 
 // Zugriffsmodell der Inventar-Boards = identisch zu den Kanban-Boards:
 // admin ODER Eigentümer ODER Freigabe an Nutzer/Gruppe (binär, kein Lese-/
@@ -117,15 +120,30 @@ export async function requireInventoryBoardManage(
   return { user, board };
 }
 
-/** Neues Inventar-Board anlegen (Ersteller = Eigentümer). Gibt die ID zurück. */
+/**
+ * Neues Inventar-Board anlegen (Ersteller = Eigentümer). Setzt alle Felder
+ * sichtbar und legt die (deaktivierte) Nummerierung an. Gibt die ID zurück.
+ */
 export async function createInventoryBoard(
   ownerId: number,
   name: string,
   description: string | null,
 ): Promise<number> {
-  const [row] = await db
-    .insert(inventoryBoards)
-    .values({ name, description, ownerId })
-    .returning({ id: inventoryBoards.id });
-  return row.id;
+  return db.transaction(async (tx) => {
+    const [board] = await tx
+      .insert(inventoryBoards)
+      .values({ name, description, ownerId })
+      .returning({ id: inventoryBoards.id });
+
+    for (let i = 0; i < INVENTORY_FIELD_KEYS.length; i++) {
+      await tx.insert(inventoryBoardFields).values({
+        boardId: board.id,
+        fieldKey: INVENTORY_FIELD_KEYS[i],
+        visible: true,
+        position: i,
+      });
+    }
+    await tx.insert(inventoryNumbering).values({ boardId: board.id });
+    return board.id;
+  });
 }

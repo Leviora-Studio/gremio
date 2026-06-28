@@ -260,6 +260,13 @@
       "when": 1782650407042,
       "tag": "0036_pink_charles_xavier",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1782658632721,
+      "tag": "0037_lethal_sabra",
+      "breakpoints": true
     }
   ]
 }
