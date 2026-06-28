@@ -8,9 +8,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import {
+  groups,
+  inventoryBoardAccess,
   inventoryBoardFields,
   inventoryBoards,
   inventoryNumbering,
+  users,
 } from "@/lib/db/schema";
 import { requireInventoryBoardManage } from "@/lib/inventory";
 import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
@@ -87,4 +90,70 @@ export async function deleteInventoryBoardAction(formData: FormData) {
   await db.delete(inventoryBoards).where(eq(inventoryBoards.id, boardId));
   revalidatePath(`/intern/inventar`);
   redirect(`/intern/inventar`);
+}
+
+// --- Freigaben (wie Kanban-Boards) --------------------------------------
+function revAccess(boardId: number) {
+  revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
+  revalidatePath(`/intern/inventar/${boardId}`);
+  revalidatePath(`/intern/inventar`);
+}
+
+/** Board einem Nutzer freigeben. */
+export async function addInventoryAccessUserAction(
+  boardId: number,
+  formData: FormData,
+): Promise<void> {
+  await requireInventoryBoardManage(boardId);
+  const userId = Number(formData.get("userId"));
+  if (!Number.isInteger(userId)) return;
+  const exists = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!exists.length) return;
+  await db
+    .insert(inventoryBoardAccess)
+    .values({ boardId, userId })
+    .onConflictDoNothing();
+  revAccess(boardId);
+}
+
+/** Board einer Gruppe freigeben. */
+export async function addInventoryAccessGroupAction(
+  boardId: number,
+  formData: FormData,
+): Promise<void> {
+  await requireInventoryBoardManage(boardId);
+  const groupId = Number(formData.get("groupId"));
+  if (!Number.isInteger(groupId)) return;
+  const exists = await db
+    .select({ id: groups.id })
+    .from(groups)
+    .where(eq(groups.id, groupId))
+    .limit(1);
+  if (!exists.length) return;
+  await db
+    .insert(inventoryBoardAccess)
+    .values({ boardId, groupId })
+    .onConflictDoNothing();
+  revAccess(boardId);
+}
+
+/** Eine Freigabe entfernen. */
+export async function removeInventoryAccessAction(
+  boardId: number,
+  accessId: number,
+): Promise<void> {
+  await requireInventoryBoardManage(boardId);
+  await db
+    .delete(inventoryBoardAccess)
+    .where(
+      and(
+        eq(inventoryBoardAccess.id, accessId),
+        eq(inventoryBoardAccess.boardId, boardId),
+      ),
+    );
+  revAccess(boardId);
 }

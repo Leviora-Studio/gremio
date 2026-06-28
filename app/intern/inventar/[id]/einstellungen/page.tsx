@@ -2,6 +2,9 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { groups, inventoryBoardAccess, users } from "@/lib/db/schema";
 import { requireInventoryBoardManage } from "@/lib/inventory";
 import {
   getInventoryBoardFields,
@@ -10,8 +13,14 @@ import {
   type InventoryFieldKey,
 } from "@/lib/inventory-fields";
 import { getInventoryNumbering } from "@/lib/inventory-items";
+import { Avatar } from "@/components/Avatar";
+import { Select } from "@/components/Select";
+import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteInventoryBoardButton } from "@/components/inventory/DeleteInventoryBoardButton";
 import {
+  addInventoryAccessGroupAction,
+  addInventoryAccessUserAction,
+  removeInventoryAccessAction,
   renameInventoryBoardAction,
   updateInventoryFieldsAction,
   updateInventoryNumberingAction,
@@ -26,9 +35,31 @@ export default async function InventoryBoardSettingsPage({
 }) {
   const { id } = await params;
   const { board } = await requireInventoryBoardManage(Number(id));
-  const [fields, numbering] = await Promise.all([
+  const [fields, numbering, access, allUsers, allGroups] = await Promise.all([
     getInventoryBoardFields(board.id),
     getInventoryNumbering(board.id),
+    db
+      .select({
+        id: inventoryBoardAccess.id,
+        userId: inventoryBoardAccess.userId,
+        groupId: inventoryBoardAccess.groupId,
+        userName: users.username,
+        avatarPath: users.avatarPath,
+        groupName: groups.name,
+      })
+      .from(inventoryBoardAccess)
+      .leftJoin(users, eq(users.id, inventoryBoardAccess.userId))
+      .leftJoin(groups, eq(groups.id, inventoryBoardAccess.groupId))
+      .where(eq(inventoryBoardAccess.boardId, board.id)),
+    db
+      .select({ id: users.id, username: users.username })
+      .from(users)
+      .where(eq(users.isActive, true))
+      .orderBy(users.username),
+    db
+      .select({ id: groups.id, name: groups.name })
+      .from(groups)
+      .orderBy(groups.name),
   ]);
   const visible = new Set(
     fields.filter((f) => f.visible).map((f) => f.fieldKey),
@@ -78,6 +109,94 @@ export default async function InventoryBoardSettingsPage({
           Speichern
         </button>
       </form>
+
+      {/* Freigaben */}
+      <div className="card space-y-4 p-6">
+        <div>
+          <h2 className="font-semibold">Freigaben</h2>
+          <p className="text-sm text-slate-500">
+            Lege fest, welche Nutzer und Gruppen dieses Inventar sehen und
+            bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <form
+            action={addInventoryAccessUserAction.bind(null, board.id)}
+            className="flex items-end gap-2"
+          >
+            <div className="flex-1">
+              <label className="label">Nutzer freigeben</label>
+              <Select
+                name="userId"
+                placeholder="Nutzer…"
+                searchable
+                searchPlaceholder="Nutzer suchen…"
+                options={allUsers.map((u) => ({
+                  value: String(u.id),
+                  label: u.username,
+                }))}
+              />
+            </div>
+            <SubmitButton className="btn-primary">+</SubmitButton>
+          </form>
+
+          <form
+            action={addInventoryAccessGroupAction.bind(null, board.id)}
+            className="flex items-end gap-2"
+          >
+            <div className="flex-1">
+              <label className="label">Gruppe freigeben</label>
+              <Select
+                name="groupId"
+                placeholder="Gruppe…"
+                searchable
+                searchPlaceholder="Gruppe suchen…"
+                options={allGroups.map((g) => ({
+                  value: String(g.id),
+                  label: g.name,
+                }))}
+              />
+            </div>
+            <SubmitButton className="btn-primary">+</SubmitButton>
+          </form>
+        </div>
+
+        <div className="space-y-2">
+          {access.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Noch keine Freigaben (nur Eigentümer & Admins haben Zugriff).
+            </p>
+          )}
+          {access.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center justify-between rounded border border-slate-200 px-3 py-2"
+            >
+              <span className="inline-flex items-center gap-2 text-sm">
+                {a.userId ? (
+                  <>
+                    <Avatar
+                      username={a.userName ?? "?"}
+                      src={a.avatarPath ? `/api/avatar/${a.userId}` : null}
+                      size={22}
+                    />
+                    {a.userName}
+                  </>
+                ) : (
+                  <>👥 {a.groupName} (Gruppe)</>
+                )}
+              </span>
+              <form
+                action={removeInventoryAccessAction.bind(null, board.id, a.id)}
+              >
+                <SubmitButton className="btn-secondary px-2 py-1">
+                  Entfernen
+                </SubmitButton>
+              </form>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Felder */}
       <form action={updateInventoryFieldsAction} className="card space-y-4 p-6">
