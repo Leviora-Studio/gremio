@@ -21,10 +21,12 @@ import {
   type Opt,
 } from "./ItemFormModal";
 import {
+  approveLoanAction,
   createDefectAction,
   createLoanAction,
   deleteDefectAction,
   deleteLoanAction,
+  rejectLoanAction,
   returnLoanAction,
   toggleDefectAction,
 } from "@/app/intern/inventar/item/[itemId]/actions";
@@ -82,7 +84,8 @@ export function ItemDetail({
   const [editing, setEditing] = useState(false);
 
   const show = (k: string) => visibleFields.includes(k);
-  const activeLoan = loans.find((l) => !l.returnedAt);
+  const activeLoan = loans.find((l) => l.status === "active");
+  const requests = loans.filter((l) => l.status === "requested");
   const openDefects = defects.filter((d) => !d.resolvedAt);
 
   function onOptionAdded(kind: OptionKind, opt: Opt) {
@@ -184,6 +187,44 @@ export function ItemDetail({
       {/* Entleihe */}
       <section className="card p-5">
         <h2 className="mb-3 font-semibold">Entleihe</h2>
+
+        {requests.length > 0 && (
+          <div className="mb-4 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-blue-700">
+              Offene Anfragen ({requests.length})
+            </p>
+            {requests.map((r) => (
+              <div
+                key={r.id}
+                className="rounded-lg border border-blue-200 bg-blue-50 p-3"
+              >
+                <p className="text-sm">
+                  <strong>{r.borrower}</strong>
+                  {r.borrowerEmail ? ` · ${r.borrowerEmail}` : ""}
+                </p>
+                <p className="text-sm text-slate-600">
+                  {period(r.startDate, r.endDate)}
+                  {r.purpose ? ` · ${r.purpose}` : ""}
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <form action={approveLoanAction}>
+                    <input type="hidden" name="loanId" value={r.id} />
+                    <SubmitButton className="btn-primary px-3 py-1 text-sm">
+                      Annehmen
+                    </SubmitButton>
+                  </form>
+                  <form action={rejectLoanAction}>
+                    <input type="hidden" name="loanId" value={r.id} />
+                    <SubmitButton className="btn-secondary px-3 py-1 text-sm text-red-600">
+                      Ablehnen
+                    </SubmitButton>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {activeLoan ? (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-sm">
@@ -252,14 +293,20 @@ export function ItemDetail({
                   <span>
                     <strong>{l.borrower}</strong> ·{" "}
                     {period(l.startDate, l.endDate)}
-                    {l.returnedAt ? (
+                    {l.status === "returned" ? (
                       <span className="ml-1 text-slate-500">
                         (zurück am {fmtDateTime(l.returnedAt)})
                       </span>
-                    ) : (
+                    ) : l.status === "active" ? (
                       <span className="ml-1 font-medium text-amber-700">
                         (läuft)
                       </span>
+                    ) : l.status === "requested" ? (
+                      <span className="ml-1 font-medium text-blue-700">
+                        (Anfrage)
+                      </span>
+                    ) : (
+                      <span className="ml-1 text-slate-400">(abgelehnt)</span>
                     )}
                   </span>
                   <form action={deleteLoanAction}>

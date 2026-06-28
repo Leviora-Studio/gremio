@@ -843,25 +843,38 @@ export const inventoryNumbering = pgTable("inventory_numbering", {
   next: integer("next").notNull().default(1),
 });
 
-// Entleihvorgänge je Gegenstand (Historie). Der aktuell „offene" Vorgang
-// (returnedAt IS NULL) bestimmt „aktuell bei" + laufenden Entleihzeitraum.
-export const inventoryLoans = pgTable("inventory_loans", {
-  id: serial("id").primaryKey(),
-  itemId: integer("item_id")
-    .notNull()
-    .references(() => inventoryItems.id, { onDelete: "cascade" }),
-  borrower: text("borrower").notNull(), // Entleiher
-  borrowerEmail: text("borrower_email"), // optional (öffentliche Anfrage)
-  purpose: text("purpose"), // Verwendungsort/Zweck
-  startDate: text("start_date"), // YYYY-MM-DD
-  endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
-  returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
-  notes: text("notes"),
-  createdAt: createdAt(),
-  createdBy: integer("created_by").references(() => users.id, {
-    onDelete: "set null",
+// Entleihvorgänge je Gegenstand (Historie). status='active' (und returnedAt
+// NULL) = laufend → bestimmt „aktuell bei". 'requested' = öffentliche Anfrage,
+// die intern noch geprüft wird; 'rejected' = abgelehnt; 'returned' = zurück.
+export const inventoryLoans = pgTable(
+  "inventory_loans",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("active"), // requested|active|returned|rejected
+    token: text("token"), // öffentlicher Status-Link bei Anfragen (sonst NULL)
+    borrower: text("borrower").notNull(), // Entleiher
+    borrowerEmail: text("borrower_email"), // bei öffentlicher Anfrage Pflicht
+    purpose: text("purpose"), // Verwendungsort/Zweck
+    startDate: text("start_date"), // YYYY-MM-DD
+    endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
+    returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
+    notes: text("notes"),
+    createdAt: createdAt(),
+    createdBy: integer("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    statusCheck: check(
+      "inventory_loans_status",
+      sql`${t.status} in ('requested','active','returned','rejected')`,
+    ),
+    tokenUq: uniqueIndex("inventory_loans_token_uq").on(t.token),
   }),
-});
+);
 
 // Mängel je Gegenstand (Historie). resolvedAt IS NULL = bekannter offener Mangel.
 export const inventoryDefects = pgTable("inventory_defects", {

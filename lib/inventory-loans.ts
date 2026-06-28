@@ -9,6 +9,7 @@ import {
   type InventoryDefect,
   type InventoryLoan,
 } from "@/lib/db/schema";
+import { generateToken, isTokenConflict } from "@/lib/token";
 
 // ---------------------------------------------------------------------------
 // Entleihvorgänge
@@ -61,12 +62,71 @@ export async function createLoan(
 export async function returnLoan(loanId: number): Promise<void> {
   await db
     .update(inventoryLoans)
-    .set({ returnedAt: new Date() })
-    .where(and(eq(inventoryLoans.id, loanId), isNull(inventoryLoans.returnedAt)));
+    .set({ returnedAt: new Date(), status: "returned" })
+    .where(eq(inventoryLoans.id, loanId));
 }
 
 export async function deleteLoan(loanId: number): Promise<void> {
   await db.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
+}
+
+/** Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token). */
+export async function createLoanRequest(
+  itemId: number,
+  data: LoanInput,
+): Promise<{ id: number; token: string }> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const token = generateToken();
+    try {
+      const [row] = await db
+        .insert(inventoryLoans)
+        .values({ itemId, status: "requested", token, createdBy: null, ...data })
+        .returning({ id: inventoryLoans.id });
+      return { id: row.id, token };
+    } catch (e) {
+      if (isTokenConflict(e)) continue;
+      throw e;
+    }
+  }
+  throw new Error("Konnte keinen eindeutigen Token erzeugen.");
+}
+
+/** Anfrage annehmen → laufender Vorgang. */
+export async function approveLoan(loanId: number): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ status: "active" })
+    .where(
+      and(
+        eq(inventoryLoans.id, loanId),
+        eq(inventoryLoans.status, "requested"),
+      ),
+    );
+}
+
+/** Anfrage ablehnen. */
+export async function rejectLoan(loanId: number): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ status: "rejected" })
+    .where(
+      and(
+        eq(inventoryLoans.id, loanId),
+        eq(inventoryLoans.status, "requested"),
+      ),
+    );
+}
+
+export async function getLoanByToken(
+  token: string,
+): Promise<InventoryLoan | undefined> {
+  if (!token) return undefined;
+  const [row] = await db
+    .select()
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.token, token))
+    .limit(1);
+  return row;
 }
 
 export type ActiveLoan = {
@@ -92,6 +152,7 @@ export async function getActiveLoanMap(
     .where(
       and(
         inArray(inventoryLoans.itemId, itemIds),
+        eq(inventoryLoans.status, "active"),
         isNull(inventoryLoans.returnedAt),
       ),
     )

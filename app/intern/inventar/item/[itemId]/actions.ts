@@ -11,12 +11,14 @@ import {
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
+  approveLoan,
   createDefect,
   createLoan,
   deleteDefect,
   deleteLoan,
   getDefectById,
   getLoanById,
+  rejectLoan,
   returnLoan,
   setDefectResolved,
 } from "@/lib/inventory-loans";
@@ -83,6 +85,22 @@ export async function deleteLoanAction(fd: FormData): Promise<void> {
   if (!loan) return;
   const { item } = await assertItemAccess(loan.itemId);
   await deleteLoan(loan.id);
+  revItem(item);
+}
+
+export async function approveLoanAction(fd: FormData): Promise<void> {
+  const loan = await getLoanById(Number(fd.get("loanId")));
+  if (!loan) return;
+  const { item } = await assertItemAccess(loan.itemId);
+  await approveLoan(loan.id);
+  revItem(item);
+}
+
+export async function rejectLoanAction(fd: FormData): Promise<void> {
+  const loan = await getLoanById(Number(fd.get("loanId")));
+  if (!loan) return;
+  const { item } = await assertItemAccess(loan.itemId);
+  await rejectLoan(loan.id);
   revItem(item);
 }
 
