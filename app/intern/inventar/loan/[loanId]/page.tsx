@@ -39,7 +39,7 @@ export default async function InventoryLoanPage({
   if (!loan) notFound();
   const item = await getInventoryItemById(loan.itemId);
   if (!item) notFound();
-  const { board } = await requireInventoryBoardAccess(item.boardId);
+  const { user, board } = await requireInventoryBoardAccess(item.boardId);
 
   const docs = await listLoanAttachments(loan.id);
   const pending = PENDING.includes(loan.status);
@@ -136,7 +136,11 @@ export default async function InventoryLoanPage({
           Leihvertrag/-antrag für diesen Vorgang. Der bereitgestellte Vertrag
           erscheint auf der öffentlichen Statusseite zum Unterschreiben.
         </p>
-        <LoanContractUpload loanId={loan.id} docs={docs} />
+        <LoanContractUpload
+          loanId={loan.id}
+          docs={docs}
+          hasCert={!!user.certSubject}
+        />
       </div>
     </div>
   );

@@ -5,13 +5,14 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import {
   uploadSignedContractAction,
   type PublicContractState,
 } from "@/app/inventar/status/[token]/actions";
 
-type Doc = { id: number; filename: string; kind: string };
-type Signed = { id: number; filename: string };
+type Doc = { id: number; filename: string; kind: string; mime: string };
+type Signed = { id: number; filename: string; mime: string };
 
 const KIND_LABEL: Record<string, string> = {
   loan_contract: "Leihvertrag",
@@ -52,14 +53,14 @@ export function PublicContractSection({
           <ul className="space-y-1">
             {provided.map((d) => (
               <li key={d.id}>
-                <a
-                  href={`/api/inventar/status/${token}/attachment/${d.id}`}
-                  target="_blank"
-                  rel="noreferrer"
+                <AttachmentLink
+                  id={d.id}
+                  filename={d.filename}
+                  mime={d.mime}
+                  src={`/api/inventar/status/${token}/attachment/${d.id}`}
+                  label={`${KIND_LABEL[d.kind] ?? "Dokument"}: ${d.filename}`}
                   className="text-sm text-brand-600 hover:underline"
-                >
-                  📄 {KIND_LABEL[d.kind] ?? "Dokument"}: {d.filename}
-                </a>
+                />
               </li>
             ))}
           </ul>
@@ -97,14 +98,14 @@ export function PublicContractSection({
           <ul className="space-y-1">
             {signed.map((d) => (
               <li key={d.id}>
-                <a
-                  href={`/api/inventar/status/${token}/attachment/${d.id}`}
-                  target="_blank"
-                  rel="noreferrer"
+                <AttachmentLink
+                  id={d.id}
+                  filename={d.filename}
+                  mime={d.mime}
+                  src={`/api/inventar/status/${token}/attachment/${d.id}`}
+                  label={`📎 ${d.filename}`}
                   className="text-sm text-brand-600 hover:underline"
-                >
-                  📎 {d.filename}
-                </a>
+                />
               </li>
             ))}
           </ul>

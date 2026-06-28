@@ -24,7 +24,7 @@ export default async function InventoryItemPage({
   const id = Number(itemId);
   const item = await getInventoryItemById(id);
   if (!item) notFound();
-  const { board } = await requireInventoryBoardAccess(item.boardId);
+  const { user, board } = await requireInventoryBoardAccess(item.boardId);
 
   const [view, options, visible, numbering, loans, defects, attachments] =
     await Promise.all([
@@ -57,6 +57,7 @@ export default async function InventoryItemPage({
         loans={loans}
         defects={defects}
         attachments={attachments}
+        hasCert={!!user.certSubject}
       />
     </>
   );

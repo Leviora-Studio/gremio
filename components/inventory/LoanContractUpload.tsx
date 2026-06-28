@@ -6,12 +6,14 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
+import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
   deleteInventoryAttachmentAction,
   uploadLoanContractAction,
   type AttachmentState,
 } from "@/app/intern/inventar/item/[itemId]/attachment-actions";
+import { saveInventoryPdfEditsAction } from "@/app/intern/inventar/item/[itemId]/pdf-actions";
 
 const KIND_LABEL: Record<string, string> = {
   loan_contract: "Leihvertrag",
@@ -21,9 +23,11 @@ const KIND_LABEL: Record<string, string> = {
 export function LoanContractUpload({
   loanId,
   docs,
+  hasCert = false,
 }: {
   loanId: number;
   docs: InventoryAttachment[];
+  hasCert?: boolean;
 }) {
   const [state, action] = useActionState(
     uploadLoanContractAction,
@@ -46,14 +50,18 @@ export function LoanContractUpload({
               key={d.id}
               className="flex items-center justify-between gap-2 text-sm"
             >
-              <a
-                href={`/api/inventory/attachment/${d.id}`}
-                target="_blank"
-                rel="noreferrer"
+              <AttachmentLink
+                id={d.id}
+                filename={d.filename}
+                mime={d.mime}
+                src={`/api/inventory/attachment/${d.id}`}
+                editable
+                hasCert={hasCert}
+                fieldsUrl={`/api/inventory/attachment/${d.id}/fields`}
+                saveAction={saveInventoryPdfEditsAction}
+                label={`${KIND_LABEL[d.kind] ?? "Datei"}: ${d.filename}`}
                 className="truncate text-brand-600 hover:underline"
-              >
-                {KIND_LABEL[d.kind] ?? "Datei"}: {d.filename}
-              </a>
+              />
               <span className="flex shrink-0 items-center gap-2 text-xs text-slate-400">
                 {d.uploadedBy == null ? "vom Entleiher" : "bereitgestellt"}
                 <form action={deleteInventoryAttachmentAction}>

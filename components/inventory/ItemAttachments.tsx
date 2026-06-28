@@ -5,6 +5,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
   INVENTORY_ATTACHMENT_LABELS,
@@ -15,6 +16,7 @@ import {
   uploadInventoryAttachmentAction,
   type AttachmentState,
 } from "@/app/intern/inventar/item/[itemId]/attachment-actions";
+import { saveInventoryPdfEditsAction } from "@/app/intern/inventar/item/[itemId]/pdf-actions";
 
 // In dieser Reihenfolge angezeigt; „other" bleibt vorerst außen vor.
 const SHOWN_KINDS: InventoryAttachmentKind[] = [
@@ -35,9 +37,11 @@ function fmt(d: Date | string): string {
 export function ItemAttachments({
   itemId,
   attachments,
+  hasCert = false,
 }: {
   itemId: number;
   attachments: Record<InventoryAttachmentKind, InventoryAttachment[]>;
+  hasCert?: boolean;
 }) {
   return (
     <section className="card space-y-5 p-5">
@@ -49,6 +53,7 @@ export function ItemAttachments({
           kind={kind}
           label={INVENTORY_ATTACHMENT_LABELS[kind]}
           files={attachments[kind] ?? []}
+          hasCert={hasCert}
         />
       ))}
     </section>
@@ -60,11 +65,13 @@ function AttachmentKindSection({
   kind,
   label,
   files,
+  hasCert,
 }: {
   itemId: number;
   kind: InventoryAttachmentKind;
   label: string;
   files: InventoryAttachment[];
+  hasCert: boolean;
 }) {
   const [state, action] = useActionState(
     uploadInventoryAttachmentAction,
@@ -88,14 +95,17 @@ function AttachmentKindSection({
               key={f.id}
               className="flex items-center justify-between gap-2 rounded border border-slate-100 px-3 py-1.5 text-sm"
             >
-              <a
-                href={`/api/inventory/attachment/${f.id}`}
-                target="_blank"
-                rel="noreferrer"
+              <AttachmentLink
+                id={f.id}
+                filename={f.filename}
+                mime={f.mime}
+                src={`/api/inventory/attachment/${f.id}`}
+                editable
+                hasCert={hasCert}
+                fieldsUrl={`/api/inventory/attachment/${f.id}/fields`}
+                saveAction={saveInventoryPdfEditsAction}
                 className="truncate text-brand-600 hover:underline"
-              >
-                {f.filename}
-              </a>
+              />
               <span className="flex shrink-0 items-center gap-3 text-xs text-slate-400">
                 {fmt(f.uploadedAt)}
                 <form action={deleteInventoryAttachmentAction}>

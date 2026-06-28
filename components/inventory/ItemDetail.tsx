@@ -69,6 +69,7 @@ export function ItemDetail({
   loans,
   defects,
   attachments,
+  hasCert,
 }: {
   item: InventoryItemView;
   boardName: string;
@@ -78,6 +79,7 @@ export function ItemDetail({
   loans: InventoryLoan[];
   defects: DefectView[];
   attachments: Record<InventoryAttachmentKind, InventoryAttachment[]>;
+  hasCert: boolean;
 }) {
   const router = useRouter();
   const [options, setOptions] = useState<GroupedOpts>(initialOptions);
@@ -337,7 +339,11 @@ export function ItemDetail({
       </section>
 
       {/* Dateien: Belege, Leihanträge, Leihverträge (mit Historie) */}
-      <ItemAttachments itemId={item.id} attachments={attachments} />
+      <ItemAttachments
+        itemId={item.id}
+        attachments={attachments}
+        hasCert={hasCert}
+      />
 
       {editing && (
         <ItemFormModal

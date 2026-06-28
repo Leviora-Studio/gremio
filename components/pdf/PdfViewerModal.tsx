@@ -5,6 +5,7 @@
 
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
+import type { PdfEditorProps } from "./PdfEditor";
 
 const PdfEditor = dynamic(() => import("./PdfEditor"), {
   ssr: false,
@@ -22,6 +23,8 @@ export type PdfViewerModalProps = {
   attachmentId: number;
   editable: boolean;
   hasCert: boolean;
+  fieldsUrl?: string;
+  saveAction?: PdfEditorProps["saveAction"];
 };
 
 export function PdfViewerModal({
@@ -33,6 +36,8 @@ export function PdfViewerModal({
   attachmentId,
   editable,
   hasCert,
+  fieldsUrl,
+  saveAction,
 }: PdfViewerModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -69,6 +74,8 @@ export function PdfViewerModal({
             editable={editable}
             hasCert={hasCert}
             onClose={onClose}
+            fieldsUrl={fieldsUrl}
+            saveAction={saveAction}
           />
         ) : (
           <>

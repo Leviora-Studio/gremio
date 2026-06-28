@@ -170,6 +170,20 @@ export async function saveNamedFile(
   };
 }
 
+/** Wie saveNamedFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */
+export async function saveNamedBuffer(
+  subdir: string,
+  filename: string,
+  buf: Buffer,
+  mime: string,
+): Promise<{ relPath: string; filename: string; mime: string; size: number }> {
+  const rel = join(subdir, `${randomUUID()}-${sanitize(filename)}`);
+  const abs = absPath(rel);
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, buf);
+  return { relPath: rel, filename, mime, size: buf.length };
+}
+
 /** Wie saveAntragFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */
 export async function saveAntragBuffer(
   cardId: number,

@@ -76,10 +76,15 @@ export default async function InventoryRequestStatusPage({
         d.uploadedBy != null &&
         (d.kind === "loan_contract" || d.kind === "loan_request"),
     )
-    .map((d) => ({ id: d.id, filename: d.filename, kind: d.kind }));
+    .map((d) => ({
+      id: d.id,
+      filename: d.filename,
+      kind: d.kind,
+      mime: d.mime,
+    }));
   const signed = loanDocs
     .filter((d) => d.uploadedBy == null && d.kind === "loan_contract")
-    .map((d) => ({ id: d.id, filename: d.filename }));
+    .map((d) => ({ id: d.id, filename: d.filename, mime: d.mime }));
 
   const s = STATUS[loan.status] ?? STATUS.requested;
   const pending = (PENDING_LOAN_STATUSES as readonly string[]).includes(
