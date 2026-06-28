@@ -232,8 +232,14 @@ export default async function StatusPage({
           {/* Benennungs-Hinweis nur beim Einreichen von Quittungen. */}
           {!canResubmit && (
             <div className="rounded-md border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">
-              <p className="font-semibold">So benennst du deine Quittungen</p>
+              <p className="font-semibold">Wichtig für deine Quittungen</p>
               <ul className="mt-1 list-disc space-y-1 pl-5">
+                <li>
+                  Jede Quittung muss <strong>vollständig sichtbar</strong> und{" "}
+                  <strong>nicht abgeschnitten</strong> sein — der gesamte Beleg
+                  inklusive <strong>Kaufdatum</strong> muss auf dem Scan klar
+                  erkennbar sein.
+                </li>
                 <li>
                   Lade <strong>jede Quittung als eigene, einzelne PDF-Datei</strong>{" "}
                   hoch — bitte nicht mehrere Quittungen in einem Dokument
