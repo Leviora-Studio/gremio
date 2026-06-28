@@ -8,6 +8,7 @@ import {
   getPublicInventoryBoardById,
 } from "@/lib/inventory-public";
 import { PublicInventoryBoard } from "@/components/inventory/PublicInventoryBoard";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function PublicInventoryBoardPage({
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
+      <LiveRefresh src={`/api/inventar/${board.id}/stream`} />
       <Link href="/inventar" className="text-sm text-brand-600">
         ← Inventar
       </Link>

@@ -13,6 +13,7 @@ import {
   listInventoryItems,
 } from "@/lib/inventory-items";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export default async function InventoryBoardPage({
   params,
@@ -35,6 +36,7 @@ export default async function InventoryBoardPage({
 
   return (
     <div className="space-y-5">
+      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/intern/inventar" className="text-sm text-brand-600">

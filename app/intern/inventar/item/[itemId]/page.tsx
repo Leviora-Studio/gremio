@@ -13,6 +13,7 @@ import {
 import { listDefects, listLoans } from "@/lib/inventory-loans";
 import { listInventoryAttachments } from "@/lib/inventory-attachments";
 import { ItemDetail } from "@/components/inventory/ItemDetail";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export default async function InventoryItemPage({
   params,
@@ -41,8 +42,10 @@ export default async function InventoryItemPage({
     rows.map((r) => ({ id: r.id, name: r.name }));
 
   return (
-    <ItemDetail
-      item={view}
+    <>
+      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
+      <ItemDetail
+        item={view}
       boardName={board.name}
       visibleFields={Array.from(visible)}
       options={{
@@ -50,10 +53,11 @@ export default async function InventoryItemPage({
         location: toOpts(options.location),
         loan_status: toOpts(options.loan_status),
       }}
-      numberingEnabled={numbering?.enabled ?? false}
-      loans={loans}
-      defects={defects}
-      attachments={attachments}
-    />
+        numberingEnabled={numbering?.enabled ?? false}
+        loans={loans}
+        defects={defects}
+        attachments={attachments}
+      />
+    </>
   );
 }

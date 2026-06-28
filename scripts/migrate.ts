@@ -33,6 +33,46 @@ async function main() {
     FOR EACH ROW EXECUTE FUNCTION notify_card_change();
   `);
 
+  // Inventar-Realtime — spiegelt lib/realtime.ts ensureInventoryChangeTrigger().
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION notify_inventory_change() RETURNS trigger AS $fn$
+    DECLARE rec record; v_board int; v_token text;
+    BEGIN
+      IF (TG_OP = 'DELETE') THEN rec := OLD; ELSE rec := NEW; END IF;
+      v_board := NULL; v_token := NULL;
+      IF TG_TABLE_NAME = 'inventory_items' THEN
+        v_board := rec.board_id;
+      ELSIF TG_TABLE_NAME = 'inventory_loans' THEN
+        SELECT board_id INTO v_board FROM inventory_items WHERE id = rec.item_id;
+        v_token := rec.token;
+      ELSE
+        SELECT board_id INTO v_board FROM inventory_items WHERE id = rec.item_id;
+        IF TG_TABLE_NAME = 'inventory_attachments' AND rec.loan_id IS NOT NULL THEN
+          SELECT token INTO v_token FROM inventory_loans WHERE id = rec.loan_id;
+        END IF;
+      END IF;
+      PERFORM pg_notify(
+        'inventory_change',
+        json_build_object('boardId', v_board, 'token', v_token)::text
+      );
+      RETURN rec;
+    END;
+    $fn$ LANGUAGE plpgsql;
+  `);
+  for (const t of [
+    "inventory_items",
+    "inventory_loans",
+    "inventory_defects",
+    "inventory_attachments",
+  ]) {
+    await pool.query(`DROP TRIGGER IF EXISTS ${t}_notify_change ON ${t};`);
+    await pool.query(`
+      CREATE TRIGGER ${t}_notify_change
+      AFTER INSERT OR UPDATE OR DELETE ON ${t}
+      FOR EACH ROW EXECUTE FUNCTION notify_inventory_change();
+    `);
+  }
+
   console.log("✅ Migrationen + Realtime-Trigger angewendet.");
   await pool.end();
 }

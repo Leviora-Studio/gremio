@@ -9,6 +9,7 @@ import {
 import { getInventoryItemById } from "@/lib/inventory-items";
 import { listLoanAttachments } from "@/lib/inventory-attachments";
 import { PublicContractSection } from "@/components/inventory/PublicContractSection";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { withdrawRequestAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +90,7 @@ export default async function InventoryRequestStatusPage({
 
   return (
     <main className="mx-auto max-w-xl px-4 py-10">
+      <LiveRefresh src={`/api/inventar/status/${token}/stream`} />
       <h1 className="text-2xl font-bold">Status deiner Anfrage</h1>
       <p className="mt-1 text-sm text-slate-500">
         Bewahre den Link zu dieser Seite auf, um den Status später erneut
