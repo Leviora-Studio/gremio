@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { env } from "@/lib/env";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import { getLoanById } from "@/lib/inventory-loans";
@@ -47,6 +48,10 @@ export default async function InventoryLoanPage({
   const pending = PENDING.includes(loan.status);
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
+  // Öffentlicher Status-Link der Anfrage (nur bei öffentlichen Anfragen mit Token).
+  const statusLink = loan.token
+    ? `${env.APP_BASE_URL}/inventar/status/${loan.token}`
+    : null;
 
   const detail: { label: string; value: string }[] = [
     { label: "Entleiher", value: loan.borrower },
@@ -96,6 +101,24 @@ export default async function InventoryLoanPage({
             </div>
           ))}
         </dl>
+
+        {statusLink && (
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <dt className="text-xs uppercase tracking-wide text-slate-400">
+              Status-Link (öffentlich)
+            </dt>
+            <dd>
+              <a
+                href={statusLink}
+                target="_blank"
+                rel="noopener"
+                className="break-all text-sm text-brand-600 hover:underline"
+              >
+                {statusLink}
+              </a>
+            </dd>
+          </div>
+        )}
 
         {/* Aktionen je nach Status */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
