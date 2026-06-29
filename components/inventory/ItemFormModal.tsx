@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Select } from "@/components/Select";
 import {
   addInventoryOptionAction,
@@ -147,7 +147,7 @@ export function ItemFormModal({
           )}
 
           {show("category") && (
-            <ChipMultiSelect
+            <CategorySelect
               label="Kategorie"
               options={options.category}
               selected={categoryIds}
@@ -160,33 +160,32 @@ export function ItemFormModal({
             />
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {show("location") && (
-              <SingleSelect
-                label="Standort"
-                options={options.location}
-                value={locationId}
-                onChange={setLocationId}
-                onAdd={(name) => addOption("location", name)}
-              />
-            )}
-            {show("lendable") && (
-              <div>
-                <span className="label">Entleihbar</span>
-                <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={lendable}
-                    onChange={(e) => setLendable(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm text-slate-700">
-                    Gegenstand ist entleihbar (sonst öffentlich nicht sichtbar)
-                  </span>
-                </label>
-              </div>
-            )}
-          </div>
+          {show("location") && (
+            <SingleSelect
+              label="Standort"
+              options={options.location}
+              value={locationId}
+              onChange={setLocationId}
+              onAdd={(name) => addOption("location", name)}
+            />
+          )}
+
+          {show("lendable") && (
+            <div>
+              <span className="label">Entleihbar</span>
+              <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={lendable}
+                  onChange={(e) => setLendable(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm text-slate-700">
+                  Gegenstand ist entleihbar (sonst öffentlich nicht sichtbar)
+                </span>
+              </label>
+            </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-3">
             {show("price") && (
@@ -353,7 +352,7 @@ function SingleSelect({
       <label className="label">{label}</label>
       <Select
         placeholder="— keine —"
-        searchable={options.length > 8}
+        searchable
         value={value == null ? "" : String(value)}
         onChange={(v) => onChange(v ? Number(v) : null)}
         options={[
@@ -366,7 +365,9 @@ function SingleSelect({
   );
 }
 
-function ChipMultiSelect({
+/** Suchbares Mehrfach-Select (Kategorie): Dropdown mit Suche + Chips über die
+ *  gesamte Breite, plus „neu hinzufügen" darunter. */
+function CategorySelect({
   label,
   options,
   selected,
@@ -379,31 +380,105 @@ function ChipMultiSelect({
   onToggle: (id: number) => void;
   onAdd: (name: string) => Promise<string | null>;
 }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? options.filter((o) => o.name.toLowerCase().includes(q))
+    : options;
+  const selectedOpts = options.filter((o) => selected.includes(o.id));
+
   return (
     <div>
       <label className="label">{label}</label>
-      {options.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1.5">
-          {options.map((o) => {
-            const active = selected.includes(o.id);
-            return (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => onToggle(o.id)}
-                className={`rounded border px-2.5 py-1 text-sm transition ${
-                  active
-                    ? "border-brand-500 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:border-slate-300"
-                }`}
-              >
-                {active ? "✓ " : ""}
-                {o.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-left text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        >
+          <span className="flex flex-wrap gap-1">
+            {selectedOpts.length ? (
+              selectedOpts.map((o) => (
+                <span
+                  key={o.id}
+                  className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-700"
+                >
+                  {o.name}
+                </span>
+              ))
+            ) : (
+              <span className="text-slate-400">Kategorien wählen…</span>
+            )}
+          </span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 20 20"
+            fill="none"
+            className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+            aria-hidden
+          >
+            <path
+              d="M5 7.5 10 12.5 15 7.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+
+        {open && (
+          <div className="absolute z-30 mt-1 w-full rounded-md border border-slate-200 bg-white text-sm shadow-lg">
+            <div className="border-b border-slate-100 p-1.5">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Suchen…"
+                className="h-8 w-full rounded border border-slate-300 px-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+            <ul className="max-h-60 overflow-auto py-1">
+              {visible.length === 0 ? (
+                <li className="px-3 py-1.5 text-slate-400">Keine Treffer</li>
+              ) : (
+                visible.map((o) => {
+                  const isSel = selected.includes(o.id);
+                  return (
+                    <li key={o.id}>
+                      <button
+                        type="button"
+                        onClick={() => onToggle(o.id)}
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-brand-50 ${
+                          isSel
+                            ? "font-medium text-brand-700"
+                            : "text-slate-700"
+                        }`}
+                      >
+                        <span className="w-4 shrink-0">{isSel ? "✓" : ""}</span>
+                        {o.name}
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
       <AddOption placeholder="Neue Kategorie …" onAdd={onAdd} />
     </div>
   );
