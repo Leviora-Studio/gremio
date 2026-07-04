@@ -31,6 +31,29 @@ export default async function InventarPage() {
         </Link>
       </div>
 
+      {/* Anlagenverzeichnis: board-übergreifende Nur-Ansicht (für alle sichtbar,
+          Einstellungen nur Admin). */}
+      <Link
+        href="/intern/inventar/gesamt"
+        className="card flex items-center justify-between gap-3 p-4 transition hover:border-brand-300 hover:shadow-sm"
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600"
+            aria-hidden
+          >
+            📋
+          </span>
+          <div>
+            <div className="font-medium text-slate-800">Gesamtinventar</div>
+            <div className="text-xs text-slate-500">
+              Board-übergreifendes Anlagenverzeichnis — nur Ansicht
+            </div>
+          </div>
+        </div>
+        <span className="text-slate-300">→</span>
+      </Link>
+
       {boards.length === 0 ? (
         <div className="card p-8 text-center text-slate-500">
           <p>Du hast noch kein Inventar.</p>

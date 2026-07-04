@@ -62,7 +62,7 @@ export function InventoryBoardView({
   const [fCategory, setFCategory] = useState<number | null>(null);
   const [fLocation, setFLocation] = useState<number | null>(null);
   const [fAvail, setFAvail] = useState<string>("");
-  const [grouped, setGrouped] = useState(false);
+  const [grouped, setGrouped] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const cols = COLUMNS.filter(
@@ -191,25 +191,25 @@ export function InventoryBoardView({
             <div className="flex overflow-hidden rounded-md border border-slate-300">
               <button
                 type="button"
-                onClick={() => setGrouped(false)}
-                className={`px-3 py-1.5 text-sm ${
-                  grouped
-                    ? "bg-white text-slate-600 hover:bg-slate-50"
-                    : "bg-brand-50 font-medium text-brand-700"
-                }`}
-              >
-                Liste
-              </button>
-              <button
-                type="button"
                 onClick={() => setGrouped(true)}
-                className={`border-l border-slate-300 px-3 py-1.5 text-sm ${
+                className={`px-3 py-1.5 text-sm ${
                   grouped
                     ? "bg-brand-50 font-medium text-brand-700"
                     : "bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
                 Nach Gruppe
+              </button>
+              <button
+                type="button"
+                onClick={() => setGrouped(false)}
+                className={`border-l border-slate-300 px-3 py-1.5 text-sm ${
+                  grouped
+                    ? "bg-white text-slate-600 hover:bg-slate-50"
+                    : "bg-brand-50 font-medium text-brand-700"
+                }`}
+              >
+                Liste
               </button>
             </div>
           )}

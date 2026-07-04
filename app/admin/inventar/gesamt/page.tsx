@@ -37,15 +37,26 @@ export default async function InventoryOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/admin/inventar" className="text-sm text-brand-600">
-          ← Inventar
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link href="/admin/inventar" className="text-sm text-brand-600">
+            ← Inventar
+          </Link>
+          <h2 className="text-lg font-semibold">
+            Gesamtübersicht — Einstellungen
+          </h2>
+          <p className="text-sm text-slate-500">
+            Lege fest, welche Inventare ab welchem Mindestpreis ins
+            Anlagenverzeichnis einfließen. Die reine Ansicht sehen alle Nutzer
+            unter Inventar → Gesamtinventar.
+          </p>
+        </div>
+        <Link
+          href="/intern/inventar/gesamt"
+          className="btn-secondary shrink-0"
+        >
+          Zur Ansicht
         </Link>
-        <h2 className="text-lg font-semibold">Gesamtübersicht (Anlagenverzeichnis)</h2>
-        <p className="text-sm text-slate-500">
-          Alle Artikel ab einem Mindestpreis aus den einbezogenen Inventaren —
-          einzeln gelistet für gesetzliche Nachweise.
-        </p>
       </div>
 
       {/* Einstellungen */}

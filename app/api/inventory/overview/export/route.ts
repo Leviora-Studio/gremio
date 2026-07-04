@@ -17,11 +17,10 @@ function euro(cents: number | null): string {
   return cents == null ? "" : (cents / 100).toFixed(2).replace(".", ",");
 }
 
-/** CSV-Export der board-übergreifenden Gesamtübersicht (nur Admin). */
+/** CSV-Export des Anlagenverzeichnisses (jeder eingeloggte Nutzer; nur Ansicht). */
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
-  if (user.role !== "admin") return new Response("Forbidden", { status: 403 });
 
   const { items, total } = await getOverviewItems();
   const header = [
