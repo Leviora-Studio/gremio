@@ -127,6 +127,25 @@ export function ItemFormModal({
             />
           </div>
 
+          {show("group") && (
+            <div>
+              <label htmlFor="it-group" className="label">
+                Artikel/Gruppe
+              </label>
+              <input
+                id="it-group"
+                name="groupName"
+                className="input"
+                defaultValue={item?.groupName ?? ""}
+                placeholder="z. B. Bierzeltgarnitur (fasst gleiche Stücke zusammen)"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Gleicher Name = ein Sammel-Posten. Öffentlich erscheint nur die
+                Stückzahl; jedes Stück behält seine eigene Inventarnummer.
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             {show("number") && (
               <div>

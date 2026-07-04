@@ -13,6 +13,7 @@ import { inventoryBoardFields } from "@/lib/db/schema";
  * Feld-Schlüssel werden dann ergänzt).
  */
 export const INVENTORY_FIELD_KEYS = [
+  "group", // Artikel/Gruppe (Stückzahl-Zusammenfassung gleicher Stücke)
   "number", // Inventarnummer
   "serial_number", // Seriennummer (nur intern)
   "category", // Kategorie (Multiselect)
@@ -30,6 +31,7 @@ export const INVENTORY_FIELD_KEYS = [
 export type InventoryFieldKey = (typeof INVENTORY_FIELD_KEYS)[number];
 
 export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
+  group: "Artikel/Gruppe",
   number: "Inventarnummer",
   serial_number: "Seriennummer",
   category: "Kategorie",

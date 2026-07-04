@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { InventoryItemView } from "@/lib/inventory-items";
 import { Select } from "@/components/Select";
@@ -18,6 +18,7 @@ type OptionKind = keyof GroupedOpts;
 
 const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "name", label: "Bezeichnung", always: true },
+  { key: "group", label: "Gruppe" },
   { key: "number", label: "Inv.-Nr." },
   { key: "serial_number", label: "Seriennr." },
   { key: "category", label: "Kategorie" },
@@ -61,16 +62,23 @@ export function InventoryBoardView({
   const [fCategory, setFCategory] = useState<number | null>(null);
   const [fLocation, setFLocation] = useState<number | null>(null);
   const [fAvail, setFAvail] = useState<string>("");
+  const [grouped, setGrouped] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const cols = COLUMNS.filter(
     (c) => c.always || visibleFields.includes(c.key),
   );
 
+  // Gruppierung nur anbieten, wenn das Feld aktiv ist und Gruppen vorkommen.
+  const hasGroups =
+    visibleFields.includes("group") &&
+    items.some((it) => (it.groupName ?? "").trim() !== "");
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.name} ${it.number ?? ""} ${it.serialNumber ?? ""} ${it.vendor ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
+        const hay = `${it.name} ${it.groupName ?? ""} ${it.number ?? ""} ${it.serialNumber ?? ""} ${it.vendor ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;
@@ -79,6 +87,49 @@ export function InventoryBoardView({
       return true;
     });
   }, [items, query, fCategory, fLocation, fAvail]);
+
+  // Nach „Artikel/Gruppe" bündeln: gleiche groupName → ein Sammel-Posten,
+  // Gegenstände ohne Gruppe bleiben einzeln.
+  const groups = useMemo(() => {
+    const map = new Map<string, InventoryItemView[]>();
+    const singles: InventoryItemView[] = [];
+    for (const it of filtered) {
+      const g = (it.groupName ?? "").trim();
+      if (!g) {
+        singles.push(it);
+        continue;
+      }
+      const arr = map.get(g) ?? [];
+      arr.push(it);
+      map.set(g, arr);
+    }
+    const grouped = [...map.entries()].map(([name, its]) => ({
+      key: `g:${name}`,
+      name,
+      items: its,
+      total: its.length,
+      available: its.filter((i) => i.availability === "available").length,
+    }));
+    const single = singles.map((it) => ({
+      key: `i:${it.id}`,
+      name: null as string | null,
+      items: [it],
+      total: 1,
+      available: it.availability === "available" ? 1 : 0,
+    }));
+    return [...grouped, ...single].sort((a, b) =>
+      (a.name ?? a.items[0].name).localeCompare(b.name ?? b.items[0].name),
+    );
+  }, [filtered]);
+
+  function toggleExpand(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   function onSaved() {
     setCreateOpen(false);
@@ -135,13 +186,41 @@ export function InventoryBoardView({
             ]}
           />
         )}
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="btn-primary ml-auto"
-        >
-          + Neuer Gegenstand
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {hasGroups && (
+            <div className="flex overflow-hidden rounded-md border border-slate-300">
+              <button
+                type="button"
+                onClick={() => setGrouped(false)}
+                className={`px-3 py-1.5 text-sm ${
+                  grouped
+                    ? "bg-white text-slate-600 hover:bg-slate-50"
+                    : "bg-brand-50 font-medium text-brand-700"
+                }`}
+              >
+                Liste
+              </button>
+              <button
+                type="button"
+                onClick={() => setGrouped(true)}
+                className={`border-l border-slate-300 px-3 py-1.5 text-sm ${
+                  grouped
+                    ? "bg-brand-50 font-medium text-brand-700"
+                    : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Nach Gruppe
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="btn-primary"
+          >
+            + Neuer Gegenstand
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -161,19 +240,95 @@ export function InventoryBoardView({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((it) => (
-                <tr
-                  key={it.id}
-                  onClick={() => router.push(`/intern/inventar/item/${it.id}`)}
-                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                >
-                  {cols.map((c) => (
-                    <td key={c.key} className="px-3 py-2 align-top">
-                      {renderCell(c.key, it)}
-                    </td>
+              {grouped
+                ? groups.map((g) => {
+                    const single = g.name === null;
+                    if (single) {
+                      const it = g.items[0];
+                      return (
+                        <tr
+                          key={g.key}
+                          onClick={() =>
+                            router.push(`/intern/inventar/item/${it.id}`)
+                          }
+                          className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                        >
+                          {cols.map((c) => (
+                            <td key={c.key} className="px-3 py-2 align-top">
+                              {renderCell(c.key, it)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    }
+                    const isOpen = expanded.has(g.key);
+                    return (
+                      <Fragment key={g.key}>
+                        <tr
+                          onClick={() => toggleExpand(g.key)}
+                          className="cursor-pointer border-b border-slate-100 bg-slate-50/60 hover:bg-slate-100"
+                        >
+                          <td
+                            colSpan={cols.length}
+                            className="px-3 py-2 align-top"
+                          >
+                            <span className="flex items-center gap-2 font-medium text-slate-800">
+                              <span
+                                className={`inline-block text-slate-400 transition-transform ${
+                                  isOpen ? "rotate-90" : ""
+                                }`}
+                              >
+                                ▸
+                              </span>
+                              {g.name}
+                              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                                {g.total} Stück
+                              </span>
+                              <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                                {g.available} verfügbar
+                              </span>
+                            </span>
+                          </td>
+                        </tr>
+                        {isOpen &&
+                          g.items.map((it) => (
+                            <tr
+                              key={it.id}
+                              onClick={() =>
+                                router.push(`/intern/inventar/item/${it.id}`)
+                              }
+                              className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                            >
+                              {cols.map((c, i) => (
+                                <td
+                                  key={c.key}
+                                  className={`px-3 py-2 align-top ${
+                                    i === 0 ? "pl-8" : ""
+                                  }`}
+                                >
+                                  {renderCell(c.key, it)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                      </Fragment>
+                    );
+                  })
+                : filtered.map((it) => (
+                    <tr
+                      key={it.id}
+                      onClick={() =>
+                        router.push(`/intern/inventar/item/${it.id}`)
+                      }
+                      className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                    >
+                      {cols.map((c) => (
+                        <td key={c.key} className="px-3 py-2 align-top">
+                          {renderCell(c.key, it)}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
               {filtered.length === 0 && (
                 <tr>
                   <td
@@ -226,6 +381,14 @@ function renderCell(key: string, it: InventoryItemView) {
     case "availability":
       return (
         <AvailabilityBadge availability={it.availability} until={it.activeUntil} />
+      );
+    case "group":
+      return it.groupName ? (
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+          {it.groupName}
+        </span>
+      ) : (
+        "—"
       );
     case "number":
       return it.number ?? "—";

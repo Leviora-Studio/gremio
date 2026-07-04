@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { env } from "@/lib/env";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
-import { getLoanById } from "@/lib/inventory-loans";
+import { getLoanById, getLoanItems } from "@/lib/inventory-loans";
 import { listLoanAttachments } from "@/lib/inventory-attachments";
 import {
   loanStageClass,
@@ -46,6 +46,7 @@ export default async function InventoryLoanPage({
   const { user, board } = await requireInventoryBoardAccess(item.boardId);
 
   const docs = await listLoanAttachments(loan.id);
+  const loanItems = await getLoanItems(loan.id);
   const pending = PENDING.includes(loan.status);
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
@@ -160,6 +161,31 @@ export default async function InventoryLoanPage({
           </form>
         </div>
       </div>
+
+      {/* Reservierte Stücke (bei Stückzahl-Ausleihe mehrere) */}
+      {loanItems.length > 1 && (
+        <div className="card p-5">
+          <h2 className="mb-1 font-semibold">
+            Reservierte Stücke ({loanItems.length})
+          </h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Dieser Vorgang umfasst mehrere konkrete Stücke.
+          </p>
+          <ul className="divide-y divide-slate-100">
+            {loanItems.map((li) => (
+              <li key={li.id}>
+                <Link
+                  href={`/intern/inventar/item/${li.id}`}
+                  className="flex items-center justify-between gap-2 py-2 text-sm hover:text-brand-600"
+                >
+                  <span className="font-medium text-slate-800">{li.name}</span>
+                  <span className="text-slate-400">{li.number ?? "—"}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Hinweise für den Entleiher (über den Status-Link sichtbar) */}
       <form action={setLoanBorrowerNoteAction} className="card space-y-2 p-5">

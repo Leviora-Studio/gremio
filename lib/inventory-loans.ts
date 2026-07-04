@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import {
   inventoryDefects,
   inventoryItems,
+  inventoryLoanItems,
   inventoryLoans,
   users,
   type InventoryDefect,
@@ -26,13 +27,15 @@ export type LoanInput = {
   notes: string | null;
 };
 
-/** Alle Entleihvorgänge eines Gegenstands (neueste zuerst). */
+/** Alle Entleihvorgänge, die ein Gegenstand (mit)betrifft (neueste zuerst). */
 export async function listLoans(itemId: number): Promise<InventoryLoan[]> {
-  return db
-    .select()
-    .from(inventoryLoans)
-    .where(eq(inventoryLoans.itemId, itemId))
+  const rows = await db
+    .select({ l: inventoryLoans })
+    .from(inventoryLoanItems)
+    .innerJoin(inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId))
+    .where(eq(inventoryLoanItems.itemId, itemId))
     .orderBy(desc(inventoryLoans.createdAt));
+  return rows.map((r) => r.l);
 }
 
 export async function getLoanById(
@@ -47,17 +50,41 @@ export async function getLoanById(
   return row;
 }
 
-/** Neuen Entleihvorgang anlegen (offen = aktuell entliehen). */
+/** Die konkreten Stücke eines Vorgangs (Inventarnummer + Bezeichnung). */
+export async function getLoanItems(
+  loanId: number,
+): Promise<{ id: number; number: string | null; name: string }[]> {
+  return db
+    .select({
+      id: inventoryItems.id,
+      number: inventoryItems.number,
+      name: inventoryItems.name,
+    })
+    .from(inventoryLoanItems)
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId))
+    .where(eq(inventoryLoanItems.loanId, loanId))
+    .orderBy(inventoryItems.number, inventoryItems.id);
+}
+
+/**
+ * Neuen Entleihvorgang anlegen — reserviert 1..n konkrete Stücke. `itemIds[0]`
+ * ist das Leit-Stück (loans.item_id), alle Stücke landen in loan_items.
+ */
 export async function createLoan(
-  itemId: number,
+  itemIds: number[],
   createdBy: number | null,
   data: LoanInput,
 ): Promise<number> {
-  const [row] = await db
-    .insert(inventoryLoans)
-    .values({ itemId, createdBy, ...data })
-    .returning({ id: inventoryLoans.id });
-  return row.id;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(inventoryLoans)
+      .values({ itemId: itemIds[0], createdBy, ...data })
+      .returning({ id: inventoryLoans.id });
+    await tx
+      .insert(inventoryLoanItems)
+      .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
+    return row.id;
+  });
 }
 
 /** Vorgang als zurückgegeben markieren (beendet den laufenden Entleihzeitraum). */
@@ -83,19 +110,33 @@ export async function setLoanBorrowerNote(
     .where(eq(inventoryLoans.id, loanId));
 }
 
-/** Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token). */
+/**
+ * Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token) —
+ * reserviert 1..n konkrete Stücke.
+ */
 export async function createLoanRequest(
-  itemId: number,
+  itemIds: number[],
   data: LoanInput,
 ): Promise<{ id: number; token: string }> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const token = generateToken();
     try {
-      const [row] = await db
-        .insert(inventoryLoans)
-        .values({ itemId, status: "requested", token, createdBy: null, ...data })
-        .returning({ id: inventoryLoans.id });
-      return { id: row.id, token };
+      return await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(inventoryLoans)
+          .values({
+            itemId: itemIds[0],
+            status: "requested",
+            token,
+            createdBy: null,
+            ...data,
+          })
+          .returning({ id: inventoryLoans.id });
+        await tx
+          .insert(inventoryLoanItems)
+          .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
+        return { id: row.id, token };
+      });
     } catch (e) {
       if (isTokenConflict(e)) continue;
       throw e;
@@ -243,16 +284,17 @@ export async function getActiveLoanMap(
   if (!itemIds.length) return new Map();
   const rows = await db
     .select({
-      itemId: inventoryLoans.itemId,
+      itemId: inventoryLoanItems.itemId,
       borrower: inventoryLoans.borrower,
       startDate: inventoryLoans.startDate,
       endDate: inventoryLoans.endDate,
       createdAt: inventoryLoans.createdAt,
     })
-    .from(inventoryLoans)
+    .from(inventoryLoanItems)
+    .innerJoin(inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId))
     .where(
       and(
-        inArray(inventoryLoans.itemId, itemIds),
+        inArray(inventoryLoanItems.itemId, itemIds),
         eq(inventoryLoans.status, "active"),
         isNull(inventoryLoans.returnedAt),
       ),

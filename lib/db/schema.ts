@@ -790,6 +790,8 @@ export const inventoryItems = pgTable("inventory_items", {
     .references(() => inventoryBoards.id, { onDelete: "cascade" }),
   number: text("number"), // Inventarnummer (board-spezifisch, optional/auto)
   name: text("name").notNull().default(""), // Bezeichnung
+  // „Artikel/Gruppe": Stücke mit gleichem groupName bilden eine Gruppe (Stückzahl).
+  groupName: text("group_name"),
   // Ist der Gegenstand prinzipiell entleihbar? Nicht-entleihbare sind öffentlich
   // unsichtbar. Der laufende Status (verfügbar/entliehen) ergibt sich automatisch
   // aus den Entleihvorgängen.
@@ -902,6 +904,20 @@ export const inventoryLoans = pgTable(
     ),
     tokenUq: uniqueIndex("inventory_loans_token_uq").on(t.token),
   }),
+);
+
+// Ein Entleihvorgang reserviert 1..n konkrete Stücke (Stückzahl-Ausleihe).
+export const inventoryLoanItems = pgTable(
+  "inventory_loan_items",
+  {
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => inventoryLoans.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.loanId, t.itemId] }) }),
 );
 
 // Mängel je Gegenstand (Historie). resolvedAt IS NULL = bekannter offener Mangel.

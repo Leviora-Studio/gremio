@@ -65,7 +65,7 @@ export async function createLoanAction(fd: FormData): Promise<void> {
   const { userId, item } = await assertItemAccess(itemId);
   const borrower = text(fd, "borrower", 200);
   if (!borrower) return;
-  await createLoan(itemId, userId, {
+  await createLoan([itemId], userId, {
     borrower,
     borrowerEmail: null,
     purpose: text(fd, "purpose"),

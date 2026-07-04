@@ -67,6 +67,8 @@ function parseCategoryIds(formData: FormData): number[] {
 /** Aus dem Formular nur die am Board sichtbaren Felder übernehmen. */
 function readFields(formData: FormData, visible: Set<string>) {
   const out: ItemPatch = {};
+  if (visible.has("group"))
+    out.groupName = parseText(formData.get("groupName"));
   if (visible.has("number")) out.number = parseText(formData.get("number"));
   if (visible.has("serial_number"))
     out.serialNumber = parseText(formData.get("serialNumber"));
@@ -117,6 +119,7 @@ export async function createInventoryItemAction(
   const fields = readFields(formData, visible);
   const data: ItemInput = {
     name,
+    groupName: fields.groupName ?? null,
     number: fields.number ?? null,
     serialNumber: fields.serialNumber ?? null,
     condition: fields.condition ?? "active",

@@ -18,18 +18,37 @@ type Options = {
   category: PublicOpt[];
 };
 
+// Eine Tabellenzeile: entweder ein Einzelstück oder ein Sammel-Posten (Gruppe).
+type Row = {
+  key: string;
+  name: string;
+  categoryNames: string[];
+  isGroup: boolean;
+  groupName: string | null;
+  total: number; // Stückzahl gesamt (nur bei Gruppe > 1 relevant)
+  available: number; // aktuell verfügbare Stückzahl
+  item: PublicInventoryItem; // Repräsentant (für Einzel-Anfrage)
+};
+
+// Ziel eines Anfrage-Dialogs.
+type RequestTarget =
+  | { kind: "single"; item: PublicInventoryItem }
+  | { kind: "group"; groupName: string; name: string; available: number };
+
 export function PublicInventoryBoard({
+  boardId,
   publicFields,
   items,
   options,
 }: {
+  boardId: number;
   publicFields: string[];
   items: PublicInventoryItem[];
   options: Options;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCats, setSelectedCats] = useState<number[]>([]);
-  const [requestItem, setRequestItem] = useState<PublicInventoryItem | null>(
+  const [requestTarget, setRequestTarget] = useState<RequestTarget | null>(
     null,
   );
 
@@ -63,6 +82,46 @@ export function PublicInventoryBoard({
       return true;
     });
   }, [items, query, selectedCats]);
+
+  // Gleiche Artikel/Gruppe zu einem Sammel-Posten bündeln (Stückzahl); Stücke
+  // ohne Gruppe bleiben einzeln.
+  const rows = useMemo<Row[]>(() => {
+    const map = new Map<string, PublicInventoryItem[]>();
+    const singles: PublicInventoryItem[] = [];
+    for (const it of filtered) {
+      const g = (it.groupName ?? "").trim();
+      if (!g) {
+        singles.push(it);
+        continue;
+      }
+      const arr = map.get(g) ?? [];
+      arr.push(it);
+      map.set(g, arr);
+    }
+    const groupRows: Row[] = [...map.entries()].map(([name, its]) => ({
+      key: `g:${name}`,
+      name,
+      categoryNames: its[0].categoryNames,
+      isGroup: true,
+      groupName: name,
+      total: its.length,
+      available: its.filter((i) => i.availability === "available").length,
+      item: its[0],
+    }));
+    const singleRows: Row[] = singles.map((it) => ({
+      key: `i:${it.id}`,
+      name: it.name,
+      categoryNames: it.categoryNames,
+      isGroup: false,
+      groupName: null,
+      total: 1,
+      available: it.availability === "available" ? 1 : 0,
+      item: it,
+    }));
+    return [...groupRows, ...singleRows].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [filtered]);
 
   return (
     <div className="flex flex-col gap-5 md:flex-row">
@@ -149,37 +208,68 @@ export function PublicInventoryBoard({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((it) => (
+                {rows.map((r) => (
                   <tr
-                    key={it.id}
+                    key={r.key}
                     className="border-b border-slate-100 last:border-0"
                   >
                     <td className="px-3 py-2 align-top">
-                      {renderCell("name", it)}
+                      <span className="flex flex-wrap items-center gap-1.5 font-medium text-slate-800">
+                        {r.name || "—"}
+                        {r.isGroup && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                            {r.total} Stück
+                          </span>
+                        )}
+                      </span>
                     </td>
                     {showCategory && (
                       <td className="px-3 py-2 align-top">
-                        {renderCell("category", it)}
+                        {renderCategories(r.categoryNames)}
                       </td>
                     )}
                     <td className="px-3 py-2 align-top">
-                      <AvailabilityBadge
-                        availability={it.availability}
-                        until={it.lentUntil}
-                      />
+                      {r.isGroup ? (
+                        <span
+                          className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
+                            r.available > 0
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {r.available} von {r.total} verfügbar
+                        </span>
+                      ) : (
+                        <AvailabilityBadge
+                          availability={r.item.availability}
+                          until={r.item.lentUntil}
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right align-top">
                       <button
                         type="button"
-                        onClick={() => setRequestItem(it)}
-                        className="btn-secondary px-2.5 py-1 text-xs"
+                        disabled={r.available === 0}
+                        onClick={() =>
+                          setRequestTarget(
+                            r.isGroup
+                              ? {
+                                  kind: "group",
+                                  groupName: r.groupName as string,
+                                  name: r.name,
+                                  available: r.available,
+                                }
+                              : { kind: "single", item: r.item },
+                          )
+                        }
+                        className="btn-secondary px-2.5 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Anfragen
                       </button>
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {rows.length === 0 && (
                   <tr>
                     <td
                       colSpan={showCategory ? 4 : 3}
@@ -195,51 +285,49 @@ export function PublicInventoryBoard({
         )}
       </div>
 
-      {requestItem && (
+      {requestTarget && (
         <RequestModal
-          item={requestItem}
-          onClose={() => setRequestItem(null)}
+          boardId={boardId}
+          target={requestTarget}
+          onClose={() => setRequestTarget(null)}
         />
       )}
     </div>
   );
 }
 
-function renderCell(key: string, it: PublicInventoryItem) {
-  switch (key) {
-    case "name":
-      return <span className="font-medium text-slate-800">{it.name || "—"}</span>;
-    case "category":
-      return it.categoryNames.length ? (
-        <span className="flex flex-wrap gap-1">
-          {it.categoryNames.map((n) => (
-            <span
-              key={n}
-              className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
-            >
-              {n}
-            </span>
-          ))}
+function renderCategories(names: string[]) {
+  return names.length ? (
+    <span className="flex flex-wrap gap-1">
+      {names.map((n) => (
+        <span
+          key={n}
+          className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600"
+        >
+          {n}
         </span>
-      ) : (
-        "—"
-      );
-    default:
-      return "—";
-  }
+      ))}
+    </span>
+  ) : (
+    "—"
+  );
 }
 
 function RequestModal({
-  item,
+  boardId,
+  target,
   onClose,
 }: {
-  item: PublicInventoryItem;
+  boardId: number;
+  target: RequestTarget;
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState(
     createInventoryLoanRequestAction,
     {} as RequestState,
   );
+  const isGroup = target.kind === "group";
+  const name = isGroup ? target.name : target.item.name;
 
   return (
     <div
@@ -252,7 +340,9 @@ function RequestModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">Gegenstand anfragen</h2>
+          <h2 className="text-lg font-bold">
+            {isGroup ? "Artikel anfragen" : "Gegenstand anfragen"}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -263,11 +353,41 @@ function RequestModal({
           </button>
         </div>
         <p className="text-sm text-slate-600">
-          <strong>{item.name}</strong>
+          <strong>{name}</strong>
+          {isGroup && (
+            <span className="text-slate-500">
+              {" "}
+              — {target.available} Stück verfügbar
+            </span>
+          )}
         </p>
 
         <form action={action} noValidate className="space-y-3">
-          <input type="hidden" name="itemId" value={item.id} />
+          {isGroup ? (
+            <>
+              <input type="hidden" name="boardId" value={boardId} />
+              <input type="hidden" name="groupName" value={target.groupName} />
+              <div>
+                <label htmlFor="rq-qty" className="label">
+                  Stückzahl
+                </label>
+                <input
+                  id="rq-qty"
+                  name="quantity"
+                  type="number"
+                  min={1}
+                  max={target.available}
+                  className="input w-28"
+                  defaultValue={state.values?.quantity ?? "1"}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Konkrete Stücke werden automatisch reserviert.
+                </p>
+              </div>
+            </>
+          ) : (
+            <input type="hidden" name="itemId" value={target.item.id} />
+          )}
           <div>
             <label htmlFor="rq-borrower" className="label">
               Dein Name

@@ -20,6 +20,7 @@ export const PUBLIC_INVENTORY_FIELD_KEYS = ["category"] as const;
 export type PublicInventoryItem = {
   id: number;
   name: string;
+  groupName: string | null; // Sammel-/Stückzahl-Gruppe (mehrere gleiche Stücke)
   categoryIds: number[];
   categoryNames: string[];
   availability: InventoryAvailability; // available | lent (nie not_lendable öffentlich)
@@ -71,6 +72,7 @@ export async function getPublicBoardData(boardId: number): Promise<{
     .map((it) => ({
       id: it.id,
       name: it.name,
+      groupName: it.groupName,
       categoryIds: it.categoryIds,
       categoryNames: it.categoryNames,
       availability: it.availability,

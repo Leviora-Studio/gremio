@@ -279,6 +279,7 @@ export async function getInventoryItemView(
 
 export type ItemInput = {
   name: string;
+  groupName: string | null;
   number: string | null;
   serialNumber: string | null;
   condition: string;
@@ -307,6 +308,7 @@ export async function createInventoryItem(
       .values({
         boardId,
         name: data.name,
+        groupName: data.groupName,
         number: data.number,
         serialNumber: data.serialNumber,
         condition: data.condition,
@@ -364,4 +366,32 @@ export async function updateInventoryItem(
 
 export async function deleteInventoryItem(id: number): Promise<void> {
   await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+}
+
+/**
+ * Verfügbare Stücke einer Artikel/Gruppe (aktiv, entleihbar, aktuell nicht
+ * laufend verliehen) — für die öffentliche Stückzahl-Ausleihe. Liefert bis zu
+ * `limit` konkrete IDs, aufsteigend nach Inventarnummer.
+ */
+export async function getAvailableGroupItemIds(
+  boardId: number,
+  groupName: string,
+  limit: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ id: inventoryItems.id })
+    .from(inventoryItems)
+    .where(
+      and(
+        eq(inventoryItems.boardId, boardId),
+        eq(inventoryItems.groupName, groupName),
+        eq(inventoryItems.condition, "active"),
+        eq(inventoryItems.lendable, true),
+      ),
+    )
+    .orderBy(asc(inventoryItems.number), asc(inventoryItems.id));
+  if (!rows.length) return [];
+  const active = await getActiveLoanMap(rows.map((r) => r.id));
+  const free = rows.filter((r) => !active.has(r.id)).map((r) => r.id);
+  return free.slice(0, Math.max(0, limit));
 }

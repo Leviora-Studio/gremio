@@ -35,6 +35,7 @@ export default async function PublicInventoryBoardPage({
 
       <div className="mt-6">
         <PublicInventoryBoard
+          boardId={board.id}
           publicFields={publicFields}
           items={items}
           options={options}
