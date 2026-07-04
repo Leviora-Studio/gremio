@@ -6,9 +6,9 @@
 import { useState } from "react";
 import { Select } from "@/components/Select";
 
-/** Export der Inventarliste als CSV, mit wählbarer Sortierung. */
-export function InventoryExport({ boardId }: { boardId: number }) {
-  const [sort, setSort] = useState("name");
+/** CSV-Export des Anlagenverzeichnisses mit wählbarer Sortierung. */
+export function OverviewExport() {
+  const [sort, setSort] = useState("board");
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select
@@ -16,17 +16,17 @@ export function InventoryExport({ boardId }: { boardId: number }) {
         value={sort}
         onChange={setSort}
         options={[
+          { value: "board", label: "Sortierung: Inventar" },
           { value: "name", label: "Sortierung: Bezeichnung" },
           { value: "number", label: "Sortierung: Inventarnummer" },
-          { value: "category", label: "Sortierung: Kategorie" },
-          { value: "location", label: "Sortierung: Standort" },
-          { value: "price", label: "Sortierung: Preis (absteigend)" },
-          { value: "purchase_date", label: "Sortierung: Kaufdatum" },
           { value: "condition", label: "Sortierung: Zustand" },
+          { value: "purchase_date", label: "Sortierung: Kaufdatum" },
+          { value: "vendor", label: "Sortierung: Händler" },
+          { value: "price", label: "Sortierung: Preis (absteigend)" },
         ]}
       />
       <a
-        href={`/api/inventory/board/${boardId}/export?sort=${sort}`}
+        href={`/api/inventory/overview/export?sort=${sort}`}
         className="btn-secondary shrink-0"
       >
         Export (CSV)

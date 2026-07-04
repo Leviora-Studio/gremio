@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { inventoryBoards } from "@/lib/db/schema";
 import { getOverviewItems } from "@/lib/inventory-overview";
 import { conditionLabel } from "@/lib/inventory-condition";
+import { OverviewExport } from "@/components/inventory/OverviewExport";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
   setOverviewMinPriceAction,
@@ -125,12 +126,7 @@ export default async function InventoryOverviewPage() {
         <h3 className="font-semibold">
           Artikel ({overview.items.length}) — Gesamtwert {euro(overview.total)}
         </h3>
-        <a
-          href="/api/inventory/overview/export"
-          className="btn-secondary"
-        >
-          Export (CSV)
-        </a>
+        <OverviewExport />
       </div>
 
       {overview.items.length === 0 ? (

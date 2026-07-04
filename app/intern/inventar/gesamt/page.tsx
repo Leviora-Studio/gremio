@@ -5,6 +5,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getOverviewItems } from "@/lib/inventory-overview";
 import { conditionLabel } from "@/lib/inventory-condition";
+import { OverviewExport } from "@/components/inventory/OverviewExport";
 
 export const metadata = { title: "Gesamtinventar — Gremio" };
 
@@ -51,9 +52,7 @@ export default async function InventoryOverviewViewPage() {
         <h2 className="font-semibold">
           Artikel ({overview.items.length}) — Gesamtwert {euro(overview.total)}
         </h2>
-        <a href="/api/inventory/overview/export" className="btn-secondary">
-          Export (CSV)
-        </a>
+        <OverviewExport />
       </div>
 
       {overview.items.length === 0 ? (
