@@ -29,6 +29,7 @@ import {
 import { setCardAssignees } from "@/lib/assignees";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { assignCardNumber } from "@/lib/numbering";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
@@ -442,6 +443,7 @@ export async function updateCardViaApi(
       `${oldStatusName} → ${moveTo.name}`,
     );
     await maybeSetTriggerDates(card.id, moveTo.id);
+    await syncLoanFromCard(card.id, moveTo.id);
     await maybeArchive(card.id);
   }
   if (assigneeUserIds) {

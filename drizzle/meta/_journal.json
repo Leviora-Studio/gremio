@@ -337,6 +337,13 @@
       "when": 1783176419572,
       "tag": "0047_violet_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1783180804195,
+      "tag": "0048_awesome_micromacro",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,11 @@ import { notFound } from "next/navigation";
 import { env } from "@/lib/env";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
-import { getLoanById, getLoanItems } from "@/lib/inventory-loans";
+import {
+  getLoanById,
+  getLoanItems,
+  getLoanCardProgress,
+} from "@/lib/inventory-loans";
 import { listLoanAttachments } from "@/lib/inventory-attachments";
 import {
   loanStageClass,
@@ -47,6 +51,10 @@ export default async function InventoryLoanPage({
 
   const docs = await listLoanAttachments(loan.id);
   const loanItems = await getLoanItems(loan.id);
+  // Aufgabentracking: verknüpfte Karte → Aktionen laufen über das Kanban-Board.
+  const cardProgress = loan.cardId
+    ? await getLoanCardProgress(loan.cardId)
+    : null;
   const pending = PENDING.includes(loan.status);
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
@@ -122,9 +130,29 @@ export default async function InventoryLoanPage({
           </div>
         )}
 
-        {/* Aktionen je nach Status */}
+        {/* Aufgabentracking: verknüpfte Karte → Bearbeitung auf dem Board */}
+        {cardProgress && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+            <div className="text-sm">
+              <span className="text-xs uppercase tracking-wide text-slate-400">
+                Aktuelle Spalte
+              </span>
+              <div className="font-medium text-slate-800">
+                {cardProgress.currentName || "—"}
+              </div>
+            </div>
+            <Link
+              href={`/intern/board/${cardProgress.boardId}`}
+              className="btn-secondary"
+            >
+              Auf dem Board bearbeiten →
+            </Link>
+          </div>
+        )}
+
+        {/* Aktionen je nach Status — nur ohne Aufgabentracking (sonst Board) */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-          {pending && (
+          {!cardProgress && pending && (
             <>
               {loan.status === "contract_signed" ? (
                 <form action={approveLoanAction}>
@@ -145,7 +173,7 @@ export default async function InventoryLoanPage({
               </form>
             </>
           )}
-          {loan.status === "active" && (
+          {!cardProgress && loan.status === "active" && (
             <form action={returnLoanAction}>
               <input type="hidden" name="loanId" value={loan.id} />
               <SubmitButton className="btn-secondary">

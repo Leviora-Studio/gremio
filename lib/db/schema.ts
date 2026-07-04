@@ -713,6 +713,21 @@ export const inventoryBoards = pgTable("inventory_boards", {
   isPublic: boolean("is_public").notNull().default(false),
   // In die board-übergreifende Gesamtübersicht (Anlagenverzeichnis) einbeziehen.
   includeInOverview: boolean("include_in_overview").notNull().default(false),
+  // Aufgabentracking: Leihvorgänge landen als Karte auf diesem Kanban-Board.
+  // Der Antragsteller sieht die Spalten dieses Boards als Status. NULL = aus.
+  loanBoardId: integer("loan_board_id").references(() => boards.id, {
+    onDelete: "set null",
+  }),
+  // Erreicht die Karte diese Spalte → Gegenstand gilt als ausgeliehen (Vorgang
+  // active). Erreicht sie die „zurückgegeben"-Spalte → Vorgang returned.
+  loanActiveStatusId: integer("loan_active_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "set null" },
+  ),
+  loanReturnedStatusId: integer("loan_returned_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "set null" },
+  ),
   createdAt: createdAt(),
 });
 
@@ -892,6 +907,10 @@ export const inventoryLoans = pgTable(
     notes: text("notes"),
     // Hinweise des Verleihers an den Entleiher — über den Status-Link sichtbar.
     borrowerNote: text("borrower_note"),
+    // Aufgabentracking: verknüpfte Kanban-Karte (NULL = kein Ziel-Board gesetzt).
+    cardId: integer("card_id").references(() => cards.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     createdBy: integer("created_by").references(() => users.id, {
       onDelete: "set null",

@@ -4,6 +4,7 @@
 import { notFound } from "next/navigation";
 import {
   getLoanByToken,
+  getLoanCardProgress,
   PENDING_LOAN_STATUSES,
 } from "@/lib/inventory-loans";
 import { getInventoryItemById } from "@/lib/inventory-items";
@@ -95,6 +96,15 @@ export default async function InventoryRequestStatusPage({
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
 
+  // Aufgabentracking: bei verknüpfter Karte die Board-Spalten als Status zeigen.
+  // Abgelehnt/zurückgezogen sind Vorgangs-Endzustände (nicht auf dem Board).
+  const terminal = loan.status === "rejected" || loan.status === "withdrawn";
+  const progress =
+    loan.cardId && !terminal ? await getLoanCardProgress(loan.cardId) : null;
+  const currentIndex = progress
+    ? progress.columns.findIndex((c) => c.id === progress.currentStatusId)
+    : -1;
+
   return (
     <main className="mx-auto max-w-xl px-4 py-10">
       <LiveRefresh src={`/api/inventar/status/${token}/stream`} />
@@ -114,14 +124,54 @@ export default async function InventoryRequestStatusPage({
           </div>
         </div>
 
-        <div>
-          <span
-            className={`inline-block rounded px-3 py-1 text-sm font-medium ${s.cls}`}
-          >
-            {s.label}
-          </span>
-          <p className="mt-2 text-sm text-slate-600">{s.hint}</p>
-        </div>
+        {progress ? (
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-400">
+              Status
+            </div>
+            <ol className="mt-2 space-y-2">
+              {progress.columns.map((c, i) => {
+                const done = i < currentIndex;
+                const current = i === currentIndex;
+                return (
+                  <li key={c.id} className="flex items-center gap-2.5 text-sm">
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                        current
+                          ? "bg-brand-600 text-white"
+                          : done
+                            ? "bg-emerald-500 text-white"
+                            : "bg-slate-200 text-slate-500"
+                      }`}
+                    >
+                      {done ? "✓" : i + 1}
+                    </span>
+                    <span
+                      className={
+                        current
+                          ? "font-semibold text-slate-800"
+                          : done
+                            ? "text-slate-500"
+                            : "text-slate-400"
+                      }
+                    >
+                      {c.name}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        ) : (
+          <div>
+            <span
+              className={`inline-block rounded px-3 py-1 text-sm font-medium ${s.cls}`}
+            >
+              {s.label}
+            </span>
+            <p className="mt-2 text-sm text-slate-600">{s.hint}</p>
+          </div>
+        )}
 
         {loan.borrowerNote && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3">

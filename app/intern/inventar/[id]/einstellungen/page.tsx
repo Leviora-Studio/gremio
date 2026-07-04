@@ -2,10 +2,17 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { groups, inventoryBoardAccess, users } from "@/lib/db/schema";
+import {
+  boardStatuses,
+  groups,
+  inventoryBoardAccess,
+  users,
+} from "@/lib/db/schema";
+import { getAccessibleBoards } from "@/lib/authz";
 import { requireInventoryBoardManage } from "@/lib/inventory";
+import { LoanBoardEditor } from "@/components/inventory/LoanBoardEditor";
 import {
   getInventoryBoardFields,
   INVENTORY_FIELD_KEYS,
@@ -38,8 +45,9 @@ export default async function InventoryBoardSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { board } = await requireInventoryBoardManage(Number(id));
-  const [fields, numbering, access, allUsers, allGroups] = await Promise.all([
+  const { user, board } = await requireInventoryBoardManage(Number(id));
+  const [fields, numbering, access, allUsers, allGroups, loanBoards, loanCols] =
+    await Promise.all([
     getInventoryBoardFields(board.id),
     getInventoryNumbering(board.id),
     db
@@ -64,10 +72,26 @@ export default async function InventoryBoardSettingsPage({
       .select({ id: groups.id, name: groups.name })
       .from(groups)
       .orderBy(groups.name),
+    getAccessibleBoards(user),
+    db
+      .select({
+        id: boardStatuses.id,
+        boardId: boardStatuses.boardId,
+        name: boardStatuses.name,
+      })
+      .from(boardStatuses)
+      .orderBy(asc(boardStatuses.position)),
   ]);
   const visible = new Set(
     fields.filter((f) => f.visible).map((f) => f.fieldKey),
   );
+  const loanBoardsWithStatuses = loanBoards.map((b) => ({
+    id: b.id,
+    name: b.name,
+    statuses: loanCols
+      .filter((s) => s.boardId === b.id)
+      .map((s) => ({ id: s.id, name: s.name })),
+  }));
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 py-2">
@@ -231,6 +255,19 @@ export default async function InventoryBoardSettingsPage({
             Felder speichern
           </button>
         </form>
+      </CollapsibleSection>
+
+      {/* Aufgabentracking: Leihvorgänge als Karten auf einem Kanban-Board */}
+      <CollapsibleSection title="Aufgabentracking (Leihvorgänge als Karten)">
+        <LoanBoardEditor
+          boardId={board.id}
+          current={{
+            loanBoardId: board.loanBoardId,
+            loanActiveStatusId: board.loanActiveStatusId,
+            loanReturnedStatusId: board.loanReturnedStatusId,
+          }}
+          boards={loanBoardsWithStatuses}
+        />
       </CollapsibleSection>
 
       {/* Inventarnummer */}

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  boardStatuses,
+  cardActivity,
+  cards,
+  inventoryBoards,
   inventoryDefects,
   inventoryItems,
   inventoryLoanItems,
@@ -13,6 +17,81 @@ import {
   type InventoryLoan,
 } from "@/lib/db/schema";
 import { generateToken, isTokenConflict } from "@/lib/token";
+
+// Drizzle-Transaktionshandle (für Helfer, die in einer bestehenden Tx laufen).
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Aufgabentracking: Hat das Inventar-Board der Stücke ein Ziel-Board gesetzt,
+ * wird für den Vorgang eine Karte in dessen erster Spalte angelegt und mit dem
+ * Vorgang verknüpft. Ohne Ziel-Board passiert nichts.
+ */
+async function maybeCreateTrackingCard(
+  tx: Tx,
+  itemIds: number[],
+  loanId: number,
+  info: { borrower: string; purpose: string | null },
+): Promise<void> {
+  const [firstItem] = await tx
+    .select({ boardId: inventoryItems.boardId, name: inventoryItems.name })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, itemIds[0]))
+    .limit(1);
+  if (!firstItem) return;
+
+  const [invBoard] = await tx
+    .select({ loanBoardId: inventoryBoards.loanBoardId })
+    .from(inventoryBoards)
+    .where(eq(inventoryBoards.id, firstItem.boardId))
+    .limit(1);
+  if (!invBoard?.loanBoardId) return;
+
+  const [firstCol] = await tx
+    .select({ id: boardStatuses.id })
+    .from(boardStatuses)
+    .where(eq(boardStatuses.boardId, invBoard.loanBoardId))
+    .orderBy(asc(boardStatuses.position))
+    .limit(1);
+  if (!firstCol) return;
+
+  let title = firstItem.name || "Leihgegenstand";
+  if (itemIds.length > 1) title = `${title} ×${itemIds.length}`;
+
+  const [maxRow] = await tx
+    .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
+    .from(cards)
+    .where(
+      and(
+        eq(cards.boardId, invBoard.loanBoardId),
+        eq(cards.statusId, firstCol.id),
+      ),
+    );
+  const position = (maxRow?.m ?? -1) + 1;
+
+  const [card] = await tx
+    .insert(cards)
+    .values({
+      boardId: invBoard.loanBoardId,
+      statusId: firstCol.id,
+      title,
+      applicant: info.borrower || "—",
+      token: generateToken(), // eigener Token; wird nicht veröffentlicht
+      notes: info.purpose,
+      position,
+    })
+    .returning({ id: cards.id });
+
+  await tx.insert(cardActivity).values({
+    cardId: card.id,
+    userId: null,
+    type: "created",
+    detail: "Leihvorgang aus dem Inventar angelegt",
+  });
+  await tx
+    .update(inventoryLoans)
+    .set({ cardId: card.id })
+    .where(eq(inventoryLoans.id, loanId));
+}
 
 // ---------------------------------------------------------------------------
 // Entleihvorgänge
@@ -83,6 +162,10 @@ export async function createLoan(
     await tx
       .insert(inventoryLoanItems)
       .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
+    await maybeCreateTrackingCard(tx, itemIds, row.id, {
+      borrower: data.borrower,
+      purpose: data.purpose,
+    });
     return row.id;
   });
 }
@@ -96,7 +179,16 @@ export async function returnLoan(loanId: number): Promise<void> {
 }
 
 export async function deleteLoan(loanId: number): Promise<void> {
+  // Verknüpfte Tracking-Karte mitlöschen, damit keine Karteileiche übrig bleibt.
+  const [loan] = await db
+    .select({ cardId: inventoryLoans.cardId })
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.id, loanId))
+    .limit(1);
   await db.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
+  if (loan?.cardId != null) {
+    await db.delete(cards).where(eq(cards.id, loan.cardId));
+  }
 }
 
 /** Hinweise des Verleihers an den Entleiher setzen (über Status-Link sichtbar). */
@@ -135,6 +227,10 @@ export async function createLoanRequest(
         await tx
           .insert(inventoryLoanItems)
           .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
+        await maybeCreateTrackingCard(tx, itemIds, row.id, {
+          borrower: data.borrower,
+          purpose: data.purpose,
+        });
         return { id: row.id, token };
       });
     } catch (e) {
@@ -151,6 +247,100 @@ export const PENDING_LOAN_STATUSES = [
   "contract_provided",
   "contract_signed",
 ] as const;
+
+/**
+ * Aufgabentracking (kartengeführt): Bewegt sich die verknüpfte Karte, wird der
+ * Vorgangsstatus daraus abgeleitet. Erreicht die Karte die „ausgeliehen"-Spalte
+ * des Inventar-Boards → Vorgang active (Gegenstand entliehen); erreicht sie die
+ * „zurückgegeben"-Spalte → Vorgang returned (Gegenstand wieder verfügbar).
+ * No-op, wenn die Karte zu keinem Vorgang gehört oder keine Trigger gesetzt sind.
+ */
+export async function syncLoanFromCard(
+  cardId: number,
+  statusId: number,
+): Promise<void> {
+  const [loan] = await db
+    .select({ id: inventoryLoans.id, itemId: inventoryLoans.itemId })
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.cardId, cardId))
+    .limit(1);
+  if (!loan) return;
+
+  const [cfg] = await db
+    .select({
+      activeId: inventoryBoards.loanActiveStatusId,
+      returnedId: inventoryBoards.loanReturnedStatusId,
+    })
+    .from(inventoryItems)
+    .innerJoin(
+      inventoryBoards,
+      eq(inventoryBoards.id, inventoryItems.boardId),
+    )
+    .where(eq(inventoryItems.id, loan.itemId))
+    .limit(1);
+  if (!cfg) return;
+
+  if (cfg.returnedId != null && statusId === cfg.returnedId) {
+    // Rückgabe: nur wenn noch nicht zurückgegeben.
+    await db
+      .update(inventoryLoans)
+      .set({ status: "returned", returnedAt: new Date() })
+      .where(
+        and(eq(inventoryLoans.id, loan.id), isNull(inventoryLoans.returnedAt)),
+      );
+  } else if (cfg.activeId != null && statusId === cfg.activeId) {
+    // Ausgeliehen: nur aus einem Pending-Zustand (verwandelt Anfrage in Ausleihe).
+    await db
+      .update(inventoryLoans)
+      .set({ status: "active" })
+      .where(
+        and(
+          eq(inventoryLoans.id, loan.id),
+          inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+        ),
+      );
+  }
+}
+
+export type LoanCardProgress = {
+  boardId: number;
+  columns: { id: number; name: string }[];
+  currentStatusId: number;
+  currentName: string;
+  archived: boolean;
+};
+
+/**
+ * Spalten-Fortschritt der verknüpften Karte (für die öffentliche Statusseite):
+ * alle Board-Spalten in Reihenfolge + die aktuelle. NULL, wenn keine Karte.
+ */
+export async function getLoanCardProgress(
+  cardId: number,
+): Promise<LoanCardProgress | null> {
+  const [card] = await db
+    .select({
+      statusId: cards.statusId,
+      boardId: cards.boardId,
+      archivedAt: cards.archivedAt,
+    })
+    .from(cards)
+    .where(eq(cards.id, cardId))
+    .limit(1);
+  if (!card) return null;
+  const columns = await db
+    .select({ id: boardStatuses.id, name: boardStatuses.name })
+    .from(boardStatuses)
+    .where(eq(boardStatuses.boardId, card.boardId))
+    .orderBy(asc(boardStatuses.position));
+  const current = columns.find((c) => c.id === card.statusId);
+  return {
+    boardId: card.boardId,
+    columns,
+    currentStatusId: card.statusId,
+    currentName: current?.name ?? "",
+    archived: card.archivedAt != null,
+  };
+}
 
 /** Anfrage annehmen → laufender Vorgang (nur aus einem Pending-Zustand). */
 export async function approveLoan(loanId: number): Promise<void> {
@@ -257,6 +447,58 @@ export async function listBoardActiveLoans(
     )
     .orderBy(desc(inventoryLoans.createdAt));
   return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
+}
+
+export type BoardLoanCard = {
+  loanId: number;
+  cardId: number;
+  kanbanBoardId: number;
+  columnId: number;
+  columnName: string;
+  columnPosition: number;
+  borrower: string;
+  itemName: string;
+  endDate: string | null;
+};
+
+/**
+ * Laufende, kartengeführte Leihvorgänge eines Inventar-Boards inkl. aktueller
+ * Kanban-Spalte — für die kompakte „Laufende Vorgänge"-Übersicht. Ohne
+ * zurückgegebene/abgelehnte/zurückgezogene und ohne archivierte Karten.
+ */
+export async function listInventoryBoardLoanCards(
+  inventoryBoardId: number,
+): Promise<BoardLoanCard[]> {
+  const rows = await db
+    .select({
+      loanId: inventoryLoans.id,
+      cardId: cards.id,
+      kanbanBoardId: cards.boardId,
+      columnId: boardStatuses.id,
+      columnName: boardStatuses.name,
+      columnPosition: boardStatuses.position,
+      borrower: inventoryLoans.borrower,
+      itemName: inventoryItems.name,
+      endDate: inventoryLoans.endDate,
+    })
+    .from(inventoryLoans)
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
+    .innerJoin(cards, eq(cards.id, inventoryLoans.cardId))
+    .innerJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+    .where(
+      and(
+        eq(inventoryItems.boardId, inventoryBoardId),
+        isNull(cards.archivedAt),
+        inArray(inventoryLoans.status, [
+          "requested",
+          "contract_provided",
+          "contract_signed",
+          "active",
+        ]),
+      ),
+    )
+    .orderBy(asc(boardStatuses.position), desc(inventoryLoans.createdAt));
+  return rows;
 }
 
 export async function getLoanByToken(

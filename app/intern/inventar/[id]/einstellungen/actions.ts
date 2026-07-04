@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import {
+  boardStatuses,
   groups,
   inventoryBoardAccess,
   inventoryBoardFields,
@@ -15,8 +16,11 @@ import {
   inventoryNumbering,
   users,
 } from "@/lib/db/schema";
+import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { requireInventoryBoardManage } from "@/lib/inventory";
 import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
+
+export type LoanBoardState = { error?: string; success?: string };
 
 function clampInt(raw: FormDataEntryValue | null, min: number, max: number): number {
   const n = Number.parseInt(typeof raw === "string" ? raw : "", 10);
@@ -82,6 +86,59 @@ export async function renameInventoryBoardAction(formData: FormData) {
   revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
   revalidatePath(`/intern/inventar/${boardId}`);
   revalidatePath(`/intern/inventar`);
+}
+
+/**
+ * Ziel-Board für Leihvorgänge (Aufgabentracking) + optionale Trigger-Spalten
+ * „ausgeliehen" / „zurückgegeben" setzen. Die Spalten müssen zum Ziel-Board
+ * gehören; der Verwalter braucht Zugriff auf das Ziel-Board.
+ */
+export async function setLoanBoardTargetAction(
+  boardId: number,
+  _prev: LoanBoardState,
+  formData: FormData,
+): Promise<LoanBoardState> {
+  const { user } = await requireInventoryBoardManage(boardId);
+
+  const parseId = (k: string): number | null => {
+    const n = Number.parseInt(String(formData.get(k) ?? ""), 10);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const loanBoardId = parseId("loanBoardId");
+  let activeStatusId = parseId("loanActiveStatusId");
+  let returnedStatusId = parseId("loanReturnedStatusId");
+
+  if (loanBoardId != null) {
+    const target = await getBoardById(loanBoardId);
+    if (!target || !(await canAccessBoard(user, target))) {
+      return { error: "Kein Zugriff auf das gewählte Ziel-Board." };
+    }
+    // Trigger-Spalten müssen zum Ziel-Board gehören, sonst verwerfen.
+    const cols = await db
+      .select({ id: boardStatuses.id })
+      .from(boardStatuses)
+      .where(eq(boardStatuses.boardId, loanBoardId));
+    const ids = new Set(cols.map((c) => c.id));
+    if (activeStatusId != null && !ids.has(activeStatusId)) activeStatusId = null;
+    if (returnedStatusId != null && !ids.has(returnedStatusId))
+      returnedStatusId = null;
+  } else {
+    // Kein Ziel-Board → keine Trigger-Spalten.
+    activeStatusId = null;
+    returnedStatusId = null;
+  }
+
+  await db
+    .update(inventoryBoards)
+    .set({
+      loanBoardId,
+      loanActiveStatusId: activeStatusId,
+      loanReturnedStatusId: returnedStatusId,
+    })
+    .where(eq(inventoryBoards.id, boardId));
+  revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
+  revalidatePath(`/intern/inventar/${boardId}`);
+  return { success: "Gespeichert." };
 }
 
 // --- Eigentum & Löschen (wie Kanban-Boards) -----------------------------
