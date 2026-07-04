@@ -711,7 +711,15 @@ export const inventoryBoards = pgTable("inventory_boards", {
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   isPublic: boolean("is_public").notNull().default(false),
+  // In die board-übergreifende Gesamtübersicht (Anlagenverzeichnis) einbeziehen.
+  includeInOverview: boolean("include_in_overview").notNull().default(false),
   createdAt: createdAt(),
+});
+
+// Einstellungen der Gesamtübersicht (Singleton, id=1): Mindestpreis in Cent.
+export const inventoryOverviewConfig = pgTable("inventory_overview_config", {
+  id: integer("id").primaryKey().default(1),
+  minPrice: integer("min_price").notNull().default(0),
 });
 
 // Freigabe eines Inventar-Boards an Nutzer ODER Gruppe (binär), wie board_access.

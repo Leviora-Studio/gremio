@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
+import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -23,15 +24,22 @@ export default async function AdminInventoryPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">Inventar — öffentliche Sichtbarkeit</h2>
-        <p className="text-sm text-slate-500">
-          Öffentlich freigegebene Inventare erscheinen unter{" "}
-          <code>/inventar</code> für alle (mit Such-/Filterfunktion und der
-          Möglichkeit, einen Gegenstand anzufragen). Öffentlich sichtbar sind
-          nur Bezeichnung, Kategorie, Standort und Entleihstatus — keine Preise,
-          Belege, Halter oder Verträge.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">
+            Inventar — öffentliche Sichtbarkeit
+          </h2>
+          <p className="text-sm text-slate-500">
+            Öffentlich freigegebene Inventare erscheinen unter{" "}
+            <code>/inventar</code> für alle (mit Such-/Filterfunktion und der
+            Möglichkeit, einen Gegenstand anzufragen). Öffentlich sichtbar sind
+            nur Bezeichnung, Kategorie und Entleihstatus — keine Inventar-/
+            Seriennummer, Standort, Preise, Belege, Halter oder Verträge.
+          </p>
+        </div>
+        <Link href="/admin/inventar/gesamt" className="btn-secondary shrink-0">
+          Gesamtübersicht
+        </Link>
       </div>
 
       {boards.length === 0 && (
