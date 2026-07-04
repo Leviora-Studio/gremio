@@ -798,6 +798,10 @@ export const inventoryItems = pgTable("inventory_items", {
   purchaseDate: text("purchase_date"), // YYYY-MM-DD
   vendor: text("vendor"), // Händler
   serialNumber: text("serial_number"), // Seriennummer (nur intern sichtbar)
+  // Interner Zustand des einzelnen Stücks. defect/lost landen im Archiv und
+  // sind nicht entleihbar / öffentlich unsichtbar.
+  condition: text("condition").notNull().default("active"), // active|defect|lost
+  conditionNote: text("condition_note"), // Grund/Notiz zum Zustand (Archiv)
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -806,7 +810,12 @@ export const inventoryItems = pgTable("inventory_items", {
   creatorUserId: integer("creator_user_id").references(() => users.id, {
     onDelete: "set null",
   }),
-});
+}, (t) => ({
+  conditionCheck: check(
+    "inventory_items_condition",
+    sql`${t.condition} in ('active','defect','lost')`,
+  ),
+}));
 
 // n:m Gegenstand ↔ Kategorie-Option (Multiselect).
 export const inventoryItemCategories = pgTable(

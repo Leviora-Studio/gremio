@@ -41,12 +41,13 @@ export default async function InventoryBoardPage({
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const manage = canManageInventoryBoard(user, board);
 
-  const [visible, options, numbering, items, pending, activeLoans] =
+  const [visible, options, numbering, items, archived, pending, activeLoans] =
     await Promise.all([
       getVisibleInventoryFieldKeys(board.id),
       getInventoryOptions(board.id),
       getInventoryNumbering(board.id),
-      listInventoryItems(board.id),
+      listInventoryItems(board.id, ["active"]),
+      listInventoryItems(board.id, ["defect", "lost"]),
       listBoardPendingLoans(board.id),
       listBoardActiveLoans(board.id),
     ]);
@@ -67,14 +68,22 @@ export default async function InventoryBoardPage({
             <p className="text-sm text-slate-500">{board.description}</p>
           )}
         </div>
-        {manage && (
+        <div className="flex items-center gap-2">
           <Link
-            href={`/intern/inventar/${board.id}/einstellungen`}
+            href={`/intern/inventar/${board.id}/archiv`}
             className="btn-secondary"
           >
-            ⚙ Einstellungen
+            Archiv{archived.length > 0 ? ` (${archived.length})` : ""}
           </Link>
-        )}
+          {manage && (
+            <Link
+              href={`/intern/inventar/${board.id}/einstellungen`}
+              className="btn-secondary"
+            >
+              ⚙ Einstellungen
+            </Link>
+          )}
+        </div>
       </div>
 
       {pending.length > 0 && (

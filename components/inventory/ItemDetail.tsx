@@ -13,6 +13,10 @@ import {
   LOAN_STAGE_LABEL,
   loanStageClass,
 } from "@/lib/inventory-loan-stage";
+import {
+  conditionClass,
+  conditionLabel,
+} from "@/lib/inventory-condition";
 import type { InventoryAttachmentKind } from "@/lib/inventory-attachment-kinds";
 import { SubmitButton } from "@/components/SubmitButton";
 import { AvailabilityBadge } from "./AvailabilityBadge";
@@ -104,6 +108,22 @@ export function ItemDetail({
     stamm.push({ label: "Inventarnummer", value: item.number || "—" });
   if (show("serial_number"))
     stamm.push({ label: "Seriennummer", value: item.serialNumber || "—" });
+  if (show("condition"))
+    stamm.push({
+      label: "Zustand",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <span
+            className={`rounded px-2 py-0.5 text-xs font-medium ${conditionClass(item.condition)}`}
+          >
+            {conditionLabel(item.condition)}
+          </span>
+          {item.conditionNote && (
+            <span className="text-xs text-slate-500">{item.conditionNote}</span>
+          )}
+        </span>
+      ),
+    });
   if (show("category"))
     stamm.push({
       label: "Kategorie",
@@ -129,7 +149,7 @@ export function ItemDetail({
       label: "Entleihbar",
       value: item.lendable ? "ja" : "nein",
     });
-  if (show("availability"))
+  if (show("availability") && item.condition === "active")
     stamm.push({
       label: "Verfügbarkeit",
       value: (

@@ -17,6 +17,7 @@ export const INVENTORY_FIELD_KEYS = [
   "serial_number", // Seriennummer (nur intern)
   "category", // Kategorie (Multiselect)
   "location", // Standort
+  "condition", // Zustand: aktiv/defekt/verloren (nur intern)
   "lendable", // „Entleihbar" (ja/nein) — editierbar
   "current_holder", // „Aktuell bei" (abgeleitet vom laufenden Vorgang)
   "availability", // „Verfügbarkeit" (verfügbar/entliehen/nicht entleihbar)
@@ -33,6 +34,7 @@ export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
   serial_number: "Seriennummer",
   category: "Kategorie",
   location: "Standort",
+  condition: "Zustand",
   lendable: "Entleihbar",
   current_holder: "Aktuell bei",
   availability: "Verfügbarkeit",

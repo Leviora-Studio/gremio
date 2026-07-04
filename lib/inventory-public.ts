@@ -65,9 +65,9 @@ export async function getPublicBoardData(boardId: number): Promise<{
   const publicFields = PUBLIC_INVENTORY_FIELD_KEYS.filter((k) =>
     visible.has(k),
   );
-  // Nicht-entleihbare Gegenstände sind öffentlich gar nicht sichtbar.
+  // Öffentlich nur aktive, entleihbare Gegenstände (defekt/verloren = Archiv).
   const items: PublicInventoryItem[] = full
-    .filter((it) => it.lendable)
+    .filter((it) => it.lendable && it.condition === "active")
     .map((it) => ({
       id: it.id,
       name: it.name,

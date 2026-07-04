@@ -185,6 +185,35 @@ export function ItemFormModal({
             />
           )}
 
+          {show("condition") && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label">Zustand (intern)</label>
+                <Select
+                  name="condition"
+                  defaultValue={item?.condition ?? "active"}
+                  options={[
+                    { value: "active", label: "Aktiv" },
+                    { value: "defect", label: "Defekt" },
+                    { value: "lost", label: "Verloren gegangen" },
+                  ]}
+                />
+              </div>
+              <div>
+                <label htmlFor="it-condnote" className="label">
+                  Notiz zum Zustand
+                </label>
+                <input
+                  id="it-condnote"
+                  name="conditionNote"
+                  className="input"
+                  defaultValue={item?.conditionNote ?? ""}
+                  placeholder="z. B. Bein gebrochen, Sommerfest 2026"
+                />
+              </div>
+            </div>
+          )}
+
           {show("lendable") && (
             <div>
               <span className="label">Entleihbar</span>

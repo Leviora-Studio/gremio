@@ -160,14 +160,26 @@ function availabilityOf(
   return activeBorrower != null ? "lent" : "available";
 }
 
-/** Alle Gegenstände eines Boards inkl. aufgelöster Options-Namen. */
+/**
+ * Alle Gegenstände eines Boards inkl. aufgelöster Options-Namen. `conditions`
+ * filtert auf den Zustand (z. B. ['active'] fürs Board, ['defect','lost'] fürs
+ * Archiv); ohne Angabe werden alle Zustände geliefert.
+ */
 export async function listInventoryItems(
   boardId: number,
+  conditions?: string[],
 ): Promise<InventoryItemView[]> {
   const items = await db
     .select()
     .from(inventoryItems)
-    .where(eq(inventoryItems.boardId, boardId))
+    .where(
+      conditions && conditions.length
+        ? and(
+            eq(inventoryItems.boardId, boardId),
+            inArray(inventoryItems.condition, conditions),
+          )
+        : eq(inventoryItems.boardId, boardId),
+    )
     .orderBy(asc(inventoryItems.name), asc(inventoryItems.id));
   if (!items.length) return [];
 
@@ -269,6 +281,8 @@ export type ItemInput = {
   name: string;
   number: string | null;
   serialNumber: string | null;
+  condition: string;
+  conditionNote: string | null;
   lendable: boolean;
   locationId: number | null;
   price: number | null;
@@ -295,6 +309,8 @@ export async function createInventoryItem(
         name: data.name,
         number: data.number,
         serialNumber: data.serialNumber,
+        condition: data.condition,
+        conditionNote: data.conditionNote,
         lendable: data.lendable,
         locationId: data.locationId,
         price: data.price,
