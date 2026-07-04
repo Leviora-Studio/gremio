@@ -46,12 +46,14 @@ export function InventoryBoardView({
   visibleFields,
   numberingEnabled,
   initialOptions,
+  groupNames,
   items,
 }: {
   boardId: number;
   visibleFields: string[];
   numberingEnabled: boolean;
   initialOptions: GroupedOpts;
+  groupNames: string[];
   items: InventoryItemView[];
 }) {
   const router = useRouter();
@@ -350,6 +352,7 @@ export function InventoryBoardView({
           item={null}
           visibleFields={visibleFields}
           options={options}
+          groupNames={groupNames}
           numberingEnabled={numberingEnabled}
           onClose={() => setCreateOpen(false)}
           onSaved={onSaved}

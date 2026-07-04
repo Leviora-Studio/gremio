@@ -56,6 +56,15 @@ export default async function InventoryBoardPage({
   const toOpts = (rows: { id: number; name: string }[]) =>
     rows.map((r) => ({ id: r.id, name: r.name }));
 
+  // Bestehende Artikel/Gruppen-Namen (aktiv + archiviert) für die suchbare Auswahl.
+  const groupNames = Array.from(
+    new Set(
+      [...items, ...archived]
+        .map((it) => (it.groupName ?? "").trim())
+        .filter((g) => g !== ""),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "de"));
+
   return (
     <div className="space-y-5">
       <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
@@ -153,6 +162,7 @@ export default async function InventoryBoardPage({
           location: toOpts(options.location),
           loan_status: toOpts(options.loan_status),
         }}
+        groupNames={groupNames}
         items={items}
       />
     </div>

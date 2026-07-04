@@ -368,6 +368,20 @@ export async function deleteInventoryItem(id: number): Promise<void> {
   await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
 }
 
+/** Bestehende, nicht-leere Artikel/Gruppen-Namen eines Boards (alphabetisch). */
+export async function listInventoryGroupNames(
+  boardId: number,
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ groupName: inventoryItems.groupName })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.boardId, boardId));
+  return rows
+    .map((r) => (r.groupName ?? "").trim())
+    .filter((g) => g !== "")
+    .sort((a, b) => a.localeCompare(b, "de"));
+}
+
 /**
  * Verfügbare Stücke einer Artikel/Gruppe (aktiv, entleihbar, aktuell nicht
  * laufend verliehen) — für die öffentliche Stückzahl-Ausleihe. Liefert bis zu

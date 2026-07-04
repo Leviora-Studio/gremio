@@ -32,6 +32,7 @@ export function ItemFormModal({
   item,
   visibleFields,
   options,
+  groupNames,
   numberingEnabled,
   onClose,
   onSaved,
@@ -41,6 +42,7 @@ export function ItemFormModal({
   item: InventoryItemView | null;
   visibleFields: string[];
   options: GroupedOpts;
+  groupNames: string[];
   numberingEnabled: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -63,6 +65,15 @@ export function ItemFormModal({
   const [categoryIds, setCategoryIds] = useState<number[]>(
     item?.categoryIds ?? [],
   );
+  const [groupName, setGroupName] = useState<string | null>(
+    item?.groupName ?? null,
+  );
+  // Vorhandene Gruppennamen + ggf. der aktuelle (falls noch nicht in der Liste).
+  const [groupOptions, setGroupOptions] = useState<string[]>(() => {
+    const set = new Set(groupNames);
+    if (item?.groupName) set.add(item.groupName);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "de"));
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -128,22 +139,19 @@ export function ItemFormModal({
           </div>
 
           {show("group") && (
-            <div>
-              <label htmlFor="it-group" className="label">
-                Artikel/Gruppe
-              </label>
-              <input
-                id="it-group"
-                name="groupName"
-                className="input"
-                defaultValue={item?.groupName ?? ""}
-                placeholder="z. B. Bierzeltgarnitur (fasst gleiche Stücke zusammen)"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Gleicher Name = ein Sammel-Posten. Öffentlich erscheint nur die
-                Stückzahl; jedes Stück behält seine eigene Inventarnummer.
-              </p>
-            </div>
+            <GroupSelect
+              options={groupOptions}
+              value={groupName}
+              onChange={setGroupName}
+              onAdd={(name) => {
+                setGroupOptions((prev) =>
+                  prev.includes(name)
+                    ? prev
+                    : [...prev, name].sort((a, b) => a.localeCompare(b, "de")),
+                );
+                setGroupName(name);
+              }}
+            />
           )}
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -328,6 +336,9 @@ export function ItemFormModal({
           )}
 
           {/* versteckte Felder für die Custom-Selects */}
+          {show("group") && (
+            <input type="hidden" name="groupName" value={groupName ?? ""} />
+          )}
           {show("location") && (
             <input type="hidden" name="locationId" value={locationId ?? ""} />
           )}
@@ -393,6 +404,47 @@ export function ItemFormModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/** Suchbare Einfachauswahl für „Artikel/Gruppe" (wie Standort), Werte sind
+ *  Strings; neue Gruppen werden lokal ergänzt (erst beim Speichern persistiert). */
+function GroupSelect({
+  options,
+  value,
+  onChange,
+  onAdd,
+}: {
+  options: string[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+  onAdd: (name: string) => void;
+}) {
+  return (
+    <div>
+      <label className="label">Artikel/Gruppe</label>
+      <Select
+        placeholder="— keine —"
+        searchable
+        value={value ?? ""}
+        onChange={(v) => onChange(v || null)}
+        options={[
+          { value: "", label: "— keine —" },
+          ...options.map((g) => ({ value: g, label: g })),
+        ]}
+      />
+      <AddOption
+        placeholder="Neue Gruppe …"
+        onAdd={async (name) => {
+          onAdd(name);
+          return null;
+        }}
+      />
+      <p className="mt-1 text-xs text-slate-500">
+        Gleiche Gruppe = ein Sammel-Posten. Öffentlich erscheint nur die
+        Stückzahl; jedes Stück behält seine eigene Inventarnummer.
+      </p>
     </div>
   );
 }

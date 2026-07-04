@@ -71,6 +71,7 @@ export function ItemDetail({
   boardName,
   visibleFields,
   options: initialOptions,
+  groupNames,
   numberingEnabled,
   loans,
   defects,
@@ -81,6 +82,7 @@ export function ItemDetail({
   boardName: string;
   visibleFields: string[];
   options: GroupedOpts;
+  groupNames: string[];
   numberingEnabled: boolean;
   loans: InventoryLoan[];
   defects: DefectView[];
@@ -375,6 +377,7 @@ export function ItemDetail({
           item={item}
           visibleFields={visibleFields}
           options={options}
+          groupNames={groupNames}
           numberingEnabled={numberingEnabled}
           onClose={() => setEditing(false)}
           onSaved={() => {
