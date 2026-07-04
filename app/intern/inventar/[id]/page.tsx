@@ -13,15 +13,10 @@ import {
   listInventoryItems,
 } from "@/lib/inventory-items";
 import {
-  listBoardActiveLoans,
-  listBoardPendingLoans,
+  countUntrackedLoans,
   listInventoryBoardLoanCards,
   type BoardLoanCard,
 } from "@/lib/inventory-loans";
-import {
-  loanStageClass,
-  loanStageLabel,
-} from "@/lib/inventory-loan-stage";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
 import { InventoryExport } from "@/components/inventory/InventoryExport";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
@@ -44,33 +39,21 @@ export default async function InventoryBoardPage({
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const manage = canManageInventoryBoard(user, board);
 
-  const [
-    visible,
-    options,
-    numbering,
-    items,
-    archived,
-    pending,
-    activeLoans,
-    loanCards,
-  ] = await Promise.all([
-    getVisibleInventoryFieldKeys(board.id),
-    getInventoryOptions(board.id),
-    getInventoryNumbering(board.id),
-    listInventoryItems(board.id, ["active"]),
-    listInventoryItems(board.id, ["defect", "lost"]),
-    listBoardPendingLoans(board.id),
-    listBoardActiveLoans(board.id),
-    board.loanBoardId
-      ? listInventoryBoardLoanCards(board.id)
-      : Promise.resolve([] as BoardLoanCard[]),
-  ]);
+  const [visible, options, numbering, items, archived, loanCards, untracked] =
+    await Promise.all([
+      getVisibleInventoryFieldKeys(board.id),
+      getInventoryOptions(board.id),
+      getInventoryNumbering(board.id),
+      listInventoryItems(board.id, ["active"]),
+      listInventoryItems(board.id, ["defect", "lost"]),
+      board.loanBoardId
+        ? listInventoryBoardLoanCards(board.id)
+        : Promise.resolve([] as BoardLoanCard[]),
+      countUntrackedLoans(board.id),
+    ]);
 
-  // Aufgabentracking: kartengeführte Vorgänge in der kompakten Kanban-Übersicht;
-  // Vorgänge OHNE Karte (Altbestand) bleiben in den klassischen Listen sichtbar.
+  // Aufgabentracking: laufende Vorgänge erscheinen kompakt als Kanban-Karten.
   const trackingOn = board.loanBoardId != null;
-  const pendingLegacy = pending.filter((l) => l.cardId == null);
-  const activeLegacy = activeLoans.filter((l) => l.cardId == null);
   const loanColumns: { id: number; name: string; cards: BoardLoanCard[] }[] = [];
   for (const lc of loanCards) {
     let col = loanColumns.find((c) => c.id === lc.columnId);
@@ -180,60 +163,28 @@ export default async function InventoryBoardPage({
         </CollapsibleSection>
       )}
 
-      {pendingLegacy.length > 0 && (
-        <CollapsibleSection
-          title={`Offene Anfragen (${pendingLegacy.length})`}
-          className="border-blue-200"
-          defaultOpen
-        >
-          <ul className="space-y-1.5">
-            {pendingLegacy.map((l) => (
-              <li key={l.id}>
-                <Link
-                  href={`/intern/inventar/loan/${l.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/40 px-3 py-2 text-sm transition hover:bg-blue-50"
-                >
-                  <span>
-                    <strong>{l.itemName}</strong> · {l.borrower}
-                    {l.borrowerEmail ? ` · ${l.borrowerEmail}` : ""}
-                  </span>
-                  <span
-                    className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${loanStageClass(l.status)}`}
-                  >
-                    {loanStageLabel(l.status)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </CollapsibleSection>
-      )}
-
-      {activeLegacy.length > 0 && (
-        <CollapsibleSection
-          title={`Laufende Ausleihe (${activeLegacy.length})`}
-          className="border-amber-200"
-          defaultOpen
-        >
-          <ul className="space-y-1.5">
-            {activeLegacy.map((l) => (
-              <li key={l.id}>
-                <Link
-                  href={`/intern/inventar/loan/${l.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm transition hover:bg-amber-50"
-                >
-                  <span>
-                    <strong>{l.itemName}</strong> · {l.borrower}
-                    {l.endDate ? ` · bis ${fmtDate(l.endDate)}` : ""}
-                  </span>
-                  <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                    entliehen
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </CollapsibleSection>
+      {/* Sicherheitsnetz: Vorgänge ohne verknüpfte Karte (z. B. weil noch kein
+          Ziel-Board gesetzt ist) würden sonst nirgends auftauchen. */}
+      {untracked > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {untracked === 1
+            ? "1 Leihvorgang ist keiner Board-Karte zugeordnet"
+            : `${untracked} Leihvorgänge sind keiner Board-Karte zugeordnet`}
+          {trackingOn
+            ? " (vor der Verknüpfung angelegt)."
+            : " — lege in den Einstellungen ein Ziel-Board für Leihvorgänge fest, um sie zu verfolgen."}
+          {manage && (
+            <>
+              {" "}
+              <Link
+                href={`/intern/inventar/${board.id}/einstellungen`}
+                className="font-medium underline"
+              >
+                Einstellungen öffnen
+              </Link>
+            </>
+          )}
+        </div>
       )}
 
       <InventoryBoardView

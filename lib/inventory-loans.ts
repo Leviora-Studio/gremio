@@ -411,44 +411,6 @@ export async function advanceLoanToContractSigned(
     );
 }
 
-export type LoanWithItem = InventoryLoan & { itemName: string };
-
-/** Alle offenen Anfragen (Pending) eines Boards — für die zentrale Übersicht. */
-export async function listBoardPendingLoans(
-  boardId: number,
-): Promise<LoanWithItem[]> {
-  const rows = await db
-    .select({ l: inventoryLoans, itemName: inventoryItems.name })
-    .from(inventoryLoans)
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
-    .where(
-      and(
-        eq(inventoryItems.boardId, boardId),
-        inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
-      ),
-    )
-    .orderBy(desc(inventoryLoans.createdAt));
-  return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
-}
-
-/** Alle laufenden Ausleihen (status='active') eines Boards. */
-export async function listBoardActiveLoans(
-  boardId: number,
-): Promise<LoanWithItem[]> {
-  const rows = await db
-    .select({ l: inventoryLoans, itemName: inventoryItems.name })
-    .from(inventoryLoans)
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
-    .where(
-      and(
-        eq(inventoryItems.boardId, boardId),
-        eq(inventoryLoans.status, "active"),
-      ),
-    )
-    .orderBy(desc(inventoryLoans.createdAt));
-  return rows.map((r) => ({ ...r.l, itemName: r.itemName }));
-}
-
 export type BoardLoanCard = {
   loanId: number;
   cardId: number;
@@ -499,6 +461,33 @@ export async function listInventoryBoardLoanCards(
     )
     .orderBy(asc(boardStatuses.position), desc(inventoryLoans.createdAt));
   return rows;
+}
+
+/**
+ * Anzahl laufender Vorgänge eines Inventar-Boards OHNE verknüpfte Karte — z. B.
+ * weil (noch) kein Ziel-Board gesetzt ist. Als Hinweis, damit solche Vorgänge
+ * nicht unsichtbar werden.
+ */
+export async function countUntrackedLoans(
+  inventoryBoardId: number,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(inventoryLoans)
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
+    .where(
+      and(
+        eq(inventoryItems.boardId, inventoryBoardId),
+        isNull(inventoryLoans.cardId),
+        inArray(inventoryLoans.status, [
+          "requested",
+          "contract_provided",
+          "contract_signed",
+          "active",
+        ]),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 export async function getLoanByToken(
