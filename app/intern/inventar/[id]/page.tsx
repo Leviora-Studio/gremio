@@ -21,6 +21,7 @@ import {
   loanStageLabel,
 } from "@/lib/inventory-loan-stage";
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
+import { InventoryExport } from "@/components/inventory/InventoryExport";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
@@ -68,7 +69,8 @@ export default async function InventoryBoardPage({
             <p className="text-sm text-slate-500">{board.description}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <InventoryExport boardId={board.id} />
           <Link
             href={`/intern/inventar/${board.id}/archiv`}
             className="btn-secondary"
