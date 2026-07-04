@@ -127,24 +127,39 @@ export function ItemFormModal({
             />
           </div>
 
-          {show("number") && (
-            <div>
-              <label htmlFor="it-number" className="label">
-                Inventarnummer
-              </label>
-              <input
-                id="it-number"
-                name="number"
-                className="input"
-                defaultValue={item?.number ?? ""}
-                placeholder={
-                  numberingEnabled && !isEdit
-                    ? "wird automatisch vergeben"
-                    : "frei vergeben"
-                }
-              />
-            </div>
-          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {show("number") && (
+              <div>
+                <label htmlFor="it-number" className="label">
+                  Inventarnummer
+                </label>
+                <input
+                  id="it-number"
+                  name="number"
+                  className="input"
+                  defaultValue={item?.number ?? ""}
+                  placeholder={
+                    numberingEnabled && !isEdit
+                      ? "wird automatisch vergeben"
+                      : "frei vergeben"
+                  }
+                />
+              </div>
+            )}
+            {show("serial_number") && (
+              <div>
+                <label htmlFor="it-serial" className="label">
+                  Seriennummer (nur intern)
+                </label>
+                <input
+                  id="it-serial"
+                  name="serialNumber"
+                  className="input"
+                  defaultValue={item?.serialNumber ?? ""}
+                />
+              </div>
+            )}
+          </div>
 
           {show("category") && (
             <CategorySelect

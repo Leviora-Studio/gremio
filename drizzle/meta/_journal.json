@@ -309,6 +309,13 @@
       "when": 1782674328475,
       "tag": "0043_good_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1783169217579,
+      "tag": "0044_new_katie_power",
+      "breakpoints": true
     }
   ]
 }

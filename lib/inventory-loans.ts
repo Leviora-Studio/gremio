@@ -72,6 +72,17 @@ export async function deleteLoan(loanId: number): Promise<void> {
   await db.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
 }
 
+/** Hinweise des Verleihers an den Entleiher setzen (über Status-Link sichtbar). */
+export async function setLoanBorrowerNote(
+  loanId: number,
+  note: string | null,
+): Promise<void> {
+  await db
+    .update(inventoryLoans)
+    .set({ borrowerNote: note })
+    .where(eq(inventoryLoans.id, loanId));
+}
+
 /** Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token). */
 export async function createLoanRequest(
   itemId: number,

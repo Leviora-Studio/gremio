@@ -123,6 +123,17 @@ export default async function InventoryRequestStatusPage({
           <p className="mt-2 text-sm text-slate-600">{s.hint}</p>
         </div>
 
+        {loan.borrowerNote && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Hinweise zur Ausleihe
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+              {loan.borrowerNote}
+            </p>
+          </div>
+        )}
+
         <dl className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
           <div>
             <dt className="text-xs uppercase tracking-wide text-slate-400">

@@ -268,6 +268,7 @@ export async function getInventoryItemView(
 export type ItemInput = {
   name: string;
   number: string | null;
+  serialNumber: string | null;
   lendable: boolean;
   locationId: number | null;
   price: number | null;
@@ -293,6 +294,7 @@ export async function createInventoryItem(
         boardId,
         name: data.name,
         number: data.number,
+        serialNumber: data.serialNumber,
         lendable: data.lendable,
         locationId: data.locationId,
         price: data.price,

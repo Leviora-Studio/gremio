@@ -8,23 +8,14 @@ import type {
   PublicInventoryItem,
   PublicOpt,
 } from "@/lib/inventory-public";
-import { Select } from "@/components/Select";
 import { AvailabilityBadge } from "./AvailabilityBadge";
 import {
   createInventoryLoanRequestAction,
   type RequestState,
 } from "@/app/inventar/request-actions";
 
-const COLUMNS: { key: string; label: string; always?: boolean }[] = [
-  { key: "name", label: "Bezeichnung", always: true },
-  { key: "number", label: "Inv.-Nr." },
-  { key: "category", label: "Kategorie" },
-  { key: "location", label: "Standort" },
-];
-
 type Options = {
   category: PublicOpt[];
-  location: PublicOpt[];
 };
 
 export function PublicInventoryBoard({
@@ -37,118 +28,172 @@ export function PublicInventoryBoard({
   options: Options;
 }) {
   const [query, setQuery] = useState("");
-  const [fCategory, setFCategory] = useState<number | null>(null);
-  const [fLocation, setFLocation] = useState<number | null>(null);
+  const [selectedCats, setSelectedCats] = useState<number[]>([]);
   const [requestItem, setRequestItem] = useState<PublicInventoryItem | null>(
     null,
   );
 
-  const cols = COLUMNS.filter(
-    (c) => c.always || publicFields.includes(c.key),
-  );
-  const showCat = publicFields.includes("category") && options.category.length > 0;
-  const showLoc = publicFields.includes("location") && options.location.length > 0;
+  const showCategory =
+    publicFields.includes("category") && options.category.length > 0;
+
+  // Kategorie-Facetten mit Trefferzahl.
+  const catCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const it of items)
+      for (const id of it.categoryIds) m.set(id, (m.get(id) ?? 0) + 1);
+    return m;
+  }, [items]);
+
+  const toggleCat = (id: number) =>
+    setSelectedCats((s) =>
+      s.includes(id) ? s.filter((x) => x !== id) : [...s, id],
+    );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
-      if (q) {
-        const hay = `${it.name} ${it.number ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;
-      if (fLocation != null && it.locationId !== fLocation) return false;
+      if (q && !`${it.name} ${it.categoryNames.join(" ")}`.toLowerCase().includes(q))
+        return false;
+      // Facetten: Treffer, wenn mind. eine gewählte Kategorie zutrifft (ODER).
+      if (
+        selectedCats.length &&
+        !it.categoryIds.some((c) => selectedCats.includes(c))
+      )
+        return false;
       return true;
     });
-  }, [items, query, fCategory, fLocation]);
+  }, [items, query, selectedCats]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-5 md:flex-row">
+      {showCategory && (
+        <aside className="md:w-52 md:shrink-0">
+          <div className="card p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-700">
+                Kategorien
+              </h2>
+              {selectedCats.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCats([])}
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  zurücksetzen
+                </button>
+              )}
+            </div>
+            <ul className="space-y-0.5">
+              {options.category
+                .filter((o) => (catCounts.get(o.id) ?? 0) > 0)
+                .map((o) => {
+                  const active = selectedCats.includes(o.id);
+                  return (
+                    <li key={o.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleCat(o.id)}
+                        className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm ${
+                          active
+                            ? "bg-brand-50 font-medium text-brand-700"
+                            : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                              active
+                                ? "border-brand-500 bg-brand-500 text-white"
+                                : "border-slate-300"
+                            }`}
+                          >
+                            {active ? "✓" : ""}
+                          </span>
+                          {o.name}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {catCounts.get(o.id) ?? 0}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
+        </aside>
+      )}
+
+      <div className="min-w-0 flex-1 space-y-4">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Suche (Bezeichnung, Nummer) …"
-          className="input max-w-xs flex-1"
+          placeholder="Suche (Bezeichnung) …"
+          className="input w-full sm:max-w-xs"
         />
-        {showCat && (
-          <FilterSelect
-            label="Kategorie"
-            options={options.category}
-            value={fCategory}
-            onChange={setFCategory}
-          />
-        )}
-        {showLoc && (
-          <FilterSelect
-            label="Standort"
-            options={options.location}
-            value={fLocation}
-            onChange={setFLocation}
-          />
+
+        {items.length === 0 ? (
+          <div className="card p-8 text-center text-slate-500">
+            Aktuell sind keine Gegenstände vorhanden.
+          </div>
+        ) : (
+          <div className="card overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-medium">Bezeichnung</th>
+                  {showCategory && (
+                    <th className="px-3 py-2 font-medium">Kategorie</th>
+                  )}
+                  <th className="px-3 py-2 font-medium">Verfügbarkeit</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((it) => (
+                  <tr
+                    key={it.id}
+                    className="border-b border-slate-100 last:border-0"
+                  >
+                    <td className="px-3 py-2 align-top">
+                      {renderCell("name", it)}
+                    </td>
+                    {showCategory && (
+                      <td className="px-3 py-2 align-top">
+                        {renderCell("category", it)}
+                      </td>
+                    )}
+                    <td className="px-3 py-2 align-top">
+                      <AvailabilityBadge
+                        availability={it.availability}
+                        until={it.lentUntil}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right align-top">
+                      <button
+                        type="button"
+                        onClick={() => setRequestItem(it)}
+                        className="btn-secondary px-2.5 py-1 text-xs"
+                      >
+                        Anfragen
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={showCategory ? 4 : 3}
+                      className="px-3 py-6 text-center text-slate-400"
+                    >
+                      Keine Treffer.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-
-      {items.length === 0 ? (
-        <div className="card p-8 text-center text-slate-500">
-          Aktuell sind keine Gegenstände vorhanden.
-        </div>
-      ) : (
-        <div className="card overflow-x-auto p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                {cols.map((c) => (
-                  <th key={c.key} className="px-3 py-2 font-medium">
-                    {c.label}
-                  </th>
-                ))}
-                <th className="px-3 py-2 font-medium">Verfügbarkeit</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((it) => (
-                <tr
-                  key={it.id}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  {cols.map((c) => (
-                    <td key={c.key} className="px-3 py-2 align-top">
-                      {renderCell(c.key, it)}
-                    </td>
-                  ))}
-                  <td className="px-3 py-2 align-top">
-                    <AvailabilityBadge
-                      availability={it.availability}
-                      until={it.lentUntil}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right align-top">
-                    <button
-                      type="button"
-                      onClick={() => setRequestItem(it)}
-                      className="btn-secondary px-2.5 py-1 text-xs"
-                    >
-                      Anfragen
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={cols.length + 2}
-                    className="px-3 py-6 text-center text-slate-400"
-                  >
-                    Keine Treffer.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {requestItem && (
         <RequestModal
@@ -164,8 +209,6 @@ function renderCell(key: string, it: PublicInventoryItem) {
   switch (key) {
     case "name":
       return <span className="font-medium text-slate-800">{it.name || "—"}</span>;
-    case "number":
-      return it.number ?? "—";
     case "category":
       return it.categoryNames.length ? (
         <span className="flex flex-wrap gap-1">
@@ -181,37 +224,9 @@ function renderCell(key: string, it: PublicInventoryItem) {
       ) : (
         "—"
       );
-    case "location":
-      return it.locationName ?? "—";
     default:
       return "—";
   }
-}
-
-function FilterSelect({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: PublicOpt[];
-  value: number | null;
-  onChange: (v: number | null) => void;
-}) {
-  return (
-    <Select
-      className="w-auto"
-      placeholder={`${label}: alle`}
-      searchable={options.length > 8}
-      value={value == null ? "" : String(value)}
-      onChange={(v) => onChange(v ? Number(v) : null)}
-      options={[
-        { value: "", label: `${label}: alle` },
-        ...options.map((o) => ({ value: String(o.id), label: o.name })),
-      ]}
-    />
-  );
 }
 
 function RequestModal({
@@ -249,7 +264,6 @@ function RequestModal({
         </div>
         <p className="text-sm text-slate-600">
           <strong>{item.name}</strong>
-          {item.number ? ` (${item.number})` : ""}
         </p>
 
         <form action={action} noValidate className="space-y-3">

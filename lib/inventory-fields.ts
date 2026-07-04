@@ -14,6 +14,7 @@ import { inventoryBoardFields } from "@/lib/db/schema";
  */
 export const INVENTORY_FIELD_KEYS = [
   "number", // Inventarnummer
+  "serial_number", // Seriennummer (nur intern)
   "category", // Kategorie (Multiselect)
   "location", // Standort
   "lendable", // „Entleihbar" (ja/nein) — editierbar
@@ -29,6 +30,7 @@ export type InventoryFieldKey = (typeof INVENTORY_FIELD_KEYS)[number];
 
 export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
   number: "Inventarnummer",
+  serial_number: "Seriennummer",
   category: "Kategorie",
   location: "Standort",
   lendable: "Entleihbar",

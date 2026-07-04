@@ -102,6 +102,8 @@ export function ItemDetail({
   const stamm: { label: string; value: ReactNode }[] = [];
   if (show("number"))
     stamm.push({ label: "Inventarnummer", value: item.number || "—" });
+  if (show("serial_number"))
+    stamm.push({ label: "Seriennummer", value: item.serialNumber || "—" });
   if (show("category"))
     stamm.push({
       label: "Kategorie",
@@ -201,6 +203,70 @@ export function ItemDetail({
         </div>
       )}
 
+      {/* Mängel — bewusst über den Vorgängen */}
+      <section className="card p-5">
+        <h2 className="mb-3 font-semibold">Mängel</h2>
+        <form action={createDefectAction} className="mb-4 flex items-end gap-2">
+          <input type="hidden" name="itemId" value={item.id} />
+          <div className="flex-1">
+            <label className="label">Mangel melden</label>
+            <input
+              name="description"
+              className="input"
+              required
+              placeholder="z. B. Bein wackelt"
+            />
+          </div>
+          <SubmitButton className="btn-primary">Melden</SubmitButton>
+        </form>
+
+        {defects.length === 0 ? (
+          <p className="text-sm text-slate-500">Keine Mängel erfasst.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {defects.map((d) => (
+              <li
+                key={d.id}
+                className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm ${
+                  d.resolvedAt
+                    ? "border-slate-100 text-slate-400"
+                    : "border-amber-200 bg-amber-50"
+                }`}
+              >
+                <span>
+                  <span className={d.resolvedAt ? "line-through" : ""}>
+                    {d.description}
+                  </span>
+                  {d.resolvedAt && (
+                    <span className="ml-1">
+                      (behoben am {fmtDateTime(d.resolvedAt)})
+                    </span>
+                  )}
+                  <span className="ml-1 block text-xs text-slate-400">
+                    gemeldet von {d.creatorName ?? "—"} am{" "}
+                    {fmtDateTime(d.createdAt)}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <form action={toggleDefectAction}>
+                    <input type="hidden" name="defectId" value={d.id} />
+                    <SubmitButton className="text-xs text-brand-600 hover:underline">
+                      {d.resolvedAt ? "wieder öffnen" : "behoben"}
+                    </SubmitButton>
+                  </form>
+                  <form action={deleteDefectAction}>
+                    <input type="hidden" name="defectId" value={d.id} />
+                    <SubmitButton className="text-xs text-slate-400 hover:text-red-600">
+                      löschen
+                    </SubmitButton>
+                  </form>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* Entleih-Vorgänge — jede Anfrage/Entleihe ist ein aufklickbarer Vorgang */}
       <section className="card p-5">
         <h2 className="mb-3 font-semibold">Entleih-Vorgänge</h2>
@@ -276,71 +342,7 @@ export function ItemDetail({
         </form>
       </section>
 
-      {/* Mängel */}
-      <section className="card p-5">
-        <h2 className="mb-3 font-semibold">Mängel</h2>
-        <form action={createDefectAction} className="mb-4 flex items-end gap-2">
-          <input type="hidden" name="itemId" value={item.id} />
-          <div className="flex-1">
-            <label className="label">Mangel melden</label>
-            <input
-              name="description"
-              className="input"
-              required
-              placeholder="z. B. Bein wackelt"
-            />
-          </div>
-          <SubmitButton className="btn-primary">Melden</SubmitButton>
-        </form>
-
-        {defects.length === 0 ? (
-          <p className="text-sm text-slate-500">Keine Mängel erfasst.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {defects.map((d) => (
-              <li
-                key={d.id}
-                className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm ${
-                  d.resolvedAt
-                    ? "border-slate-100 text-slate-400"
-                    : "border-amber-200 bg-amber-50"
-                }`}
-              >
-                <span>
-                  <span className={d.resolvedAt ? "line-through" : ""}>
-                    {d.description}
-                  </span>
-                  {d.resolvedAt && (
-                    <span className="ml-1">
-                      (behoben am {fmtDateTime(d.resolvedAt)})
-                    </span>
-                  )}
-                  <span className="ml-1 block text-xs text-slate-400">
-                    gemeldet von {d.creatorName ?? "—"} am{" "}
-                    {fmtDateTime(d.createdAt)}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <form action={toggleDefectAction}>
-                    <input type="hidden" name="defectId" value={d.id} />
-                    <SubmitButton className="text-xs text-brand-600 hover:underline">
-                      {d.resolvedAt ? "wieder öffnen" : "behoben"}
-                    </SubmitButton>
-                  </form>
-                  <form action={deleteDefectAction}>
-                    <input type="hidden" name="defectId" value={d.id} />
-                    <SubmitButton className="text-xs text-slate-400 hover:text-red-600">
-                      löschen
-                    </SubmitButton>
-                  </form>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Dateien: Belege, Leihanträge, Leihverträge (mit Historie) */}
+      {/* Kaufbelege */}
       <ItemAttachments
         itemId={item.id}
         attachments={attachments}

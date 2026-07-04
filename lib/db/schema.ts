@@ -797,6 +797,7 @@ export const inventoryItems = pgTable("inventory_items", {
   price: integer("price"), // Kaufpreis in Cent
   purchaseDate: text("purchase_date"), // YYYY-MM-DD
   vendor: text("vendor"), // Händler
+  serialNumber: text("serial_number"), // Seriennummer (nur intern sichtbar)
   notes: text("notes"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -870,6 +871,8 @@ export const inventoryLoans = pgTable(
     endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
     returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
     notes: text("notes"),
+    // Hinweise des Verleihers an den Entleiher — über den Status-Link sichtbar.
+    borrowerNote: text("borrower_note"),
     createdAt: createdAt(),
     createdBy: integer("created_by").references(() => users.id, {
       onDelete: "set null",

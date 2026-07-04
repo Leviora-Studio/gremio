@@ -19,12 +19,8 @@ import {
 } from "@/app/intern/inventar/item/[itemId]/attachment-actions";
 import { saveInventoryPdfEditsAction } from "@/app/intern/inventar/item/[itemId]/pdf-actions";
 
-// In dieser Reihenfolge angezeigt; „other" bleibt vorerst außen vor.
-const SHOWN_KINDS: InventoryAttachmentKind[] = [
-  "receipt",
-  "loan_request",
-  "loan_contract",
-];
+// Am Gegenstand nur die Kaufbelege — Leihanträge/-verträge leben am Vorgang.
+const SHOWN_KINDS: InventoryAttachmentKind[] = ["receipt"];
 
 function fmt(d: Date | string): string {
   const date = typeof d === "string" ? new Date(d) : d;
@@ -46,7 +42,7 @@ export function ItemAttachments({
 }) {
   return (
     <section className="card space-y-5 p-5">
-      <h2 className="font-semibold">Dateien</h2>
+      <h2 className="font-semibold">Kaufbelege</h2>
       {SHOWN_KINDS.map((kind) => (
         <AttachmentKindSection
           key={kind}

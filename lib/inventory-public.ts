@@ -11,23 +11,17 @@ import {
   type InventoryAvailability,
 } from "@/lib/inventory-items";
 
-// Öffentlich zeigbare Felder — bewusste Whitelist. NICHT enthalten: Preis,
-// Händler, Kaufdatum, Belege, „aktuell bei" (Person) und Verträge. Die
-// Verfügbarkeit (verfügbar / entliehen bis) wird immer angezeigt.
-export const PUBLIC_INVENTORY_FIELD_KEYS = [
-  "number",
-  "category",
-  "location",
-] as const;
+// Öffentlich zeigbare Felder — bewusste Whitelist. NICHT enthalten: Inventar-/
+// Seriennummer, Standort, Preis, Händler, Kaufdatum, Belege, „aktuell bei"
+// (Person) und Verträge. Die Verfügbarkeit (verfügbar / entliehen bis) wird
+// immer angezeigt.
+export const PUBLIC_INVENTORY_FIELD_KEYS = ["category"] as const;
 
 export type PublicInventoryItem = {
   id: number;
   name: string;
-  number: string | null;
   categoryIds: number[];
   categoryNames: string[];
-  locationId: number | null;
-  locationName: string | null;
   availability: InventoryAvailability; // available | lent (nie not_lendable öffentlich)
   lentUntil: string | null; // nur das Enddatum — KEINE Person
 };
@@ -61,7 +55,7 @@ export async function getPublicInventoryBoardById(
 export async function getPublicBoardData(boardId: number): Promise<{
   publicFields: string[];
   items: PublicInventoryItem[];
-  options: { category: PublicOpt[]; location: PublicOpt[] };
+  options: { category: PublicOpt[] };
 }> {
   const [visible, full, options] = await Promise.all([
     getVisibleInventoryFieldKeys(boardId),
@@ -77,11 +71,8 @@ export async function getPublicBoardData(boardId: number): Promise<{
     .map((it) => ({
       id: it.id,
       name: it.name,
-      number: it.number,
       categoryIds: it.categoryIds,
       categoryNames: it.categoryNames,
-      locationId: it.locationId,
-      locationName: it.locationName,
       availability: it.availability,
       lentUntil: it.activeUntil,
     }));
@@ -90,9 +81,6 @@ export async function getPublicBoardData(boardId: number): Promise<{
   return {
     publicFields,
     items,
-    options: {
-      category: toOpts(options.category),
-      location: toOpts(options.location),
-    },
+    options: { category: toOpts(options.category) },
   };
 }

@@ -22,6 +22,7 @@ import {
   rejectLoan,
   returnLoan,
   setDefectResolved,
+  setLoanBorrowerNote,
 } from "@/lib/inventory-loans";
 import type { InventoryItem } from "@/lib/db/schema";
 
@@ -105,6 +106,15 @@ export async function rejectLoanAction(fd: FormData): Promise<void> {
   if (!loan) return;
   const { item } = await assertItemAccess(loan.itemId);
   await rejectLoan(loan.id);
+  revItem(item);
+}
+
+export async function setLoanBorrowerNoteAction(fd: FormData): Promise<void> {
+  const loan = await getLoanById(Number(fd.get("loanId")));
+  if (!loan) return;
+  const { item } = await assertItemAccess(loan.itemId);
+  const note = text(fd, "borrowerNote", 3000);
+  await setLoanBorrowerNote(loan.id, note);
   revItem(item);
 }
 

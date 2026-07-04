@@ -19,6 +19,7 @@ type OptionKind = keyof GroupedOpts;
 const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "name", label: "Bezeichnung", always: true },
   { key: "number", label: "Inv.-Nr." },
+  { key: "serial_number", label: "Seriennr." },
   { key: "category", label: "Kategorie" },
   { key: "location", label: "Standort" },
   { key: "current_holder", label: "Aktuell bei" },
@@ -69,7 +70,7 @@ export function InventoryBoardView({
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.name} ${it.number ?? ""} ${it.vendor ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
+        const hay = `${it.name} ${it.number ?? ""} ${it.serialNumber ?? ""} ${it.vendor ?? ""} ${it.categoryNames.join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (fCategory != null && !it.categoryIds.includes(fCategory)) return false;
@@ -228,6 +229,8 @@ function renderCell(key: string, it: InventoryItemView) {
       );
     case "number":
       return it.number ?? "—";
+    case "serial_number":
+      return it.serialNumber ?? "—";
     case "category":
       return it.categoryNames.length ? (
         <span className="flex flex-wrap gap-1">
