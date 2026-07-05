@@ -8,7 +8,12 @@ import { and, eq, max } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, attachments, boards, boardStatuses } from "@/lib/db/schema";
 import { MAX_PUBLIC_OTHER_FILES, PDF_MIME } from "@/lib/constants";
-import { saveAntragFile, validateUpload } from "@/lib/attachments";
+import {
+  nextReceiptIndex,
+  receiptFileName,
+  saveAntragFile,
+  validateUpload,
+} from "@/lib/attachments";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
@@ -56,18 +61,25 @@ export async function addPublicFileAction(
   if (err) return { error: err };
 
   const existing = await db
-    .select({ id: attachments.id })
+    .select({ id: attachments.id, filename: attachments.filename })
     .from(attachments)
     .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, "other")));
   if (existing.length >= MAX_PUBLIC_OTHER_FILES) {
     return { error: "Maximale Anzahl an Dateien erreicht." };
   }
 
+  // Quittungen automatisch fortlaufend benennen: <Antragsnummer>_Q1, _Q2 …
+  // Lücken werden wiederverwendet; vorhandene Dateien bleiben unverändert.
   const saved = await saveAntragFile(card.id, file);
+  const index = nextReceiptIndex(
+    card.number,
+    existing.map((e) => e.filename),
+  );
+  const displayName = receiptFileName(card.number, index, saved.filename);
   await db.insert(attachments).values({
     cardId: card.id,
     kind: "other",
-    filename: saved.filename,
+    filename: displayName,
     path: saved.relPath,
     mime: saved.mime,
     size: saved.size,
@@ -78,7 +90,7 @@ export async function addPublicFileAction(
     card.id,
     null,
     "attachment_added",
-    `Datei nachgereicht (öffentlich): ${saved.filename}`,
+    `Datei nachgereicht (öffentlich): ${displayName}`,
   );
 
   revalidatePath(`/status/${token}`);

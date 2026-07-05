@@ -246,22 +246,9 @@ export default async function StatusPage({
                   zusammenfassen.
                 </li>
                 <li>
-                  Benenne die Dateien fortlaufend nach dem Schema{" "}
-                  <code className="rounded bg-white px-1 py-0.5 font-mono text-brand-800 ring-1 ring-brand-200">
-                    {antrag.number ? `${antrag.number}_Q1` : "Antragsnummer_Q1"}
-                  </code>
-                  ,{" "}
-                  <code className="rounded bg-white px-1 py-0.5 font-mono text-brand-800 ring-1 ring-brand-200">
-                    {antrag.number ? `${antrag.number}_Q2` : "Antragsnummer_Q2"}
-                  </code>{" "}
-                  usw.
-                  {!antrag.number && (
-                    <>
-                      {" "}
-                      („Antragsnummer" durch deine oben angezeigte Antragsnummer
-                      ersetzen.)
-                    </>
-                  )}
+                  Die Quittungen werden{" "}
+                  <strong>automatisch fortlaufend benannt</strong> (Q1, Q2 …) —
+                  du musst dich nicht selbst um die Benennung kümmern.
                 </li>
               </ul>
             </div>
