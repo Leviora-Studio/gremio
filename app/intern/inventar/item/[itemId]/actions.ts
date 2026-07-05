@@ -12,6 +12,7 @@ import {
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
+  addLoanItem,
   approveLoan,
   createDefect,
   createLoan,
@@ -20,6 +21,7 @@ import {
   getDefectById,
   getLoanById,
   rejectLoan,
+  removeLoanItem,
   returnLoan,
   setDefectResolved,
   setLoanBorrowerNote,
@@ -127,6 +129,28 @@ export async function setLoanBorrowerNoteAction(
     return { error: "Kein Zugriff." };
   }
   return { ok: true };
+}
+
+/** Ein weiteres Stück derselben Gruppe dem Vorgang zuordnen (bestätigte Menge). */
+export async function addLoanItemAction(fd: FormData): Promise<void> {
+  const loan = await getLoanById(Number(fd.get("loanId")));
+  if (!loan) return;
+  const { item } = await assertItemAccess(loan.itemId);
+  const itemId = Number(fd.get("itemId"));
+  if (Number.isInteger(itemId)) await addLoanItem(loan.id, itemId);
+  revItem(item);
+  revalidatePath(`/intern/inventar/loan/${loan.id}`);
+}
+
+/** Ein zugeordnetes Stück aus dem Vorgang entfernen (mind. 1 bleibt). */
+export async function removeLoanItemAction(fd: FormData): Promise<void> {
+  const loan = await getLoanById(Number(fd.get("loanId")));
+  if (!loan) return;
+  const { item } = await assertItemAccess(loan.itemId);
+  const itemId = Number(fd.get("itemId"));
+  if (Number.isInteger(itemId)) await removeLoanItem(loan.id, itemId);
+  revItem(item);
+  revalidatePath(`/intern/inventar/loan/${loan.id}`);
 }
 
 // --- Mängel -------------------------------------------------------------

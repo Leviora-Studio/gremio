@@ -909,6 +909,9 @@ export const inventoryLoans = pgTable(
     purpose: text("purpose"), // Verwendungsort/Zweck
     startDate: text("start_date"), // YYYY-MM-DD
     endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
+    // Angefragte Stückzahl (bei Anfrage gesetzt, unveränderlich). Die bestätigte
+    // Stückzahl = Anzahl der aktuell zugeordneten Stücke (inventory_loan_items).
+    requestedQuantity: integer("requested_quantity").notNull().default(1),
     returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
     notes: text("notes"),
     // Hinweise des Verleihers an den Entleiher — über den Status-Link sichtbar.

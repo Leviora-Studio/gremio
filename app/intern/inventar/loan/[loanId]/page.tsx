@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
+  getAddableGroupUnits,
   getLoanById,
   getLoanItems,
   getLoanCardProgress,
@@ -19,6 +20,7 @@ import {
 import { SubmitButton } from "@/components/SubmitButton";
 import { LoanContractUpload } from "@/components/inventory/LoanContractUpload";
 import { BorrowerNoteForm } from "@/components/inventory/BorrowerNoteForm";
+import { LoanQuantityEditor } from "@/components/inventory/LoanQuantityEditor";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   approveLoanAction,
@@ -51,6 +53,13 @@ export default async function InventoryLoanPage({
 
   const docs = await listLoanAttachments(loan.id);
   const loanItems = await getLoanItems(loan.id);
+  // Stückzahl-Vorgang (Gruppe): angefragte vs. bestätigte Menge + Anpassung.
+  const isGroupLoan = item.groupName != null;
+  const addableUnits = isGroupLoan ? await getAddableGroupUnits(loan.id) : [];
+  const confirmedLabel =
+    loan.status === "active" || loan.status === "returned"
+      ? "Bestätigte Stückzahl"
+      : "Zugeordnete Stückzahl";
   // Aufgabentracking: verknüpfte Karte → Aktionen laufen über das Kanban-Board.
   const cardProgress = loan.cardId
     ? await getLoanCardProgress(loan.cardId)
@@ -190,29 +199,15 @@ export default async function InventoryLoanPage({
         </div>
       </div>
 
-      {/* Reservierte Stücke (bei Stückzahl-Ausleihe mehrere) */}
-      {loanItems.length > 1 && (
-        <div className="card p-5">
-          <h2 className="mb-1 font-semibold">
-            Reservierte Stücke ({loanItems.length})
-          </h2>
-          <p className="mb-3 text-sm text-slate-500">
-            Dieser Vorgang umfasst mehrere konkrete Stücke.
-          </p>
-          <ul className="divide-y divide-slate-100">
-            {loanItems.map((li) => (
-              <li key={li.id}>
-                <Link
-                  href={`/intern/inventar/item/${li.id}`}
-                  className="flex items-center justify-between gap-2 py-2 text-sm hover:text-brand-600"
-                >
-                  <span className="font-medium text-slate-800">{li.name}</span>
-                  <span className="text-slate-400">{li.number ?? "—"}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {/* Stückzahl-Vorgang: angefragte vs. bestätigte Menge + Anpassung */}
+      {isGroupLoan && (
+        <LoanQuantityEditor
+          loanId={loan.id}
+          requested={loan.requestedQuantity}
+          confirmedLabel={confirmedLabel}
+          items={loanItems}
+          addable={addableUnits}
+        />
       )}
 
       {/* Hinweise für den Entleiher (über den Status-Link sichtbar) */}

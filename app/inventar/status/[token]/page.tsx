@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import {
   getLoanByToken,
   getLoanCardProgress,
+  getLoanItems,
   PENDING_LOAN_STATUSES,
 } from "@/lib/inventory-loans";
 import { getInventoryItemById } from "@/lib/inventory-items";
@@ -95,6 +96,13 @@ export default async function InventoryRequestStatusPage({
   );
   const from = fmtDate(loan.startDate);
   const to = fmtDate(loan.endDate);
+
+  // Stückzahl-Anfrage: angefragte Menge immer zeigen, bestätigte erst nach der
+  // Bestätigung (Ausleihe läuft/abgeschlossen).
+  const confirmedQty = (await getLoanItems(loan.id)).length;
+  const isQuantity = loan.requestedQuantity > 1 || confirmedQty > 1;
+  const showConfirmed =
+    loan.status === "active" || loan.status === "returned";
 
   // Aufgabentracking: bei verknüpfter Karte die Board-Spalten als Status zeigen.
   // Abgelehnt/zurückgezogen sind Vorgangs-Endzustände (nicht auf dem Board).
@@ -191,6 +199,21 @@ export default async function InventoryRequestStatusPage({
             </dt>
             <dd className="text-slate-800">{loan.borrower}</dd>
           </div>
+          {isQuantity && (
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-slate-400">
+                Angefragte Stückzahl
+              </dt>
+              <dd className="text-slate-800">
+                {loan.requestedQuantity} Stück
+                {showConfirmed && (
+                  <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                    {confirmedQty} bestätigt
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
           {(from || to) && (
             <div>
               <dt className="text-xs uppercase tracking-wide text-slate-400">

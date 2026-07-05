@@ -145,6 +145,147 @@ export async function getLoanItems(
     .orderBy(inventoryItems.number, inventoryItems.id);
 }
 
+/** Aktualisiert den Titel der Tracking-Karte anhand Leit-Stück + Stückzahl. */
+async function updateTrackingCardTitle(loanId: number): Promise<void> {
+  const loan = await getLoanById(loanId);
+  if (!loan?.cardId) return;
+  const [lead] = await db
+    .select({ name: inventoryItems.name })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, loan.itemId))
+    .limit(1);
+  const [cnt] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(inventoryLoanItems)
+    .where(eq(inventoryLoanItems.loanId, loanId));
+  let title = lead?.name || "Leihgegenstand";
+  if ((cnt?.n ?? 1) > 1) title = `${title} ×${cnt.n}`;
+  await db
+    .update(cards)
+    .set({ title, updatedAt: new Date() })
+    .where(eq(cards.id, loan.cardId));
+}
+
+/**
+ * Verfügbare Stücke der Gruppe eines Vorgangs, die noch NICHT zugeordnet sind —
+ * zum manuellen Ergänzen (bestätigte Stückzahl anpassen). Leer, wenn das
+ * Leit-Stück keiner Gruppe angehört.
+ */
+export async function getAddableGroupUnits(
+  loanId: number,
+): Promise<{ id: number; number: string | null; name: string }[]> {
+  const loan = await getLoanById(loanId);
+  if (!loan) return [];
+  const [lead] = await db
+    .select({
+      boardId: inventoryItems.boardId,
+      groupName: inventoryItems.groupName,
+    })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, loan.itemId))
+    .limit(1);
+  if (!lead?.groupName) return [];
+  const candidates = await db
+    .select({
+      id: inventoryItems.id,
+      number: inventoryItems.number,
+      name: inventoryItems.name,
+    })
+    .from(inventoryItems)
+    .where(
+      and(
+        eq(inventoryItems.boardId, lead.boardId),
+        eq(inventoryItems.groupName, lead.groupName),
+        eq(inventoryItems.condition, "active"),
+        eq(inventoryItems.lendable, true),
+      ),
+    )
+    .orderBy(inventoryItems.number, inventoryItems.id);
+  if (!candidates.length) return [];
+  const active = await getActiveLoanMap(candidates.map((c) => c.id));
+  const attached = new Set(
+    (
+      await db
+        .select({ id: inventoryLoanItems.itemId })
+        .from(inventoryLoanItems)
+        .where(eq(inventoryLoanItems.loanId, loanId))
+    ).map((r) => r.id),
+  );
+  return candidates.filter((c) => !active.has(c.id) && !attached.has(c.id));
+}
+
+/** Ein weiteres Stück derselben Gruppe dem Vorgang zuordnen (bestätigte Menge). */
+export async function addLoanItem(
+  loanId: number,
+  itemId: number,
+): Promise<void> {
+  const loan = await getLoanById(loanId);
+  if (!loan) return;
+  const [lead] = await db
+    .select({
+      boardId: inventoryItems.boardId,
+      groupName: inventoryItems.groupName,
+    })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, loan.itemId))
+    .limit(1);
+  const [target] = await db
+    .select({
+      boardId: inventoryItems.boardId,
+      groupName: inventoryItems.groupName,
+    })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, itemId))
+    .limit(1);
+  // Nur Stücke derselben Gruppe/desselben Boards zulassen.
+  if (
+    !lead ||
+    !target ||
+    !lead.groupName ||
+    target.boardId !== lead.boardId ||
+    target.groupName !== lead.groupName
+  ) {
+    return;
+  }
+  await db
+    .insert(inventoryLoanItems)
+    .values({ loanId, itemId })
+    .onConflictDoNothing();
+  await updateTrackingCardTitle(loanId);
+}
+
+/** Ein zugeordnetes Stück wieder entfernen (mind. 1 bleibt; Leit-Stück wandert). */
+export async function removeLoanItem(
+  loanId: number,
+  itemId: number,
+): Promise<void> {
+  const rows = await db
+    .select({ id: inventoryLoanItems.itemId })
+    .from(inventoryLoanItems)
+    .where(eq(inventoryLoanItems.loanId, loanId));
+  const ids = rows.map((r) => r.id);
+  if (!ids.includes(itemId) || ids.length <= 1) return; // letztes Stück bleibt
+  await db
+    .delete(inventoryLoanItems)
+    .where(
+      and(
+        eq(inventoryLoanItems.loanId, loanId),
+        eq(inventoryLoanItems.itemId, itemId),
+      ),
+    );
+  const loan = await getLoanById(loanId);
+  if (loan && loan.itemId === itemId) {
+    const nextLead = ids.find((id) => id !== itemId);
+    if (nextLead != null) {
+      await db
+        .update(inventoryLoans)
+        .set({ itemId: nextLead })
+        .where(eq(inventoryLoans.id, loanId));
+    }
+  }
+  await updateTrackingCardTitle(loanId);
+}
+
 /**
  * Neuen Entleihvorgang anlegen — reserviert 1..n konkrete Stücke. `itemIds[0]`
  * ist das Leit-Stück (loans.item_id), alle Stücke landen in loan_items.
@@ -157,7 +298,12 @@ export async function createLoan(
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(inventoryLoans)
-      .values({ itemId: itemIds[0], createdBy, ...data })
+      .values({
+        itemId: itemIds[0],
+        createdBy,
+        requestedQuantity: itemIds.length,
+        ...data,
+      })
       .returning({ id: inventoryLoans.id });
     await tx
       .insert(inventoryLoanItems)
@@ -221,6 +367,7 @@ export async function createLoanRequest(
             status: "requested",
             token,
             createdBy: null,
+            requestedQuantity: itemIds.length,
             ...data,
           })
           .returning({ id: inventoryLoans.id });
