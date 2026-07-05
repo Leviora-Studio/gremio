@@ -2,15 +2,14 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
-  boardStatuses,
+  boards,
   groups,
   inventoryBoardAccess,
   users,
 } from "@/lib/db/schema";
-import { getAccessibleBoards } from "@/lib/authz";
 import { requireInventoryBoardManage } from "@/lib/inventory";
 import { LoanBoardEditor } from "@/components/inventory/LoanBoardEditor";
 import {
@@ -45,53 +44,45 @@ export default async function InventoryBoardSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { user, board } = await requireInventoryBoardManage(Number(id));
-  const [fields, numbering, access, allUsers, allGroups, loanBoards, loanCols] =
+  const { board } = await requireInventoryBoardManage(Number(id));
+  const [fields, numbering, access, allUsers, allGroups, loanBoardRow] =
     await Promise.all([
-    getInventoryBoardFields(board.id),
-    getInventoryNumbering(board.id),
-    db
-      .select({
-        id: inventoryBoardAccess.id,
-        userId: inventoryBoardAccess.userId,
-        groupId: inventoryBoardAccess.groupId,
-        userName: users.username,
-        avatarPath: users.avatarPath,
-        groupName: groups.name,
-      })
-      .from(inventoryBoardAccess)
-      .leftJoin(users, eq(users.id, inventoryBoardAccess.userId))
-      .leftJoin(groups, eq(groups.id, inventoryBoardAccess.groupId))
-      .where(eq(inventoryBoardAccess.boardId, board.id)),
-    db
-      .select({ id: users.id, username: users.username })
-      .from(users)
-      .where(eq(users.isActive, true))
-      .orderBy(users.username),
-    db
-      .select({ id: groups.id, name: groups.name })
-      .from(groups)
-      .orderBy(groups.name),
-    getAccessibleBoards(user),
-    db
-      .select({
-        id: boardStatuses.id,
-        boardId: boardStatuses.boardId,
-        name: boardStatuses.name,
-      })
-      .from(boardStatuses)
-      .orderBy(asc(boardStatuses.position)),
-  ]);
+      getInventoryBoardFields(board.id),
+      getInventoryNumbering(board.id),
+      db
+        .select({
+          id: inventoryBoardAccess.id,
+          userId: inventoryBoardAccess.userId,
+          groupId: inventoryBoardAccess.groupId,
+          userName: users.username,
+          avatarPath: users.avatarPath,
+          groupName: groups.name,
+        })
+        .from(inventoryBoardAccess)
+        .leftJoin(users, eq(users.id, inventoryBoardAccess.userId))
+        .leftJoin(groups, eq(groups.id, inventoryBoardAccess.groupId))
+        .where(eq(inventoryBoardAccess.boardId, board.id)),
+      db
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.isActive, true))
+        .orderBy(users.username),
+      db
+        .select({ id: groups.id, name: groups.name })
+        .from(groups)
+        .orderBy(groups.name),
+      board.loanBoardId
+        ? db
+            .select({ id: boards.id, name: boards.name })
+            .from(boards)
+            .where(eq(boards.id, board.loanBoardId))
+            .limit(1)
+        : Promise.resolve([]),
+    ]);
   const visible = new Set(
     fields.filter((f) => f.visible).map((f) => f.fieldKey),
   );
-  const loanBoardsWithStatuses = loanBoards.map((b) => ({
-    id: b.id,
-    name: b.name,
-    statuses: loanCols
-      .filter((s) => s.boardId === b.id)
-      .map((s) => ({ id: s.id, name: s.name })),
-  }));
+  const loanBoard = loanBoardRow[0] ?? null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 py-2">
@@ -261,12 +252,8 @@ export default async function InventoryBoardSettingsPage({
       <CollapsibleSection title="Aufgabentracking (Leihvorgänge als Karten)">
         <LoanBoardEditor
           boardId={board.id}
-          current={{
-            loanBoardId: board.loanBoardId,
-            loanActiveStatusId: board.loanActiveStatusId,
-            loanReturnedStatusId: board.loanReturnedStatusId,
-          }}
-          boards={loanBoardsWithStatuses}
+          loanBoard={loanBoard}
+          suggestedName={`${board.name} – Leihvorgänge`}
         />
       </CollapsibleSection>
 

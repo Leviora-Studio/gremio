@@ -121,6 +121,12 @@ export const boards = pgTable("boards", {
     { onDelete: "set null" },
   ),
   doneSweepTime: text("done_sweep_time"), // "HH:MM" (lokale Zeit), NULL = aus
+  // System-Board: dediziertes Leihvorgang-Board eines Inventars. NULL = normales
+  // Kanban-Board. Zugriff/Freigaben spiegeln das Inventar; wird mit ihm gelöscht.
+  inventoryBoardId: integer("inventory_board_id").references(
+    (): AnyPgColumn => inventoryBoards.id,
+    { onDelete: "cascade" },
+  ),
   createdAt: createdAt(),
 });
 

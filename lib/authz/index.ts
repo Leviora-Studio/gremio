@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import {
   boardAccess,
   boards,
+  inventoryBoardAccess,
+  inventoryBoards,
   userGroups,
   users,
   type Board,
@@ -24,6 +26,41 @@ export async function getUserGroupIds(userId: number): Promise<number[]> {
 }
 
 /**
+ * Zugriff auf ein Inventar-Board (Eigentümer ODER Freigabe an Nutzer/Gruppe).
+ * Hier inline gehalten, damit die Zugriffslogik der Leihvorgang-System-Boards
+ * das Inventar spiegelt, ohne Import-Zyklus mit lib/inventory.
+ */
+async function canAccessInventoryBoardById(
+  user: User,
+  inventoryBoardId: number,
+): Promise<boolean> {
+  const [inv] = await db
+    .select({ ownerId: inventoryBoards.ownerId })
+    .from(inventoryBoards)
+    .where(eq(inventoryBoards.id, inventoryBoardId))
+    .limit(1);
+  if (!inv) return false;
+  if (inv.ownerId === user.id) return true;
+  const groupIds = await getUserGroupIds(user.id);
+  const rows = await db
+    .select({ id: inventoryBoardAccess.id })
+    .from(inventoryBoardAccess)
+    .where(
+      and(
+        eq(inventoryBoardAccess.boardId, inventoryBoardId),
+        or(
+          eq(inventoryBoardAccess.userId, user.id),
+          groupIds.length
+            ? inArray(inventoryBoardAccess.groupId, groupIds)
+            : undefined,
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
  * Sehen + Karten bearbeiten:
  * admin ODER Eigentümer ODER Freigabe an Nutzer ODER an eine seiner Gruppen.
  */
@@ -32,6 +69,10 @@ export async function canAccessBoard(
   board: Board,
 ): Promise<boolean> {
   if (user.role === "admin") return true;
+  // System-Board (Leihvorgänge): Zugriff spiegelt das verknüpfte Inventar.
+  if (board.inventoryBoardId != null) {
+    return canAccessInventoryBoardById(user, board.inventoryBoardId);
+  }
   if (board.ownerId === user.id) return true;
 
   const groupIds = await getUserGroupIds(user.id);
@@ -78,8 +119,36 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
         .where(inArray(boardAccess.groupId, groupIds))
     : [];
 
+  // System-Boards (Leihvorgänge): über die zugänglichen Inventare einbeziehen,
+  // damit Freigaben identisch zum Inventar wirken.
+  const invOwner = await db
+    .select({ id: inventoryBoards.id })
+    .from(inventoryBoards)
+    .where(eq(inventoryBoards.ownerId, user.id));
+  const invUser = await db
+    .select({ id: inventoryBoardAccess.boardId })
+    .from(inventoryBoardAccess)
+    .where(eq(inventoryBoardAccess.userId, user.id));
+  const invGroup = groupIds.length
+    ? await db
+        .select({ id: inventoryBoardAccess.boardId })
+        .from(inventoryBoardAccess)
+        .where(inArray(inventoryBoardAccess.groupId, groupIds))
+    : [];
+  const invIds = Array.from(
+    new Set([...invOwner, ...invUser, ...invGroup].map((r) => r.id)),
+  );
+  const sysRows = invIds.length
+    ? await db
+        .select({ id: boards.id })
+        .from(boards)
+        .where(inArray(boards.inventoryBoardId, invIds))
+    : [];
+
   const ids = Array.from(
-    new Set([...ownerRows, ...userRows, ...groupRows].map((r) => r.id)),
+    new Set(
+      [...ownerRows, ...userRows, ...groupRows, ...sysRows].map((r) => r.id),
+    ),
   );
   if (!ids.length) return [];
   return db
@@ -109,19 +178,53 @@ export async function getBoardMemberUsers(
     .select({ id: users.id })
     .from(users)
     .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
-  const directRows = await db
-    .select({ id: boardAccess.userId })
-    .from(boardAccess)
-    .where(and(eq(boardAccess.boardId, board.id), isNotNull(boardAccess.userId)));
-  const groupMemberRows = await db
-    .select({ id: userGroups.userId })
-    .from(userGroups)
-    .innerJoin(boardAccess, eq(boardAccess.groupId, userGroups.groupId))
-    .where(eq(boardAccess.boardId, board.id));
+
+  // System-Board (Leihvorgänge): Mitglieder = Mitglieder des Inventars.
+  let ownerId = board.ownerId;
+  let directRows: { id: number | null }[];
+  let groupMemberRows: { id: number }[];
+  if (board.inventoryBoardId != null) {
+    const invId = board.inventoryBoardId;
+    const [inv] = await db
+      .select({ ownerId: inventoryBoards.ownerId })
+      .from(inventoryBoards)
+      .where(eq(inventoryBoards.id, invId))
+      .limit(1);
+    if (inv) ownerId = inv.ownerId;
+    directRows = await db
+      .select({ id: inventoryBoardAccess.userId })
+      .from(inventoryBoardAccess)
+      .where(
+        and(
+          eq(inventoryBoardAccess.boardId, invId),
+          isNotNull(inventoryBoardAccess.userId),
+        ),
+      );
+    groupMemberRows = await db
+      .select({ id: userGroups.userId })
+      .from(userGroups)
+      .innerJoin(
+        inventoryBoardAccess,
+        eq(inventoryBoardAccess.groupId, userGroups.groupId),
+      )
+      .where(eq(inventoryBoardAccess.boardId, invId));
+  } else {
+    directRows = await db
+      .select({ id: boardAccess.userId })
+      .from(boardAccess)
+      .where(
+        and(eq(boardAccess.boardId, board.id), isNotNull(boardAccess.userId)),
+      );
+    groupMemberRows = await db
+      .select({ id: userGroups.userId })
+      .from(userGroups)
+      .innerJoin(boardAccess, eq(boardAccess.groupId, userGroups.groupId))
+      .where(eq(boardAccess.boardId, board.id));
+  }
 
   const ids = Array.from(
     new Set<number>([
-      board.ownerId,
+      ownerId,
       ...adminRows.map((r) => r.id),
       ...directRows.map((r) => r.id as number),
       ...groupMemberRows.map((r) => r.id),

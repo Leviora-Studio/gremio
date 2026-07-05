@@ -12,10 +12,69 @@ import {
   boardStatuses,
   boardTemplateStatuses,
   cards,
+  inventoryBoards,
   locations,
+  type InventoryBoard,
 } from "@/lib/db/schema";
 import { CARD_FIELD_KEYS } from "@/lib/constants";
 import { deleteStoredFile } from "@/lib/attachments";
+
+// Standard-Spalten eines automatisch erzeugten Leihvorgang-Boards.
+export const LOAN_BOARD_COLUMNS = [
+  "Eingegangen",
+  "In Prüfung",
+  "Vertrag bereitgestellt",
+  "Vertrag unterschrieben",
+  "Ausleihe bestätigt",
+  "in Ausleihe",
+  "Zurückgegeben",
+] as const;
+const LOAN_ACTIVE_COLUMN = "in Ausleihe"; // → Gegenstand gilt als ausgeliehen
+const LOAN_RETURNED_COLUMN = "Zurückgegeben"; // → Gegenstand wieder verfügbar
+
+/**
+ * Legt das dedizierte Leihvorgang-Board („System-Board") eines Inventars an:
+ * eigenes Kanban-Board mit fester Leih-Spaltenstruktur, als System-Board
+ * markiert (boards.inventory_board_id) und mit dem Inventar verknüpft
+ * (loan_board_id + Trigger-Spalten). Eigentümer = Inventar-Eigentümer.
+ */
+export async function createLoanBoardForInventory(
+  inventoryBoard: InventoryBoard,
+  name: string,
+): Promise<number> {
+  // Grundgerüst (Kartenfelder/Archiv/Nummerierung) wie ein normales Board.
+  const boardId = await createBoardFromTemplate(
+    inventoryBoard.ownerId,
+    name,
+    `Leihvorgänge – ${inventoryBoard.name}`,
+    null,
+  );
+  for (let i = 0; i < LOAN_BOARD_COLUMNS.length; i++) {
+    await db
+      .insert(boardStatuses)
+      .values({ boardId, name: LOAN_BOARD_COLUMNS[i], position: i });
+  }
+  const cols = await db
+    .select({ id: boardStatuses.id, name: boardStatuses.name })
+    .from(boardStatuses)
+    .where(eq(boardStatuses.boardId, boardId));
+  const activeCol = cols.find((c) => c.name === LOAN_ACTIVE_COLUMN);
+  const returnedCol = cols.find((c) => c.name === LOAN_RETURNED_COLUMN);
+
+  await db
+    .update(boards)
+    .set({ inventoryBoardId: inventoryBoard.id })
+    .where(eq(boards.id, boardId));
+  await db
+    .update(inventoryBoards)
+    .set({
+      loanBoardId: boardId,
+      loanActiveStatusId: activeCol?.id ?? null,
+      loanReturnedStatusId: returnedCol?.id ?? null,
+    })
+    .where(eq(inventoryBoards.id, inventoryBoard.id));
+  return boardId;
+}
 
 /**
  * Neues Board aus einem Template: kopiert dessen Spalten (inkl. Archiv-Trigger),
@@ -90,6 +149,17 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
   if (ref) {
     throw new BoardDeleteBlockedError(
       `Board wird vom Standort „${ref.name}" als Ziel verwendet. Bitte zuerst das Standort-Routing umstellen.`,
+    );
+  }
+  // System-Board (Leihvorgänge) wird über das Inventar verwaltet, nicht hier.
+  const [sys] = await db
+    .select({ inventoryBoardId: boards.inventoryBoardId })
+    .from(boards)
+    .where(eq(boards.id, boardId))
+    .limit(1);
+  if (sys?.inventoryBoardId != null) {
+    throw new BoardDeleteBlockedError(
+      "Dies ist ein Leihvorgang-Board eines Inventars. Deaktiviere das Aufgabentracking in den Inventar-Einstellungen, um es zu entfernen.",
     );
   }
   // Anhang-Pfade VOR dem Löschen sammeln, um die physischen Dateien danach

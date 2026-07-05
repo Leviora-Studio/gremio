@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import {
-  boardStatuses,
+  boards,
   groups,
   inventoryBoardAccess,
   inventoryBoardFields,
@@ -16,8 +16,8 @@ import {
   inventoryNumbering,
   users,
 } from "@/lib/db/schema";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { requireInventoryBoardManage } from "@/lib/inventory";
+import { createLoanBoardForInventory, deleteBoardCascade } from "@/lib/boards";
 import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
 
 export type LoanBoardState = { error?: string; success?: string };
@@ -88,57 +88,61 @@ export async function renameInventoryBoardAction(formData: FormData) {
   revalidatePath(`/intern/inventar`);
 }
 
+function revLoanBoard(boardId: number) {
+  revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
+  revalidatePath(`/intern/inventar/${boardId}`);
+  revalidatePath(`/intern`);
+  revalidatePath(`/intern/boards`);
+}
+
 /**
- * Ziel-Board für Leihvorgänge (Aufgabentracking) + optionale Trigger-Spalten
- * „ausgeliehen" / „zurückgegeben" setzen. Die Spalten müssen zum Ziel-Board
- * gehören; der Verwalter braucht Zugriff auf das Ziel-Board.
+ * Aufgabentracking aktivieren: legt ein dediziertes Leihvorgang-Board
+ * (System-Board) mit fester Leih-Spaltenstruktur an und verknüpft es. Zugriff/
+ * Freigaben spiegeln automatisch das Inventar.
  */
-export async function setLoanBoardTargetAction(
+export async function activateLoanTrackingAction(
   boardId: number,
   _prev: LoanBoardState,
   formData: FormData,
 ): Promise<LoanBoardState> {
-  const { user } = await requireInventoryBoardManage(boardId);
-
-  const parseId = (k: string): number | null => {
-    const n = Number.parseInt(String(formData.get(k) ?? ""), 10);
-    return Number.isInteger(n) && n > 0 ? n : null;
-  };
-  const loanBoardId = parseId("loanBoardId");
-  let activeStatusId = parseId("loanActiveStatusId");
-  let returnedStatusId = parseId("loanReturnedStatusId");
-
-  if (loanBoardId != null) {
-    const target = await getBoardById(loanBoardId);
-    if (!target || !(await canAccessBoard(user, target))) {
-      return { error: "Kein Zugriff auf das gewählte Ziel-Board." };
-    }
-    // Trigger-Spalten müssen zum Ziel-Board gehören, sonst verwerfen.
-    const cols = await db
-      .select({ id: boardStatuses.id })
-      .from(boardStatuses)
-      .where(eq(boardStatuses.boardId, loanBoardId));
-    const ids = new Set(cols.map((c) => c.id));
-    if (activeStatusId != null && !ids.has(activeStatusId)) activeStatusId = null;
-    if (returnedStatusId != null && !ids.has(returnedStatusId))
-      returnedStatusId = null;
-  } else {
-    // Kein Ziel-Board → keine Trigger-Spalten.
-    activeStatusId = null;
-    returnedStatusId = null;
+  const { board } = await requireInventoryBoardManage(boardId);
+  if (board.loanBoardId != null) {
+    return { error: "Aufgabentracking ist bereits aktiv." };
   }
+  const name =
+    String(formData.get("boardName") ?? "").trim().slice(0, 120) ||
+    `${board.name} – Leihvorgänge`;
+  await createLoanBoardForInventory(board, name);
+  revLoanBoard(boardId);
+  return { success: "Leihvorgang-Board erstellt." };
+}
 
+/**
+ * Aufgabentracking deaktivieren: löst die Verknüpfung und löscht das dedizierte
+ * Leihvorgang-Board inkl. seiner Karten. Verknüpfte Vorgänge verlieren ihre
+ * Karte (bleiben als Vorgang bestehen).
+ */
+export async function deactivateLoanTrackingAction(
+  boardId: number,
+): Promise<void> {
+  const { board } = await requireInventoryBoardManage(boardId);
+  const loanBoardId = board.loanBoardId;
+  if (loanBoardId == null) return;
+  // Erst entkoppeln (hebt den Lösch-Schutz des System-Boards auf), dann löschen.
   await db
     .update(inventoryBoards)
     .set({
-      loanBoardId,
-      loanActiveStatusId: activeStatusId,
-      loanReturnedStatusId: returnedStatusId,
+      loanBoardId: null,
+      loanActiveStatusId: null,
+      loanReturnedStatusId: null,
     })
     .where(eq(inventoryBoards.id, boardId));
-  revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
-  revalidatePath(`/intern/inventar/${boardId}`);
-  return { success: "Gespeichert." };
+  await db
+    .update(boards)
+    .set({ inventoryBoardId: null })
+    .where(eq(boards.id, loanBoardId));
+  await deleteBoardCascade(loanBoardId);
+  revLoanBoard(boardId);
 }
 
 // --- Eigentum & Löschen (wie Kanban-Boards) -----------------------------

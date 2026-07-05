@@ -1,0 +1,2 @@
+ALTER TABLE "boards" ADD COLUMN "inventory_board_id" integer;--> statement-breakpoint
+ALTER TABLE "boards" ADD CONSTRAINT "boards_inventory_board_id_inventory_boards_id_fk" FOREIGN KEY ("inventory_board_id") REFERENCES "public"."inventory_boards"("id") ON DELETE cascade ON UPDATE no action;

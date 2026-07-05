@@ -3,130 +3,97 @@
 
 "use client";
 
-import { useActionState, useState } from "react";
-import { Select } from "@/components/Select";
+import { useActionState } from "react";
+import Link from "next/link";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import {
-  setLoanBoardTargetAction,
+  activateLoanTrackingAction,
+  deactivateLoanTrackingAction,
   type LoanBoardState,
 } from "@/app/intern/inventar/[id]/einstellungen/actions";
 
-type BoardWithStatuses = {
-  id: number;
-  name: string;
-  statuses: { id: number; name: string }[];
-};
-
 /**
- * Ziel-Board für Leihvorgänge (Aufgabentracking) wählen: Jeder Vorgang wird zu
- * einer Karte auf diesem Board. Optional zwei Trigger-Spalten — erreicht die
- * Karte sie, gilt der Gegenstand als ausgeliehen bzw. zurückgegeben.
+ * Aufgabentracking aktivieren/deaktivieren. Bei Aktivierung wird ein dediziertes
+ * Leihvorgang-Board (System-Board) angelegt — kein Auswählen bestehender Boards.
  */
 export function LoanBoardEditor({
   boardId,
-  current,
-  boards,
+  loanBoard,
+  suggestedName,
 }: {
   boardId: number;
-  current: {
-    loanBoardId: number | null;
-    loanActiveStatusId: number | null;
-    loanReturnedStatusId: number | null;
-  };
-  boards: BoardWithStatuses[];
+  loanBoard: { id: number; name: string } | null;
+  suggestedName: string;
 }) {
-  const [loanBoardId, setLoanBoardId] = useState(
-    current.loanBoardId ? String(current.loanBoardId) : "",
-  );
-  const [activeId, setActiveId] = useState(
-    current.loanActiveStatusId ? String(current.loanActiveStatusId) : "",
-  );
-  const [returnedId, setReturnedId] = useState(
-    current.loanReturnedStatusId ? String(current.loanReturnedStatusId) : "",
-  );
   const [state, action, pending] = useActionState(
-    setLoanBoardTargetAction.bind(null, boardId),
+    activateLoanTrackingAction.bind(null, boardId),
     {} as LoanBoardState,
   );
 
-  const selectedBoard = boards.find((b) => String(b.id) === loanBoardId);
-  const statuses = selectedBoard?.statuses ?? [];
-  const colOptions = (empty: string) => [
-    { value: "", label: empty },
-    ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
-  ];
+  if (loanBoard) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-slate-500">
+          Aufgabentracking ist aktiv. Jeder Entleihvorgang wird zu einer Karte
+          auf diesem Board; der Antragsteller sieht dessen Spalten als Status.
+          Ein Klick auf eine Karte öffnet die Leih-Detailansicht (Vertrag,
+          Hinweise …).
+        </p>
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+          <span className="text-sm">
+            <span className="font-medium text-slate-800">{loanBoard.name}</span>
+            <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+              aktiv
+            </span>
+          </span>
+          <Link
+            href={`/intern/board/${loanBoard.id}`}
+            className="btn-secondary ml-auto"
+          >
+            Board öffnen →
+          </Link>
+          <ConfirmButton
+            action={deactivateLoanTrackingAction.bind(null, boardId)}
+            className="btn-secondary text-red-600"
+            label="Entfernen"
+            title="Leihvorgang-Board entfernen?"
+            message="Das Board und alle darauf liegenden Vorgangs-Karten werden gelöscht. Die Vorgänge selbst bleiben erhalten, verlieren aber ihre Karte."
+            confirmLabel="Entfernen"
+            confirmClassName="btn-danger"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-3">
       <p className="text-sm text-slate-500">
-        Jeder Entleihvorgang wird automatisch zu einer Karte auf dem gewählten
-        Board. Der Antragsteller sieht dessen Spalten als Status. Erreicht die
-        Karte die Trigger-Spalten, gilt der Gegenstand als ausgeliehen bzw.
-        wieder verfügbar.
+        Aktiviere das Aufgabentracking: Es wird automatisch ein eigenes
+        Kanban-Board für die Leihvorgänge angelegt. Zugriff/Freigaben
+        entsprechen dem Inventar; die Vorgangs-Karten öffnen die
+        Leih-Detailansicht.
       </p>
-
       <div>
-        <label className="label">Ziel-Board für Leihvorgänge</label>
-        <Select
-          name="loanBoardId"
-          className="sm:w-80"
-          searchable={boards.length > 8}
-          value={loanBoardId}
-          onChange={(v) => {
-            setLoanBoardId(v);
-            setActiveId("");
-            setReturnedId("");
-          }}
-          placeholder="— kein Aufgabentracking —"
-          options={[
-            { value: "", label: "— kein Aufgabentracking —" },
-            ...boards.map((b) => ({ value: String(b.id), label: b.name })),
-          ]}
+        <label htmlFor="lb-name" className="label">
+          Name des Leihvorgang-Boards
+        </label>
+        <input
+          id="lb-name"
+          name="boardName"
+          className="input sm:w-96"
+          defaultValue={suggestedName}
         />
       </div>
-
-      {loanBoardId && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Spalte „ausgeliehen"</label>
-            <Select
-              name="loanActiveStatusId"
-              value={activeId}
-              onChange={setActiveId}
-              placeholder="— optional —"
-              options={colOptions("— optional —")}
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Ab dieser Spalte gilt der Gegenstand als entliehen.
-            </p>
-          </div>
-          <div>
-            <label className="label">Spalte „zurückgegeben"</label>
-            <Select
-              name="loanReturnedStatusId"
-              value={returnedId}
-              onChange={setReturnedId}
-              placeholder="— optional —"
-              options={colOptions("— optional —")}
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Ab dieser Spalte ist der Gegenstand wieder verfügbar.
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className="btn-primary">
-          Speichern
+          Aufgabentracking aktivieren
         </button>
-        {(state.error || state.success) && (
-          <span
-            className={`text-sm ${
-              state.error ? "text-red-600" : "text-green-600"
-            }`}
-          >
-            {state.error ?? state.success}
-          </span>
+        {state.error && (
+          <span className="text-sm text-red-600">{state.error}</span>
+        )}
+        {state.success && (
+          <span className="text-sm text-green-600">{state.success}</span>
         )}
       </div>
     </form>

@@ -46,6 +46,7 @@ export default async function BoardsPage() {
               name: b.name,
               description: b.description,
               isOwner: b.ownerId === user.id,
+              isSystemBoard: b.inventoryBoardId != null,
             }))}
           />
         </>

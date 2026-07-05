@@ -16,6 +16,7 @@ export default async function AdminBoardsPage() {
       id: boards.id,
       name: boards.name,
       ownerId: boards.ownerId,
+      inventoryBoardId: boards.inventoryBoardId,
       ownerName: users.username,
       cards: sql<number>`(select count(*) from ${cards} where ${cards.boardId} = ${boards.id})`,
     })
@@ -51,6 +52,11 @@ export default async function AdminBoardsPage() {
                     >
                       {b.name}
                     </Link>
+                    {b.inventoryBoardId != null && (
+                      <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                        System-Board · Leihvorgänge
+                      </span>
+                    )}
                     <span className="ml-2 text-sm text-slate-500">
                       Eigentümer: {b.ownerName ?? "—"} · {b.cards} Karte(n)
                     </span>

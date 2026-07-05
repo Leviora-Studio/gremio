@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -12,6 +12,7 @@ import {
   boardStatuses,
   cardComments,
   cardActivity,
+  inventoryLoans,
   locations,
   users,
 } from "@/lib/db/schema";
@@ -48,6 +49,16 @@ export default async function AntragDetailPage({
   const user = await requireUser();
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) notFound();
+
+  // Leihvorgang-Karte: immer die Leih-Detailansicht öffnen (egal ob man über
+  // das Board oder das Inventar navigiert). Deren Guard prüft den Zugriff.
+  const [linkedLoan] = await db
+    .select({ id: inventoryLoans.id })
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.cardId, cardId))
+    .limit(1);
+  if (linkedLoan) redirect(`/intern/inventar/loan/${linkedLoan.id}`);
+
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) notFound();
 

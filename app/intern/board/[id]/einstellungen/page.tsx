@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -54,6 +55,12 @@ export default async function BoardSettingsPage({
   const { id } = await params;
   const boardId = Number(id);
   const { board } = await requireBoardManage(boardId);
+
+  // System-Board (Leihvorgänge): keine normalen Board-Einstellungen — die
+  // Verwaltung (inkl. Freigaben) läuft über das verknüpfte Inventar.
+  if (board.inventoryBoardId != null) {
+    redirect(`/intern/inventar/${board.inventoryBoardId}/einstellungen`);
+  }
 
   const statuses = await db
     .select()
