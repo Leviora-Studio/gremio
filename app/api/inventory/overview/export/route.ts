@@ -8,14 +8,11 @@ import {
 } from "@/lib/inventory-overview";
 import { conditionLabel } from "@/lib/inventory-condition";
 import { contentDisposition } from "@/lib/attachments";
+import { buildCsv } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function csvCell(v: string | null): string {
-  const s = v ?? "";
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 function euro(cents: number | null): string {
   return cents == null ? "" : (cents / 100).toFixed(2).replace(".", ",");
 }
@@ -65,11 +62,7 @@ export async function GET(request: Request) {
   ]);
   const totalRow = ["", "", "Gesamtwert", "", "", "", "", euro(total)];
 
-  const csv =
-    "﻿" +
-    [header, ...rows, totalRow]
-      .map((r) => r.map(csvCell).join(";"))
-      .join("\r\n");
+  const csv = buildCsv([header, ...rows, totalRow]);
 
   return new Response(csv, {
     headers: {
@@ -78,6 +71,7 @@ export async function GET(request: Request) {
         `inventar-gesamtuebersicht-${sort}.csv`,
         "attachment",
       ),
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "no-store",
     },
   });

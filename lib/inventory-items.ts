@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  cards,
   inventoryItemCategories,
   inventoryItems,
+  inventoryLoanItems,
+  inventoryLoans,
   inventoryNumbering,
   inventoryOptions,
   type InventoryItem,
@@ -13,7 +16,11 @@ import {
   type InventoryOption,
 } from "@/lib/db/schema";
 import { buildCardNumber } from "@/lib/numbering";
-import { getActiveLoanMap, getOpenDefectCountMap } from "@/lib/inventory-loans";
+import {
+  getActiveLoanMap,
+  getOpenDefectCountMap,
+  updateTrackingCardTitle,
+} from "@/lib/inventory-loans";
 
 // Drizzle-Transaktionshandle (für „in bestehender Transaktion mitlaufen").
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -364,8 +371,56 @@ export async function updateInventoryItem(
   });
 }
 
+/**
+ * Gegenstand löschen. Räumt dabei die Leih-Verknüpfungen sauber ab:
+ *  - Vorgänge, für die das Stück das Leit-Stück ist, werden per FK-Cascade
+ *    mitgelöscht → deren Tracking-Karten werden hier entfernt (sonst verwaist).
+ *  - Vorgänge, in denen das Stück nur EINES von mehreren ist, bleiben bestehen;
+ *    ihr Karten-Titel (×N) wird nach dem Entfernen aktualisiert.
+ */
 export async function deleteInventoryItem(id: number): Promise<void> {
-  await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+  // Karten der Vorgänge, die dieses Stück als Leit-Stück haben (werden cascaded).
+  const leadCardIds = (
+    await db
+      .select({ cardId: inventoryLoans.cardId })
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.itemId, id))
+  )
+    .map((r) => r.cardId)
+    .filter((c): c is number => c != null);
+
+  // Vorgänge, in denen das Stück nur Mitglied (nicht Leit-Stück) ist.
+  const survivingLoanIds = Array.from(
+    new Set(
+      (
+        await db
+          .select({ loanId: inventoryLoanItems.loanId })
+          .from(inventoryLoanItems)
+          .innerJoin(
+            inventoryLoans,
+            eq(inventoryLoans.id, inventoryLoanItems.loanId),
+          )
+          .where(
+            and(
+              eq(inventoryLoanItems.itemId, id),
+              ne(inventoryLoans.itemId, id),
+            ),
+          )
+      ).map((r) => r.loanId),
+    ),
+  );
+
+  await db.transaction(async (tx) => {
+    await tx.delete(inventoryItems).where(eq(inventoryItems.id, id)); // Cascade
+    if (leadCardIds.length) {
+      await tx.delete(cards).where(inArray(cards.id, leadCardIds));
+    }
+  });
+
+  // Titel der überlebenden Vorgangs-Karten nachziehen (Stückzahl hat sich geändert).
+  for (const loanId of survivingLoanIds) {
+    await updateTrackingCardTitle(loanId);
+  }
 }
 
 /** Bestehende, nicht-leere Artikel/Gruppen-Namen eines Boards (alphabetisch). */

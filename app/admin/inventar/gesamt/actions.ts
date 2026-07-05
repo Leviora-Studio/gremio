@@ -9,15 +9,11 @@ import {
   setBoardInOverview,
   setOverviewMinPrice,
 } from "@/lib/inventory-overview";
+import { parseEuroToCents as parseEuro } from "@/lib/money";
 
+/** Mindestpreis-Eingabe → Cent (0 = kein Minimum). */
 function parseEuroToCents(raw: FormDataEntryValue | null): number {
-  if (typeof raw !== "string") return 0;
-  const s = raw.trim();
-  if (!s) return 0;
-  const normalized = s.replace(/\./g, "").replace(",", ".").replace(/[^0-9.]/g, "");
-  const value = Number.parseFloat(normalized);
-  if (!Number.isFinite(value) || value < 0) return 0;
-  return Math.round(value * 100);
+  return typeof raw === "string" ? (parseEuro(raw) ?? 0) : 0;
 }
 
 export async function setOverviewMinPriceAction(

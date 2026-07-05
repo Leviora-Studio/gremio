@@ -86,6 +86,14 @@ export async function POST(
     !(await canAccessBoard(ctx.user, board))
   )
     return apiError(404, "Board nicht gefunden.");
+  // Leihvorgang-System-Boards werden ausschließlich über das Inventar verwaltet
+  // (die Web-UI leitet Karten dort in die Leih-Ansicht) → API nur lesend.
+  if (board.inventoryBoardId != null) {
+    return apiError(
+      409,
+      "Leihvorgang-Board: Karten werden über das Inventar verwaltet (API nur lesend).",
+    );
+  }
 
   let body: unknown;
   try {

@@ -144,6 +144,7 @@ export async function ensureInventoryChangeTrigger(): Promise<void> {
   for (const t of [
     "inventory_items",
     "inventory_loans",
+    "inventory_loan_items",
     "inventory_defects",
     "inventory_attachments",
   ]) {

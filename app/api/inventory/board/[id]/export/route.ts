@@ -12,14 +12,10 @@ import {
 } from "@/lib/inventory-items";
 import { conditionLabel } from "@/lib/inventory-condition";
 import { contentDisposition } from "@/lib/attachments";
+import { buildCsv } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function csvCell(v: string | null): string {
-  const s = v ?? "";
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 function euro(cents: number | null): string {
   return cents == null ? "" : (cents / 100).toFixed(2).replace(".", ",");
@@ -98,9 +94,7 @@ export async function GET(
   ]);
 
   // BOM + Semikolon → Excel (DE) öffnet Umlaute und Spalten korrekt.
-  const csv =
-    "﻿" +
-    [header, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
+  const csv = buildCsv([header, ...rows]);
 
   const safeName = board.name.replace(/[^\w.-]+/g, "_").slice(0, 60) || "inventar";
   const filename = `inventar-${safeName}-${sort}.csv`;
@@ -109,6 +103,7 @@ export async function GET(
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": contentDisposition(filename, "attachment"),
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "no-store",
     },
   });

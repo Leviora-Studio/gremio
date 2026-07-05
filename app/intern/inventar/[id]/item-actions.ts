@@ -25,18 +25,13 @@ import {
 import { addInventoryAttachment } from "@/lib/inventory-attachments";
 import { AUSWEIS_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
+import { parseEuroToCents as parseEuro } from "@/lib/money";
 
 export type ItemActionState = { error?: string; ok?: boolean };
 
-/** Euro-String („12,50" / „12.5" / „1.234,56") → Cent, oder null. */
+/** Euro-String („12,50" / „12.5" / „12.50" / „1.234,56") → Cent, oder null. */
 function parseEuroToCents(raw: FormDataEntryValue | null): number | null {
-  if (typeof raw !== "string") return null;
-  const s = raw.trim();
-  if (!s) return null;
-  const normalized = s.replace(/\./g, "").replace(",", ".").replace(/[^0-9.]/g, "");
-  const value = Number.parseFloat(normalized);
-  if (!Number.isFinite(value)) return null;
-  return Math.round(value * 100);
+  return typeof raw === "string" ? parseEuro(raw) : null;
 }
 
 function parseDate(raw: FormDataEntryValue | null): string | null {

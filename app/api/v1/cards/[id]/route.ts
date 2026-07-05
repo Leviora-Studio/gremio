@@ -81,6 +81,12 @@ export async function PATCH(
   if (r instanceof NextResponse) return r;
   const denied = requireWriteScope(r.ctx);
   if (denied) return denied;
+  if (r.board.inventoryBoardId != null) {
+    return apiError(
+      409,
+      "Leihvorgang-Board: Karten werden über das Inventar verwaltet (API nur lesend).",
+    );
+  }
 
   let body: unknown;
   try {
@@ -119,6 +125,12 @@ export async function DELETE(
   if (r instanceof NextResponse) return r;
   const denied = requireWriteScope(r.ctx);
   if (denied) return denied;
+  if (r.board.inventoryBoardId != null) {
+    return apiError(
+      409,
+      "Leihvorgang-Board: Karten werden über das Inventar verwaltet (API nur lesend).",
+    );
+  }
 
   await deleteCardViaApi(r.card.id);
   return NextResponse.json({ ok: true });

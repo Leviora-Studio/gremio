@@ -156,7 +156,7 @@ export async function getLoanItems(
 }
 
 /** Aktualisiert den Titel der Tracking-Karte anhand Leit-Stück + Stückzahl. */
-async function updateTrackingCardTitle(loanId: number): Promise<void> {
+export async function updateTrackingCardTitle(loanId: number): Promise<void> {
   const loan = await getLoanById(loanId);
   if (!loan?.cardId) return;
   const [lead] = await db
@@ -257,6 +257,9 @@ export async function addLoanItem(
   ) {
     return;
   }
+  // Kein bereits laufend verliehenes Stück zuordnen (keine Doppelbuchung).
+  const active = await getActiveLoanMap([itemId]);
+  if (active.has(itemId)) return;
   await db
     .insert(inventoryLoanItems)
     .values({ loanId, itemId })
@@ -269,30 +272,37 @@ export async function removeLoanItem(
   loanId: number,
   itemId: number,
 ): Promise<void> {
-  const rows = await db
-    .select({ id: inventoryLoanItems.itemId })
-    .from(inventoryLoanItems)
-    .where(eq(inventoryLoanItems.loanId, loanId));
-  const ids = rows.map((r) => r.id);
-  if (!ids.includes(itemId) || ids.length <= 1) return; // letztes Stück bleibt
-  await db
-    .delete(inventoryLoanItems)
-    .where(
-      and(
-        eq(inventoryLoanItems.loanId, loanId),
-        eq(inventoryLoanItems.itemId, itemId),
-      ),
-    );
-  const loan = await getLoanById(loanId);
-  if (loan && loan.itemId === itemId) {
-    const nextLead = ids.find((id) => id !== itemId);
-    if (nextLead != null) {
-      await db
-        .update(inventoryLoans)
-        .set({ itemId: nextLead })
-        .where(eq(inventoryLoans.id, loanId));
+  // Lesen + Löschen + Leit-Stück-Umzug atomar (kein TOCTOU zwischen den Schritten).
+  await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ id: inventoryLoanItems.itemId })
+      .from(inventoryLoanItems)
+      .where(eq(inventoryLoanItems.loanId, loanId));
+    const ids = rows.map((r) => r.id);
+    if (!ids.includes(itemId) || ids.length <= 1) return; // letztes Stück bleibt
+    await tx
+      .delete(inventoryLoanItems)
+      .where(
+        and(
+          eq(inventoryLoanItems.loanId, loanId),
+          eq(inventoryLoanItems.itemId, itemId),
+        ),
+      );
+    const [loan] = await tx
+      .select({ itemId: inventoryLoans.itemId })
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.id, loanId))
+      .limit(1);
+    if (loan && loan.itemId === itemId) {
+      const nextLead = ids.find((id) => id !== itemId);
+      if (nextLead != null) {
+        await tx
+          .update(inventoryLoans)
+          .set({ itemId: nextLead })
+          .where(eq(inventoryLoans.id, loanId));
+      }
     }
-  }
+  });
   await updateTrackingCardTitle(loanId);
 }
 
@@ -305,25 +315,35 @@ export async function createLoan(
   createdBy: number | null,
   data: LoanInput,
 ): Promise<number> {
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(inventoryLoans)
-      .values({
-        itemId: itemIds[0],
-        createdBy,
-        requestedQuantity: itemIds.length,
-        ...data,
-      })
-      .returning({ id: inventoryLoans.id });
-    await tx
-      .insert(inventoryLoanItems)
-      .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
-    await maybeCreateTrackingCard(tx, itemIds, row.id, {
-      borrower: data.borrower,
-      purpose: data.purpose,
-    });
-    return row.id;
-  });
+  // maybeCreateTrackingCard vergibt einen Karten-Token; kollidiert er (faktisch
+  // unmöglich), bricht die Transaktion ab → erneut versuchen (wie createLoanRequest).
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      return await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(inventoryLoans)
+          .values({
+            itemId: itemIds[0],
+            createdBy,
+            requestedQuantity: itemIds.length,
+            ...data,
+          })
+          .returning({ id: inventoryLoans.id });
+        await tx
+          .insert(inventoryLoanItems)
+          .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
+        await maybeCreateTrackingCard(tx, itemIds, row.id, {
+          borrower: data.borrower,
+          purpose: data.purpose,
+        });
+        return row.id;
+      });
+    } catch (e) {
+      if (isTokenConflict(e)) continue;
+      throw e;
+    }
+  }
+  throw new Error("Konnte den Vorgang nicht anlegen (Token-Kollision).");
 }
 
 /** Vorgang als zurückgegeben markieren (beendet den laufenden Entleihzeitraum). */
