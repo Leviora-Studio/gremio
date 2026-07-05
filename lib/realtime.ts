@@ -123,11 +123,15 @@ export async function ensureInventoryChangeTrigger(): Promise<void> {
       ELSIF TG_TABLE_NAME = 'inventory_loans' THEN
         SELECT board_id INTO v_board FROM inventory_items WHERE id = rec.item_id;
         v_token := rec.token;
-      ELSE
+      ELSIF TG_TABLE_NAME = 'inventory_attachments' THEN
+        -- rec.loan_id nur hier referenzieren: nur diese Tabelle hat die Spalte.
         SELECT board_id INTO v_board FROM inventory_items WHERE id = rec.item_id;
-        IF TG_TABLE_NAME = 'inventory_attachments' AND rec.loan_id IS NOT NULL THEN
+        IF rec.loan_id IS NOT NULL THEN
           SELECT token INTO v_token FROM inventory_loans WHERE id = rec.loan_id;
         END IF;
+      ELSE
+        -- inventory_defects u. a.: nur item_id vorhanden, KEIN loan_id.
+        SELECT board_id INTO v_board FROM inventory_items WHERE id = rec.item_id;
       END IF;
       PERFORM pg_notify(
         'inventory_change',
