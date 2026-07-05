@@ -140,9 +140,9 @@ export default async function InventoryOverviewPage() {
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2 font-medium">Inventar</th>
                 <th className="px-3 py-2 font-medium">Inv.-Nr.</th>
-                <th className="px-3 py-2 font-medium">Seriennr.</th>
                 <th className="px-3 py-2 font-medium">Bezeichnung</th>
                 <th className="px-3 py-2 font-medium">Zustand</th>
+                <th className="px-3 py-2 font-medium">Seriennr.</th>
                 <th className="px-3 py-2 font-medium">Kaufdatum</th>
                 <th className="px-3 py-2 font-medium">Händler</th>
                 <th className="px-3 py-2 text-right font-medium">Preis</th>
@@ -158,14 +158,14 @@ export default async function InventoryOverviewPage() {
                     {it.boardName}
                   </td>
                   <td className="px-3 py-2 align-top">{it.number ?? "—"}</td>
-                  <td className="px-3 py-2 align-top">
-                    {it.serialNumber ?? "—"}
-                  </td>
                   <td className="px-3 py-2 align-top font-medium text-slate-800">
                     {it.name}
                   </td>
                   <td className="px-3 py-2 align-top">
                     {conditionLabel(it.condition)}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {it.serialNumber ?? "—"}
                   </td>
                   <td className="px-3 py-2 align-top">
                     {it.purchaseDate ?? "—"}

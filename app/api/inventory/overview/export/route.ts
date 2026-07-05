@@ -46,9 +46,9 @@ export async function GET(request: Request) {
   const header = [
     "Inventar",
     "Inventarnummer",
-    "Seriennummer",
     "Bezeichnung",
     "Zustand",
+    "Seriennummer",
     "Kaufdatum",
     "Händler",
     "Kaufpreis (EUR)",
@@ -56,14 +56,14 @@ export async function GET(request: Request) {
   const rows = items.map((it) => [
     it.boardName,
     it.number,
-    it.serialNumber,
     it.name,
     conditionLabel(it.condition),
+    it.serialNumber,
     it.purchaseDate,
     it.vendor,
     euro(it.price),
   ]);
-  const totalRow = ["", "", "", "Gesamtwert", "", "", "", euro(total)];
+  const totalRow = ["", "", "Gesamtwert", "", "", "", "", euro(total)];
 
   const csv =
     "﻿" +
