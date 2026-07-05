@@ -18,13 +18,13 @@ import {
 } from "@/lib/inventory-loan-stage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LoanContractUpload } from "@/components/inventory/LoanContractUpload";
+import { BorrowerNoteForm } from "@/components/inventory/BorrowerNoteForm";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   approveLoanAction,
   deleteLoanAction,
   rejectLoanAction,
   returnLoanAction,
-  setLoanBorrowerNoteAction,
 } from "../../item/[itemId]/actions";
 
 const PENDING = ["requested", "contract_provided", "contract_signed"];
@@ -216,23 +216,7 @@ export default async function InventoryLoanPage({
       )}
 
       {/* Hinweise für den Entleiher (über den Status-Link sichtbar) */}
-      <form action={setLoanBorrowerNoteAction} className="card space-y-2 p-5">
-        <input type="hidden" name="loanId" value={loan.id} />
-        <div>
-          <h2 className="font-semibold">Hinweise für den Entleiher</h2>
-          <p className="text-sm text-slate-500">
-            Diese Hinweise sieht der Entleiher über seinen Status-Link.
-          </p>
-        </div>
-        <textarea
-          name="borrowerNote"
-          rows={3}
-          className="input"
-          defaultValue={loan.borrowerNote ?? ""}
-          placeholder="z. B. Abholung Mo–Fr 10–14 Uhr im Stura-Büro, Pfand 20 €."
-        />
-        <SubmitButton className="btn-primary">Speichern</SubmitButton>
-      </form>
+      <BorrowerNoteForm loanId={loan.id} initial={loan.borrowerNote ?? ""} />
 
       {/* Dokumente des Vorgangs (Leihvertrag/-antrag) */}
       <div className="card p-5">

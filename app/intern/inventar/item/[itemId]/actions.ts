@@ -109,13 +109,24 @@ export async function rejectLoanAction(fd: FormData): Promise<void> {
   revItem(item);
 }
 
-export async function setLoanBorrowerNoteAction(fd: FormData): Promise<void> {
+export type BorrowerNoteState = { ok?: boolean; error?: string };
+
+export async function setLoanBorrowerNoteAction(
+  _prev: BorrowerNoteState,
+  fd: FormData,
+): Promise<BorrowerNoteState> {
   const loan = await getLoanById(Number(fd.get("loanId")));
-  if (!loan) return;
-  const { item } = await assertItemAccess(loan.itemId);
-  const note = text(fd, "borrowerNote", 3000);
-  await setLoanBorrowerNote(loan.id, note);
-  revItem(item);
+  if (!loan) return { error: "Vorgang nicht gefunden." };
+  try {
+    const { item } = await assertItemAccess(loan.itemId);
+    const note = text(fd, "borrowerNote", 3000);
+    await setLoanBorrowerNote(loan.id, note);
+    revItem(item);
+    revalidatePath(`/intern/inventar/loan/${loan.id}`);
+  } catch {
+    return { error: "Kein Zugriff." };
+  }
+  return { ok: true };
 }
 
 // --- Mängel -------------------------------------------------------------
