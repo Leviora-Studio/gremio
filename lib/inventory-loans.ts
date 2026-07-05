@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   boardStatuses,
@@ -655,7 +665,15 @@ export type ActiveLoan = {
   endDate: string | null;
 };
 
-/** Laufender (nicht zurückgegebener) Vorgang je Gegenstand — für die Liste. */
+/**
+ * Aktuell entliehene Stücke — Grundregel: ein Stück ist NUR dann entliehen,
+ * wenn seine Vorgangs-Karte gerade in der „ausgeliehen"-Spalte (in Ausleihe)
+ * des Inventar-Boards liegt. Verlässt die Karte diese Spalte, ist das Stück
+ * sofort wieder verfügbar (nicht am Vorgangsstatus „festgeklebt").
+ *
+ * Fallback ohne Aufgabentracking (kein Ziel-Board/keine Karte oder keine
+ * Trigger-Spalte gesetzt): der klassische Status 'active' (nicht zurückgegeben).
+ */
 export async function getActiveLoanMap(
   itemIds: number[],
 ): Promise<Map<number, ActiveLoan>> {
@@ -670,11 +688,31 @@ export async function getActiveLoanMap(
     })
     .from(inventoryLoanItems)
     .innerJoin(inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId))
+    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId))
+    .innerJoin(inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId))
+    .leftJoin(cards, eq(cards.id, inventoryLoans.cardId))
     .where(
       and(
         inArray(inventoryLoanItems.itemId, itemIds),
-        eq(inventoryLoans.status, "active"),
-        isNull(inventoryLoans.returnedAt),
+        or(
+          // Kartengeführt: Karte liegt in der „ausgeliehen"-Spalte (und der
+          // Vorgang ist nicht bereits zurückgegeben).
+          and(
+            isNotNull(inventoryBoards.loanActiveStatusId),
+            isNotNull(inventoryLoans.cardId),
+            eq(cards.statusId, inventoryBoards.loanActiveStatusId),
+            isNull(inventoryLoans.returnedAt),
+          ),
+          // Fallback: klassischer aktiver Vorgang ohne Karten-Trigger.
+          and(
+            or(
+              isNull(inventoryBoards.loanActiveStatusId),
+              isNull(inventoryLoans.cardId),
+            ),
+            eq(inventoryLoans.status, "active"),
+            isNull(inventoryLoans.returnedAt),
+          ),
+        ),
       ),
     )
     .orderBy(desc(inventoryLoans.createdAt));
