@@ -41,6 +41,7 @@ import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
+import { syncLoanFromCard } from "@/lib/inventory-loans";
 
 export type State = { error?: string; success?: string };
 
@@ -338,6 +339,9 @@ export async function setCardStatusAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(card.id, statusId);
+    // Aufgabentracking: verknüpften Leihvorgang aus der Kartenspalte ableiten
+    // (wie moveCardAction) — No-op, wenn die Karte zu keinem Vorgang gehört.
+    await syncLoanFromCard(card.id, statusId);
   }
   await maybeArchive(card.id);
   revalidatePath(`/intern/card/${card.id}`);

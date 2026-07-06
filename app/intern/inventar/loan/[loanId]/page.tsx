@@ -21,6 +21,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { LoanContractUpload } from "@/components/inventory/LoanContractUpload";
 import { BorrowerNoteForm } from "@/components/inventory/BorrowerNoteForm";
 import { LoanQuantityEditor } from "@/components/inventory/LoanQuantityEditor";
+import { LoanColumnSelect } from "@/components/inventory/LoanColumnSelect";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   approveLoanAction,
@@ -139,15 +140,20 @@ export default async function InventoryLoanPage({
           </div>
         )}
 
-        {/* Aufgabentracking: verknüpfte Karte → Bearbeitung auf dem Board */}
-        {cardProgress && (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+        {/* Aufgabentracking: verknüpfte Karte → Spalte direkt hier umstellen
+            (Schalter) ODER auf dem Board per Drag&Drop verschieben. */}
+        {cardProgress && loan.cardId && (
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
             <div className="text-sm">
               <span className="text-xs uppercase tracking-wide text-slate-400">
                 Aktuelle Spalte
               </span>
-              <div className="font-medium text-slate-800">
-                {cardProgress.currentName || "—"}
+              <div className="mt-1">
+                <LoanColumnSelect
+                  cardId={loan.cardId}
+                  columns={cardProgress.columns}
+                  current={cardProgress.currentStatusId}
+                />
               </div>
             </div>
             <Link
