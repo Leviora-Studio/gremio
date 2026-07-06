@@ -24,12 +24,21 @@ export function parseEuroToCents(input: string): number | null {
     s = s.replace(/\./g, "").replace(",", ".");
   } else if (hasDot) {
     // Nur Punkt: als Dezimaltrenner werten, wenn genau EIN Punkt mit 1–2
-    // Nachkommastellen ("12.50", "12.5"); sonst Tausenderpunkte entfernen
-    // ("1.234", "12.500", "1.000.000").
+    // Nachkommastellen ("12.50", "12.5"). Sonst NUR als Tausenderpunkte
+    // akzeptieren, wenn das Muster sauber gruppiert ist ("1.234", "12.500",
+    // "1.000.000"); fehlerhafte Eingaben ("1.2.3", "1.2345", "1.234.5",
+    // "12.5000", "1.") werden abgewiesen statt still als falscher Betrag
+    // interpretiert (früher: alle Punkte entfernen → "1.2.3" wurde 123,00 €).
     const parts = s.split(".");
     const isDecimal =
       parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 2;
-    if (!isDecimal) s = s.replace(/\./g, "");
+    if (isDecimal) {
+      // s unverändert lassen — Punkt ist der Dezimaltrenner.
+    } else if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+      s = s.replace(/\./g, ""); // saubere Tausenderpunkte → entfernen
+    } else {
+      return null; // ungültiges Punkt-Muster
+    }
   }
   if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
   const cents = Math.round(Number(s) * 100);

@@ -425,58 +425,87 @@ export const PENDING_LOAN_STATUSES = [
   "contract_signed",
 ] as const;
 
+// Namespace für den Transaktions-Advisory-Lock, der Sync-Aufrufe je Karte
+// serialisiert (pg_advisory_xact_lock(ns, cardId)); "LS" = Loan Sync.
+const LOAN_SYNC_LOCK_NS = 0x4c53;
+
 /**
  * Aufgabentracking (kartengeführt): Bewegt sich die verknüpfte Karte, wird der
  * Vorgangsstatus daraus abgeleitet. Erreicht die Karte die „ausgeliehen"-Spalte
  * des Inventar-Boards → Vorgang active (Gegenstand entliehen); erreicht sie die
  * „zurückgegeben"-Spalte → Vorgang returned (Gegenstand wieder verfügbar).
  * No-op, wenn die Karte zu keinem Vorgang gehört oder keine Trigger gesetzt sind.
+ *
+ * Nebenläufigkeit: Zwei gleichzeitige gegenläufige Moves DERSELBEN Karte werden
+ * per Transaktions-Advisory-Lock (je cardId) serialisiert. Innerhalb der Sperre
+ * wird der AKTUELLE Kartenstatus frisch gelesen (statt dem übergebenen `statusId`
+ * zu vertrauen), damit die zuletzt committete Kartenposition maßgeblich ist und
+ * Karte/Vorgang konsistent bleiben. `statusId` dient nur noch als Hinweis.
  */
 export async function syncLoanFromCard(
   cardId: number,
-  statusId: number,
+  _statusId: number,
 ): Promise<void> {
-  const [loan] = await db
-    .select({ id: inventoryLoans.id, itemId: inventoryLoans.itemId })
-    .from(inventoryLoans)
-    .where(eq(inventoryLoans.cardId, cardId))
-    .limit(1);
-  if (!loan) return;
+  await db.transaction(async (tx) => {
+    // Serialisieren; Lock wird am Transaktionsende automatisch freigegeben.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${LOAN_SYNC_LOCK_NS}, ${cardId})`,
+    );
 
-  const [cfg] = await db
-    .select({
-      activeId: inventoryBoards.loanActiveStatusId,
-      returnedId: inventoryBoards.loanReturnedStatusId,
-    })
-    .from(inventoryItems)
-    .innerJoin(
-      inventoryBoards,
-      eq(inventoryBoards.id, inventoryItems.boardId),
-    )
-    .where(eq(inventoryItems.id, loan.itemId))
-    .limit(1);
-  if (!cfg) return;
+    const [loan] = await tx
+      .select({ id: inventoryLoans.id, itemId: inventoryLoans.itemId })
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.cardId, cardId))
+      .limit(1);
+    if (!loan) return;
 
-  if (cfg.returnedId != null && statusId === cfg.returnedId) {
-    // Rückgabe: nur wenn noch nicht zurückgegeben.
-    await db
-      .update(inventoryLoans)
-      .set({ status: "returned", returnedAt: new Date() })
-      .where(
-        and(eq(inventoryLoans.id, loan.id), isNull(inventoryLoans.returnedAt)),
-      );
-  } else if (cfg.activeId != null && statusId === cfg.activeId) {
-    // Ausgeliehen: nur aus einem Pending-Zustand (verwandelt Anfrage in Ausleihe).
-    await db
-      .update(inventoryLoans)
-      .set({ status: "active" })
-      .where(
-        and(
-          eq(inventoryLoans.id, loan.id),
-          inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
-        ),
-      );
-  }
+    // Aktuellen Kartenstatus frisch lesen (maßgeblich für die Ableitung).
+    const [card] = await tx
+      .select({ statusId: cards.statusId })
+      .from(cards)
+      .where(eq(cards.id, cardId))
+      .limit(1);
+    if (!card) return;
+    const curStatus = card.statusId;
+
+    const [cfg] = await tx
+      .select({
+        activeId: inventoryBoards.loanActiveStatusId,
+        returnedId: inventoryBoards.loanReturnedStatusId,
+      })
+      .from(inventoryItems)
+      .innerJoin(inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId))
+      .where(eq(inventoryItems.id, loan.itemId))
+      .limit(1);
+    if (!cfg) return;
+
+    if (cfg.returnedId != null && curStatus === cfg.returnedId) {
+      // Rückgabe: nur wenn noch nicht zurückgegeben.
+      await tx
+        .update(inventoryLoans)
+        .set({ status: "returned", returnedAt: new Date() })
+        .where(
+          and(eq(inventoryLoans.id, loan.id), isNull(inventoryLoans.returnedAt)),
+        );
+    } else if (cfg.activeId != null && curStatus === cfg.activeId) {
+      // Ausgeliehen: aus einem Pending-Zustand (Anfrage → Ausleihe) ODER zurück
+      // aus „zurückgegeben". Karte in der Aktiv-Spalte = Gegenstand entliehen ⇒
+      // Vorgang aktiv, `returnedAt` zurücksetzen (Kartenposition ist maßgeblich).
+      // Bereits aktive Vorgänge bleiben unberührt (No-op).
+      await tx
+        .update(inventoryLoans)
+        .set({ status: "active", returnedAt: null })
+        .where(
+          and(
+            eq(inventoryLoans.id, loan.id),
+            or(
+              inArray(inventoryLoans.status, [...PENDING_LOAN_STATUSES]),
+              isNotNull(inventoryLoans.returnedAt),
+            ),
+          ),
+        );
+    }
+  });
 }
 
 export type LoanCardProgress = {

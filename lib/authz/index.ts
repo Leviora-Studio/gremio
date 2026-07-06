@@ -260,5 +260,11 @@ export async function requireBoardManage(
   const user = await requireUser();
   const board = await getBoardById(boardId);
   if (!board || !canManageBoard(user, board)) notFound();
+  // System-Boards (Leihvorgänge) haben KEINE normalen Board-Einstellungen — sie
+  // werden über /intern/inventar/{id}/einstellungen verwaltet. Serverseitig hart
+  // abweisen (nicht nur die Seite umleiten), damit Done-Spalte/Archiv-Trigger/
+  // Nextcloud nie auf einem Leihboard scharfgeschaltet werden können (sonst
+  // würde der Done-Sweep bzw. die Archivierung Leihkarten wegräumen).
+  if (board.inventoryBoardId != null) notFound();
   return { user, board };
 }

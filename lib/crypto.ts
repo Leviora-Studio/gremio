@@ -55,8 +55,16 @@ export function decryptSecret(payload: string): string {
     Buffer.from(ivB, "base64"),
   );
   decipher.setAuthTag(Buffer.from(tagB, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(dataB, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
+  try {
+    return Buffer.concat([
+      decipher.update(Buffer.from(dataB, "base64")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    // Node-Krypto-Fehler (z. B. "unable to authenticate data" bei falschem
+    // Schlüssel/manipuliertem Tag) normalisieren — keine Krypto-Interna in Logs.
+    throw new Error(
+      "Entschlüsselung fehlgeschlagen (Schlüssel/Daten passen nicht).",
+    );
+  }
 }
