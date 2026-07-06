@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import {
+  submitContractAction,
   uploadSignedContractAction,
   type PublicContractState,
 } from "@/app/inventar/status/[token]/actions";
@@ -22,15 +23,21 @@ const KIND_LABEL: Record<string, string> = {
 
 export function PublicContractSection({
   token,
+  status,
   provided,
   signed,
 }: {
   token: string;
+  status: string;
   provided: Doc[];
   signed: Signed[];
 }) {
   const [state, action] = useActionState(
     uploadSignedContractAction.bind(null, token),
+    {} as PublicContractState,
+  );
+  const [submitState, submitAction] = useActionState(
+    submitContractAction.bind(null, token),
     {} as PublicContractState,
   );
   const formRef = useRef<HTMLFormElement>(null);
@@ -41,6 +48,8 @@ export function PublicContractSection({
       setResetKey((k) => k + 1);
     }
   }, [state.ok]);
+  // „Vertrag einsenden" bestätigt die Abgabe → Status auf „Vertrag unterschrieben".
+  const submitted = status === "contract_signed";
 
   return (
     <div className="card mt-6 space-y-4 p-6">
@@ -115,6 +124,33 @@ export function PublicContractSection({
           </ul>
         </div>
       )}
+
+      <div className="border-t border-slate-100 pt-4">
+        {submitted ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+            ✓ Vertrag eingesendet — vielen Dank! Deine Unterlagen werden
+            geprüft.
+          </div>
+        ) : (
+          <form action={submitAction} className="space-y-2">
+            <p className="text-sm text-slate-600">
+              Wenn du alle vorgeschriebenen Dokumente angefügt hast, sende den
+              Vertrag ein.
+            </p>
+            <SubmitButton className="btn-success" disabled={signed.length === 0}>
+              ✓ Vertrag einsenden
+            </SubmitButton>
+            {signed.length === 0 && (
+              <p className="text-xs text-slate-500">
+                Lade zuerst mindestens ein unterschriebenes Dokument hoch.
+              </p>
+            )}
+            {submitState.error && (
+              <p className="text-xs text-red-600">{submitState.error}</p>
+            )}
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -31,6 +31,8 @@ export const LOAN_BOARD_COLUMNS = [
 ] as const;
 const LOAN_ACTIVE_COLUMN = "in Ausleihe"; // → Gegenstand gilt als ausgeliehen
 const LOAN_RETURNED_COLUMN = "Zurückgegeben"; // → Gegenstand wieder verfügbar
+// Spalte, in die die Karte springt, wenn der Entleiher den Vertrag einsendet.
+export const LOAN_CONTRACT_SIGNED_COLUMN = "Vertrag unterschrieben";
 
 /**
  * Legt das dedizierte Leihvorgang-Board („System-Board") eines Inventars an:

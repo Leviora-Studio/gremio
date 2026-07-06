@@ -252,6 +252,7 @@ export default async function InventoryRequestStatusPage({
       {pending && (
         <PublicContractSection
           token={token}
+          status={loan.status}
           provided={provided}
           signed={signed}
         />

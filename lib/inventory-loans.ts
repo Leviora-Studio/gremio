@@ -27,6 +27,7 @@ import {
   type InventoryLoan,
 } from "@/lib/db/schema";
 import { generateToken, isTokenConflict } from "@/lib/token";
+import { LOAN_CONTRACT_SIGNED_COLUMN } from "@/lib/boards";
 
 // Drizzle-Transaktionshandle (für Helfer, die in einer bestehenden Tx laufen).
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -615,6 +616,76 @@ export async function advanceLoanToContractSigned(
         inArray(inventoryLoans.status, ["requested", "contract_provided"]),
       ),
     );
+}
+
+/**
+ * Entleiher sendet den Vertrag ein (öffentlich, token-gesichert): Vorgang auf
+ * „Vertrag unterschrieben" setzen UND — falls kartengeführt — die verknüpfte
+ * Karte in die „Vertrag unterschrieben"-Spalte des Leihboards bewegen, damit der
+ * kartenbasierte öffentliche Status-Stepper mitzieht. No-op, wenn der Vorgang
+ * nicht (mehr) in der Vertragsphase ist. Gibt zurück, ob etwas passiert ist.
+ */
+export async function submitLoanContract(loanId: number): Promise<boolean> {
+  const [loan] = await db
+    .select({
+      status: inventoryLoans.status,
+      cardId: inventoryLoans.cardId,
+    })
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.id, loanId))
+    .limit(1);
+  if (!loan) return false;
+  if (loan.status !== "requested" && loan.status !== "contract_provided") {
+    return false;
+  }
+  // 1) Vorgangsstatus weiterstellen.
+  await advanceLoanToContractSigned(loanId);
+
+  // 2) Kartengeführt: Karte in die „Vertrag unterschrieben"-Spalte bewegen,
+  //    sofern es sie (noch) gibt (Spalten sind theoretisch umbenennbar).
+  if (loan.cardId == null) return true;
+  const [card] = await db
+    .select({ id: cards.id, boardId: cards.boardId, statusId: cards.statusId })
+    .from(cards)
+    .where(eq(cards.id, loan.cardId))
+    .limit(1);
+  if (!card) return true;
+  const [target] = await db
+    .select({ id: boardStatuses.id })
+    .from(boardStatuses)
+    .where(
+      and(
+        eq(boardStatuses.boardId, card.boardId),
+        eq(boardStatuses.name, LOAN_CONTRACT_SIGNED_COLUMN),
+      ),
+    )
+    .limit(1);
+  if (!target || target.id === card.statusId) return true;
+  const [maxRow] = await db
+    .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
+    .from(cards)
+    .where(
+      and(
+        eq(cards.boardId, card.boardId),
+        eq(cards.statusId, target.id),
+        isNull(cards.archivedAt),
+      ),
+    );
+  await db
+    .update(cards)
+    .set({
+      statusId: target.id,
+      position: (maxRow?.m ?? -1) + 1,
+      updatedAt: new Date(),
+    })
+    .where(eq(cards.id, card.id));
+  await db.insert(cardActivity).values({
+    cardId: card.id,
+    userId: null,
+    type: "status",
+    detail: "Vertrag vom Entleiher eingesendet → Vertrag unterschrieben",
+  });
+  return true;
 }
 
 export type BoardLoanCard = {

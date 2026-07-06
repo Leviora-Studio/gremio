@@ -8,8 +8,8 @@ import { allowRequest } from "@/lib/rate-limit";
 import { AUSWEIS_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
 import {
-  advanceLoanToContractSigned,
   getLoanByToken,
+  submitLoanContract,
   withdrawLoan,
 } from "@/lib/inventory-loans";
 import {
@@ -53,8 +53,40 @@ export async function uploadSignedContractAction(
   }
 
   await addInventoryAttachment(loan.itemId, "loan_contract", file, null, loan.id);
-  // Unterschriebener Vertrag hochgeladen → Vorgang weiterstellen.
-  await advanceLoanToContractSigned(loan.id);
+  // Nur anhängen — den Status stellt der Entleiher bewusst per „Vertrag
+  // einsenden" weiter (submitContractAction), nicht schon beim Hochladen.
+  revalidatePath(`/inventar/status/${token}`);
+  return { ok: true };
+}
+
+/**
+ * Entleiher bestätigt „Vertrag einsenden": alle Unterlagen sind angefügt →
+ * Vorgang auf „Vertrag unterschrieben" stellen (und die Tracking-Karte in die
+ * passende Spalte bewegen). Verlangt mind. ein hochgeladenes Dokument.
+ */
+export async function submitContractAction(
+  token: string,
+  _prev: PublicContractState,
+  _formData: FormData,
+): Promise<PublicContractState> {
+  if (!(await allowRequest("inventory-contract", 10, 60_000))) {
+    return {
+      error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut.",
+    };
+  }
+  const loan = await getLoanByToken(token);
+  if (!loan) return { error: "Vorgang nicht gefunden." };
+  if (loan.status !== "requested" && loan.status !== "contract_provided") {
+    return { error: "Der Vertrag wurde bereits eingesendet." };
+  }
+  const existing = await listLoanAttachments(loan.id);
+  const uploaded = existing.filter(
+    (a) => a.kind === "loan_contract" && a.uploadedBy === null,
+  );
+  if (uploaded.length === 0) {
+    return { error: "Bitte lade zuerst deine unterschriebenen Dokumente hoch." };
+  }
+  await submitLoanContract(loan.id);
   revalidatePath(`/inventar/status/${token}`);
   return { ok: true };
 }
