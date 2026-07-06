@@ -107,6 +107,12 @@ export default async function InventoryRequestStatusPage({
   // Aufgabentracking: bei verknüpfter Karte die Board-Spalten als Status zeigen.
   // Abgelehnt/zurückgezogen sind Vorgangs-Endzustände (nicht auf dem Board).
   const terminal = loan.status === "rejected" || loan.status === "withdrawn";
+  // Vertrags-Bereich bleibt sichtbar, solange der Vorgang nicht abgelehnt/
+  // zurückgezogen ist UND es etwas zu zeigen/tun gibt — auch während („in
+  // Ausleihe") und nach der Ausleihe, damit der Entleiher die Verträge weiter
+  // einsehen kann. Nicht mehr nur an loan.status ∈ pending gekoppelt.
+  const showContract =
+    !terminal && (pending || provided.length > 0 || signed.length > 0);
   const progress =
     loan.cardId && !terminal ? await getLoanCardProgress(loan.cardId) : null;
   const currentIndex = progress
@@ -255,7 +261,7 @@ export default async function InventoryRequestStatusPage({
         )}
       </div>
 
-      {pending && (
+      {showContract && (
         <PublicContractSection
           token={token}
           status={loan.status}
