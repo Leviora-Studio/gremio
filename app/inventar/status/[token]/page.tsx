@@ -112,6 +112,9 @@ export default async function InventoryRequestStatusPage({
   const currentIndex = progress
     ? progress.columns.findIndex((c) => c.id === progress.currentStatusId)
     : -1;
+  // Ist der aktuelle Schritt der letzte (z. B. „Zurückgegeben"), gilt der
+  // Vorgang als abgeschlossen → grüner Haken statt Nummer (überall ein Haken).
+  const atEnd = progress != null && currentIndex === progress.columns.length - 1;
 
   return (
     <main className="mx-auto max-w-xl px-4 py-10">
@@ -141,18 +144,21 @@ export default async function InventoryRequestStatusPage({
               {progress.columns.map((c, i) => {
                 const done = i < currentIndex;
                 const current = i === currentIndex;
+                // Erledigt-Optik (grüner Haken) auch für den aktuellen Schritt,
+                // wenn er der letzte ist (Vorgang abgeschlossen).
+                const completed = done || (current && atEnd);
                 return (
                   <li key={c.id} className="flex items-center gap-2.5 text-sm">
                     <span
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                        current
-                          ? "bg-brand-600 text-white"
-                          : done
-                            ? "bg-emerald-500 text-white"
+                        completed
+                          ? "bg-emerald-500 text-white"
+                          : current
+                            ? "bg-brand-600 text-white"
                             : "bg-slate-200 text-slate-500"
                       }`}
                     >
-                      {done ? "✓" : i + 1}
+                      {completed ? "✓" : i + 1}
                     </span>
                     <span
                       className={
