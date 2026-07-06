@@ -154,6 +154,26 @@ export function ItemFormModal({
             />
           )}
 
+          {/* Stückzahl — immer verfügbar (eine Nummer, mehrere Einheiten). */}
+          <div>
+            <label htmlFor="it-quantity" className="label">
+              Stückzahl
+            </label>
+            <input
+              id="it-quantity"
+              name="quantity"
+              type="number"
+              min={1}
+              step={1}
+              className="input sm:w-40"
+              defaultValue={String(item?.quantity ?? 1)}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Anzahl physischer Einheiten dieses Gegenstands (z. B. 100 Becher).
+              Davon kann eine beliebige Menge ausgeliehen werden. Standard 1.
+            </p>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             {show("number") && (
               <div>

@@ -369,6 +369,11 @@ function renderCell(key: string, it: InventoryItemView) {
       return (
         <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
           {it.name || "—"}
+          {it.quantity > 1 && (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+              {it.quantity} Stück
+            </span>
+          )}
           {it.openDefects > 0 && (
             <span
               title={`${it.openDefects} offene(r) Mangel/Mängel`}
@@ -382,6 +387,18 @@ function renderCell(key: string, it: InventoryItemView) {
     case "current_holder":
       return it.activeBorrower ?? "—";
     case "availability":
+      if (it.quantity > 1)
+        return (
+          <span
+            className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
+              it.availableQuantity > 0
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {it.availableQuantity} von {it.quantity} verfügbar
+          </span>
+        );
       return (
         <AvailabilityBadge availability={it.availability} until={it.activeUntil} />
       );

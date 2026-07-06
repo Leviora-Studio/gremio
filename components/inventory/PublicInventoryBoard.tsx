@@ -18,22 +18,24 @@ type Options = {
   category: PublicOpt[];
 };
 
-// Eine Tabellenzeile: entweder ein Einzelstück oder ein Sammel-Posten (Gruppe).
+// Eine Tabellenzeile: Einzelstück, Sammel-Posten (Gruppe) oder Mengen-Gegenstand
+// (eine Nummer, mehrere Einheiten).
 type Row = {
   key: string;
   name: string;
   categoryNames: string[];
-  isGroup: boolean;
+  kind: "single" | "group" | "bulk";
   groupName: string | null;
-  total: number; // Stückzahl gesamt (nur bei Gruppe > 1 relevant)
+  total: number; // Stückzahl gesamt (bei Gruppe/Menge > 1)
   available: number; // aktuell verfügbare Stückzahl
-  item: PublicInventoryItem; // Repräsentant (für Einzel-Anfrage)
+  item: PublicInventoryItem; // Repräsentant (für Einzel-/Mengen-Anfrage)
 };
 
 // Ziel eines Anfrage-Dialogs.
 type RequestTarget =
   | { kind: "single"; item: PublicInventoryItem }
-  | { kind: "group"; groupName: string; name: string; available: number };
+  | { kind: "group"; groupName: string; name: string; available: number }
+  | { kind: "bulk"; item: PublicInventoryItem; available: number };
 
 export function PublicInventoryBoard({
   boardId,
@@ -102,22 +104,29 @@ export function PublicInventoryBoard({
       key: `g:${name}`,
       name,
       categoryNames: its[0].categoryNames,
-      isGroup: true,
+      kind: "group",
       groupName: name,
       total: its.length,
       available: its.filter((i) => i.availability === "available").length,
       item: its[0],
     }));
-    const singleRows: Row[] = singles.map((it) => ({
-      key: `i:${it.id}`,
-      name: it.name,
-      categoryNames: it.categoryNames,
-      isGroup: false,
-      groupName: null,
-      total: 1,
-      available: it.availability === "available" ? 1 : 0,
-      item: it,
-    }));
+    const singleRows: Row[] = singles.map((it) => {
+      const bulk = it.quantity > 1;
+      return {
+        key: `i:${it.id}`,
+        name: it.name,
+        categoryNames: it.categoryNames,
+        kind: bulk ? "bulk" : "single",
+        groupName: null,
+        total: bulk ? it.quantity : 1,
+        available: bulk
+          ? it.availableQuantity
+          : it.availability === "available"
+            ? 1
+            : 0,
+        item: it,
+      };
+    });
     return [...groupRows, ...singleRows].sort((a, b) =>
       a.name.localeCompare(b.name),
     );
@@ -216,7 +225,7 @@ export function PublicInventoryBoard({
                     <td className="px-3 py-2 align-top">
                       <span className="flex flex-wrap items-center gap-1.5 font-medium text-slate-800">
                         {r.name || "—"}
-                        {r.isGroup && (
+                        {r.kind !== "single" && (
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
                             {r.total} Stück
                           </span>
@@ -229,7 +238,7 @@ export function PublicInventoryBoard({
                       </td>
                     )}
                     <td className="px-3 py-2 align-top">
-                      {r.isGroup ? (
+                      {r.kind !== "single" ? (
                         <span
                           className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
                             r.available > 0
@@ -252,14 +261,20 @@ export function PublicInventoryBoard({
                         disabled={r.available === 0}
                         onClick={() =>
                           setRequestTarget(
-                            r.isGroup
+                            r.kind === "group"
                               ? {
                                   kind: "group",
                                   groupName: r.groupName as string,
                                   name: r.name,
                                   available: r.available,
                                 }
-                              : { kind: "single", item: r.item },
+                              : r.kind === "bulk"
+                                ? {
+                                    kind: "bulk",
+                                    item: r.item,
+                                    available: r.available,
+                                  }
+                                : { kind: "single", item: r.item },
                           )
                         }
                         className="btn-secondary px-2.5 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
@@ -327,7 +342,10 @@ function RequestModal({
     {} as RequestState,
   );
   const isGroup = target.kind === "group";
+  const isBulk = target.kind === "bulk";
+  const showQuantity = isGroup || isBulk;
   const name = isGroup ? target.name : target.item.name;
+  const available = isGroup || isBulk ? target.available : 0;
 
   return (
     <div
@@ -341,7 +359,7 @@ function RequestModal({
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold">
-            {isGroup ? "Artikel anfragen" : "Gegenstand anfragen"}
+            {showQuantity ? "Menge anfragen" : "Gegenstand anfragen"}
           </h2>
           <button
             type="button"
@@ -354,10 +372,10 @@ function RequestModal({
         </div>
         <p className="text-sm text-slate-600">
           <strong>{name}</strong>
-          {isGroup && (
+          {showQuantity && (
             <span className="text-slate-500">
               {" "}
-              — {target.available} Stück verfügbar
+              — {available} Stück verfügbar
             </span>
           )}
         </p>
@@ -367,26 +385,30 @@ function RequestModal({
             <>
               <input type="hidden" name="boardId" value={boardId} />
               <input type="hidden" name="groupName" value={target.groupName} />
-              <div>
-                <label htmlFor="rq-qty" className="label">
-                  Stückzahl
-                </label>
-                <input
-                  id="rq-qty"
-                  name="quantity"
-                  type="number"
-                  min={1}
-                  max={target.available}
-                  className="input w-28"
-                  defaultValue={state.values?.quantity ?? "1"}
-                />
-                <p className="mt-1 text-xs text-slate-500">
-                  Konkrete Stücke werden automatisch reserviert.
-                </p>
-              </div>
             </>
           ) : (
             <input type="hidden" name="itemId" value={target.item.id} />
+          )}
+          {showQuantity && (
+            <div>
+              <label htmlFor="rq-qty" className="label">
+                Stückzahl
+              </label>
+              <input
+                id="rq-qty"
+                name="quantity"
+                type="number"
+                min={1}
+                max={available}
+                className="input w-28"
+                defaultValue={state.values?.quantity ?? "1"}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                {isGroup
+                  ? "Konkrete Stücke werden automatisch reserviert."
+                  : `Beliebige Menge bis ${available} Stück.`}
+              </p>
+            </div>
           )}
           <div>
             <label htmlFor="rq-borrower" className="label">

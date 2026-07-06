@@ -151,15 +151,28 @@ export function ItemDetail({
       label: "Entleihbar",
       value: item.lendable ? "ja" : "nein",
     });
+  if (item.quantity > 1)
+    stamm.push({ label: "Stückzahl", value: `${item.quantity} Stück` });
   if (show("availability") && item.condition === "active")
     stamm.push({
       label: "Verfügbarkeit",
-      value: (
-        <AvailabilityBadge
-          availability={item.availability}
-          until={item.activeUntil}
-        />
-      ),
+      value:
+        item.quantity > 1 ? (
+          <span
+            className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
+              item.availableQuantity > 0
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {item.availableQuantity} von {item.quantity} verfügbar
+          </span>
+        ) : (
+          <AvailabilityBadge
+            availability={item.availability}
+            until={item.activeUntil}
+          />
+        ),
     });
   if (show("price"))
     stamm.push({ label: "Kaufpreis", value: fmtCents(item.price) });
@@ -359,8 +372,29 @@ export function ItemDetail({
               <label className="label">Bis (Datum + Uhrzeit)</label>
               <input name="endDate" type="datetime-local" className="input" />
             </div>
+            {item.quantity > 1 && (
+              <div>
+                <label className="label">Stückzahl</label>
+                <input
+                  name="quantity"
+                  type="number"
+                  min={1}
+                  max={item.availableQuantity}
+                  defaultValue={1}
+                  className="input"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {item.availableQuantity} von {item.quantity} verfügbar.
+                </p>
+              </div>
+            )}
           </div>
-          <SubmitButton className="btn-primary">Entleihen</SubmitButton>
+          <SubmitButton
+            className="btn-primary"
+            disabled={item.quantity > 1 && item.availableQuantity <= 0}
+          >
+            Entleihen
+          </SubmitButton>
         </form>
       </section>
 

@@ -21,6 +21,8 @@ export type PublicInventoryItem = {
   id: number;
   name: string;
   groupName: string | null; // Sammel-/Stückzahl-Gruppe (mehrere gleiche Stücke)
+  quantity: number; // Gesamtstückzahl (Mengen-Gegenstand: >1)
+  availableQuantity: number; // aktuell verfügbare Menge (quantity − verliehen)
   categoryIds: number[];
   categoryNames: string[];
   availability: InventoryAvailability; // available | lent (nie not_lendable öffentlich)
@@ -73,6 +75,8 @@ export async function getPublicBoardData(boardId: number): Promise<{
       id: it.id,
       name: it.name,
       groupName: it.groupName,
+      quantity: it.quantity,
+      availableQuantity: it.availableQuantity,
       categoryIds: it.categoryIds,
       categoryNames: it.categoryNames,
       availability: it.availability,

@@ -358,6 +358,13 @@
       "when": 1783271032146,
       "tag": "0050_abandoned_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783327105474,
+      "tag": "0051_light_xavin",
+      "breakpoints": true
     }
   ]
 }

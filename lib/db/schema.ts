@@ -813,6 +813,10 @@ export const inventoryItems = pgTable("inventory_items", {
   name: text("name").notNull().default(""), // Bezeichnung
   // „Artikel/Gruppe": Stücke mit gleichem groupName bilden eine Gruppe (Stückzahl).
   groupName: text("group_name"),
+  // Stückzahl dieses EINEN Gegenstands (eine Nummer, aber mehrere physische
+  // Einheiten, z. B. 100 Becher). Standard 1. Verfügbare Menge =
+  // quantity − Summe der aktuell verliehenen Mengen.
+  quantity: integer("quantity").notNull().default(1),
   // Ist der Gegenstand prinzipiell entleihbar? Nicht-entleihbare sind öffentlich
   // unsichtbar. Der laufende Status (verfügbar/entliehen) ergibt sich automatisch
   // aus den Entleihvorgängen.
@@ -846,6 +850,7 @@ export const inventoryItems = pgTable("inventory_items", {
     "inventory_items_condition",
     sql`${t.condition} in ('active','defect','lost')`,
   ),
+  quantityCheck: check("inventory_items_quantity", sql`${t.quantity} >= 1`),
 }));
 
 // n:m Gegenstand ↔ Kategorie-Option (Multiselect).
@@ -944,8 +949,17 @@ export const inventoryLoanItems = pgTable(
     itemId: integer("item_id")
       .notNull()
       .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    // Reservierte Menge dieses Stücks im Vorgang. Einzel-/Gruppen-Stücke: 1.
+    // Mengen-Gegenstand: die entliehene Anzahl (1..item.quantity).
+    quantity: integer("quantity").notNull().default(1),
   },
-  (t) => ({ pk: primaryKey({ columns: [t.loanId, t.itemId] }) }),
+  (t) => ({
+    pk: primaryKey({ columns: [t.loanId, t.itemId] }),
+    quantityCheck: check(
+      "inventory_loan_items_quantity",
+      sql`${t.quantity} >= 1`,
+    ),
+  }),
 );
 
 // Mängel je Gegenstand (Historie). resolvedAt IS NULL = bekannter offener Mangel.

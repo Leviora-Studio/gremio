@@ -36,20 +36,30 @@ import {
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
+ * Eine reservierte Einheit eines Vorgangs: ein konkretes Stück + Menge. Gruppen
+ * liefern je Stück quantity=1; ein Mengen-Gegenstand liefert EIN Stück mit der
+ * gewünschten Anzahl.
+ */
+export type LoanUnit = { itemId: number; quantity: number };
+
+/**
  * Aufgabentracking: Hat das Inventar-Board der Stücke ein Ziel-Board gesetzt,
  * wird für den Vorgang eine Karte in dessen erster Spalte angelegt und mit dem
  * Vorgang verknüpft. Ohne Ziel-Board passiert nichts.
  */
 async function maybeCreateTrackingCard(
   tx: Tx,
-  itemIds: number[],
+  units: LoanUnit[],
   loanId: number,
   info: { borrower: string; purpose: string | null },
 ): Promise<void> {
+  const leadId = units[0]?.itemId;
+  if (leadId == null) return;
+  const totalQty = units.reduce((s, u) => s + u.quantity, 0);
   const [firstItem] = await tx
     .select({ boardId: inventoryItems.boardId, name: inventoryItems.name })
     .from(inventoryItems)
-    .where(eq(inventoryItems.id, itemIds[0]))
+    .where(eq(inventoryItems.id, leadId))
     .limit(1);
   if (!firstItem) return;
 
@@ -69,7 +79,7 @@ async function maybeCreateTrackingCard(
   if (!firstCol) return;
 
   let title = firstItem.name || "Leihgegenstand";
-  if (itemIds.length > 1) title = `${title} ×${itemIds.length}`;
+  if (totalQty > 1) title = `${title} ×${totalQty}`;
 
   const [maxRow] = await tx
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
@@ -159,6 +169,20 @@ export async function getLoanItems(
     .orderBy(inventoryItems.number, inventoryItems.id);
 }
 
+/**
+ * Bestätigte/zugeordnete Gesamtmenge eines Vorgangs = Summe der Mengen aller
+ * zugeordneten Stücke (Gruppen: 1 je Stück; Mengen-Gegenstand: die Anzahl).
+ */
+export async function getConfirmedQuantity(loanId: number): Promise<number> {
+  const [row] = await db
+    .select({
+      n: sql<number>`coalesce(sum(${inventoryLoanItems.quantity}), 0)::int`,
+    })
+    .from(inventoryLoanItems)
+    .where(eq(inventoryLoanItems.loanId, loanId));
+  return row?.n ?? 0;
+}
+
 /** Aktualisiert den Titel der Tracking-Karte anhand Leit-Stück + Stückzahl. */
 export async function updateTrackingCardTitle(loanId: number): Promise<void> {
   const loan = await getLoanById(loanId);
@@ -169,7 +193,9 @@ export async function updateTrackingCardTitle(loanId: number): Promise<void> {
     .where(eq(inventoryItems.id, loan.itemId))
     .limit(1);
   const [cnt] = await db
-    .select({ n: sql<number>`count(*)::int` })
+    .select({
+      n: sql<number>`coalesce(sum(${inventoryLoanItems.quantity}), 1)::int`,
+    })
     .from(inventoryLoanItems)
     .where(eq(inventoryLoanItems.loanId, loanId));
   let title = lead?.name || "Leihgegenstand";
@@ -315,10 +341,11 @@ export async function removeLoanItem(
  * ist das Leit-Stück (loans.item_id), alle Stücke landen in loan_items.
  */
 export async function createLoan(
-  itemIds: number[],
+  units: LoanUnit[],
   createdBy: number | null,
   data: LoanInput,
 ): Promise<number> {
+  const totalQty = units.reduce((s, u) => s + u.quantity, 0);
   // maybeCreateTrackingCard vergibt einen Karten-Token; kollidiert er (faktisch
   // unmöglich), bricht die Transaktion ab → erneut versuchen (wie createLoanRequest).
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -327,16 +354,20 @@ export async function createLoan(
         const [row] = await tx
           .insert(inventoryLoans)
           .values({
-            itemId: itemIds[0],
+            itemId: units[0].itemId,
             createdBy,
-            requestedQuantity: itemIds.length,
+            requestedQuantity: totalQty,
             ...data,
           })
           .returning({ id: inventoryLoans.id });
-        await tx
-          .insert(inventoryLoanItems)
-          .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
-        await maybeCreateTrackingCard(tx, itemIds, row.id, {
+        await tx.insert(inventoryLoanItems).values(
+          units.map((u) => ({
+            loanId: row.id,
+            itemId: u.itemId,
+            quantity: u.quantity,
+          })),
+        );
+        await maybeCreateTrackingCard(tx, units, row.id, {
           borrower: data.borrower,
           purpose: data.purpose,
         });
@@ -387,9 +418,10 @@ export async function setLoanBorrowerNote(
  * reserviert 1..n konkrete Stücke.
  */
 export async function createLoanRequest(
-  itemIds: number[],
+  units: LoanUnit[],
   data: LoanInput,
 ): Promise<{ id: number; token: string }> {
+  const totalQty = units.reduce((s, u) => s + u.quantity, 0);
   for (let attempt = 0; attempt < 5; attempt++) {
     const token = generateToken();
     try {
@@ -397,18 +429,22 @@ export async function createLoanRequest(
         const [row] = await tx
           .insert(inventoryLoans)
           .values({
-            itemId: itemIds[0],
+            itemId: units[0].itemId,
             status: "requested",
             token,
             createdBy: null,
-            requestedQuantity: itemIds.length,
+            requestedQuantity: totalQty,
             ...data,
           })
           .returning({ id: inventoryLoans.id });
-        await tx
-          .insert(inventoryLoanItems)
-          .values(itemIds.map((itemId) => ({ loanId: row.id, itemId })));
-        await maybeCreateTrackingCard(tx, itemIds, row.id, {
+        await tx.insert(inventoryLoanItems).values(
+          units.map((u) => ({
+            loanId: row.id,
+            itemId: u.itemId,
+            quantity: u.quantity,
+          })),
+        );
+        await maybeCreateTrackingCard(tx, units, row.id, {
           borrower: data.borrower,
           purpose: data.purpose,
         });
@@ -801,6 +837,9 @@ export type ActiveLoan = {
   borrower: string;
   startDate: string | null;
   endDate: string | null;
+  // Summe der aktuell verliehenen Menge dieses Gegenstands (über alle laufenden
+  // Vorgänge). Für Einzel-/Gruppen-Stücke 1; für Mengen-Gegenstände die Summe.
+  lentQuantity: number;
 };
 
 /**
@@ -819,6 +858,7 @@ export async function getActiveLoanMap(
   const rows = await db
     .select({
       itemId: inventoryLoanItems.itemId,
+      quantity: inventoryLoanItems.quantity,
       borrower: inventoryLoans.borrower,
       startDate: inventoryLoans.startDate,
       endDate: inventoryLoans.endDate,
@@ -854,13 +894,20 @@ export async function getActiveLoanMap(
       ),
     )
     .orderBy(desc(inventoryLoans.createdAt));
+  // Nach createdAt DESC sortiert → das erste Vorkommen je Gegenstand ist der
+  // jüngste Vorgang (liefert borrower/Datum); weitere laufende Vorgänge desselben
+  // Mengen-Gegenstands summieren nur noch die verliehene Menge dazu.
   const map = new Map<number, ActiveLoan>();
   for (const r of rows) {
-    if (!map.has(r.itemId)) {
+    const existing = map.get(r.itemId);
+    if (existing) {
+      existing.lentQuantity += r.quantity;
+    } else {
       map.set(r.itemId, {
         borrower: r.borrower,
         startDate: r.startDate,
         endDate: r.endDate,
+        lentQuantity: r.quantity,
       });
     }
   }

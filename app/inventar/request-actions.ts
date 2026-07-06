@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { allowRequest } from "@/lib/rate-limit";
 import {
   getAvailableGroupItemIds,
+  getAvailableItemQuantity,
   getInventoryItemById,
 } from "@/lib/inventory-items";
 import { getPublicInventoryBoardById } from "@/lib/inventory-public";
@@ -60,10 +61,10 @@ export async function createInventoryLoanRequestAction(
     return { error: `Bitte ergänze: ${missing.join(", ")}.`, values };
   }
 
-  // Zwei Varianten: einzelner Gegenstand (itemId) oder Stückzahl aus einer
-  // Artikel/Gruppe (boardId + groupName + quantity → konkrete Stücke).
+  // Drei Varianten: (a) Stückzahl aus einer Artikel/Gruppe (mehrere Stücke),
+  // (b) Mengen-Gegenstand (eine Nummer, gewünschte Menge), (c) Einzel-Gegenstand.
   const groupName = String(formData.get("groupName") ?? "").trim();
-  let itemIds: number[];
+  let units: { itemId: number; quantity: number }[];
 
   if (groupName) {
     const boardId = Number(formData.get("boardId"));
@@ -73,7 +74,7 @@ export async function createInventoryLoanRequestAction(
     const quantity = Math.floor(Number(values.quantity));
     if (!Number.isFinite(quantity) || quantity < 1)
       return { error: "Bitte eine gültige Stückzahl wählen.", values };
-    itemIds = await getAvailableGroupItemIds(board.id, groupName, quantity);
+    const itemIds = await getAvailableGroupItemIds(board.id, groupName, quantity);
     if (itemIds.length < quantity) {
       return {
         error:
@@ -83,6 +84,7 @@ export async function createInventoryLoanRequestAction(
         values,
       };
     }
+    units = itemIds.map((id) => ({ itemId: id, quantity: 1 }));
   } else {
     const itemId = Number(formData.get("itemId"));
     const item = await getInventoryItemById(itemId);
@@ -92,10 +94,28 @@ export async function createInventoryLoanRequestAction(
       return { error: "Dieses Inventar ist nicht öffentlich.", values };
     if (!item.lendable || item.condition !== "active")
       return { error: "Dieser Gegenstand ist nicht verfügbar.", values };
-    itemIds = [item.id];
+    if (item.quantity > 1) {
+      // Mengen-Gegenstand: gewünschte Menge gegen die Verfügbarkeit prüfen.
+      const avail = await getAvailableItemQuantity(item.id);
+      const q = Math.floor(Number(values.quantity));
+      if (!Number.isFinite(q) || q < 1)
+        return { error: "Bitte eine gültige Stückzahl wählen.", values };
+      if (q > avail) {
+        return {
+          error:
+            avail === 0
+              ? "Von diesem Gegenstand ist aktuell nichts verfügbar."
+              : `Aktuell sind nur ${avail} Stück verfügbar.`,
+          values,
+        };
+      }
+      units = [{ itemId: item.id, quantity: q }];
+    } else {
+      units = [{ itemId: item.id, quantity: 1 }];
+    }
   }
 
-  const { token } = await createLoanRequest(itemIds, {
+  const { token } = await createLoanRequest(units, {
     borrower: values.borrower,
     borrowerEmail: values.email,
     purpose: values.purpose || null,

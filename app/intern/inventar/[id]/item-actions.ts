@@ -52,6 +52,13 @@ function parseText(raw: FormDataEntryValue | null): string | null {
   return s ? s.slice(0, 2000) : null;
 }
 
+/** Stückzahl (ganze Zahl ≥ 1), Fallback 1; gedeckelt gegen Unsinn. */
+function parseQuantity(raw: FormDataEntryValue | null): number {
+  if (typeof raw !== "string") return 1;
+  const n = Number.parseInt(raw.trim(), 10);
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, 1_000_000) : 1;
+}
+
 function parseCategoryIds(formData: FormData): number[] {
   return formData
     .getAll("categoryIds")
@@ -62,6 +69,8 @@ function parseCategoryIds(formData: FormData): number[] {
 /** Aus dem Formular nur die am Board sichtbaren Felder übernehmen. */
 function readFields(formData: FormData, visible: Set<string>) {
   const out: ItemPatch = {};
+  // Stückzahl ist immer verfügbar (nicht feld-gated), Standard 1.
+  out.quantity = parseQuantity(formData.get("quantity"));
   if (visible.has("group"))
     out.groupName = parseText(formData.get("groupName"));
   if (visible.has("number")) out.number = parseText(formData.get("number"));
@@ -115,6 +124,7 @@ export async function createInventoryItemAction(
   const data: ItemInput = {
     name,
     groupName: fields.groupName ?? null,
+    quantity: fields.quantity ?? 1,
     number: fields.number ?? null,
     serialNumber: fields.serialNumber ?? null,
     condition: fields.condition ?? "active",

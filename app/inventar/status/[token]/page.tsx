@@ -3,9 +3,9 @@
 
 import { notFound } from "next/navigation";
 import {
+  getConfirmedQuantity,
   getLoanByToken,
   getLoanCardProgress,
-  getLoanItems,
   PENDING_LOAN_STATUSES,
 } from "@/lib/inventory-loans";
 import { getInventoryItemById } from "@/lib/inventory-items";
@@ -99,7 +99,7 @@ export default async function InventoryRequestStatusPage({
 
   // Stückzahl-Anfrage: angefragte Menge immer zeigen, bestätigte erst nach der
   // Bestätigung (Ausleihe läuft/abgeschlossen).
-  const confirmedQty = (await getLoanItems(loan.id)).length;
+  const confirmedQty = await getConfirmedQuantity(loan.id);
   const isQuantity = loan.requestedQuantity > 1 || confirmedQty > 1;
   const showConfirmed =
     loan.status === "active" || loan.status === "returned";

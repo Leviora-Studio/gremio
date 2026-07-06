@@ -10,7 +10,10 @@ import {
   canAccessInventoryBoard,
   getInventoryBoardById,
 } from "@/lib/inventory";
-import { getInventoryItemById } from "@/lib/inventory-items";
+import {
+  getAvailableItemQuantity,
+  getInventoryItemById,
+} from "@/lib/inventory-items";
 import {
   addLoanItem,
   approveLoan,
@@ -67,7 +70,16 @@ export async function createLoanAction(fd: FormData): Promise<void> {
   const { userId, item } = await assertItemAccess(itemId);
   const borrower = text(fd, "borrower", 200);
   if (!borrower) return;
-  await createLoan([itemId], userId, {
+  // Mengen-Gegenstand: gewünschte Anzahl (1..verfügbar). Einzel-Item bleibt 1.
+  let quantity = 1;
+  if (item.quantity > 1) {
+    const avail = await getAvailableItemQuantity(itemId);
+    if (avail <= 0) return; // nichts mehr verfügbar
+    const raw = fd.get("quantity");
+    const n = typeof raw === "string" ? Number.parseInt(raw.trim(), 10) : NaN;
+    quantity = Number.isInteger(n) && n >= 1 ? Math.min(n, avail) : 1;
+  }
+  await createLoan([{ itemId, quantity }], userId, {
     borrower,
     borrowerEmail: null,
     purpose: text(fd, "purpose"),

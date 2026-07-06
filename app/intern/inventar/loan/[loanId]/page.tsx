@@ -56,6 +56,8 @@ export default async function InventoryLoanPage({
   const loanItems = await getLoanItems(loan.id);
   // Stückzahl-Vorgang (Gruppe): angefragte vs. bestätigte Menge + Anpassung.
   const isGroupLoan = item.groupName != null;
+  // Mengen-Gegenstand (eine Nummer, mehrere Einheiten): feste Menge, kein Editor.
+  const isBulkLoan = !isGroupLoan && item.quantity > 1;
   const addableUnits = isGroupLoan ? await getAddableGroupUnits(loan.id) : [];
   const confirmedLabel =
     loan.status === "active" || loan.status === "returned"
@@ -82,6 +84,8 @@ export default async function InventoryLoanPage({
     detail.push({ label: "Zeitraum", value: `${from ?? "?"} – ${to ?? "?"}` });
   if (loan.purpose)
     detail.push({ label: "Verwendungsort / Zweck", value: loan.purpose });
+  if (isBulkLoan)
+    detail.push({ label: "Menge", value: `${loan.requestedQuantity} Stück` });
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
