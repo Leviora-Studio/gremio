@@ -339,9 +339,12 @@ export async function setCardStatusAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(card.id, statusId);
-    // Aufgabentracking: verknüpften Leihvorgang aus der Kartenspalte ableiten
-    // (wie moveCardAction) — No-op, wenn die Karte zu keinem Vorgang gehört.
-    await syncLoanFromCard(card.id, statusId);
+    // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
+    // der Kartenspalte ableiten (wie moveCardAction) — spart auf normalen Boards
+    // die Transaktion/Advisory-Lock/Query.
+    if (board.inventoryBoardId != null) {
+      await syncLoanFromCard(card.id, statusId);
+    }
   }
   await maybeArchive(card.id);
   revalidatePath(`/intern/card/${card.id}`);

@@ -27,7 +27,10 @@ import {
   type InventoryLoan,
 } from "@/lib/db/schema";
 import { generateToken, isTokenConflict } from "@/lib/token";
-import { LOAN_CONTRACT_SIGNED_COLUMN } from "@/lib/boards";
+import {
+  LOAN_CONTRACT_PROVIDED_COLUMN,
+  LOAN_CONTRACT_SIGNED_COLUMN,
+} from "@/lib/boards";
 
 // Drizzle-Transaktionshandle (für Helfer, die in einer bestehenden Tx laufen).
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -603,11 +606,15 @@ export async function advanceLoanToContractProvided(
     );
 }
 
-/** Auto: Vertrag unterschrieben (vom Einreicher hochgeladen). */
+/**
+ * Auto: Vertrag unterschrieben. Gibt zurück, ob der Status wirklich
+ * weitergestellt wurde (false, wenn der Vorgang die Vertragsphase bereits
+ * verlassen hat — dann darf auch die Karte nicht mehr bewegt werden).
+ */
 export async function advanceLoanToContractSigned(
   loanId: number,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(inventoryLoans)
     .set({ status: "contract_signed" })
     .where(
@@ -615,7 +622,9 @@ export async function advanceLoanToContractSigned(
         eq(inventoryLoans.id, loanId),
         inArray(inventoryLoans.status, ["requested", "contract_provided"]),
       ),
-    );
+    )
+    .returning({ id: inventoryLoans.id });
+  return rows.length > 0;
 }
 
 /**
@@ -638,11 +647,15 @@ export async function submitLoanContract(loanId: number): Promise<boolean> {
   if (loan.status !== "requested" && loan.status !== "contract_provided") {
     return false;
   }
-  // 1) Vorgangsstatus weiterstellen.
-  await advanceLoanToContractSigned(loanId);
+  // 1) Vorgangsstatus weiterstellen — nur fortfahren, wenn wirklich advanced
+  //    (sonst hat ein paralleler Schritt den Vorgang schon weitergebracht).
+  const advanced = await advanceLoanToContractSigned(loanId);
+  if (!advanced) return false;
 
-  // 2) Kartengeführt: Karte in die „Vertrag unterschrieben"-Spalte bewegen,
-  //    sofern es sie (noch) gibt (Spalten sind theoretisch umbenennbar).
+  // 2) Kartengeführt: Karte NUR aus der Quell-Spalte („Vertrag bereitgestellt")
+  //    in die Ziel-Spalte („Vertrag unterschrieben") bewegen — Quell-Gate wie
+  //    beim Quittungs-Von→Nach-Zug. Steht die Karte woanders (früher/später),
+  //    wird nichts bewegt (nie rückwärts, kein Überspringen).
   if (loan.cardId == null) return true;
   const [card] = await db
     .select({ id: cards.id, boardId: cards.boardId, statusId: cards.statusId })
@@ -650,31 +663,36 @@ export async function submitLoanContract(loanId: number): Promise<boolean> {
     .where(eq(cards.id, loan.cardId))
     .limit(1);
   if (!card) return true;
-  const [target] = await db
-    .select({ id: boardStatuses.id })
+  const cols = await db
+    .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)
     .where(
       and(
         eq(boardStatuses.boardId, card.boardId),
-        eq(boardStatuses.name, LOAN_CONTRACT_SIGNED_COLUMN),
+        inArray(boardStatuses.name, [
+          LOAN_CONTRACT_PROVIDED_COLUMN,
+          LOAN_CONTRACT_SIGNED_COLUMN,
+        ]),
       ),
-    )
-    .limit(1);
-  if (!target || target.id === card.statusId) return true;
+    );
+  const from = cols.find((c) => c.name === LOAN_CONTRACT_PROVIDED_COLUMN);
+  const to = cols.find((c) => c.name === LOAN_CONTRACT_SIGNED_COLUMN);
+  // Quell-Gate: nur bewegen, wenn die Karte in der Quell-Spalte steht.
+  if (!from || !to || card.statusId !== from.id) return true;
   const [maxRow] = await db
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
     .where(
       and(
         eq(cards.boardId, card.boardId),
-        eq(cards.statusId, target.id),
+        eq(cards.statusId, to.id),
         isNull(cards.archivedAt),
       ),
     );
   await db
     .update(cards)
     .set({
-      statusId: target.id,
+      statusId: to.id,
       position: (maxRow?.m ?? -1) + 1,
       updatedAt: new Date(),
     })

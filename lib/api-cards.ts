@@ -443,7 +443,10 @@ export async function updateCardViaApi(
       `${oldStatusName} → ${moveTo.name}`,
     );
     await maybeSetTriggerDates(card.id, moveTo.id);
-    await syncLoanFromCard(card.id, moveTo.id);
+    // Nur auf System-/Leihboards den verknüpften Vorgang ableiten.
+    if (board.inventoryBoardId != null) {
+      await syncLoanFromCard(card.id, moveTo.id);
+    }
     await maybeArchive(card.id);
   }
   if (assigneeUserIds) {

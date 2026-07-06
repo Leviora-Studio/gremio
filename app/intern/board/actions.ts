@@ -123,8 +123,11 @@ export async function moveCardAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(cardId, statusId);
-    // Aufgabentracking: verknüpften Leihvorgang aus der Kartenspalte ableiten.
-    await syncLoanFromCard(cardId, statusId);
+    // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
+    // der Kartenspalte ableiten — spart auf normalen Boards Tx/Lock/Query.
+    if (board.inventoryBoardId != null) {
+      await syncLoanFromCard(cardId, statusId);
+    }
     await maybeArchive(cardId);
   }
   revalidatePath(`/intern/board/${card.boardId}`);
