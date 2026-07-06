@@ -262,8 +262,9 @@ export default async function InventoryBoardSettingsPage({
         <form action={updateInventoryNumberingAction} className="space-y-4">
           <p className="text-sm text-slate-500">
             Automatisch vergebene Nummer beim Anlegen eines Gegenstands. Format:
-            Präfix + Zähler, dann Jahr und Kürzel (leere Teile werden
-            übersprungen).
+            Präfix {numbering?.separator ?? "_"} Jahr {numbering?.separator ?? "_"}{" "}
+            Ziffer (leere Teile werden übersprungen, z. B. „INV
+            {numbering?.separator ?? "_"}2026{numbering?.separator ?? "_"}005").
           </p>
           <input type="hidden" name="boardId" value={board.id} />
           <label className="flex items-center gap-2">
@@ -289,12 +290,6 @@ export default async function InventoryBoardSettingsPage({
             label="Jahr"
             defaultValue={numbering?.year ?? ""}
             placeholder="2026"
-          />
-          <Field
-            name="code"
-            label="Kürzel"
-            defaultValue={numbering?.code ?? ""}
-            placeholder="KOE"
           />
           <Field
             name="separator"

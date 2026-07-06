@@ -15,7 +15,7 @@ import {
   type InventoryNumbering,
   type InventoryOption,
 } from "@/lib/db/schema";
-import { buildCardNumber } from "@/lib/numbering";
+import { buildInventoryNumber } from "@/lib/numbering";
 import {
   getActiveLoanMap,
   getOpenDefectCountMap,
@@ -127,12 +127,12 @@ async function assignInventoryNumberTx(
       assigned: sql<number>`${inventoryNumbering.next} - 1`,
       prefix: inventoryNumbering.prefix,
       year: inventoryNumbering.year,
-      code: inventoryNumbering.code,
       separator: inventoryNumbering.separator,
       padding: inventoryNumbering.padding,
     });
   if (!cfg) return null; // Nummerierung aus
-  const number = buildCardNumber(cfg, cfg.assigned);
+  // Format: Präfix {Trenner} Jahr {Trenner} Ziffer (aufgefüllt).
+  const number = buildInventoryNumber(cfg, cfg.assigned);
   await tx
     .update(inventoryItems)
     .set({ number })
@@ -154,6 +154,9 @@ export type InventoryItemView = InventoryItem & {
   // abgeleitet aus dem laufenden Entleihvorgang (null = nicht entliehen)
   activeBorrower: string | null;
   activeUntil: string | null;
+  // Mengen: aktuell verliehene bzw. noch verfügbare Menge (quantity − verliehen).
+  lentQuantity: number;
+  availableQuantity: number;
   openDefects: number;
   // automatischer Status: nicht entleihbar / verfügbar / entliehen
   availability: InventoryAvailability;
@@ -161,10 +164,12 @@ export type InventoryItemView = InventoryItem & {
 
 function availabilityOf(
   lendable: boolean,
-  activeBorrower: string | null,
+  quantity: number,
+  lentQuantity: number,
 ): InventoryAvailability {
   if (!lendable) return "not_lendable";
-  return activeBorrower != null ? "lent" : "available";
+  // Erst „entliehen", wenn KEINE Einheit mehr frei ist (Mengen: quantity − verliehen).
+  return lentQuantity >= quantity ? "lent" : "available";
 }
 
 /**
@@ -216,6 +221,7 @@ export async function listInventoryItems(
   return items.map((it) => {
     const categoryIds = byItem.get(it.id) ?? [];
     const loan = activeLoans.get(it.id);
+    const lentQuantity = loan?.lentQuantity ?? 0;
     return {
       ...it,
       categoryIds,
@@ -228,8 +234,10 @@ export async function listInventoryItems(
         : null,
       activeBorrower: loan?.borrower ?? null,
       activeUntil: loan?.endDate ?? null,
+      lentQuantity,
+      availableQuantity: Math.max(0, it.quantity - lentQuantity),
       openDefects: defectCounts.get(it.id) ?? 0,
-      availability: availabilityOf(it.lendable, loan?.borrower ?? null),
+      availability: availabilityOf(it.lendable, it.quantity, lentQuantity),
     };
   });
 }
@@ -267,6 +275,7 @@ export async function getInventoryItemView(
     getOpenDefectCountMap([id]),
   ]);
   const loan = loanMap.get(id);
+  const lentQuantity = loan?.lentQuantity ?? 0;
   return {
     ...item,
     categoryIds,
@@ -279,14 +288,17 @@ export async function getInventoryItemView(
       : null,
     activeBorrower: loan?.borrower ?? null,
     activeUntil: loan?.endDate ?? null,
+    lentQuantity,
+    availableQuantity: Math.max(0, item.quantity - lentQuantity),
     openDefects: defectMap.get(id) ?? 0,
-    availability: availabilityOf(item.lendable, loan?.borrower ?? null),
+    availability: availabilityOf(item.lendable, item.quantity, lentQuantity),
   };
 }
 
 export type ItemInput = {
   name: string;
   groupName: string | null;
+  quantity: number;
   number: string | null;
   serialNumber: string | null;
   condition: string;
@@ -316,6 +328,7 @@ export async function createInventoryItem(
         boardId,
         name: data.name,
         groupName: data.groupName,
+        quantity: data.quantity,
         number: data.number,
         serialNumber: data.serialNumber,
         condition: data.condition,
@@ -463,4 +476,24 @@ export async function getAvailableGroupItemIds(
   const active = await getActiveLoanMap(rows.map((r) => r.id));
   const free = rows.filter((r) => !active.has(r.id)).map((r) => r.id);
   return free.slice(0, Math.max(0, limit));
+}
+
+/**
+ * Verfügbare Menge eines EINZELNEN Mengen-Gegenstands (quantity − aktuell
+ * verliehen). 0, wenn nicht entleihbar oder nicht im Zustand „aktiv".
+ */
+export async function getAvailableItemQuantity(itemId: number): Promise<number> {
+  const [item] = await db
+    .select({
+      quantity: inventoryItems.quantity,
+      lendable: inventoryItems.lendable,
+      condition: inventoryItems.condition,
+    })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, itemId))
+    .limit(1);
+  if (!item || !item.lendable || item.condition !== "active") return 0;
+  const active = await getActiveLoanMap([itemId]);
+  const lent = active.get(itemId)?.lentQuantity ?? 0;
+  return Math.max(0, item.quantity - lent);
 }
