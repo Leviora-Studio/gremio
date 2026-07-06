@@ -49,26 +49,33 @@ export async function updateInventoryFieldsAction(formData: FormData) {
   revalidatePath(`/intern/inventar/${boardId}`);
 }
 
-/** Auto-Inventarnummer konfigurieren. */
-export async function updateInventoryNumberingAction(formData: FormData) {
+/** Auto-Inventarnummer konfigurieren. Gibt eine Erfolgs-/Fehlermeldung zurück. */
+export async function updateInventoryNumberingAction(
+  _prev: LoanBoardState,
+  formData: FormData,
+): Promise<LoanBoardState> {
   const boardId = Number(formData.get("boardId"));
   await requireInventoryBoardManage(boardId);
   const str = (k: string, max: number) =>
     String(formData.get(k) ?? "").slice(0, max);
+  const values = {
+    enabled: formData.get("enabled") === "on",
+    prefix: str("prefix", 20),
+    year: str("year", 10),
+    // Kürzel gibt es in der UI nicht mehr → immer leer.
+    code: "",
+    separator: str("separator", 3) || "_",
+    padding: clampInt(formData.get("padding"), 0, 10),
+    next: clampInt(formData.get("next"), 1, 1_000_000_000),
+  };
+  // Upsert: ältere Boards haben evtl. noch keine Nummerierungs-Zeile.
   await db
-    .update(inventoryNumbering)
-    .set({
-      enabled: formData.get("enabled") === "on",
-      prefix: str("prefix", 20),
-      year: str("year", 10),
-      code: str("code", 20),
-      separator: str("separator", 3) || "_",
-      padding: clampInt(formData.get("padding"), 0, 10),
-      next: clampInt(formData.get("next"), 1, 1_000_000_000),
-    })
-    .where(eq(inventoryNumbering.boardId, boardId));
+    .insert(inventoryNumbering)
+    .values({ boardId, ...values })
+    .onConflictDoUpdate({ target: inventoryNumbering.boardId, set: values });
   revalidatePath(`/intern/inventar/${boardId}/einstellungen`);
   revalidatePath(`/intern/inventar/${boardId}`);
+  return { success: "Nummerierung gespeichert." };
 }
 
 /** Board umbenennen / Beschreibung ändern. */

@@ -25,6 +25,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
+import { InventoryNumberingForm } from "@/components/inventory/InventoryNumberingForm";
 import {
   addInventoryAccessGroupAction,
   addInventoryAccessUserAction,
@@ -33,7 +34,6 @@ import {
   renameInventoryBoardAction,
   transferInventoryOwnerAction,
   updateInventoryFieldsAction,
-  updateInventoryNumberingAction,
 } from "./actions";
 
 export const metadata = { title: "Inventar-Einstellungen — Gremio" };
@@ -259,60 +259,17 @@ export default async function InventoryBoardSettingsPage({
 
       {/* Inventarnummer */}
       <CollapsibleSection title="Automatische Inventarnummer">
-        <form action={updateInventoryNumberingAction} className="space-y-4">
-          <p className="text-sm text-slate-500">
-            Automatisch vergebene Nummer beim Anlegen eines Gegenstands. Format:
-            Präfix {numbering?.separator ?? "_"} Jahr {numbering?.separator ?? "_"}{" "}
-            Ziffer (leere Teile werden übersprungen, z. B. „INV
-            {numbering?.separator ?? "_"}2026{numbering?.separator ?? "_"}005").
-          </p>
-          <input type="hidden" name="boardId" value={board.id} />
-          <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            name="enabled"
-            defaultChecked={numbering?.enabled ?? false}
-            className="h-4 w-4"
-          />
-          <span className="text-sm font-medium">
-            Automatische Nummerierung aktiv
-          </span>
-        </label>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field
-            name="prefix"
-            label="Präfix"
-            defaultValue={numbering?.prefix ?? ""}
-            placeholder="INV-"
-          />
-          <Field
-            name="year"
-            label="Jahr"
-            defaultValue={numbering?.year ?? ""}
-            placeholder="2026"
-          />
-          <Field
-            name="separator"
-            label="Trennzeichen"
-            defaultValue={numbering?.separator ?? "_"}
-          />
-          <Field
-            name="padding"
-            label="Stellen (Auffüllen)"
-            type="number"
-            defaultValue={String(numbering?.padding ?? 0)}
-          />
-          <Field
-            name="next"
-            label="Nächste Nummer"
-            type="number"
-            defaultValue={String(numbering?.next ?? 1)}
-          />
-        </div>
-          <button type="submit" className="btn-primary">
-            Nummerierung speichern
-          </button>
-        </form>
+        <InventoryNumberingForm
+          boardId={board.id}
+          config={{
+            enabled: numbering?.enabled ?? false,
+            prefix: numbering?.prefix ?? "",
+            year: numbering?.year ?? "",
+            separator: numbering?.separator ?? "_",
+            padding: numbering?.padding ?? 0,
+            next: numbering?.next ?? 1,
+          }}
+        />
       </CollapsibleSection>
 
       {/* Eigentum & Löschen */}
