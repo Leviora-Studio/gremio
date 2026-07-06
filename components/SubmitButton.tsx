@@ -9,13 +9,19 @@ import { clsx } from "clsx";
 export function SubmitButton({
   children,
   className,
+  disabled,
 }: {
   children: React.ReactNode;
   className?: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={clsx(className)}>
+    <button
+      type="submit"
+      disabled={pending || disabled}
+      className={clsx(className)}
+    >
       {children}
     </button>
   );

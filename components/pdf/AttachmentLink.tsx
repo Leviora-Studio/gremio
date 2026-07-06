@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { clsx } from "clsx";
-import { PdfViewerModal } from "./PdfViewerModal";
+import { PdfViewerModal, type PdfViewerModalProps } from "./PdfViewerModal";
 
 export type AttachmentLinkProps = {
   id: number;
@@ -20,6 +20,9 @@ export type AttachmentLinkProps = {
   /** Anzeigetext (Standard: Dateiname). */
   label?: string;
   className?: string;
+  /** Abweichende Editor-Endpunkte (z. B. Inventar statt Karten-Anhang). */
+  fieldsUrl?: string;
+  saveAction?: PdfViewerModalProps["saveAction"];
 };
 
 /**
@@ -35,6 +38,8 @@ export function AttachmentLink({
   hasCert = false,
   label,
   className,
+  fieldsUrl,
+  saveAction,
 }: AttachmentLinkProps) {
   const [open, setOpen] = useState(false);
   const viewable = mime === "application/pdf" || mime.startsWith("image/");
@@ -67,6 +72,8 @@ export function AttachmentLink({
         attachmentId={id}
         editable={editable}
         hasCert={hasCert}
+        fieldsUrl={fieldsUrl}
+        saveAction={saveAction}
       />
     </>
   );

@@ -41,6 +41,7 @@ import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
+import { syncLoanFromCard } from "@/lib/inventory-loans";
 
 export type State = { error?: string; success?: string };
 
@@ -338,6 +339,12 @@ export async function setCardStatusAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(card.id, statusId);
+    // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
+    // der Kartenspalte ableiten (wie moveCardAction) — spart auf normalen Boards
+    // die Transaktion/Advisory-Lock/Query.
+    if (board.inventoryBoardId != null) {
+      await syncLoanFromCard(card.id, statusId);
+    }
   }
   await maybeArchive(card.id);
   revalidatePath(`/intern/card/${card.id}`);

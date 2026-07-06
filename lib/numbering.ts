@@ -26,6 +26,21 @@ export function buildCardNumber(cfg: NumberingConfig, counter: number): string {
   return parts.join(cfg.separator);
 }
 
+/**
+ * Inventarnummer: Präfix, Jahr, dann die (aufgefüllte) Ziffer — in genau dieser
+ * Reihenfolge, verbunden mit dem Trennzeichen. Leere Blöcke (Präfix/Jahr) werden
+ * übersprungen. z. B. Präfix "INV", Jahr "2026", padding 3 → "INV_2026_005".
+ */
+export function buildInventoryNumber(
+  cfg: { prefix: string; year: string; separator: string; padding: number },
+  counter: number,
+): string {
+  const num =
+    cfg.padding > 0 ? String(counter).padStart(cfg.padding, "0") : String(counter);
+  const parts = [cfg.prefix, cfg.year, num].filter((p) => p !== "");
+  return parts.join(cfg.separator);
+}
+
 // Drizzle-Transaktionshandle (für „in bestehender Transaktion mitlaufen").
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 

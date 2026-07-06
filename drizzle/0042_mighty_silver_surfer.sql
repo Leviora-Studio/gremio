@@ -1,0 +1,2 @@
+ALTER TABLE "inventory_loans" DROP CONSTRAINT "inventory_loans_status";--> statement-breakpoint
+ALTER TABLE "inventory_loans" ADD CONSTRAINT "inventory_loans_status" CHECK ("inventory_loans"."status" in ('requested','contract_provided','contract_signed','active','returned','rejected','withdrawn'));

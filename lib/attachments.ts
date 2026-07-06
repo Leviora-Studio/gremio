@@ -45,6 +45,44 @@ export function slotFileName(
   return `${base.replace(/[\\/\r\n"]+/g, "_")}${extensionOf(originalName)}`;
 }
 
+/**
+ * Anzeigename einer nachgereichten Quittung: `<Antragsnummer>_Q<n><ext>`
+ * (ohne Antragsnummer nur `Q<n>`). Die Endung stammt aus dem Original.
+ */
+export function receiptFileName(
+  cardNumber: string | null,
+  index: number,
+  originalName: string,
+): string {
+  const num = cardNumber?.trim();
+  const base = num ? `${num}_Q${index}` : `Q${index}`;
+  return `${base.replace(/[\\/\r\n"]+/g, "_")}${extensionOf(originalName)}`;
+}
+
+/**
+ * Nächste freie Q-Nummer aus den vorhandenen Quittungs-Dateinamen — Lücken
+ * zuerst: löscht das Gremium z. B. Q2, bekommt die nächste neue Datei wieder Q2.
+ * Bereits vorhandene Dateien werden NICHT umbenannt; nur Namen, die dem Schema
+ * folgen, zählen für die Nummernvergabe.
+ */
+export function nextReceiptIndex(
+  cardNumber: string | null,
+  existingFilenames: string[],
+): number {
+  const num = cardNumber?.trim();
+  const prefix = num ? `${num}_Q` : "Q";
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^${escaped}(\\d+)(?:\\.[a-z0-9]+)?$`, "i");
+  const used = new Set<number>();
+  for (const f of existingFilenames) {
+    const m = re.exec(f);
+    if (m) used.add(Number(m[1]));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return n;
+}
+
 const EXT_MIME: Record<string, string> = {
   ".pdf": "application/pdf",
   ".png": "image/png",
@@ -168,6 +206,20 @@ export async function saveNamedFile(
     mime: resolveMime(file),
     size: buf.length,
   };
+}
+
+/** Wie saveNamedFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */
+export async function saveNamedBuffer(
+  subdir: string,
+  filename: string,
+  buf: Buffer,
+  mime: string,
+): Promise<{ relPath: string; filename: string; mime: string; size: number }> {
+  const rel = join(subdir, `${randomUUID()}-${sanitize(filename)}`);
+  const abs = absPath(rel);
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, buf);
+  return { relPath: rel, filename, mime, size: buf.length };
 }
 
 /** Wie saveAntragFile, aber für bereits aufbereitete Bytes (z. B. signiertes PDF). */

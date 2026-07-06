@@ -1,0 +1,1 @@
+ALTER TABLE "inventory_items" ADD COLUMN "lendable" boolean DEFAULT true NOT NULL;

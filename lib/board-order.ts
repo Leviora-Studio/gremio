@@ -3,7 +3,11 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { userBoardOrder, userFinanceBoardOrder } from "@/lib/db/schema";
+import {
+  userBoardOrder,
+  userFinanceBoardOrder,
+  userInventoryBoardOrder,
+} from "@/lib/db/schema";
 
 function applyOrder<T extends { id: number; name: string }>(
   boards: T[],
@@ -44,4 +48,15 @@ export async function sortByUserFinanceBoardOrder<
     boards,
     new Map(rows.map((r) => [r.financeBoardId, r.position])),
   );
+}
+
+/** Sortiert Inventar-Boards nach der persönlichen Reihenfolge des Nutzers. */
+export async function sortByUserInventoryBoardOrder<
+  T extends { id: number; name: string },
+>(userId: number, boards: T[]): Promise<T[]> {
+  const rows = await db
+    .select()
+    .from(userInventoryBoardOrder)
+    .where(eq(userInventoryBoardOrder.userId, userId));
+  return applyOrder(boards, new Map(rows.map((r) => [r.boardId, r.position])));
 }

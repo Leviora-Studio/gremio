@@ -121,6 +121,12 @@ export const boards = pgTable("boards", {
     { onDelete: "set null" },
   ),
   doneSweepTime: text("done_sweep_time"), // "HH:MM" (lokale Zeit), NULL = aus
+  // System-Board: dediziertes Leihvorgang-Board eines Inventars. NULL = normales
+  // Kanban-Board. Zugriff/Freigaben spiegeln das Inventar; wird mit ihm gelöscht.
+  inventoryBoardId: integer("inventory_board_id").references(
+    (): AnyPgColumn => inventoryBoards.id,
+    { onDelete: "cascade" },
+  ),
   createdAt: createdAt(),
 });
 
@@ -697,6 +703,326 @@ export const userTaskPrefs = pgTable("user_task_prefs", {
 });
 
 // ---------------------------------------------------------------------------
+// Inventar- & Entleihsystem
+// ---------------------------------------------------------------------------
+// Inventar-Boards: eigenständige Listen (z. B. je StuRa-Standort oder Fach-
+// bereich). Zugriff intern wie bei Kanban-Boards: Eigentümer + Freigaben
+// (inventory_board_access). `isPublic` (nur Admin) steuert, ob das Board im
+// öffentlichen Bereich /inventar erscheint.
+export const inventoryBoards = pgTable("inventory_boards", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ownerId: integer("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  isPublic: boolean("is_public").notNull().default(false),
+  // In die board-übergreifende Gesamtübersicht (Anlagenverzeichnis) einbeziehen.
+  includeInOverview: boolean("include_in_overview").notNull().default(false),
+  // Aufgabentracking: Leihvorgänge landen als Karte auf diesem Kanban-Board.
+  // Der Antragsteller sieht die Spalten dieses Boards als Status. NULL = aus.
+  loanBoardId: integer("loan_board_id").references(() => boards.id, {
+    onDelete: "set null",
+  }),
+  // Erreicht die Karte diese Spalte → Gegenstand gilt als ausgeliehen (Vorgang
+  // active). Erreicht sie die „zurückgegeben"-Spalte → Vorgang returned.
+  loanActiveStatusId: integer("loan_active_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "set null" },
+  ),
+  loanReturnedStatusId: integer("loan_returned_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "set null" },
+  ),
+  createdAt: createdAt(),
+});
+
+// Einstellungen der Gesamtübersicht (Singleton, id=1): Mindestpreis in Cent.
+export const inventoryOverviewConfig = pgTable("inventory_overview_config", {
+  id: integer("id").primaryKey().default(1),
+  minPrice: integer("min_price").notNull().default(0),
+});
+
+// Freigabe eines Inventar-Boards an Nutzer ODER Gruppe (binär), wie board_access.
+export const inventoryBoardAccess = pgTable(
+  "inventory_board_access",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    groupId: integer("group_id").references(() => groups.id, {
+      onDelete: "cascade",
+    }),
+  },
+  (t) => ({
+    oneSubject: check(
+      "inventory_board_access_one_subject",
+      sql`(${t.userId} is null) <> (${t.groupId} is null)`,
+    ),
+    uqUser: uniqueIndex("inventory_board_access_board_user_uq").on(
+      t.boardId,
+      t.userId,
+    ),
+    uqGroup: uniqueIndex("inventory_board_access_board_group_uq").on(
+      t.boardId,
+      t.groupId,
+    ),
+  }),
+);
+
+// Erweiterbare Auswahloptionen je Inventar-Board: Kategorien, Standorte,
+// Entleihstatus — eine Tabelle, unterschieden über `kind`. Direkt beim Erfassen
+// eines Gegenstands erweiterbar (neue Option anlegen).
+export const inventoryOptions = pgTable(
+  "inventory_options",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // category | location | loan_status
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    kindCheck: check(
+      "inventory_options_kind",
+      sql`${t.kind} in ('category','location','loan_status')`,
+    ),
+    uq: uniqueIndex("inventory_options_board_kind_name_uq").on(
+      t.boardId,
+      t.kind,
+      t.name,
+    ),
+  }),
+);
+
+// Gegenstände eines Inventar-Boards. Entleih-/Mängel-Historie und Belege folgen
+// in einer späteren Phase (eigene Tabellen) — hier die Stammdaten.
+export const inventoryItems = pgTable("inventory_items", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id")
+    .notNull()
+    .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  number: text("number"), // Inventarnummer (board-spezifisch, optional/auto)
+  name: text("name").notNull().default(""), // Bezeichnung
+  // „Artikel/Gruppe": Stücke mit gleichem groupName bilden eine Gruppe (Stückzahl).
+  groupName: text("group_name"),
+  // Stückzahl dieses EINEN Gegenstands (eine Nummer, aber mehrere physische
+  // Einheiten, z. B. 100 Becher). Standard 1. Verfügbare Menge =
+  // quantity − Summe der aktuell verliehenen Mengen.
+  quantity: integer("quantity").notNull().default(1),
+  // Ist der Gegenstand prinzipiell entleihbar? Nicht-entleihbare sind öffentlich
+  // unsichtbar. Der laufende Status (verfügbar/entliehen) ergibt sich automatisch
+  // aus den Entleihvorgängen.
+  lendable: boolean("lendable").notNull().default(true),
+  locationId: integer("location_id").references(() => inventoryOptions.id, {
+    onDelete: "set null",
+  }),
+  // Altes manuelles „Entleihstatus"-Select — wird nicht mehr verwendet (Status
+  // ist jetzt automatisch). Spalte bleibt für Bestandsdaten erhalten.
+  loanStatusId: integer("loan_status_id").references(() => inventoryOptions.id, {
+    onDelete: "set null",
+  }),
+  price: integer("price"), // Kaufpreis in Cent
+  purchaseDate: text("purchase_date"), // YYYY-MM-DD
+  vendor: text("vendor"), // Händler
+  serialNumber: text("serial_number"), // Seriennummer (nur intern sichtbar)
+  // Interner Zustand des einzelnen Stücks. defect/lost landen im Archiv und
+  // sind nicht entleihbar / öffentlich unsichtbar.
+  condition: text("condition").notNull().default("active"), // active|defect|lost
+  conditionNote: text("condition_note"), // Grund/Notiz zum Zustand (Archiv)
+  notes: text("notes"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  creatorUserId: integer("creator_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+}, (t) => ({
+  conditionCheck: check(
+    "inventory_items_condition",
+    sql`${t.condition} in ('active','defect','lost')`,
+  ),
+  quantityCheck: check("inventory_items_quantity", sql`${t.quantity} >= 1`),
+}));
+
+// n:m Gegenstand ↔ Kategorie-Option (Multiselect).
+export const inventoryItemCategories = pgTable(
+  "inventory_item_categories",
+  {
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    optionId: integer("option_id")
+      .notNull()
+      .references(() => inventoryOptions.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.itemId, t.optionId] }) }),
+);
+
+// Sichtbare/konfigurierbare Felder je Inventar-Board (wie board_card_fields).
+export const inventoryBoardFields = pgTable(
+  "inventory_board_fields",
+  {
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    fieldKey: text("field_key").notNull(),
+    visible: boolean("visible").notNull().default(true),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.boardId, t.fieldKey] }) }),
+);
+
+// Auto-Inventarnummer je Board (wie board_numbering).
+export const inventoryNumbering = pgTable("inventory_numbering", {
+  boardId: integer("board_id")
+    .primaryKey()
+    .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  prefix: text("prefix").notNull().default(""),
+  year: text("year").notNull().default(""),
+  code: text("code").notNull().default(""),
+  separator: text("separator").notNull().default("_"),
+  padding: integer("padding").notNull().default(0),
+  next: integer("next").notNull().default(1),
+});
+
+// Entleihvorgänge je Gegenstand (Historie). status='active' (und returnedAt
+// NULL) = laufend → bestimmt „aktuell bei". 'requested' = öffentliche Anfrage,
+// die intern noch geprüft wird; 'rejected' = abgelehnt; 'returned' = zurück.
+export const inventoryLoans = pgTable(
+  "inventory_loans",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    // requested → contract_provided → contract_signed → active → returned;
+    // rejected/withdrawn sind Endzustände vor der Annahme.
+    status: text("status").notNull().default("active"),
+    token: text("token"), // öffentlicher Status-Link bei Anfragen (sonst NULL)
+    borrower: text("borrower").notNull(), // Entleiher
+    borrowerEmail: text("borrower_email"), // bei öffentlicher Anfrage Pflicht
+    purpose: text("purpose"), // Verwendungsort/Zweck
+    startDate: text("start_date"), // YYYY-MM-DD
+    endDate: text("end_date"), // YYYY-MM-DD (entliehen bis)
+    // Angefragte Stückzahl (bei Anfrage gesetzt, unveränderlich). Die bestätigte
+    // Stückzahl = Anzahl der aktuell zugeordneten Stücke (inventory_loan_items).
+    requestedQuantity: integer("requested_quantity").notNull().default(1),
+    returnedAt: timestamp("returned_at", { withTimezone: true }), // null = laufend
+    notes: text("notes"),
+    // Hinweise des Verleihers an den Entleiher — über den Status-Link sichtbar.
+    borrowerNote: text("borrower_note"),
+    // Aufgabentracking: verknüpfte Kanban-Karte (NULL = kein Ziel-Board gesetzt).
+    cardId: integer("card_id").references(() => cards.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    createdBy: integer("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    statusCheck: check(
+      "inventory_loans_status",
+      sql`${t.status} in ('requested','contract_provided','contract_signed','active','returned','rejected','withdrawn')`,
+    ),
+    tokenUq: uniqueIndex("inventory_loans_token_uq").on(t.token),
+  }),
+);
+
+// Ein Entleihvorgang reserviert 1..n konkrete Stücke (Stückzahl-Ausleihe).
+export const inventoryLoanItems = pgTable(
+  "inventory_loan_items",
+  {
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => inventoryLoans.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    // Reservierte Menge dieses Stücks im Vorgang. Einzel-/Gruppen-Stücke: 1.
+    // Mengen-Gegenstand: die entliehene Anzahl (1..item.quantity).
+    quantity: integer("quantity").notNull().default(1),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.loanId, t.itemId] }),
+    quantityCheck: check(
+      "inventory_loan_items_quantity",
+      sql`${t.quantity} >= 1`,
+    ),
+  }),
+);
+
+// Mängel je Gegenstand (Historie). resolvedAt IS NULL = bekannter offener Mangel.
+export const inventoryDefects = pgTable("inventory_defects", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id")
+    .notNull()
+    .references(() => inventoryItems.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }), // null = offen
+  createdAt: createdAt(),
+  createdBy: integer("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+});
+
+// Dateien je Gegenstand (append-only Historie): Kaufbelege, Leihanträge,
+// Leihverträge. Nie automatisch gelöscht → Nachvollziehbarkeit. loanId
+// verknüpft Leihantrag/-vertrag optional mit dem konkreten Entleihvorgang.
+export const inventoryAttachments = pgTable(
+  "inventory_attachments",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    loanId: integer("loan_id").references(() => inventoryLoans.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(), // receipt | loan_request | loan_contract | other
+    filename: text("filename").notNull(),
+    path: text("path").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    uploadedAt: createdAt(),
+    uploadedBy: integer("uploaded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => ({
+    kindCheck: check(
+      "inventory_attachments_kind",
+      sql`${t.kind} in ('receipt','loan_request','loan_contract','other')`,
+    ),
+  }),
+);
+
+// Persönliche Reihenfolge der Inventar-Boards je Nutzer (wie user_board_order).
+export const userInventoryBoardOrder = pgTable(
+  "user_inventory_board_order",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => inventoryBoards.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.userId, t.boardId] }) }),
+);
+
+// ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
 export type User = typeof users.$inferSelect;
@@ -725,3 +1051,13 @@ export type FinanceTemplateItem = typeof financeTemplateItems.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;
+export type InventoryBoard = typeof inventoryBoards.$inferSelect;
+export type InventoryBoardAccess = typeof inventoryBoardAccess.$inferSelect;
+export type InventoryOption = typeof inventoryOptions.$inferSelect;
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+export type NewInventoryItem = typeof inventoryItems.$inferInsert;
+export type InventoryBoardField = typeof inventoryBoardFields.$inferSelect;
+export type InventoryNumbering = typeof inventoryNumbering.$inferSelect;
+export type InventoryLoan = typeof inventoryLoans.$inferSelect;
+export type InventoryDefect = typeof inventoryDefects.$inferSelect;
+export type InventoryAttachment = typeof inventoryAttachments.$inferSelect;

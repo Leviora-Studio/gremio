@@ -14,6 +14,7 @@ const tabs = [
   { href: "/admin/boards", label: "Boards" },
   { href: "/admin/finanzboards", label: "Finanzboards" },
   { href: "/admin/standorte", label: "Standorte" },
+  { href: "/admin/inventar", label: "Inventar" },
   { href: "/admin/formular", label: "Antragsformular" },
   { href: "/admin/priorities", label: "Priorität" },
   { href: "/admin/accounts", label: "Konten" },

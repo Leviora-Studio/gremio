@@ -98,6 +98,7 @@ export default async function InternHome() {
             name: b.name,
             description: b.description,
             isOwner: b.ownerId === user.id,
+            isSystemBoard: b.inventoryBoardId != null,
           }))}
         />
       )}

@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
-import { ensureCardChangeTrigger } from "@/lib/realtime";
+import {
+  ensureCardChangeTrigger,
+  ensureInventoryChangeTrigger,
+} from "@/lib/realtime";
 import { startDoneArchiveScheduler } from "@/lib/done-archive";
 import { startArchiveRetryScheduler } from "@/lib/archive";
 import { isPublicHost } from "@/lib/url-guard";
@@ -83,8 +86,9 @@ export async function runStartupBootstrap(): Promise<void> {
   assertNoPlaceholderSecrets();
   assertSecureSsoInProduction();
   await migrate(db, { migrationsFolder: join(process.cwd(), "drizzle") });
-  // Realtime: NOTIFY-Trigger auf `cards` sicherstellen (idempotent).
+  // Realtime: NOTIFY-Trigger auf `cards` + Inventar sicherstellen (idempotent).
   await ensureCardChangeTrigger();
+  await ensureInventoryChangeTrigger();
   // Done-Spalten-Archivierung: Minuten-Scheduler starten.
   startDoneArchiveScheduler();
   // Nextcloud-Archiv-Retry: fehlgeschlagene Uploads periodisch wiederholen.

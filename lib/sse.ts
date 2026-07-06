@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { subscribeCardChanges, type CardChange } from "@/lib/realtime";
+import {
+  subscribeCardChanges,
+  subscribeInventoryChanges,
+  type CardChange,
+  type InventoryChange,
+} from "@/lib/realtime";
 
 // Globale Obergrenze gleichzeitiger SSE-Streams je App-Instanz — Backstop,
 // damit ein einzelner Client nicht beliebig viele Dauerverbindungen
@@ -15,9 +20,10 @@ let active = 0;
  * (z. B. auf eine Board-ID oder ein Token). Heartbeats halten die Verbindung
  * durch Proxies offen; `X-Accel-Buffering: no` deaktiviert nginx-Pufferung.
  */
-export function cardChangeSSE(
+function changeSSE<T>(
   signal: AbortSignal,
-  match: (c: CardChange) => boolean,
+  subscribe: (cb: (c: T) => void) => () => void,
+  match: (c: T) => boolean,
 ): Response {
   if (active >= MAX_SSE_CONNECTIONS) {
     return new Response("Zu viele gleichzeitige Live-Verbindungen.", {
@@ -62,7 +68,7 @@ export function cardChangeSSE(
 
       send("retry: 5000\n\n");
       send(": connected\n\n");
-      unsub = subscribeCardChanges((c) => {
+      unsub = subscribe((c) => {
         if (match(c)) send("data: change\n\n");
       });
       heartbeat = setInterval(() => send(": ping\n\n"), 25000);
@@ -81,4 +87,20 @@ export function cardChangeSSE(
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+/** SSE der Karten-Änderungen, gefiltert über `match` (Board-ID / Token). */
+export function cardChangeSSE(
+  signal: AbortSignal,
+  match: (c: CardChange) => boolean,
+): Response {
+  return changeSSE(signal, subscribeCardChanges, match);
+}
+
+/** SSE der Inventar-Änderungen, gefiltert über `match` (Board-ID / Token). */
+export function inventoryChangeSSE(
+  signal: AbortSignal,
+  match: (c: InventoryChange) => boolean,
+): Response {
+  return changeSSE(signal, subscribeInventoryChanges, match);
 }

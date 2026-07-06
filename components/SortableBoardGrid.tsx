@@ -29,6 +29,7 @@ export type BoardCard = {
   name: string;
   description: string | null;
   isOwner: boolean;
+  isSystemBoard?: boolean;
 };
 
 /** Reiner Karteninhalt (Griff + Link). handleProps werden auf den Griff gelegt. */
@@ -65,11 +66,18 @@ function CardContent({
           {item.description}
         </p>
       )}
-      {item.isOwner && (
-        <span className="mt-2 inline-block rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-          Eigentümer
-        </span>
-      )}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {item.isSystemBoard && (
+          <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            ⚙ System-Board · Leihvorgänge
+          </span>
+        )}
+        {item.isOwner && (
+          <span className="inline-block rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+            Eigentümer
+          </span>
+        )}
+      </div>
     </>
   );
 }

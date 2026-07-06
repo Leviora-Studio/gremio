@@ -15,6 +15,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import {
   savePdfEditsAction,
   type SavePdfInput,
+  type SavePdfResult,
 } from "@/app/intern/card/[id]/pdf-actions";
 
 // pdf.js-Worker lokal (kein CDN — CSP-/Offline-tauglich).
@@ -77,6 +78,9 @@ export type PdfEditorProps = {
   editable: boolean;
   hasCert: boolean;
   onClose: () => void;
+  // Optional: abweichende Endpunkte (z. B. Inventar statt Karten-Anhang).
+  fieldsUrl?: string;
+  saveAction?: (input: SavePdfInput) => Promise<SavePdfResult>;
 };
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -101,6 +105,8 @@ export default function PdfEditor({
   editable,
   hasCert,
   onClose,
+  fieldsUrl,
+  saveAction,
 }: PdfEditorProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,7 +145,7 @@ export default function PdfEditor({
   useEffect(() => {
     if (!editable) return;
     let active = true;
-    fetch(`/api/attachment/${attachmentId}/fields`)
+    fetch(fieldsUrl ?? `/api/attachment/${attachmentId}/fields`)
       .then((r) => (r.ok ? r.json() : { fields: [] }))
       .then((d: { fields?: FieldMeta[] }) => {
         if (!active) return;
@@ -179,7 +185,7 @@ export default function PdfEditor({
     return () => {
       active = false;
     };
-  }, [attachmentId, editable]);
+  }, [attachmentId, editable, fieldsUrl]);
 
   const addText = useCallback(
     (page: number, xRatio: number, yRatio: number, pageHeightPx: number) => {
@@ -261,7 +267,7 @@ export default function PdfEditor({
     };
     setSaving(true);
     try {
-      const res = await savePdfEditsAction(payload);
+      const res = await (saveAction ?? savePdfEditsAction)(payload);
       if (res.ok) {
         if (res.warning) {
           // Teil-Erfolg: gespeichert, aber einzelne Felder gingen nicht — anzeigen

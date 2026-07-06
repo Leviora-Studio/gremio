@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -54,6 +55,12 @@ export default async function BoardSettingsPage({
   const { id } = await params;
   const boardId = Number(id);
   const { board } = await requireBoardManage(boardId);
+
+  // System-Board (Leihvorgänge): keine normalen Board-Einstellungen — die
+  // Verwaltung (inkl. Freigaben) läuft über das verknüpfte Inventar.
+  if (board.inventoryBoardId != null) {
+    redirect(`/intern/inventar/${board.inventoryBoardId}/einstellungen`);
+  }
 
   const statuses = await db
     .select()
@@ -352,14 +359,15 @@ export default async function BoardSettingsPage({
           />
         </div>
 
-        {/* Quittung */}
+        {/* Rückmeldung → Karte automatisch weiterschieben (früher „Quittung") */}
         <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
           <h3 className="text-sm font-semibold text-slate-700">
-            Quittung (öffentlicher Status-Link)
+            Rückmeldung (öffentlicher Status-Link) → Karte weiterschieben
           </h3>
           <p className="text-xs text-slate-500">
-            Ab der Quell-Spalte können Antragsteller einreichen; nach dem
-            Einreichen springt die Karte automatisch in die Zielspalte.
+            Ab der Quell-Spalte kann der Antragsteller/Entleiher über den
+            Status-Link etwas einreichen (z. B. Quittung oder unterschriebenen
+            Vertrag); danach springt die Karte automatisch in die Zielspalte.
           </p>
           <SelectSaveForm
             action={setReceiptFromStatusAction.bind(null, boardId)}

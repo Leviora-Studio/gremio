@@ -126,7 +126,14 @@ export default async function BoardPage({
           <Link href="/intern" className="text-sm text-brand-600">
             ← Alle Boards
           </Link>
-          <h1 className="text-2xl font-bold">{board.name}</h1>
+          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold">
+            {board.name}
+            {board.inventoryBoardId != null && (
+              <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                System-Board · Leihvorgänge
+              </span>
+            )}
+          </h1>
           {board.description && (
             <p className="text-sm text-slate-500">{board.description}</p>
           )}
@@ -160,14 +167,22 @@ export default async function BoardPage({
           >
             📊 Statistik
           </Link>
-          {manage && (
-            <Link
-              href={`/intern/board/${boardId}/einstellungen`}
-              className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
-            >
-              ⚙ Einstellungen
-            </Link>
-          )}
+          {manage &&
+            (board.inventoryBoardId != null ? (
+              <Link
+                href={`/intern/inventar/${board.inventoryBoardId}/einstellungen`}
+                className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
+              >
+                ⚙ Inventar-Einstellungen
+              </Link>
+            ) : (
+              <Link
+                href={`/intern/board/${boardId}/einstellungen`}
+                className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
+              >
+                ⚙ Einstellungen
+              </Link>
+            ))}
         </div>
       </div>
 
