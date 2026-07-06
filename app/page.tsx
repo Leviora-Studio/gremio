@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
+import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { formDocuments, locations } from "@/lib/db/schema";
@@ -24,6 +25,9 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
       <div className="mb-6">
+        <Link href="/inventar" className="btn-success mb-4 shadow-sm">
+          📦 Zum Inventar &amp; Ausleihe →
+        </Link>
         <h1 className="text-2xl font-bold">Antrag einreichen</h1>
       </div>
       <p className="mb-6 text-slate-600">
