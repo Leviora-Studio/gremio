@@ -544,6 +544,23 @@ export async function syncLoanFromCard(
             ),
           ),
         );
+    } else if (cfg.activeId != null) {
+      // Karte in einer Vor-Ausleihe-Spalte (weder „ausgeliehen" noch
+      // „zurückgegeben"). War der Vorgang aber fälschlich schon aktiv/
+      // zurückgegeben (z. B. Karte versehentlich auf „in Ausleihe" gezogen und
+      // danach korrigiert), setzen wir ihn auf „Vertrag bereitgestellt" zurück —
+      // damit der Entleiher den Vertrag weiterhin einreichen kann. Den normalen
+      // Vertragsfortschritt (requested/contract_provided/contract_signed) rühren
+      // wir NICHT an (WHERE-Guard auf active/returned).
+      await tx
+        .update(inventoryLoans)
+        .set({ status: "contract_provided", returnedAt: null })
+        .where(
+          and(
+            eq(inventoryLoans.id, loan.id),
+            inArray(inventoryLoans.status, ["active", "returned"]),
+          ),
+        );
     }
   });
 }
