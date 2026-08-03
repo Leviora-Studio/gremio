@@ -3,15 +3,22 @@
 
 "use server";
 
+import { join } from "node:path";
 import { redirect } from "next/navigation";
 import { allowRequest } from "@/lib/rate-limit";
 import {
-  getAvailableGroupItemIds,
+  getAvailableGroupUnits,
   getAvailableItemQuantity,
   getInventoryItemById,
 } from "@/lib/inventory-items";
 import { getPublicInventoryBoardById } from "@/lib/inventory-public";
-import { createLoanRequest } from "@/lib/inventory-loans";
+import {
+  createLoanRequest,
+  LoanCapacityError,
+  type LoanUnit,
+} from "@/lib/inventory-loans";
+import { saveNamedFile, validateUpload } from "@/lib/attachments";
+import { STUDENT_CARD_MIME } from "@/lib/inventory-attachment-kinds";
 
 // Eingaben werden bei einem Fehler zurückgegeben, damit das Formular sie behält.
 export type RequestValues = {
@@ -61,10 +68,28 @@ export async function createInventoryLoanRequestAction(
     return { error: `Bitte ergänze: ${missing.join(", ")}.`, values };
   }
 
-  // Drei Varianten: (a) Stückzahl aus einer Artikel/Gruppe (mehrere Stücke),
+  // Studierendenausweis ist PFLICHT — serverseitig geprüft (das HTML-`required`
+  // ist nur Komfort und lässt sich umgehen). Vor jedem DB-Zugriff prüfen, damit
+  // eine unzulässige Datei gar nicht erst zu einem Vorgang führt.
+  const studentCardFile = formData.get("studentCard");
+  if (!(studentCardFile instanceof File) || studentCardFile.size === 0) {
+    return {
+      error: "Bitte lade deinen Studierendenausweis hoch (PDF, PNG oder JPG).",
+      values,
+    };
+  }
+  const fileError = validateUpload(studentCardFile, STUDENT_CARD_MIME);
+  if (fileError) {
+    return {
+      error: `Studierendenausweis: ${fileError} Erlaubt sind PDF, PNG und JPG.`,
+      values,
+    };
+  }
+
+  // Drei Varianten: (a) Stückzahl aus einer Obergruppe (mehrere Stücke),
   // (b) Mengen-Gegenstand (eine Nummer, gewünschte Menge), (c) Einzel-Gegenstand.
   const groupName = String(formData.get("groupName") ?? "").trim();
-  let units: { itemId: number; quantity: number }[];
+  let units: LoanUnit[];
 
   if (groupName) {
     const boardId = Number(formData.get("boardId"));
@@ -74,17 +99,23 @@ export async function createInventoryLoanRequestAction(
     const quantity = Math.floor(Number(values.quantity));
     if (!Number.isFinite(quantity) || quantity < 1)
       return { error: "Bitte eine gültige Stückzahl wählen.", values };
-    const itemIds = await getAvailableGroupItemIds(board.id, groupName, quantity);
-    if (itemIds.length < quantity) {
+    // Einheiten (nicht Datensätze!): ein Gruppenmitglied mit quantity > 1 kann
+    // mehrere Einheiten beisteuern.
+    const { units: groupUnits, available } = await getAvailableGroupUnits(
+      board.id,
+      groupName,
+      quantity,
+    );
+    if (available < quantity) {
       return {
         error:
-          itemIds.length === 0
+          available === 0
             ? "Von diesem Artikel ist aktuell nichts verfügbar."
-            : `Aktuell sind nur ${itemIds.length} Stück verfügbar.`,
+            : `Aktuell sind nur ${available} Stück verfügbar.`,
         values,
       };
     }
-    units = itemIds.map((id) => ({ itemId: id, quantity: 1 }));
+    units = groupUnits;
   } else {
     const itemId = Number(formData.get("itemId"));
     const item = await getInventoryItemById(itemId);
@@ -115,14 +146,38 @@ export async function createInventoryLoanRequestAction(
     }
   }
 
-  const { token } = await createLoanRequest(units, {
-    borrower: values.borrower,
-    borrowerEmail: values.email,
-    purpose: values.purpose || null,
-    startDate: values.startDate || null,
-    endDate: values.endDate || null,
-    notes: null,
-  });
+  // Datei erst jetzt schreiben (alle fachlichen Prüfungen sind durch). Schlägt
+  // das Anlegen des Vorgangs fehl, räumt createLoanRequest die Datei wieder weg
+  // — es bleibt keine halbfertige Anfrage ohne Ausweis zurück.
+  let token: string;
+  try {
+    const saved = await saveNamedFile(
+      join("inventory", String(units[0].itemId)),
+      studentCardFile,
+    );
+    ({ token } = await createLoanRequest(
+      units,
+      {
+        borrower: values.borrower,
+        borrowerEmail: values.email,
+        purpose: values.purpose || null,
+        startDate: values.startDate || null,
+        endDate: values.endDate || null,
+        notes: null,
+      },
+      saved,
+    ));
+  } catch (e) {
+    if (e instanceof LoanCapacityError) {
+      return {
+        error:
+          "Die gewünschte Menge wurde gerade vergeben. Bitte lade die Seite neu.",
+        values,
+      };
+    }
+    throw e;
+  }
 
+  // Außerhalb des try/catch: redirect() signalisiert über eine Exception.
   redirect(`/inventar/status/${token}`);
 }

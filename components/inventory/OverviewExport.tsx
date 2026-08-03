@@ -22,7 +22,7 @@ export function OverviewExport() {
           { value: "condition", label: "Sortierung: Zustand" },
           { value: "purchase_date", label: "Sortierung: Kaufdatum" },
           { value: "vendor", label: "Sortierung: Händler" },
-          { value: "price", label: "Sortierung: Preis (absteigend)" },
+          { value: "price", label: "Sortierung: Einzelpreis (absteigend)" },
         ]}
       />
       <a

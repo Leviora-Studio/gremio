@@ -35,6 +35,7 @@ export async function listInventoryAttachments(
     receipt: [],
     loan_request: [],
     loan_contract: [],
+    student_card: [],
     other: [],
   };
   for (const r of rows) {

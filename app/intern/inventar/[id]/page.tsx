@@ -67,7 +67,7 @@ export default async function InventoryBoardPage({
   const toOpts = (rows: { id: number; name: string }[]) =>
     rows.map((r) => ({ id: r.id, name: r.name }));
 
-  // Bestehende Artikel/Gruppen-Namen (aktiv + archiviert) für die suchbare Auswahl.
+  // Bestehende Obergruppen-Namen (aktiv + archiviert) für die suchbare Auswahl.
   const groupNames = Array.from(
     new Set(
       [...items, ...archived]

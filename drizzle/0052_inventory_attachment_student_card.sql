@@ -1,0 +1,2 @@
+ALTER TABLE "inventory_attachments" DROP CONSTRAINT "inventory_attachments_kind";--> statement-breakpoint
+ALTER TABLE "inventory_attachments" ADD CONSTRAINT "inventory_attachments_kind" CHECK ("inventory_attachments"."kind" in ('receipt','loan_request','loan_contract','student_card','other'));

@@ -264,7 +264,7 @@ export default async function StatusPage({
         <a href={`/status/${token}/pdf`} className="btn-primary">
           Eingangsbestätigung (PDF)
         </a>
-        <span className="text-sm text-slate-500">
+        <span className="text-sm font-medium text-red-700">
           Bitte speichere diesen Link: {link}
         </span>
       </div>

@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     "Seriennummer",
     "Kaufdatum",
     "Händler",
-    "Kaufpreis (EUR)",
+    "Einzelpreis (EUR)",
   ];
   const rows = items.map((it) => [
     it.boardName,

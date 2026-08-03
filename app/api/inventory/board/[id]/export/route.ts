@@ -72,7 +72,7 @@ export async function GET(
     "Entleihbar",
     "Verfügbarkeit",
     "Aktuell bei",
-    "Kaufpreis (EUR)",
+    "Einzelpreis (EUR)",
     "Kaufdatum",
     "Händler",
     "Notizen",

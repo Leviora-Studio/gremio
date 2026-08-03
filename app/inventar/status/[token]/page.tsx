@@ -126,7 +126,7 @@ export default async function InventoryRequestStatusPage({
     <main className="mx-auto max-w-xl px-4 py-10">
       <LiveRefresh src={`/api/inventar/status/${token}/stream`} />
       <h1 className="text-2xl font-bold">Status deiner Anfrage</h1>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm font-medium text-red-700">
         Bewahre den Link zu dieser Seite auf, um den Status später erneut
         aufzurufen.
       </p>

@@ -34,7 +34,7 @@ export default async function AdminInventoryPage() {
             <code>/inventar</code> für alle (mit Such-/Filterfunktion und der
             Möglichkeit, einen Gegenstand anzufragen). Öffentlich sichtbar sind
             nur Bezeichnung, Kategorie und Entleihstatus — keine Inventar-/
-            Seriennummer, Standort, Preise, Belege, Halter oder Verträge.
+            Seriennummer, Standort, Einzelpreise, Belege, Halter oder Verträge.
           </p>
         </div>
         <Link href="/admin/inventar/gesamt" className="btn-secondary shrink-0">

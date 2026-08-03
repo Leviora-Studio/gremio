@@ -96,9 +96,14 @@ export function NewCardButton({
         {"+ Neue Karte"}
       </button>
 
+      {/* Kein X-Button: Die Karte existiert bereits (Auto-Speichern), deshalb
+          gibt es hier nur die eindeutigen Wege „Verwerfen" (löscht) und
+          „Fertig" (behält). Escape und Backdrop laufen über onClose → keep,
+          also denselben Behalten-Pfad wie „Fertig". */}
       <Modal
         open={open && cardId !== null}
         onClose={keep}
+        showCloseButton={false}
         title="Neue Karte"
         headerActions={
           <>

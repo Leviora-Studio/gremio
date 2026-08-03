@@ -8,6 +8,7 @@ import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
   getAddableGroupUnits,
+  getConfirmedQuantity,
   getLoanById,
   getLoanItems,
   getLoanCardProgress,
@@ -52,8 +53,13 @@ export default async function InventoryLoanPage({
   if (!item) notFound();
   const { user, board } = await requireInventoryBoardAccess(item.boardId);
 
-  const docs = await listLoanAttachments(loan.id);
+  const allDocs = await listLoanAttachments(loan.id);
+  // Studierendenausweis (öffentliche Anfrage) getrennt ausweisen — er ist ein
+  // Ausweisdokument und wird NICHT im Vertrags-Bereich geführt.
+  const studentCards = allDocs.filter((d) => d.kind === "student_card");
+  const docs = allDocs.filter((d) => d.kind !== "student_card");
   const loanItems = await getLoanItems(loan.id);
+  const confirmedQty = await getConfirmedQuantity(loan.id);
   // Stückzahl-Vorgang (Gruppe): angefragte vs. bestätigte Menge + Anpassung.
   const isGroupLoan = item.groupName != null;
   // Mengen-Gegenstand (eine Nummer, mehrere Einheiten): feste Menge, kein Editor.
@@ -214,10 +220,37 @@ export default async function InventoryLoanPage({
         <LoanQuantityEditor
           loanId={loan.id}
           requested={loan.requestedQuantity}
+          confirmed={confirmedQty}
           confirmedLabel={confirmedLabel}
           items={loanItems}
           addable={addableUnits}
         />
+      )}
+
+      {/* Studierendenausweis der öffentlichen Anfrage — rein intern, nie über
+          den öffentlichen Status-Token abrufbar. */}
+      {studentCards.length > 0 && (
+        <div className="card p-5">
+          <h2 className="mb-1 font-semibold">Studierendenausweis</h2>
+          <p className="mb-2 text-sm text-slate-500">
+            Vom Entleiher mit der Anfrage eingereicht. Nur intern sichtbar — über
+            den öffentlichen Status-Link nicht abrufbar.
+          </p>
+          <ul className="space-y-1">
+            {studentCards.map((d) => (
+              <li key={d.id}>
+                <a
+                  href={`/api/inventory/attachment/${d.id}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="text-sm font-medium text-brand-600 hover:underline"
+                >
+                  Studierendenausweis ({d.filename})
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Hinweise für den Entleiher (über den Status-Link sichtbar) */}

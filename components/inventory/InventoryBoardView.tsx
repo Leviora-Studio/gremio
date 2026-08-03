@@ -18,14 +18,14 @@ type OptionKind = keyof GroupedOpts;
 
 const COLUMNS: { key: string; label: string; always?: boolean }[] = [
   { key: "name", label: "Bezeichnung", always: true },
-  { key: "group", label: "Gruppe" },
+  { key: "group", label: "Obergruppe" },
   { key: "number", label: "Inv.-Nr." },
   { key: "serial_number", label: "Seriennr." },
   { key: "category", label: "Kategorie" },
   { key: "location", label: "Standort" },
   { key: "current_holder", label: "Aktuell bei" },
   { key: "availability", label: "Verfügbarkeit" },
-  { key: "price", label: "Preis" },
+  { key: "price", label: "Einzelpreis" },
   { key: "purchase_date", label: "Kaufdatum" },
   { key: "vendor", label: "Händler" },
 ];
@@ -90,8 +90,8 @@ export function InventoryBoardView({
     });
   }, [items, query, fCategory, fLocation, fAvail]);
 
-  // Nach „Artikel/Gruppe" bündeln: gleiche groupName → ein Sammel-Posten,
-  // Gegenstände ohne Gruppe bleiben einzeln.
+  // Nach „Obergruppe" bündeln: gleiche groupName → ein Sammel-Posten,
+  // Gegenstände ohne Obergruppe bleiben einzeln.
   const groups = useMemo(() => {
     const map = new Map<string, InventoryItemView[]>();
     const singles: InventoryItemView[] = [];
@@ -105,19 +105,23 @@ export function InventoryBoardView({
       arr.push(it);
       map.set(g, arr);
     }
+    // Stückzahl der Obergruppe = Summe der Einzel-Stückzahlen, NICHT die Anzahl
+    // der Datensätze: ein Mitglied mit quantity > 1 zählt entsprechend mehrfach
+    // (z. B. 3 + 4 = 7). Verfügbar analog die Summe der freien Mengen
+    // (availableQuantity ist bei nicht entleihbaren/defekten Stücken 0).
     const grouped = [...map.entries()].map(([name, its]) => ({
       key: `g:${name}`,
       name,
       items: its,
-      total: its.length,
-      available: its.filter((i) => i.availability === "available").length,
+      total: its.reduce((s, i) => s + i.quantity, 0),
+      available: its.reduce((s, i) => s + i.availableQuantity, 0),
     }));
     const single = singles.map((it) => ({
       key: `i:${it.id}`,
       name: null as string | null,
       items: [it],
-      total: 1,
-      available: it.availability === "available" ? 1 : 0,
+      total: it.quantity,
+      available: it.availableQuantity,
     }));
     return [...grouped, ...single].sort((a, b) =>
       (a.name ?? a.items[0].name).localeCompare(b.name ?? b.items[0].name),
@@ -200,7 +204,7 @@ export function InventoryBoardView({
                     : "bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
-                Nach Gruppe
+                Nach Obergruppe
               </button>
               <button
                 type="button"

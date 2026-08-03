@@ -9,6 +9,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -17,6 +18,7 @@ import {
   boardStatuses,
   cardActivity,
   cards,
+  inventoryAttachments,
   inventoryBoards,
   inventoryDefects,
   inventoryItems,
@@ -26,6 +28,7 @@ import {
   type InventoryDefect,
   type InventoryLoan,
 } from "@/lib/db/schema";
+import { deleteStoredFile } from "@/lib/attachments";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import {
   LOAN_CONTRACT_PROVIDED_COLUMN,
@@ -153,15 +156,21 @@ export async function getLoanById(
   return row;
 }
 
-/** Die konkreten Stücke eines Vorgangs (Inventarnummer + Bezeichnung). */
+/**
+ * Die konkreten Stücke eines Vorgangs inkl. der ihm zugeordneten MENGE
+ * (Einzel-/Gruppenstücke: 1; Mengen-Gegenstand: die reservierte Anzahl).
+ */
 export async function getLoanItems(
   loanId: number,
-): Promise<{ id: number; number: string | null; name: string }[]> {
+): Promise<
+  { id: number; number: string | null; name: string; quantity: number }[]
+> {
   return db
     .select({
       id: inventoryItems.id,
       number: inventoryItems.number,
       name: inventoryItems.name,
+      quantity: inventoryLoanItems.quantity,
     })
     .from(inventoryLoanItems)
     .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId))
@@ -207,13 +216,17 @@ export async function updateTrackingCardTitle(loanId: number): Promise<void> {
 }
 
 /**
- * Verfügbare Stücke der Gruppe eines Vorgangs, die noch NICHT zugeordnet sind —
- * zum manuellen Ergänzen (bestätigte Stückzahl anpassen). Leer, wenn das
- * Leit-Stück keiner Gruppe angehört.
+ * Stücke der Obergruppe eines Vorgangs, von denen noch mindestens eine EINHEIT
+ * zusätzlich buchbar ist (`free` = noch freie Menge FÜR diesen Vorgang). Enthält
+ * bewusst auch bereits zugeordnete Mengen-Stücke — von ihnen lässt sich eine
+ * weitere Einheit ergänzen, solange Bestand frei ist. Leer, wenn das Leit-Stück
+ * keiner Obergruppe angehört.
  */
 export async function getAddableGroupUnits(
   loanId: number,
-): Promise<{ id: number; number: string | null; name: string }[]> {
+): Promise<
+  { id: number; number: string | null; name: string; free: number }[]
+> {
   const loan = await getLoanById(loanId);
   if (!loan) return [];
   const [lead] = await db
@@ -242,74 +255,118 @@ export async function getAddableGroupUnits(
     )
     .orderBy(inventoryItems.number, inventoryItems.id);
   if (!candidates.length) return [];
-  const active = await getActiveLoanMap(candidates.map((c) => c.id));
-  const attached = new Set(
-    (
-      await db
-        .select({ id: inventoryLoanItems.itemId })
-        .from(inventoryLoanItems)
-        .where(eq(inventoryLoanItems.loanId, loanId))
-    ).map((r) => r.id),
+
+  const free = await getFreeQuantities(
+    candidates.map((c) => c.id),
+    { excludeLoanId: loanId },
   );
-  return candidates.filter((c) => !active.has(c.id) && !attached.has(c.id));
+  return candidates
+    .map((c) => ({ ...c, free: free.get(c.id) ?? 0 }))
+    .filter((c) => c.free > 0);
 }
 
-/** Ein weiteres Stück derselben Gruppe dem Vorgang zuordnen (bestätigte Menge). */
+/**
+ * EINE weitere Einheit desselben Stücks/derselben Obergruppe zuordnen. Ist das
+ * Stück bereits zugeordnet, wird seine Menge um 1 erhöht (Mengen-Stück),
+ * andernfalls eine neue Zeile mit Menge 1 angelegt. Ohne freie Restmenge
+ * passiert nichts.
+ */
 export async function addLoanItem(
   loanId: number,
   itemId: number,
 ): Promise<void> {
-  const loan = await getLoanById(loanId);
-  if (!loan) return;
-  const [lead] = await db
-    .select({
-      boardId: inventoryItems.boardId,
-      groupName: inventoryItems.groupName,
-    })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.id, loan.itemId))
-    .limit(1);
-  const [target] = await db
-    .select({
-      boardId: inventoryItems.boardId,
-      groupName: inventoryItems.groupName,
-    })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.id, itemId))
-    .limit(1);
-  // Nur Stücke derselben Gruppe/desselben Boards zulassen.
-  if (
-    !lead ||
-    !target ||
-    !lead.groupName ||
-    target.boardId !== lead.boardId ||
-    target.groupName !== lead.groupName
-  ) {
-    return;
-  }
-  // Kein bereits laufend verliehenes Stück zuordnen (keine Doppelbuchung).
-  const active = await getActiveLoanMap([itemId]);
-  if (active.has(itemId)) return;
-  await db
-    .insert(inventoryLoanItems)
-    .values({ loanId, itemId })
-    .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    // Serialisieren gegen parallele Zuordnungen desselben Vorgangs.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${itemId})`,
+    );
+    const [loan] = await tx
+      .select({ itemId: inventoryLoans.itemId })
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.id, loanId))
+      .limit(1);
+    if (!loan) return;
+    const [lead] = await tx
+      .select({
+        boardId: inventoryItems.boardId,
+        groupName: inventoryItems.groupName,
+      })
+      .from(inventoryItems)
+      .where(eq(inventoryItems.id, loan.itemId))
+      .limit(1);
+    const [target] = await tx
+      .select({
+        boardId: inventoryItems.boardId,
+        groupName: inventoryItems.groupName,
+      })
+      .from(inventoryItems)
+      .where(eq(inventoryItems.id, itemId))
+      .limit(1);
+    // Nur Stücke derselben Obergruppe/desselben Boards zulassen.
+    if (
+      !lead ||
+      !target ||
+      !lead.groupName ||
+      target.boardId !== lead.boardId ||
+      target.groupName !== lead.groupName
+    ) {
+      return;
+    }
+    // Keine Überbuchung: nur zuordnen, wenn noch eine Einheit frei ist.
+    const free = await getFreeQuantities([itemId], {
+      excludeLoanId: loanId,
+      tx,
+    });
+    if ((free.get(itemId) ?? 0) < 1) return;
+
+    await tx
+      .insert(inventoryLoanItems)
+      .values({ loanId, itemId, quantity: 1 })
+      .onConflictDoUpdate({
+        target: [inventoryLoanItems.loanId, inventoryLoanItems.itemId],
+        set: { quantity: sql`${inventoryLoanItems.quantity} + 1` },
+      });
+  });
   await updateTrackingCardTitle(loanId);
 }
 
-/** Ein zugeordnetes Stück wieder entfernen (mind. 1 bleibt; Leit-Stück wandert). */
+/**
+ * EINE zugeordnete Einheit wieder entfernen: Menge > 1 wird reduziert, bei
+ * Menge 1 fällt die Zeile weg. Die letzte Einheit des Vorgangs bleibt immer
+ * bestehen; verschwindet die Zeile des Leit-Stücks, wandert die Leit-Rolle.
+ */
 export async function removeLoanItem(
   loanId: number,
   itemId: number,
 ): Promise<void> {
-  // Lesen + Löschen + Leit-Stück-Umzug atomar (kein TOCTOU zwischen den Schritten).
+  // Lesen + Ändern + Leit-Stück-Umzug atomar (kein TOCTOU zwischen den Schritten).
   await db.transaction(async (tx) => {
     const rows = await tx
-      .select({ id: inventoryLoanItems.itemId })
+      .select({
+        id: inventoryLoanItems.itemId,
+        quantity: inventoryLoanItems.quantity,
+      })
       .from(inventoryLoanItems)
       .where(eq(inventoryLoanItems.loanId, loanId));
-    const ids = rows.map((r) => r.id);
-    if (!ids.includes(itemId) || ids.length <= 1) return; // letztes Stück bleibt
+    const row = rows.find((r) => r.id === itemId);
+    const totalUnits = rows.reduce((s, r) => s + r.quantity, 0);
+    // Letzte verbleibende Einheit bleibt (ein Vorgang ohne Stück ergibt nichts).
+    if (!row || totalUnits <= 1) return;
+
+    if (row.quantity > 1) {
+      // Mengen-Zeile: nur um eine Einheit reduzieren, Zeile bleibt bestehen.
+      await tx
+        .update(inventoryLoanItems)
+        .set({ quantity: sql`${inventoryLoanItems.quantity} - 1` })
+        .where(
+          and(
+            eq(inventoryLoanItems.loanId, loanId),
+            eq(inventoryLoanItems.itemId, itemId),
+          ),
+        );
+      return;
+    }
+
     await tx
       .delete(inventoryLoanItems)
       .where(
@@ -324,7 +381,7 @@ export async function removeLoanItem(
       .where(eq(inventoryLoans.id, loanId))
       .limit(1);
     if (loan && loan.itemId === itemId) {
-      const nextLead = ids.find((id) => id !== itemId);
+      const nextLead = rows.find((r) => r.id !== itemId)?.id;
       if (nextLead != null) {
         await tx
           .update(inventoryLoans)
@@ -396,6 +453,27 @@ export async function deleteLoan(loanId: number): Promise<void> {
     .from(inventoryLoans)
     .where(eq(inventoryLoans.id, loanId))
     .limit(1);
+
+  // Studierendenausweise dieses Vorgangs VORHER löschen (Zeile + Datei).
+  // `inventory_attachments.loan_id` ist ON DELETE SET NULL — der Ausweis bliebe
+  // sonst als unzugeordnetes Ausweisdokument am Gegenstand hängen. Die übrigen
+  // Arten (Belege/Verträge) bleiben als Historie bewusst erhalten.
+  const cards_ = await db
+    .select({ id: inventoryAttachments.id, path: inventoryAttachments.path })
+    .from(inventoryAttachments)
+    .where(
+      and(
+        eq(inventoryAttachments.loanId, loanId),
+        eq(inventoryAttachments.kind, "student_card"),
+      ),
+    );
+  for (const c of cards_) {
+    await db
+      .delete(inventoryAttachments)
+      .where(eq(inventoryAttachments.id, c.id));
+    await deleteStoredFile(c.path);
+  }
+
   await db.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
   if (loan?.cardId != null) {
     await db.delete(cards).where(eq(cards.id, loan.cardId));
@@ -414,48 +492,109 @@ export async function setLoanBorrowerNote(
 }
 
 /**
+ * Die gewünschte Menge ist zwischen Verfügbarkeitsprüfung und Anlage weg-
+ * geschnappt worden. Eigener Fehlertyp, damit die Server-Action daraus eine
+ * verständliche Meldung machen kann (statt eines 500ers).
+ */
+export class LoanCapacityError extends Error {
+  constructor(message = "Die gewünschte Menge ist nicht mehr verfügbar.") {
+    super(message);
+    this.name = "LoanCapacityError";
+  }
+}
+
+// Advisory-Lock-Namespace, der Anfragen auf dasselbe Leit-Stück serialisiert
+// ("LR" = Loan Request) — verhindert Überbuchung durch zwei gleichzeitige
+// Anfragen, die beide noch die alte Verfügbarkeit gesehen haben.
+const LOAN_REQUEST_LOCK_NS = 0x4c52;
+
+/**
  * Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token) —
- * reserviert 1..n konkrete Stücke.
+ * reserviert 1..n konkrete Einheiten und legt den PFLICHT-Studierendenausweis
+ * als internen Anhang am Leit-Stück ab.
+ *
+ * Alles-oder-nichts: Die Ausweis-Datei wird vor der Transaktion geschrieben
+ * (das Dateisystem ist nicht transaktional), die Anhang-Zeile entsteht INNERHALB
+ * derselben Transaktion wie Vorgang, Einheiten und Tracking-Karte. Scheitert
+ * irgendetwas davon, rollt die Transaktion zurück und die Datei wird wieder
+ * gelöscht — es bleibt weder ein Vorgang ohne Ausweis noch eine verwaiste Datei.
  */
 export async function createLoanRequest(
   units: LoanUnit[],
   data: LoanInput,
+  studentCard: { filename: string; relPath: string; mime: string; size: number },
 ): Promise<{ id: number; token: string }> {
   const totalQty = units.reduce((s, u) => s + u.quantity, 0);
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const token = generateToken();
-    try {
-      return await db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(inventoryLoans)
-          .values({
-            itemId: units[0].itemId,
-            status: "requested",
-            token,
-            createdBy: null,
-            requestedQuantity: totalQty,
-            ...data,
-          })
-          .returning({ id: inventoryLoans.id });
-        await tx.insert(inventoryLoanItems).values(
-          units.map((u) => ({
+  const leadItemId = units[0].itemId;
+
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const token = generateToken();
+      try {
+        return await db.transaction(async (tx) => {
+          // Gegen Überbuchung serialisieren; Lock endet mit der Transaktion.
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${leadItemId})`,
+          );
+          // Verfügbarkeit INNERHALB der Sperre erneut prüfen — die Werte aus der
+          // Server-Action können zwischenzeitlich veraltet sein.
+          const free = await getFreeQuantities(
+            units.map((u) => u.itemId),
+            { tx },
+          );
+          for (const u of units) {
+            if (u.quantity > (free.get(u.itemId) ?? 0)) {
+              throw new LoanCapacityError();
+            }
+          }
+
+          const [row] = await tx
+            .insert(inventoryLoans)
+            .values({
+              itemId: leadItemId,
+              status: "requested",
+              token,
+              createdBy: null,
+              requestedQuantity: totalQty,
+              ...data,
+            })
+            .returning({ id: inventoryLoans.id });
+          await tx.insert(inventoryLoanItems).values(
+            units.map((u) => ({
+              loanId: row.id,
+              itemId: u.itemId,
+              quantity: u.quantity,
+            })),
+          );
+          // Ausweis am Leit-Stück, fest an diesen Vorgang gebunden. `uploadedBy`
+          // bleibt NULL (öffentlicher Upload, kein interner Nutzer).
+          await tx.insert(inventoryAttachments).values({
+            itemId: leadItemId,
             loanId: row.id,
-            itemId: u.itemId,
-            quantity: u.quantity,
-          })),
-        );
-        await maybeCreateTrackingCard(tx, units, row.id, {
-          borrower: data.borrower,
-          purpose: data.purpose,
+            kind: "student_card",
+            filename: studentCard.filename,
+            path: studentCard.relPath,
+            mime: studentCard.mime,
+            size: studentCard.size,
+            uploadedBy: null,
+          });
+          await maybeCreateTrackingCard(tx, units, row.id, {
+            borrower: data.borrower,
+            purpose: data.purpose,
+          });
+          return { id: row.id, token };
         });
-        return { id: row.id, token };
-      });
-    } catch (e) {
-      if (isTokenConflict(e)) continue;
-      throw e;
+      } catch (e) {
+        if (isTokenConflict(e)) continue;
+        throw e;
+      }
     }
+    throw new Error("Konnte keinen eindeutigen Token erzeugen.");
+  } catch (e) {
+    // Nichts ist committet → die bereits geschriebene Ausweis-Datei entfernen.
+    await deleteStoredFile(studentCard.relPath);
+    throw e;
   }
-  throw new Error("Konnte keinen eindeutigen Token erzeugen.");
 }
 
 // Zustände einer noch nicht angenommenen/abgeschlossenen Anfrage.
@@ -867,12 +1006,23 @@ export type ActiveLoan = {
  *
  * Fallback ohne Aufgabentracking (kein Ziel-Board/keine Karte oder keine
  * Trigger-Spalte gesetzt): der klassische Status 'active' (nicht zurückgegeben).
+ *
+ * Angefragte/in Vertragsverhandlung befindliche Vorgänge (`requested`,
+ * `contract_provided`, `contract_signed`) belegen bewusst NICHTS — erst die
+ * Ausleihe selbst reserviert Bestand.
+ *
+ * `opts.excludeLoanId` blendet einen Vorgang aus (→ „von ANDEREN belegt"), damit
+ * die freie Restmenge für genau diesen Vorgang berechnet werden kann, ohne dass
+ * er sich selbst blockiert. `opts.tx` erlaubt den Aufruf innerhalb einer
+ * Transaktion (identische Abfrage, damit die Belegt-Definition nicht divergiert).
  */
 export async function getActiveLoanMap(
   itemIds: number[],
+  opts: { excludeLoanId?: number; tx?: Tx } = {},
 ): Promise<Map<number, ActiveLoan>> {
   if (!itemIds.length) return new Map();
-  const rows = await db
+  const exec = opts.tx ?? db;
+  const rows = await exec
     .select({
       itemId: inventoryLoanItems.itemId,
       quantity: inventoryLoanItems.quantity,
@@ -889,6 +1039,10 @@ export async function getActiveLoanMap(
     .where(
       and(
         inArray(inventoryLoanItems.itemId, itemIds),
+        // Eigenen Vorgang ausblenden (freie Restmenge FÜR diesen Vorgang).
+        opts.excludeLoanId != null
+          ? ne(inventoryLoans.id, opts.excludeLoanId)
+          : undefined,
         or(
           // Kartengeführt: Karte liegt in der „ausgeliehen"-Spalte (und der
           // Vorgang ist nicht bereits zurückgegeben).
@@ -927,6 +1081,66 @@ export async function getActiveLoanMap(
         lentQuantity: r.quantity,
       });
     }
+  }
+  return map;
+}
+
+/**
+ * Freie (noch verleihbare) Menge je Gegenstand: `quantity` − aktuell verliehen.
+ * Nicht entleihbare sowie defekte/verlorene Stücke liefern 0 — sie zählen nie
+ * als verfügbar.
+ *
+ * Mit `excludeLoanId` wird die noch ZUSÄTZLICH buchbare Menge FÜR diesen
+ * Vorgang berechnet: sein eigener Anteil zählt nicht als fremd-belegt, dafür
+ * wird die ihm bereits zugeordnete Menge abgezogen. Dadurch stimmt das Ergebnis
+ * einheitlich, egal ob der Vorgang schon läuft (dann steckt seine Menge in
+ * `getActiveLoanMap`) oder noch angefragt ist (dann nicht).
+ */
+export async function getFreeQuantities(
+  itemIds: number[],
+  opts: { excludeLoanId?: number; tx?: Tx } = {},
+): Promise<Map<number, number>> {
+  if (!itemIds.length) return new Map();
+  const exec = opts.tx ?? db;
+
+  const items = await exec
+    .select({
+      id: inventoryItems.id,
+      quantity: inventoryItems.quantity,
+      lendable: inventoryItems.lendable,
+      condition: inventoryItems.condition,
+    })
+    .from(inventoryItems)
+    .where(inArray(inventoryItems.id, itemIds));
+
+  const lentByOthers = await getActiveLoanMap(itemIds, opts);
+
+  const attached = new Map<number, number>();
+  if (opts.excludeLoanId != null) {
+    const rows = await exec
+      .select({
+        itemId: inventoryLoanItems.itemId,
+        quantity: inventoryLoanItems.quantity,
+      })
+      .from(inventoryLoanItems)
+      .where(
+        and(
+          eq(inventoryLoanItems.loanId, opts.excludeLoanId),
+          inArray(inventoryLoanItems.itemId, itemIds),
+        ),
+      );
+    for (const r of rows) attached.set(r.itemId, r.quantity);
+  }
+
+  const map = new Map<number, number>();
+  for (const it of items) {
+    if (!it.lendable || it.condition !== "active") {
+      map.set(it.id, 0);
+      continue;
+    }
+    const lent = lentByOthers.get(it.id)?.lentQuantity ?? 0;
+    const own = attached.get(it.id) ?? 0;
+    map.set(it.id, Math.max(0, it.quantity - lent - own));
   }
   return map;
 }

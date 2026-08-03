@@ -20,7 +20,7 @@ export function InventoryExport({ boardId }: { boardId: number }) {
           { value: "number", label: "Sortierung: Inventarnummer" },
           { value: "category", label: "Sortierung: Kategorie" },
           { value: "location", label: "Sortierung: Standort" },
-          { value: "price", label: "Sortierung: Preis (absteigend)" },
+          { value: "price", label: "Sortierung: Einzelpreis (absteigend)" },
           { value: "purchase_date", label: "Sortierung: Kaufdatum" },
           { value: "condition", label: "Sortierung: Zustand" },
         ]}

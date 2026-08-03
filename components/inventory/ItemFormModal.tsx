@@ -282,7 +282,7 @@ export function ItemFormModal({
             {show("price") && (
               <div>
                 <label htmlFor="it-price" className="label">
-                  Kaufpreis (€)
+                  Einzelpreis (€)
                 </label>
                 <input
                   id="it-price"
@@ -428,8 +428,9 @@ export function ItemFormModal({
   );
 }
 
-/** Suchbare Einfachauswahl für „Artikel/Gruppe" (wie Standort), Werte sind
- *  Strings; neue Gruppen werden lokal ergänzt (erst beim Speichern persistiert). */
+/** Suchbare Einfachauswahl für „Obergruppe" (wie Standort), Werte sind
+ *  Strings; neue Obergruppen werden lokal ergänzt (erst beim Speichern
+ *  persistiert). Das zugrunde liegende Feld heißt weiterhin `groupName`. */
 function GroupSelect({
   options,
   value,
@@ -443,7 +444,7 @@ function GroupSelect({
 }) {
   return (
     <div>
-      <label className="label">Artikel/Gruppe</label>
+      <label className="label">Obergruppe</label>
       <Select
         placeholder="— keine —"
         searchable
@@ -455,15 +456,16 @@ function GroupSelect({
         ]}
       />
       <AddOption
-        placeholder="Neue Gruppe …"
+        placeholder="Neue Obergruppe …"
         onAdd={async (name) => {
           onAdd(name);
           return null;
         }}
       />
       <p className="mt-1 text-xs text-slate-500">
-        Gleiche Gruppe = ein Sammel-Posten. Öffentlich erscheint nur die
-        Stückzahl; jedes Stück behält seine eigene Inventarnummer.
+        Gleiche Obergruppe = ein Sammel-Posten. Die Stückzahl der Obergruppe ist
+        die Summe der Einzel-Stückzahlen; jedes Stück behält seine eigene
+        Inventarnummer.
       </p>
     </div>
   );

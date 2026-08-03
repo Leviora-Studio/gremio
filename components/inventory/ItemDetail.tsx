@@ -175,7 +175,7 @@ export function ItemDetail({
         ),
     });
   if (show("price"))
-    stamm.push({ label: "Kaufpreis", value: fmtCents(item.price) });
+    stamm.push({ label: "Einzelpreis", value: fmtCents(item.price) });
   if (show("purchase_date"))
     stamm.push({ label: "Kaufdatum", value: fmtDate(item.purchaseDate) || "—" });
   if (show("vendor"))

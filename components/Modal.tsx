@@ -11,12 +11,19 @@ export function Modal({
   title,
   children,
   headerActions,
+  showCloseButton = true,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   headerActions?: React.ReactNode;
+  /**
+   * X-Button in der Kopfzeile. Default `true` — nur Modals, die bewusst eigene
+   * Abschluss-Buttons anbieten (z. B. „Neue Karte" mit Verwerfen/Fertig),
+   * schalten ihn ab. Escape und Backdrop rufen weiterhin `onClose` auf.
+   */
+  showCloseButton?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -46,14 +53,16 @@ export function Modal({
           <h2 className="text-lg font-semibold">{title}</h2>
           <div className="flex items-center gap-2">
             {headerActions}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Schließen"
-              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            >
-              ✕
-            </button>
+            {showCloseButton && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Schließen"
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
         <div className="max-h-[75vh] overflow-y-auto p-5">{children}</div>

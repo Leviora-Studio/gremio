@@ -979,6 +979,13 @@ export const inventoryDefects = pgTable("inventory_defects", {
 // Dateien je Gegenstand (append-only Historie): Kaufbelege, Leihanträge,
 // Leihverträge. Nie automatisch gelöscht → Nachvollziehbarkeit. loanId
 // verknüpft Leihantrag/-vertrag optional mit dem konkreten Entleihvorgang.
+//
+// AUSNAHME `student_card`: Der bei einer öffentlichen Anfrage hochgeladene
+// Studierendenausweis ist ein Ausweisdokument und damit deutlich sensibler als
+// die übrigen Arten. Er ist bewusst ein EIGENER kind — nicht `loan_request` —,
+// weil `loan_request` über den öffentlichen Status-Token abrufbar ist. Der
+// Ausweis wird ausschließlich intern (nach Board-Zugriffsprüfung) ausgeliefert
+// und beim Löschen des Vorgangs mitgelöscht (siehe lib/inventory-loans.ts).
 export const inventoryAttachments = pgTable(
   "inventory_attachments",
   {
@@ -986,10 +993,14 @@ export const inventoryAttachments = pgTable(
     itemId: integer("item_id")
       .notNull()
       .references(() => inventoryItems.id, { onDelete: "cascade" }),
+    // Beim Löschen eines Vorgangs würde `set null` den Ausweis als verwaiste,
+    // unzugeordnete Datei zurücklassen — deleteLoan löscht student_card-Anhänge
+    // deshalb vorher explizit inkl. Datei.
     loanId: integer("loan_id").references(() => inventoryLoans.id, {
       onDelete: "set null",
     }),
-    kind: text("kind").notNull(), // receipt | loan_request | loan_contract | other
+    // receipt | loan_request | loan_contract | student_card | other
+    kind: text("kind").notNull(),
     filename: text("filename").notNull(),
     path: text("path").notNull(),
     mime: text("mime").notNull(),
@@ -1002,7 +1013,7 @@ export const inventoryAttachments = pgTable(
   (t) => ({
     kindCheck: check(
       "inventory_attachments_kind",
-      sql`${t.kind} in ('receipt','loan_request','loan_contract','other')`,
+      sql`${t.kind} in ('receipt','loan_request','loan_contract','student_card','other')`,
     ),
   }),
 );

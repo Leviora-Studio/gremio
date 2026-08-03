@@ -12,8 +12,11 @@ import { inventoryBoardFields } from "@/lib/db/schema";
  * Historie, „aktuell bei" und Belege folgen in einer späteren Phase (eigene
  * Feld-Schlüssel werden dann ergänzt).
  */
+// Hinweis: Die Feld-Keys sind bewusst UNVERÄNDERT (`group`, `price`) — nur die
+// angezeigten Bezeichnungen heißen „Obergruppe" bzw. „Einzelpreis". Ein
+// Umbenennen der Keys würde gespeicherte Feldkonfigurationen entwerten.
 export const INVENTORY_FIELD_KEYS = [
-  "group", // Artikel/Gruppe (Stückzahl-Zusammenfassung gleicher Stücke)
+  "group", // Obergruppe (Stückzahl-Zusammenfassung gleicher Stücke)
   "number", // Inventarnummer
   "serial_number", // Seriennummer (nur intern)
   "category", // Kategorie (Multiselect)
@@ -22,7 +25,7 @@ export const INVENTORY_FIELD_KEYS = [
   "lendable", // „Entleihbar" (ja/nein) — editierbar
   "current_holder", // „Aktuell bei" (abgeleitet vom laufenden Vorgang)
   "availability", // „Verfügbarkeit" (verfügbar/entliehen/nicht entleihbar)
-  "price", // Kaufpreis
+  "price", // Einzelpreis (Spalte bleibt `price`)
   "purchase_date", // Kaufdatum
   "vendor", // Händler
   "notes", // Notizen
@@ -31,7 +34,7 @@ export const INVENTORY_FIELD_KEYS = [
 export type InventoryFieldKey = (typeof INVENTORY_FIELD_KEYS)[number];
 
 export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
-  group: "Artikel/Gruppe",
+  group: "Obergruppe",
   number: "Inventarnummer",
   serial_number: "Seriennummer",
   category: "Kategorie",
@@ -40,7 +43,7 @@ export const INVENTORY_FIELD_LABELS: Record<InventoryFieldKey, string> = {
   lendable: "Entleihbar",
   current_holder: "Aktuell bei",
   availability: "Verfügbarkeit",
-  price: "Kaufpreis (€)",
+  price: "Einzelpreis (€)",
   purchase_date: "Kaufdatum",
   vendor: "Händler",
   notes: "Notizen",

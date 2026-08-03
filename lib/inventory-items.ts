@@ -18,8 +18,10 @@ import {
 import { buildInventoryNumber } from "@/lib/numbering";
 import {
   getActiveLoanMap,
+  getFreeQuantities,
   getOpenDefectCountMap,
   updateTrackingCardTitle,
+  type LoanUnit,
 } from "@/lib/inventory-loans";
 
 // Drizzle-Transaktionshandle (für „in bestehender Transaktion mitlaufen").
@@ -173,6 +175,21 @@ function availabilityOf(
 }
 
 /**
+ * Frei verfügbare Menge eines Stücks — identisch zu `getFreeQuantities`, nur
+ * aus bereits geladenen Daten. Nicht entleihbare sowie defekte/verlorene Stücke
+ * sind IMMER 0, damit Summen über Obergruppen sie nicht als verfügbar zählen.
+ */
+function freeQuantityOf(
+  lendable: boolean,
+  condition: string,
+  quantity: number,
+  lentQuantity: number,
+): number {
+  if (!lendable || condition !== "active") return 0;
+  return Math.max(0, quantity - lentQuantity);
+}
+
+/**
  * Alle Gegenstände eines Boards inkl. aufgelöster Options-Namen. `conditions`
  * filtert auf den Zustand (z. B. ['active'] fürs Board, ['defect','lost'] fürs
  * Archiv); ohne Angabe werden alle Zustände geliefert.
@@ -235,7 +252,12 @@ export async function listInventoryItems(
       activeBorrower: loan?.borrower ?? null,
       activeUntil: loan?.endDate ?? null,
       lentQuantity,
-      availableQuantity: Math.max(0, it.quantity - lentQuantity),
+      availableQuantity: freeQuantityOf(
+        it.lendable,
+        it.condition,
+        it.quantity,
+        lentQuantity,
+      ),
       openDefects: defectCounts.get(it.id) ?? 0,
       availability: availabilityOf(it.lendable, it.quantity, lentQuantity),
     };
@@ -289,7 +311,12 @@ export async function getInventoryItemView(
     activeBorrower: loan?.borrower ?? null,
     activeUntil: loan?.endDate ?? null,
     lentQuantity,
-    availableQuantity: Math.max(0, item.quantity - lentQuantity),
+    availableQuantity: freeQuantityOf(
+      item.lendable,
+      item.condition,
+      item.quantity,
+      lentQuantity,
+    ),
     openDefects: defectMap.get(id) ?? 0,
     availability: availabilityOf(item.lendable, item.quantity, lentQuantity),
   };
@@ -436,7 +463,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
   }
 }
 
-/** Bestehende, nicht-leere Artikel/Gruppen-Namen eines Boards (alphabetisch). */
+/** Bestehende, nicht-leere Obergruppen-Namen eines Boards (alphabetisch). */
 export async function listInventoryGroupNames(
   boardId: number,
 ): Promise<string[]> {
@@ -451,15 +478,21 @@ export async function listInventoryGroupNames(
 }
 
 /**
- * Verfügbare Stücke einer Artikel/Gruppe (aktiv, entleihbar, aktuell nicht
- * laufend verliehen) — für die öffentliche Stückzahl-Ausleihe. Liefert bis zu
- * `limit` konkrete IDs, aufsteigend nach Inventarnummer.
+ * Verfügbare EINHEITEN einer Obergruppe — für die öffentliche Stückzahl-
+ * Ausleihe. Maßgeblich ist die Stückzahl, nicht die Anzahl der Datensätze: ein
+ * Gruppenmitglied mit `quantity > 1` steuert entsprechend mehrere Einheiten bei,
+ * bereits verliehene Mengen werden abgezogen. Nicht entleihbare sowie defekte/
+ * verlorene Stücke zählen nie mit.
+ *
+ * `units` verteilt bis zu `limit` Einheiten der Reihe nach (aufsteigend nach
+ * Inventarnummer) auf die Mitglieder; `available` ist die insgesamt freie Menge
+ * der Obergruppe (für Anzeige und Fehlermeldungen).
  */
-export async function getAvailableGroupItemIds(
+export async function getAvailableGroupUnits(
   boardId: number,
   groupName: string,
   limit: number,
-): Promise<number[]> {
+): Promise<{ units: LoanUnit[]; available: number }> {
   const rows = await db
     .select({ id: inventoryItems.id })
     .from(inventoryItems)
@@ -472,28 +505,31 @@ export async function getAvailableGroupItemIds(
       ),
     )
     .orderBy(asc(inventoryItems.number), asc(inventoryItems.id));
-  if (!rows.length) return [];
-  const active = await getActiveLoanMap(rows.map((r) => r.id));
-  const free = rows.filter((r) => !active.has(r.id)).map((r) => r.id);
-  return free.slice(0, Math.max(0, limit));
+  if (!rows.length) return { units: [], available: 0 };
+
+  const free = await getFreeQuantities(rows.map((r) => r.id));
+  const units: LoanUnit[] = [];
+  let available = 0;
+  let remaining = Math.max(0, Math.floor(limit));
+  for (const r of rows) {
+    const f = free.get(r.id) ?? 0;
+    available += f;
+    if (remaining > 0 && f > 0) {
+      const take = Math.min(f, remaining);
+      units.push({ itemId: r.id, quantity: take });
+      remaining -= take;
+    }
+  }
+  return { units, available };
 }
 
 /**
  * Verfügbare Menge eines EINZELNEN Mengen-Gegenstands (quantity − aktuell
  * verliehen). 0, wenn nicht entleihbar oder nicht im Zustand „aktiv".
+ * Nutzt dieselbe Berechnung wie Obergruppen (`getFreeQuantities`), damit
+ * Einzel-, Mengen- und Gruppen-Fall nicht auseinanderlaufen können.
  */
 export async function getAvailableItemQuantity(itemId: number): Promise<number> {
-  const [item] = await db
-    .select({
-      quantity: inventoryItems.quantity,
-      lendable: inventoryItems.lendable,
-      condition: inventoryItems.condition,
-    })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.id, itemId))
-    .limit(1);
-  if (!item || !item.lendable || item.condition !== "active") return 0;
-  const active = await getActiveLoanMap([itemId]);
-  const lent = active.get(itemId)?.lentQuantity ?? 0;
-  return Math.max(0, item.quantity - lent);
+  const free = await getFreeQuantities([itemId]);
+  return free.get(itemId) ?? 0;
 }

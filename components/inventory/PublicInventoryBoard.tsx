@@ -9,6 +9,7 @@ import type {
   PublicOpt,
 } from "@/lib/inventory-public";
 import { AvailabilityBadge } from "./AvailabilityBadge";
+import { STUDENT_CARD_ACCEPT } from "@/lib/inventory-attachment-kinds";
 import {
   createInventoryLoanRequestAction,
   type RequestState,
@@ -85,8 +86,8 @@ export function PublicInventoryBoard({
     });
   }, [items, query, selectedCats]);
 
-  // Gleiche Artikel/Gruppe zu einem Sammel-Posten bündeln (Stückzahl); Stücke
-  // ohne Gruppe bleiben einzeln.
+  // Gleiche Obergruppe zu einem Sammel-Posten bündeln (Stückzahl); Stücke
+  // ohne Obergruppe bleiben einzeln.
   const rows = useMemo<Row[]>(() => {
     const map = new Map<string, PublicInventoryItem[]>();
     const singles: PublicInventoryItem[] = [];
@@ -100,33 +101,32 @@ export function PublicInventoryBoard({
       arr.push(it);
       map.set(g, arr);
     }
+    // Stückzahl der Obergruppe = Summe der Einzel-Stückzahlen, NICHT die Anzahl
+    // der Datensätze: ein Mitglied mit quantity > 1 zählt entsprechend mehrfach
+    // (z. B. 3 + 4 = 7). Verfügbar analog die Summe der freien Mengen.
     const groupRows: Row[] = [...map.entries()].map(([name, its]) => ({
       key: `g:${name}`,
       name,
       categoryNames: its[0].categoryNames,
       kind: "group",
       groupName: name,
-      total: its.length,
-      available: its.filter((i) => i.availability === "available").length,
+      total: its.reduce((s, i) => s + i.quantity, 0),
+      available: its.reduce((s, i) => s + i.availableQuantity, 0),
       item: its[0],
     }));
-    const singleRows: Row[] = singles.map((it) => {
-      const bulk = it.quantity > 1;
-      return {
-        key: `i:${it.id}`,
-        name: it.name,
-        categoryNames: it.categoryNames,
-        kind: bulk ? "bulk" : "single",
-        groupName: null,
-        total: bulk ? it.quantity : 1,
-        available: bulk
-          ? it.availableQuantity
-          : it.availability === "available"
-            ? 1
-            : 0,
-        item: it,
-      };
-    });
+    // Einzel- und Mengen-Gegenstände nutzen dieselbe Mengenquelle wie Gruppen,
+    // damit die drei Fälle nicht auseinanderlaufen (bei quantity = 1 ist
+    // availableQuantity genau 0 oder 1).
+    const singleRows: Row[] = singles.map((it) => ({
+      key: `i:${it.id}`,
+      name: it.name,
+      categoryNames: it.categoryNames,
+      kind: it.quantity > 1 ? "bulk" : "single",
+      groupName: null,
+      total: it.quantity,
+      available: it.availableQuantity,
+      item: it,
+    }));
     return [...groupRows, ...singleRows].sort((a, b) =>
       a.name.localeCompare(b.name),
     );
@@ -469,6 +469,23 @@ function RequestModal({
               className="input"
               defaultValue={state.values?.purpose ?? ""}
             />
+          </div>
+          <div>
+            <label htmlFor="rq-student-card" className="label">
+              Studierendenausweis (PDF, PNG, JPG) *
+            </label>
+            <input
+              id="rq-student-card"
+              name="studentCard"
+              type="file"
+              required
+              accept={STUDENT_CARD_ACCEPT}
+              className="input py-1.5"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Pflicht. Wird nur intern zur Prüfung verwendet und ist über diesen
+              Status-Link nicht abrufbar. Nach einem Fehler bitte erneut wählen.
+            </p>
           </div>
 
           {state.error && <p className="text-sm text-red-600">{state.error}</p>}

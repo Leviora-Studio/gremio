@@ -384,10 +384,10 @@ export default async function AntragDetailPage({
         <DeleteConfirm
           action={deleteCardAction.bind(null, card.id)}
           requireWord={false}
-          buttonLabel="Antrag löschen"
+          buttonLabel="Karte löschen"
           buttonClassName="btn-danger"
-          title="Antrag löschen"
-          message="Der Antrag wird inklusive aller Anhänge unwiderruflich gelöscht."
+          title="Karte löschen"
+          message="Die Karte wird inklusive aller Anhänge unwiderruflich gelöscht."
         />
       </section>
     </div>

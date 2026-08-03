@@ -12,27 +12,38 @@ import {
   removeLoanItemAction,
 } from "@/app/intern/inventar/item/[itemId]/actions";
 
-type Unit = { id: number; number: string | null; name: string };
+type Unit = {
+  id: number;
+  number: string | null;
+  name: string;
+  quantity: number;
+};
+type Addable = { id: number; number: string | null; name: string; free: number };
 
 /**
- * Stückzahl eines (Gruppen-)Vorgangs: zeigt angefragte vs. bestätigte Menge und
- * erlaubt, konkrete Stücke zuzuordnen/zu entfernen (andere Menge genehmigen).
+ * Stückzahl eines Obergruppen-Vorgangs: zeigt angefragte vs. bestätigte MENGE
+ * (Summe der zugeordneten Mengen, nicht die Zeilenzahl) und erlaubt, einzelne
+ * Einheiten zuzuordnen/zu entfernen. Bei Mengen-Stücken erhöht bzw. reduziert
+ * das die Menge der Zeile; die letzte Einheit des Vorgangs bleibt bestehen.
  */
 export function LoanQuantityEditor({
   loanId,
   requested,
+  confirmed,
   confirmedLabel,
   items,
   addable,
 }: {
   loanId: number;
   requested: number;
+  confirmed: number;
   confirmedLabel: string;
   items: Unit[];
-  addable: Unit[];
+  addable: Addable[];
 }) {
   const [toAdd, setToAdd] = useState("");
-  const unitText = (u: Unit) => `${u.name}${u.number ? ` · ${u.number}` : ""}`;
+  const baseText = (u: { name: string; number: string | null }) =>
+    `${u.name}${u.number ? ` · ${u.number}` : ""}`;
 
   return (
     <div className="card space-y-4 p-5">
@@ -47,9 +58,7 @@ export function LoanQuantityEditor({
           <dt className="text-xs uppercase tracking-wide text-slate-400">
             {confirmedLabel}
           </dt>
-          <dd className="text-lg font-semibold text-emerald-700">
-            {items.length}
-          </dd>
+          <dd className="text-lg font-semibold text-emerald-700">{confirmed}</dd>
         </div>
       </div>
 
@@ -67,16 +76,21 @@ export function LoanQuantityEditor({
                 href={`/intern/inventar/item/${it.id}`}
                 className="font-medium text-slate-800 hover:text-brand-600"
               >
-                {unitText(it)}
+                {baseText(it)}
+                {it.quantity > 1 && (
+                  <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                    ×{it.quantity}
+                  </span>
+                )}
               </Link>
               <form action={removeLoanItemAction}>
                 <input type="hidden" name="loanId" value={loanId} />
                 <input type="hidden" name="itemId" value={it.id} />
                 <SubmitButton
-                  disabled={items.length <= 1}
+                  disabled={confirmed <= 1}
                   className="text-xs font-medium text-red-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-300"
                 >
-                  Entfernen
+                  {it.quantity > 1 ? "Eine weniger" : "Entfernen"}
                 </SubmitButton>
               </form>
             </li>
@@ -91,7 +105,7 @@ export function LoanQuantityEditor({
         >
           <input type="hidden" name="loanId" value={loanId} />
           <div className="min-w-[14rem] flex-1">
-            <label className="label">Weiteres Stück zuordnen</label>
+            <label className="label">Weitere Einheit zuordnen</label>
             <Select
               name="itemId"
               value={toAdd}
@@ -100,7 +114,13 @@ export function LoanQuantityEditor({
               placeholder="Verfügbares Stück wählen…"
               options={[
                 { value: "", label: "Verfügbares Stück wählen…" },
-                ...addable.map((a) => ({ value: String(a.id), label: unitText(a) })),
+                ...addable.map((a) => ({
+                  value: String(a.id),
+                  label:
+                    a.free > 1
+                      ? `${baseText(a)} (${a.free} frei)`
+                      : baseText(a),
+                })),
               ]}
             />
           </div>
@@ -113,7 +133,7 @@ export function LoanQuantityEditor({
         </form>
       ) : (
         <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">
-          Aktuell sind keine weiteren Stücke dieser Gruppe verfügbar.
+          Aktuell sind keine weiteren Einheiten dieser Obergruppe verfügbar.
         </p>
       )}
     </div>

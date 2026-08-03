@@ -73,7 +73,7 @@ export default async function InventoryOverviewViewPage() {
                 <th className="px-3 py-2 font-medium">Seriennr.</th>
                 <th className="px-3 py-2 font-medium">Kaufdatum</th>
                 <th className="px-3 py-2 font-medium">Händler</th>
-                <th className="px-3 py-2 text-right font-medium">Preis</th>
+                <th className="px-3 py-2 text-right font-medium">Einzelpreis</th>
               </tr>
             </thead>
             <tbody>

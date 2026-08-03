@@ -4,12 +4,18 @@
 import { readFile } from "node:fs/promises";
 import { getLoanByToken } from "@/lib/inventory-loans";
 import { getInventoryAttachmentById } from "@/lib/inventory-attachments";
+import {
+  PUBLIC_LOAN_ATTACHMENT_KINDS,
+  type InventoryAttachmentKind,
+} from "@/lib/inventory-attachment-kinds";
 import { absPath, contentDisposition } from "@/lib/attachments";
 
 export const dynamic = "force-dynamic";
 
 // Öffentlich (per Token): nur Dateien, die an GENAU diesen Entleihvorgang
-// gebunden sind und Leihantrag/Leihvertrag sind — nie interne Belege o. Ä.
+// gebunden sind UND auf der Whitelist stehen (Leihantrag/Leihvertrag) — nie
+// interne Belege und insbesondere NIE der Studierendenausweis (`student_card`).
+// Whitelist statt Blacklist: neue Anhangsarten sind damit per Default privat.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ token: string; id: string }> },
@@ -22,7 +28,7 @@ export async function GET(
   if (
     !att ||
     att.loanId !== loan.id ||
-    (att.kind !== "loan_contract" && att.kind !== "loan_request")
+    !PUBLIC_LOAN_ATTACHMENT_KINDS.includes(att.kind as InventoryAttachmentKind)
   ) {
     return new Response("Not found", { status: 404 });
   }
