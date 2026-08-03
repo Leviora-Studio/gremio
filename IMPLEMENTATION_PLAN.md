@@ -1,5 +1,36 @@
 # Implementierungsplan — Gremio
 
+> ## ⚠️ ARCHIV — historisches Dokument
+>
+> **Dieser Bauplan beschreibt die Erstumsetzung (MVP) und wird nicht mehr
+> gepflegt.** Alle Phasen 0–10 sind abgeschlossen; seither hat sich die App in
+> wesentlichen Punkten weiterentwickelt. Er bleibt nur zur Nachvollziehbarkeit
+> der Entstehung im Repo — **nicht als Referenz für den aktuellen Stand
+> verwenden.**
+>
+> **Aktuelle Referenz:**
+> [CLAUDE.md](CLAUDE.md) (Fachkonzept & Datenmodell) ·
+> [README.md](README.md) (Betrieb, `.env`, Deployment) ·
+> [docs/API.md](docs/API.md) (REST-API) ·
+> `lib/db/schema.ts` (**maßgebliches** Schema)
+>
+> **Was hier überholt ist:**
+>
+> | im Plan | tatsächlich |
+> |---------|-------------|
+> | SQLite via `better-sqlite3`, `DATABASE_PATH` | **PostgreSQL 16** via `pg` + Drizzle, `DATABASE_URL` |
+> | Tabelle `antraege` | Tabelle **`cards`** |
+> | `/intern/antrag/{id}` · `/antrag/{token}` | **`/intern/card/{id}`** · **`/status/{token}`** |
+> | Lokale Passwörter (`argon2`/`bcrypt`), `ADMIN_PASSWORD`, Admin im Seed | Login **ausschließlich SSO/OIDC** (JIT-Provisioning); der Seed legt **keinen** Admin an, der erste Admin entsteht über `ADMIN_USER` |
+> | 20-stelliger Status-Token | **30-stellig** |
+> | Anhang-`kind`s `finanzantrag`/`anlage_a`/`weitere` … | `finance_request`/`annex_a`/`annex_b`/`student_card`/`other` |
+> | 6 fest verdrahtete Default-Spalten | Spalten kommen aus **Board-Templates** (`/vorlagen/boards`); max. **zwei** Archiv-Trigger je Board |
+>
+> **Was hier komplett fehlt** (nach dem MVP entstanden): Finanzübersichten,
+> Board- & Finanz-Vorlagen, **Inventar- & Entleihsystem**, REST-API (`/api/v1`),
+> In-App-PDF-Viewer/-Editor mit PAdES-Signatur, Live-Updates via SSE,
+> Done-Archiv, Aufgabenübersicht und Board-Statistik.
+
 > Bauplan für die Umsetzung. Fachkonzept & Datenmodell siehe [CLAUDE.md](CLAUDE.md).
 > Stack: **Next.js (App Router) + React + TypeScript**, SQLite via `better-sqlite3` + **Drizzle ORM**, Tailwind, `dnd-kit`, `zod`, Auth (Session), Node-`crypto` (AES-256-GCM), `sharp`, `webdav`, Docker hinter nginx.
 
