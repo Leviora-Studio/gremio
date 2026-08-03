@@ -12,6 +12,9 @@ import { getInventoryItemById } from "@/lib/inventory-items";
 import { listLoanAttachments } from "@/lib/inventory-attachments";
 import { PublicContractSection } from "@/components/inventory/PublicContractSection";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { ScrollToTop } from "@/components/ScrollToTop";
+import { StatusLinkBox } from "@/components/StatusLinkBox";
+import { env } from "@/lib/env";
 import { withdrawRequestAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -123,13 +126,21 @@ export default async function InventoryRequestStatusPage({
   const atEnd = progress != null && currentIndex === progress.columns.length - 1;
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10">
+    // Etwas breiter (wie die Antrags-Statusseite): der Status-Link oben soll
+    // nicht auf drei Zeilen umbrechen.
+    <main className="mx-auto max-w-2xl px-4 py-10">
       <LiveRefresh src={`/api/inventar/status/${token}/stream`} />
-      <h1 className="text-2xl font-bold">Status deiner Anfrage</h1>
-      <p className="mt-1 text-sm font-medium text-red-700">
-        Bewahre den Link zu dieser Seite auf, um den Status später erneut
-        aufzurufen.
-      </p>
+      <ScrollToTop />
+
+      {/* Gleiches Verfahren wie beim Antrag: Der Status-Link steht ganz oben,
+          ist größer gesetzt als der Hinweis und direkt kopierbar. Eine
+          Eingangsbestätigung als PDF gibt es für Ausleihen nicht. */}
+      <StatusLinkBox
+        link={`${env.APP_BASE_URL}/inventar/status/${token}`}
+        subject="deine Anfrage"
+      />
+
+      <h1 className="mt-8 text-2xl font-bold">Status deiner Anfrage</h1>
 
       <div className="card mt-6 space-y-4 p-6">
         <div>

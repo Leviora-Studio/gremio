@@ -12,6 +12,8 @@ import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
 import { PublicUploadForm } from "@/components/PublicUploadForm";
 import { PublicSubmitForm } from "@/components/PublicSubmitForm";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { ScrollToTop } from "@/components/ScrollToTop";
+import { StatusLinkBox } from "@/components/StatusLinkBox";
 
 export const dynamic = "force-dynamic";
 
@@ -100,9 +102,17 @@ export default async function StatusPage({
   const link = `${env.APP_BASE_URL}/status/${token}`;
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10">
+    // Etwas breiter als die übrigen öffentlichen Seiten: Der Status-Link oben
+    // ist lang und soll neben dem PDF-Button nicht auf drei Zeilen umbrechen.
+    <main className="mx-auto max-w-2xl px-4 py-10">
       <LiveRefresh src={`/api/status/${token}/stream`} />
-      <h1 className="text-2xl font-bold">Status deines Antrags</h1>
+      <ScrollToTop />
+
+      {/* Zuerst der Status-Link: ohne ihn findet der Antragsteller seinen
+          Antrag nicht wieder (kein Mailversand). Deshalb ganz oben. */}
+      <StatusLinkBox link={link} pdfHref={`/status/${token}/pdf`} />
+
+      <h1 className="mt-8 text-2xl font-bold">Status deines Antrags</h1>
 
       <div className="card mt-6 space-y-4 p-6">
         {antrag.number && (
@@ -260,14 +270,6 @@ export default async function StatusPage({
         </div>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <a href={`/status/${token}/pdf`} className="btn-primary">
-          Eingangsbestätigung (PDF)
-        </a>
-        <span className="text-sm font-medium text-red-700">
-          Bitte speichere diesen Link: {link}
-        </span>
-      </div>
     </main>
   );
 }

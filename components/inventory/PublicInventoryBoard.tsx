@@ -3,17 +3,13 @@
 
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import type {
   PublicInventoryItem,
   PublicOpt,
 } from "@/lib/inventory-public";
 import { AvailabilityBadge } from "./AvailabilityBadge";
-import { STUDENT_CARD_ACCEPT } from "@/lib/inventory-attachment-kinds";
-import {
-  createInventoryLoanRequestAction,
-  type RequestState,
-} from "@/app/inventar/request-actions";
 
 type Options = {
   category: PublicOpt[];
@@ -32,12 +28,6 @@ type Row = {
   item: PublicInventoryItem; // Repräsentant (für Einzel-/Mengen-Anfrage)
 };
 
-// Ziel eines Anfrage-Dialogs.
-type RequestTarget =
-  | { kind: "single"; item: PublicInventoryItem }
-  | { kind: "group"; groupName: string; name: string; available: number }
-  | { kind: "bulk"; item: PublicInventoryItem; available: number };
-
 export function PublicInventoryBoard({
   boardId,
   publicFields,
@@ -51,9 +41,6 @@ export function PublicInventoryBoard({
 }) {
   const [query, setQuery] = useState("");
   const [selectedCats, setSelectedCats] = useState<number[]>([]);
-  const [requestTarget, setRequestTarget] = useState<RequestTarget | null>(
-    null,
-  );
 
   const showCategory =
     publicFields.includes("category") && options.category.length > 0;
@@ -256,31 +243,22 @@ export function PublicInventoryBoard({
                       )}
                     </td>
                     <td className="px-3 py-2 text-right align-top">
-                      <button
-                        type="button"
-                        disabled={r.available === 0}
-                        onClick={() =>
-                          setRequestTarget(
+                      {r.available === 0 ? (
+                        <span className="btn-secondary cursor-not-allowed px-2.5 py-1 text-xs opacity-40">
+                          Anfragen
+                        </span>
+                      ) : (
+                        <Link
+                          href={
                             r.kind === "group"
-                              ? {
-                                  kind: "group",
-                                  groupName: r.groupName as string,
-                                  name: r.name,
-                                  available: r.available,
-                                }
-                              : r.kind === "bulk"
-                                ? {
-                                    kind: "bulk",
-                                    item: r.item,
-                                    available: r.available,
-                                  }
-                                : { kind: "single", item: r.item },
-                          )
-                        }
-                        className="btn-secondary px-2.5 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Anfragen
-                      </button>
+                              ? `/inventar/${boardId}/anfrage?group=${encodeURIComponent(r.groupName as string)}`
+                              : `/inventar/${boardId}/anfrage?item=${r.item.id}`
+                          }
+                          className="btn-secondary inline-block px-2.5 py-1 text-xs"
+                        >
+                          Anfragen
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -300,13 +278,6 @@ export function PublicInventoryBoard({
         )}
       </div>
 
-      {requestTarget && (
-        <RequestModal
-          boardId={boardId}
-          target={requestTarget}
-          onClose={() => setRequestTarget(null)}
-        />
-      )}
     </div>
   );
 }
@@ -325,181 +296,5 @@ function renderCategories(names: string[]) {
     </span>
   ) : (
     "—"
-  );
-}
-
-function RequestModal({
-  boardId,
-  target,
-  onClose,
-}: {
-  boardId: number;
-  target: RequestTarget;
-  onClose: () => void;
-}) {
-  const [state, action, pending] = useActionState(
-    createInventoryLoanRequestAction,
-    {} as RequestState,
-  );
-  const isGroup = target.kind === "group";
-  const isBulk = target.kind === "bulk";
-  const showQuantity = isGroup || isBulk;
-  const name = isGroup ? target.name : target.item.name;
-  const available = isGroup || isBulk ? target.available : 0;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="card w-full max-w-md space-y-4 p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">
-            {showQuantity ? "Menge anfragen" : "Gegenstand anfragen"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600"
-            aria-label="Schließen"
-          >
-            ✕
-          </button>
-        </div>
-        <p className="text-sm text-slate-600">
-          <strong>{name}</strong>
-          {showQuantity && (
-            <span className="text-slate-500">
-              {" "}
-              — {available} Stück verfügbar
-            </span>
-          )}
-        </p>
-
-        <form action={action} noValidate className="space-y-3">
-          {isGroup ? (
-            <>
-              <input type="hidden" name="boardId" value={boardId} />
-              <input type="hidden" name="groupName" value={target.groupName} />
-            </>
-          ) : (
-            <input type="hidden" name="itemId" value={target.item.id} />
-          )}
-          {showQuantity && (
-            <div>
-              <label htmlFor="rq-qty" className="label">
-                Stückzahl
-              </label>
-              <input
-                id="rq-qty"
-                name="quantity"
-                type="number"
-                min={1}
-                max={available}
-                className="input w-28"
-                defaultValue={state.values?.quantity ?? "1"}
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                {isGroup
-                  ? "Konkrete Stücke werden automatisch reserviert."
-                  : `Beliebige Menge bis ${available} Stück.`}
-              </p>
-            </div>
-          )}
-          <div>
-            <label htmlFor="rq-borrower" className="label">
-              Dein Name
-            </label>
-            <input
-              id="rq-borrower"
-              name="borrower"
-              className="input"
-              defaultValue={state.values?.borrower ?? ""}
-            />
-          </div>
-          <div>
-            <label htmlFor="rq-email" className="label">
-              E-Mail
-            </label>
-            <input
-              id="rq-email"
-              name="email"
-              type="email"
-              className="input"
-              defaultValue={state.values?.email ?? ""}
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="rq-start" className="label">
-                Von (Datum + Uhrzeit)
-              </label>
-              <input
-                id="rq-start"
-                name="startDate"
-                type="datetime-local"
-                className="input"
-                defaultValue={state.values?.startDate ?? ""}
-              />
-            </div>
-            <div>
-              <label htmlFor="rq-end" className="label">
-                Bis (Datum + Uhrzeit)
-              </label>
-              <input
-                id="rq-end"
-                name="endDate"
-                type="datetime-local"
-                className="input"
-                defaultValue={state.values?.endDate ?? ""}
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="rq-purpose" className="label">
-              Verwendungsort / Zweck
-            </label>
-            <input
-              id="rq-purpose"
-              name="purpose"
-              className="input"
-              defaultValue={state.values?.purpose ?? ""}
-            />
-          </div>
-          <div>
-            <label htmlFor="rq-student-card" className="label">
-              Studierendenausweis (PDF, PNG, JPG) *
-            </label>
-            <input
-              id="rq-student-card"
-              name="studentCard"
-              type="file"
-              required
-              accept={STUDENT_CARD_ACCEPT}
-              className="input py-1.5"
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Pflicht. Wird nur intern zur Prüfung verwendet und ist über diesen
-              Status-Link nicht abrufbar. Nach einem Fehler bitte erneut wählen.
-            </p>
-          </div>
-
-          {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Abbrechen
-            </button>
-            <button type="submit" disabled={pending} className="btn-primary">
-              Anfrage senden
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
