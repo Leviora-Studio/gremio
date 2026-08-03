@@ -71,3 +71,51 @@ export async function allowRequest(
 ): Promise<boolean> {
   return rateLimit(await clientKey(scope), limit, windowMs);
 }
+
+export type RateLimitResult = {
+  allowed: boolean;
+  /** Sekunden bis zum Zurücksetzen des Fensters (nur bei allowed=false sinnvoll). */
+  retryAfterSec: number;
+};
+
+/**
+ * Wie `rateLimit`, liefert bei Ablehnung zusätzlich die Wartezeit — die
+ * JSON-API setzt daraus `Retry-After`. Nutzt denselben Bucket-Speicher;
+ * das Verhalten von `rateLimit` bleibt unverändert.
+ */
+export function rateLimitDetailed(
+  key: string,
+  limit: number,
+  windowMs: number,
+): RateLimitResult {
+  const now = Date.now();
+  const b = buckets.get(key);
+  if (b && b.resetAt > now) {
+    if (b.count >= limit) {
+      return {
+        allowed: false,
+        retryAfterSec: Math.max(1, Math.ceil((b.resetAt - now) / 1000)),
+      };
+    }
+    b.count++;
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  if (buckets.size >= MAX_BUCKETS) {
+    pruneExpired(now);
+    if (buckets.size >= MAX_BUCKETS) {
+      // Fail-closed als Backstop (wie rateLimit) — kurze Wartezeit vorschlagen.
+      return { allowed: false, retryAfterSec: 60 };
+    }
+  }
+  buckets.set(key, { count: 1, resetAt: now + windowMs });
+  return { allowed: true, retryAfterSec: 0 };
+}
+
+/** Komfort-Variante von `rateLimitDetailed` für den aktuellen Client. */
+export async function allowRequestDetailed(
+  scope: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitResult> {
+  return rateLimitDetailed(await clientKey(scope), limit, windowMs);
+}

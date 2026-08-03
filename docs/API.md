@@ -4,6 +4,11 @@ Externe Tools können über eine versionierte REST-API auf Boards und Karten
 zugreifen. Die API ist bewusst schmal gehalten: Boards/Karten **lesen** und
 Karten **anlegen, ändern, verschieben und löschen**.
 
+> **Nicht zu verwechseln:** Für native Android-/iOS-Apps gibt es zusätzlich eine
+> **öffentliche, nicht authentifizierte** API zum Einreichen von Anträgen unter
+> `/api/public/v1` — siehe [PUBLIC_API.md](PUBLIC_API.md). Sie hat einen eigenen
+> Namespace, eigene Rate-Limits und verlangt einen `Idempotency-Key`.
+
 ## Authentifizierung
 
 Jede Anfrage benötigt einen **persönlichen API-Token** im Header:

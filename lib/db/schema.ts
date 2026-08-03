@@ -703,6 +703,37 @@ export const userTaskPrefs = pgTable("user_task_prefs", {
 });
 
 // ---------------------------------------------------------------------------
+// Idempotenz öffentlicher API-Schreibzugriffe
+// ---------------------------------------------------------------------------
+// Native Apps (Mobilfunk, Timeouts) müssen Requests gefahrlos wiederholen
+// können. Der Client schickt je Vorgang einen `Idempotency-Key`; hier liegt
+// dessen SHA-256-Hash (nie der Klartext) zusammen mit einem kanonischen
+// Fingerprint des Requests und der erzeugten Karte.
+//
+// Bewusst generisch gehalten (`scope`), damit weitere öffentliche Endpunkte
+// dieselbe Tabelle nutzen können. Der Datensatz entsteht IMMER in derselben
+// Transaktion wie die Karte — es gibt weder einen Eintrag ohne Karte noch eine
+// per API erzeugte Karte ohne Eintrag.
+export const apiIdempotencyKeys = pgTable(
+  "api_idempotency_keys",
+  {
+    id: serial("id").primaryKey(),
+    scope: text("scope").notNull(), // z. B. 'public-application'
+    keyHash: text("key_hash").notNull(), // SHA-256 des Idempotency-Key (hex)
+    requestHash: text("request_hash").notNull(), // kanonischer Request-Fingerprint
+    // Wird die Karte gelöscht, verfällt auch der Schlüssel — sonst bliebe ein
+    // Eintrag zurück, der auf nichts mehr zeigt.
+    cardId: integer("card_id")
+      .notNull()
+      .references(() => cards.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    uq: uniqueIndex("api_idempotency_keys_scope_key_uq").on(t.scope, t.keyHash),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Inventar- & Entleihsystem
 // ---------------------------------------------------------------------------
 // Inventar-Boards: eigenständige Listen (z. B. je StuRa-Standort oder Fach-
@@ -1062,6 +1093,7 @@ export type FinanceTemplateItem = typeof financeTemplateItems.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;
+export type ApiIdempotencyKey = typeof apiIdempotencyKeys.$inferSelect;
 export type InventoryBoard = typeof inventoryBoards.$inferSelect;
 export type InventoryBoardAccess = typeof inventoryBoardAccess.$inferSelect;
 export type InventoryOption = typeof inventoryOptions.$inferSelect;

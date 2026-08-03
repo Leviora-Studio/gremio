@@ -9,7 +9,11 @@ REST-API.
 
 Stack: **Next.js (App Router) + React + TypeScript**, **PostgreSQL** (`pg` +
 Drizzle ORM), Tailwind CSS, `dnd-kit`, iron-session, Custom-OIDC-Client (`jose`),
-`sharp`, `pdf-lib`, `webdav`. REST-API-Doku: [docs/API.md](docs/API.md).
+`sharp`, `pdf-lib`, `webdav`.
+
+API-Doku: [docs/API.md](docs/API.md) (interne Bearer-Token-API) ·
+[docs/PUBLIC_API.md](docs/PUBLIC_API.md) (öffentliche Antrags-API für native
+Apps, interaktiv unter `/api/public/docs`).
 
 ---
 
@@ -42,6 +46,14 @@ Drizzle ORM), Tailwind CSS, `dnd-kit`, iron-session, Custom-OIDC-Client (`jose`)
   Dashboard.
 - **REST-API** (`/api/v1`, persönliche Bearer-Tokens) — kann nie mehr als der
   Nutzer über die Weboberfläche. Siehe [docs/API.md](docs/API.md).
+
+**Öffentliche API für native Apps**
+- **Antragseinreichung ohne Login** (`/api/public/v1`) für direkte Android-/
+  iOS-Clients: Standorte abrufen, Antrag als `multipart/form-data` einreichen.
+  Verpflichtender `Idempotency-Key` macht Retries im Mobilfunk gefahrlos; eigene,
+  großzügige Rate-Limits. Fachlich teilt sie sich die Einreichungslogik mit dem
+  Browserformular. Siehe [docs/PUBLIC_API.md](docs/PUBLIC_API.md), interaktiv
+  unter `/api/public/docs`.
 
 **Rollen:** `admin` (alles, inkl. Admin-Panel), `template_manager` (zusätzlich
 Vorlagen), `user` (eigene Boards + Freigaben). Board-Zugriff ist binär; Verwalten

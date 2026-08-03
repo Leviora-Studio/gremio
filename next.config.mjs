@@ -18,6 +18,16 @@ const nextConfig = {
     "@signpdf/placeholder-pdf-lib",
     "@signpdf/utils",
   ],
+  // Swagger-UI-Assets werden zur Laufzeit aus node_modules gelesen (Route
+  // /api/public/docs/assets/[file]). Ohne diesen Hinweis nimmt der
+  // Standalone-Output sie nicht mit, weil sie nirgends importiert werden.
+  outputFileTracingIncludes: {
+    "/api/public/docs/assets/[file]": [
+      "./node_modules/swagger-ui-dist/swagger-ui.css",
+      "./node_modules/swagger-ui-dist/swagger-ui-bundle.js",
+      "./node_modules/swagger-ui-dist/swagger-ui-standalone-preset.js",
+    ],
+  },
   experimental: {
     serverActions: {
       // Einzige bewusste Grenze ist MAX_UPLOAD_BYTES (25 MB pro Datei). Das
