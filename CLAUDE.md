@@ -4,10 +4,16 @@
 Web-App zur Verwaltung von Anträgen in Gremien (z. B. Studierendenvertretungen, Vereinen, Ausschüssen).
 
 Zwei Bereiche:
-- **Öffentlich** — Studierende reichen Anträge über ein Formular ein, sehen Statusseite
+- **Öffentlich** — Studierende reichen Anträge über ein Formular ein, sehen Statusseite; außerdem öffentliches **Inventar** mit Ausleih-Anfrage (siehe „Inventar- & Entleihsystem")
 - **Intern** — das Gremium verwaltet Anträge auf **mehreren Kanban-Boards** (Login erforderlich)
 
 Die Boards sind **allgemeine Kanban-Boards** und auch **unabhängig vom öffentlichen Formular** nutzbar. Das öffentliche Formular ist nur *eine* Quelle: Eingaben werden je nach gewähltem **Standort** automatisch in ein vom Admin festgelegtes Board + Spalte eingespeist (siehe „Standorte & Formular-Routing").
+
+**Vier Module** teilen sich Nutzer, Gruppen und das Freigabemodell:
+1. **Kanban/Anträge** — Boards, Karten, Anhänge (Kern)
+2. **Finanzen** (`/finanzen`) — Haushaltsplan + Ausgabenauswertung über Quell-Boards
+3. **Inventar & Ausleihe** (`/intern/inventar`) — Gegenstände, Leihvorgänge, Anlagenverzeichnis
+4. **Vorlagen** (`/vorlagen`) — Board- und Finanz-Templates
 
 ---
 
@@ -16,8 +22,9 @@ Die Boards sind **allgemeine Kanban-Boards** und auch **unabhängig vom öffentl
 - **Datenbank:** **PostgreSQL** über `pg` (node-postgres), Schema/Queries mit **Drizzle ORM** (CHECK-Constraints & partielle Indizes). Läuft als eigener Container (docker-compose).
 - **Styling/UI:** Tailwind CSS (o.ä.); Kanban-Drag&Drop mit React-Lib (z.B. `dnd-kit`)
 - **Validierung:** `zod` für Formular-/API-Eingaben
-- **Auth:** Session-Login (Auth.js/NextAuth Credentials **oder** eigene Cookie-Session), Passwort-Hashing mit `argon2` oder `bcrypt`
-- **PDF-Generierung:** `@react-pdf/renderer` oder `pdf-lib` (Eingangsbestätigung)
+- **Auth:** **ausschließlich SSO/OIDC** — eigener OIDC-Client (`jose`, PKCE, `state`/`nonce`, `iss`/`aud`/`exp`-Prüfung) in `lib/oidc.ts`, Session als verschlüsseltes Cookie via `iron-session`. **Kein lokales Passwort** in dieser App (`users.password_hash` ist eine Altlast und wird nirgends gelesen).
+- **PDF-Generierung:** `pdf-lib` (Eingangsbestätigung, PDF-Bearbeitung)
+- **Live-Updates:** Postgres-Trigger auf `cards` → `pg_notify`; eine dedizierte LISTEN-Verbindung verteilt die Events über einen In-Process-EventEmitter an **SSE**-Streams (`lib/realtime.ts`, `lib/sse.ts`) — kein Polling.
 - **Secrets:** Node-`crypto` (AES-256-GCM) zum Verschlüsseln der board-eigenen Nextcloud-Zugangsdaten (Schlüssel aus `.env`)
 - **Bilder:** `sharp` zum Zuschneiden/Verkleinern der Profilbilder
 - **Nextcloud:** `webdav`-Client (npm)
@@ -43,9 +50,11 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 > **Gruppen erstellen/verwalten darf nur der Admin.** User können vorhandene Gruppen nur zu ihren eigenen Boards einladen, aber keine Gruppen anlegen/ändern.
 
 ### Entscheidungen
-- **Login-Kennung:** Benutzername (kein E-Mail-Versand, DSGVO-arm)
-- **Benutzername unveränderlich:** vom Admin bei der Anlage festgelegt, danach von niemandem änderbar
-- **Passwort:** jeder Nutzer ändert sein eigenes Passwort unter `/intern/konto`; Admin kann zusätzlich zurücksetzen
+- **Login ausschließlich über SSO/OIDC.** Konten entstehen per **JIT-Provisioning** beim ersten Login; die App legt selbst keine Konten an und kennt keine Passwörter.
+- **Login-Kennung:** `preferred_username` aus dem SSO (kein E-Mail-Versand an Antragsteller, DSGVO-arm). Verknüpfung zum SSO-Konto über `users.sub` (OIDC-Subject).
+- **Benutzername unveränderlich:** kommt vom SSO, in dieser App von niemandem änderbar
+- **Passwort/Anzeigename/E-Mail:** werden **zentral im SSO** gepflegt, nicht in Gremio. `/intern/konto` zeigt sie nur an und bietet „Profil neu abgleichen" (`resyncProfileAction`). Es gibt **keine** Passwort-Ändern- oder Passwort-Reset-Funktion.
+- **Konten deaktivieren/löschen** passiert ebenfalls im SSO; `/admin/users` vergibt nur **Rollen**.
 - **Profilbild:** optional je Nutzer (Upload/Ersetzen/Entfernen unter `/intern/konto`). Ohne Bild → generierter Avatar aus den **Initialen des Benutzernamens** (z.B. deterministische Farbe). Bild wird quadratisch zugeschnitten/verkleinert gespeichert.
 - **Board-Stati:** pro Board konfigurierbar (siehe Workflow); Archiv-Trigger pro Board wählbar
 - **Board-Zugriff:** binär (nur Zugriff, keine Lesen/Bearbeiten/Verwalten-Stufen)
@@ -58,9 +67,13 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 > Konzeptionelle Spezifikation. Umgesetzt wird das Schema in **Drizzle ORM** (TypeScript, pg-core); die folgende SQL-Notation beschreibt Tabellen, Beziehungen und Constraints. Die Karten-Tabelle heißt `cards`.
 
 ```sql
-users          (id, username UNIQUE, password_hash,
+users          (id, username UNIQUE,                     -- preferred_username aus dem SSO
+                sub UNIQUE NULL, name NULL, email NULL,  -- OIDC-Subject + Profil aus dem SSO
+                password_hash NULL,                      -- ALTLAST: seit der SSO-Umstellung nie gelesen
                 role TEXT CHECK(role IN ('admin','template_manager','user')), is_active,
-                avatar_path NULL, created_at)            -- avatar_path leer → Initialen-Fallback
+                avatar_path NULL, signature_path NULL, created_at)  -- avatar_path leer → Initialen-Fallback
+-- Signatur-Zertifikat (verschlüsselt): cert_p12_enc, cert_pass_enc, cert_subject,
+-- cert_not_after, cert_uploaded_at — siehe „PDF-Viewer, -Editor & digitale Signatur"
 
 groups         (id, name UNIQUE, description, created_at)        -- z.B. "Gremium A"
 
@@ -127,9 +140,14 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 - **Kommentare** und **Aktivitäts-/Statushistorie** je Karte — nur in der internen Detailansicht, nicht auf der öffentlichen Statusseite.
 
 ### Zugriff & Verwaltung (Logik)
-- **Sehen/bearbeiten** (`user_can_access_board`): `role='admin'` **oder** Eigentümer **oder** `board_access` mit eigener `user_id` **oder** mit einer `group_id` aus seinen Gruppen.
-- **Verwalten** (`user_can_manage_board` — umbenennen, Stati, Freigaben, löschen): `role='admin'` **oder** Eigentümer.
-- Decorators: `@login_required`, `@admin_required`, `@board_access_required`, `@board_owner_required`.
+- **Sehen/bearbeiten** (`canAccessBoard`): `role='admin'` **oder** Eigentümer **oder** `board_access` mit eigener `user_id` **oder** mit einer `group_id` aus seinen Gruppen.
+- **Verwalten** (`canManageBoard` — umbenennen, Stati, Freigaben, löschen): `role='admin'` **oder** Eigentümer.
+- **Guards** (Server-Funktionen, werfen `notFound()`/`redirect()` — in *jedem* Handler aufrufen, nie nur im UI ausblenden):
+  - `requireUser` / `requireAdmin` / `requireTemplateManager` (`lib/auth`)
+  - `requireBoardAccess` / `requireBoardManage` (`lib/authz`)
+  - `requireFinanceAccess` / `requireFinanceManage` (`lib/finance`)
+  - `requireInventoryBoardAccess` / `requireInventoryBoardManage` (`lib/inventory`)
+- Alle drei Board-Arten (Kanban, Finanzen, Inventar) benutzen **dasselbe Muster**: `canAccess*` (admin ∨ Eigentümer ∨ Freigabe) und `canManage*` (admin ∨ Eigentümer).
 
 ### Bootstrap & Sicherheit
 - Erst-Admin via SSO: der in `.env` als `ADMIN_USER` gesetzte SSO-Benutzer wird beim **ersten Login** automatisch Admin (JIT-Provisioning; kein Passwort in dieser App, kein Admin-Seed)
@@ -156,7 +174,16 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 
 > Stati sind **pro Board konfigurierbar** (anlegen/umbenennen/sortieren/löschen, Archiv-Trigger setzen — in den **Board-Einstellungen** durch Eigentümer/Admin). Beim Erstellen eines Boards werden die Spalten aus einem **Template** kopiert (von Admin **oder** Template-Verwalter unter `/vorlagen/boards` verwaltet, siehe „Board-Templates"). Das per `db:seed` angelegte Default-Template heißt **„Antragsboard"** und hat **7 Spalten**: *Eingegangen · Geplant für Sitzung · Abgelehnt · Warten auf Nachreichung · Angenommen · Quittungen erhalten · Anweisung erfolgt* (letztere = Archiv-Trigger). Der folgende Ablauf beschreibt den fachlichen Gremien-Prozess dahinter (Spaltennamen müssen damit nicht 1:1 übereinstimmen).
 >
-> **Keine Schritt-Automatismen:** Statuswechsel lösen **keine** automatischen Aktionen aus — es werden insbesondere **keine Anhänge automatisch gelöscht oder hochgeladen**. Alle Schritte unten sind **manuelle** Tätigkeiten des Gremiums. **Einzige automatische Aktion** in der ganzen App: Erreicht ein Antrag die Archiv-Trigger-Spalte eines Boards mit **aktivierter** Nextcloud-Archivierung, werden die Dateien automatisch hochgeladen.
+> **Grundsatz — keine Schritt-Automatismen:** Der fachliche Ablauf unten besteht aus **manuellen** Tätigkeiten des Gremiums. Insbesondere werden **nie Anhänge automatisch gelöscht**, und Statuswechsel ziehen keine inhaltliche Bearbeitung nach sich.
+>
+> Die **vollständige Liste** der Automatismen — alle an eine pro Board konfigurierte Spalte oder Uhrzeit gebunden, alle standardmäßig **aus**:
+> 1. **Nextcloud-Archivierung** — Archiv-Trigger-Spalte erreicht **und** Archivierung am Board aktiv → Dateien werden hochgeladen (bei Fehlschlag automatischer Retry).
+> 2. **Anweisungsdatum** (`instruction_date`) — wird beim Erreichen der Anweisungs-Trigger-Spalte gesetzt.
+> 3. **Überweisungsdatum** (`transfer_date`) — analog, eigener Trigger.
+> 4. **Done-Sweep** — Karten in der „Done"-Spalte werden täglich zur eingestellten Uhrzeit archiviert (nur ausgeblendet, nichts gelöscht).
+> 5. **Quittungs-Gate** — reicht der Antragsteller öffentlich ein, wandert die Karte von der Von- in die Nach-Spalte (nur aus der Quell-Spalte).
+> 6. **Antragsnummer** — wird bei aktiver Board-Nummerierung automatisch vergeben.
+> 7. **Leihvorgang-Sync** (Inventar) — die Spalte der Leihkarte setzt den Vorgangsstatus (siehe „Inventar- & Entleihsystem").
 
 ### 1. Eingegangen
 - Studierender reicht Formular ein (inkl. Pflichtfeld **Standort**)
@@ -228,18 +255,36 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 ```
 /                        → Antragsformular (öffentlich)
 /status/{token}          → Statusseite für Antragsteller (öffentlich, nur per Token): Status ansehen, Dokumente ansehen, PDFs nachreichen
+/status/{token}/pdf      → Eingangsbestätigung als PDF (öffentlich, nur per Token)
+/inventar                → Öffentliche Inventare (nur vom Admin freigegebene) — Einstieg
+/inventar/{id}           → Öffentliche Inventarliste: suchen/filtern + Ausleihe anfragen
+/inventar/status/{token} → Statusseite eines Leihvorgangs (öffentlich, nur per Token)
 /api/status/{token}/attachment/{id} → Öffentlicher Datei-Abruf per Token (nur finance_request/annex_a/annex_b/other; KEIN Studierendenausweis)
 /api/attachment/{id}/fields → Ausfüllbare AcroForm-Felder eines PDF-Anhangs (für den In-App-Editor; Board-Zugriff)
+/api/v1/...              → REST-API mit persönlichen Bearer-Tokens — siehe docs/API.md
 /login                   → Login-Seite (SSO)
 /finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
 /finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich; optionaler Teilmengen-Override für die Ausgaben-Berechnung Live/Tatsächlich), Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
-/intern                  → Startseite: zugängliche Boards + Navigations-Buttons zu den Bereichen
-/intern/konto            → Eigenes Konto: Passwort ändern + Profilbild (Benutzername fest, nicht änderbar)
+/finanzen/{id}/export    → XLSX/CSV-Export der Finanzübersicht
+/intern                  → Startseite: Dashboard + Navigations-Buttons zu den Bereichen
+/intern/boards           → Alle zugänglichen Kanban-Boards (persönlich sortierbar)
+/intern/aufgaben         → „Meine Aufgaben": board-übergreifend die eigenen/zugewiesenen Karten
+/intern/konto            → Eigenes Konto: Profilbild, Signatur-Zertifikat + Unterschriftsbild, API-Tokens, „Profil neu abgleichen". Benutzername/Anzeigename/Passwort kommen aus dem SSO
 /intern/board/neu        → Board erstellen (jeder eingeloggte Nutzer)
 /intern/board/{id}       → Kanban-Board (Board-Zugriff erforderlich)
+/intern/board/{id}/archiv → Erledigte (weggeräumte) Karten des Boards + wiederherstellen
+/intern/board/{id}/statistik → Auswertung des Boards (Kennzahlen, Verteilungen)
 /intern/board/{id}/einstellungen → Board verwalten: Stati + Freigaben + Kartenfelder + Nextcloud-Archiv (Eigentümer/Admin)
 /intern/card/{id}      → Detailansicht eines Antrags
+/intern/inventar         → Zugängliche Inventar-Boards (persönlich sortierbar)
+/intern/inventar/neu     → Inventar-Board erstellen (jeder eingeloggte Nutzer)
+/intern/inventar/gesamt  → Gesamtinventar (Anlagenverzeichnis) — Nur-Ansicht für alle eingeloggten Nutzer
+/intern/inventar/{id}    → Inventarliste: Gegenstände + laufende Leihvorgänge (Board-Zugriff)
+/intern/inventar/{id}/archiv → Defekte/verlorene Gegenstände
+/intern/inventar/{id}/einstellungen → Felder, Inventarnummern, Optionen, Freigaben, Leihboard, Eigentum/Löschen (Eigentümer/Admin)
+/intern/inventar/item/{itemId} → Detailansicht eines Gegenstands (Vorgänge, Mängel, Belege)
+/intern/inventar/loan/{loanId} → Detailansicht eines Leihvorgangs
 /vorlagen                → Vorlagen-Bereich (Admin ODER Template-Verwalter): Einstieg zu Board- + Finanz-Templates
 /vorlagen/boards         → Board-Templates: Liste + anlegen/umbenennen/löschen/duplizieren
 /vorlagen/boards/{id}    → Board-Template bearbeiten: Spalten anlegen/umbenennen/per Drag&Drop sortieren/löschen
@@ -249,6 +294,9 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /admin/users             → Nutzerverwaltung (nur Rollen inkl. Admin/Template-Verwalter ernennen; Konten/Aktivierung/Löschen laufen über das SSO)
 /admin/groups            → Gruppenverwaltung (anlegen, Mitglieder) — nur Admin
 /admin/boards            → Übersicht/Verwaltung ALLER Boards (Admin-Aufsicht)
+/admin/finanzboards      → Übersicht/Verwaltung ALLER Finanzboards (Admin-Aufsicht)
+/admin/inventar          → Inventare: öffentliche Sichtbarkeit je Inventar-Board schalten (nur Admin)
+/admin/inventar/gesamt   → Gesamtinventar konfigurieren: einbezogene Boards + Mindestpreis (nur Admin)
 /admin/standorte         → Standorte: anlegen/umbenennen/löschen + aktivieren/deaktivieren + Ziel-Board/-Spalte (nur Admin)
 /admin/priorities        → Prioritäten: Bezeichnung + Farbe je Stufe anpassen (nur Admin)
 /admin/accounts          → Konten: Auswahloptionen für das Kartenfeld „Konto" verwalten (nur Admin)
@@ -258,9 +306,10 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 > Pfade = Next.js-App-Router-Routen (z.B. `app/status/[token]`, `app/intern`, `app/admin/...`). Interne APIs (z.B. Nutzer-Typeahead für Ersteller/Zugewiesen, Upload-Endpunkte) als Route Handlers unter `app/api/...` bzw. via Server Actions.
 
 ### Navigation (nach Login)
-Nach dem Login landet jeder Nutzer auf der **Startseite** (`/intern`): Kacheln/Liste der zugänglichen Boards (Klick → Board öffnen) plus Buttons zu den Bereichen, eingeblendet nach Rolle/Rechten:
+Nach dem Login landet jeder Nutzer auf der **Startseite** (`/intern`): Dashboard plus Buttons zu den Bereichen, eingeblendet nach Rolle/Rechten:
+- **Boards** (`/intern/boards`), **Finanzen** (`/finanzen`), **Inventar** (`/intern/inventar`), **Meine Aufgaben** (`/intern/aufgaben`) — jeder Nutzer
 - **Neues Board erstellen** — jeder Nutzer
-- **Passwort ändern** (`/intern/konto`) — jeder Nutzer; Benutzername wird angezeigt, ist aber fest (nur der Admin legt ihn bei Anlage fest)
+- **Mein Konto** (`/intern/konto`) — jeder Nutzer; Benutzername/Anzeigename kommen aus dem SSO und sind hier nicht änderbar
 - **Vorlagen** (`/vorlagen`) — nur für Admin **und** Template-Verwalter sichtbar
 - **Admin Panel** (`/admin`) — nur für Admins sichtbar
 - **Logout**
@@ -365,6 +414,115 @@ Beispiel: "Grillabend am FB5"
 
 ---
 
+## Inventar- & Entleihsystem
+
+Eigenständiges Modul (seit 2.0.0) zur Verwaltung von Gegenständen und deren Ausleihe. **Inventar-Boards sind keine Kanban-Boards** — eigene Tabellen, eigene Listenansicht. Sie teilen sich mit den Kanban-Boards nur Nutzer, Gruppen und das **identische Zugriffsmodell**: Zugriff = Admin ∨ Eigentümer ∨ Freigabe an Nutzer/Gruppe (binär); Verwalten = Admin ∨ Eigentümer (`lib/inventory.ts`, gleiche Struktur wie `lib/authz/index.ts`). Jeder eingeloggte Nutzer darf ein Inventar-Board erstellen und ist dann dessen Eigentümer.
+
+Zwei Schalter bleiben **dem Admin vorbehalten**:
+- **Öffentlich** (`is_public`, `/admin/inventar`) — das Inventar erscheint unter `/inventar`
+- **Im Gesamtinventar** (`include_in_overview`, `/admin/inventar/gesamt`) — fließt ins Anlagenverzeichnis ein
+
+### Gegenstände
+- **Felder pro Board konfigurierbar** (`inventory_board_fields`, exakt wie `board_card_fields` bei Karten). Feld-Keys: `group`, `number`, `serial_number`, `category`, `location`, `condition`, `lendable`, `current_holder`, `availability`, `price`, `purchase_date`, `vendor`, `notes`. Die **Bezeichnung** (`name`) ist immer sichtbar und nicht abschaltbar (sie ist die Identität des Gegenstands).
+- **`current_holder` und `availability` sind abgeleitet** (read-only) — sie ergeben sich aus den laufenden Vorgängen und stehen nicht im Bearbeiten-Formular.
+- **Auswahloptionen** (`inventory_options`, unterschieden über `kind`): Kategorien (Multiselect), Standorte — **direkt beim Erfassen erweiterbar**. `kind='loan_status'` ist eine Altlast: der Entleihstatus wird nicht mehr manuell gesetzt, sondern aus den Vorgängen abgeleitet.
+- **Stückzahl:** `quantity` ≥ 1 — ein Gegenstand (eine Inventarnummer) kann mehrere physische Einheiten haben (z.B. 100 Becher). Verfügbare Menge = `quantity` − Summe der aktuell verliehenen Mengen. Über `group_name` („Artikel/Gruppe") lassen sich mehrere gleichartige **Einzelstücke** zu einer Gruppe zusammenfassen.
+- **Zustand** (`condition`): `active` | `defect` | `lost`. Defekte/verlorene Stücke landen im **Archiv** (`/intern/inventar/{id}/archiv`), sind nicht entleihbar und öffentlich unsichtbar.
+- **Inventarnummern** (`inventory_numbering`) funktionieren wie die Antragsnummern der Boards (Präfix/Jahr/Code/Zähler, atomare Vergabe).
+- **Mängel** (`inventory_defects`) je Gegenstand mit Historie; `resolved_at IS NULL` = offener Mangel.
+- **Dateien** (`inventory_attachments`): Kaufbelege, Leihanträge, Leihverträge, weitere Dateien — **append-only**, werden nie automatisch gelöscht (Nachvollziehbarkeit). Optional mit einem konkreten Vorgang verknüpft (`loan_id`).
+
+### Leihvorgänge — kartengeführt über ein System-Board
+
+> **Kernidee:** Ein Leihvorgang hat keinen eigenen Statusautomaten. Jedes Inventar bekommt ein **automatisch angelegtes Kanban-Board** („System-Board", `boards.inventory_board_id`), auf dem jeder Vorgang als Karte liegt — und **die Spalte der Karte definiert den Vorgangsstatus** (`syncLoanFromCard` in `lib/inventory-loans.ts`). Das Gremium arbeitet also im gewohnten Kanban, das Inventar zieht automatisch nach.
+
+- **Feste Spaltenstruktur** des Leihboards (`LOAN_BOARD_COLUMNS` in `lib/boards.ts`): *Eingegangen · In Prüfung · Vertrag bereitgestellt · Vertrag unterschrieben · Ausleihe bestätigt · in Ausleihe · Zurückgegeben*.
+- **Zwei Trigger-Spalten** am Inventar (`loan_active_status_id` / `loan_returned_status_id`, per Default „in Ausleihe" / „Zurückgegeben"): Karte erreicht „in Ausleihe" → Vorgang `active`, Gegenstand gilt als entliehen. Karte erreicht „Zurückgegeben" → Vorgang `returned`, Menge wieder verfügbar.
+- **Rückwärts korrigierbar:** Wird die Karte aus „in Ausleihe" wieder herausgezogen, fällt der Vorgang auf `contract_provided` zurück — der Entleiher kann den Vertrag weiter einreichen. Der normale Vertragsfortschritt wird dabei nicht angefasst.
+- **Vorgangsstatus** (`inventory_loans.status`): `requested` → `contract_provided` → `contract_signed` → `active` → `returned`; `rejected` und `withdrawn` sind Endzustände **vor** der Annahme.
+- **Ein Vorgang reserviert 1..n konkrete Stücke** (`inventory_loan_items` mit Menge je Stück) — angefragte Menge (`requested_quantity`, unveränderlich) vs. bestätigte Menge (Summe der zugeordneten Stücke), in der UI als „A von B".
+- **Nebenläufigkeit:** Gegenläufige Kartenbewegungen derselben Karte werden per `pg_advisory_xact_lock(ns, cardId)` serialisiert; innerhalb der Sperre wird der Kartenstatus **frisch gelesen** statt dem übergebenen Wert zu vertrauen.
+
+**System-Boards sind gesperrt:** `requireBoardManage` weist Boards mit gesetztem `inventory_board_id` **hart mit 404 ab** (nicht nur per Redirect). Sonst ließen sich dort Done-Spalte, Archiv-Trigger oder Nextcloud scharfschalten — beides würde Leihkarten wegräumen. Verwaltet wird das Leihboard ausschließlich über `/intern/inventar/{id}/einstellungen`. Zugriff und Mitgliederliste des System-Boards **spiegeln das Inventar** (siehe `canAccessBoard` / `getBoardMemberUsers`).
+
+### Öffentlicher Ausleih-Ablauf
+
+1. `/inventar` listet die vom Admin freigegebenen Inventare, `/inventar/{id}` die verfügbaren Gegenstände (suchen, nach Kategorie filtern).
+2. Anfrage absenden → Vorgang `requested` + **Status-Token**; falls ein Leihboard existiert, entsteht die Karte in der ersten Spalte.
+3. `/inventar/status/{token}` zeigt den Fortschritt **anhand der Kartenspalten** (Stepper) plus die Hinweise des Verleihers (`borrower_note`). Dort kann der Entleiher den bereitgestellten Vertrag herunterladen, den unterschriebenen hochladen und **„Vertrag einsenden"** — das bewegt die Karte von „Vertrag bereitgestellt" nach „Vertrag unterschrieben", aber **nur aus dieser Quell-Spalte** (nie rückwärts, kein Überspringen; gleiches Von→Nach-Prinzip wie der Quittungs-Zug auf normalen Boards). Außerdem kann er die Anfrage zurückziehen.
+
+**Öffentlich sichtbar ist eine bewusste Whitelist** (`PUBLIC_INVENTORY_FIELD_KEYS` in `lib/inventory-public.ts`): nur **Bezeichnung, Kategorie, Stückzahl/Verfügbarkeit** und ggf. „entliehen bis \<Datum\>" — **ohne Person**. **Nicht öffentlich:** Inventar-/Seriennummer, Standort, Kaufpreis, Händler, Kaufdatum, Belege, „aktuell bei" und Verträge. Gezeigt werden ausschließlich Gegenstände mit `lendable = true` **und** `condition = 'active'`.
+
+### Gesamtinventar (Anlagenverzeichnis)
+Board-übergreifende Liste aller Artikel aus den einbezogenen Inventaren mit **Preis ≥ Mindestpreis**, einzeln gelistet (keine Zwischensummen) plus Gesamtsumme — für gesetzliche Nachweise. `/intern/inventar/gesamt` ist **Nur-Ansicht für jeden eingeloggten Nutzer**; die Konfiguration (einbezogene Boards, Mindestpreis) macht nur der Admin unter `/admin/inventar/gesamt`. CSV-Export in verschiedenen Sortierungen.
+
+### Datenmodell (Ergänzung)
+```sql
+inventory_boards       (id, name, description, owner_id FK→users ON DELETE RESTRICT,
+                        is_public, include_in_overview,
+                        loan_board_id        FK→boards         NULL ON DELETE SET NULL,
+                        loan_active_status_id   FK→board_statuses NULL,  -- „in Ausleihe"
+                        loan_returned_status_id FK→board_statuses NULL,  -- „Zurückgegeben"
+                        created_at)
+-- boards.inventory_board_id FK→inventory_boards ON DELETE CASCADE markiert das
+-- System-Board (Leihvorgänge) und löscht es mit dem Inventar mit.
+
+inventory_board_access (id, board_id FK→inventory_boards ON DELETE CASCADE,
+                        user_id FK→users NULL, group_id FK→groups NULL,
+                        CHECK ((user_id IS NULL) != (group_id IS NULL)),
+                        UNIQUE(board_id,user_id), UNIQUE(board_id,group_id))
+
+inventory_options      (id, board_id FK→inventory_boards ON DELETE CASCADE,
+                        kind CHECK(kind IN ('category','location','loan_status')),
+                        name, position, created_at, UNIQUE(board_id,kind,name))
+
+inventory_items        (id, board_id FK→inventory_boards ON DELETE CASCADE,
+                        number NULL, name, group_name NULL,
+                        quantity CHECK(quantity >= 1) DEFAULT 1, lendable,
+                        location_id FK→inventory_options NULL, loan_status_id NULL,  -- loan_status_id = Altlast
+                        price NULL, purchase_date NULL, vendor NULL, serial_number NULL,
+                        condition CHECK(condition IN ('active','defect','lost')),
+                        condition_note NULL, notes NULL,
+                        created_at, updated_at, creator_user_id FK→users NULL)
+
+inventory_item_categories (item_id FK→inventory_items, option_id FK→inventory_options,
+                           PRIMARY KEY(item_id, option_id))          -- n:m Multiselect
+
+inventory_board_fields (board_id FK→inventory_boards ON DELETE CASCADE, field_key,
+                        visible DEFAULT 1, position, PRIMARY KEY(board_id, field_key))
+inventory_numbering    (board_id PK FK→inventory_boards ON DELETE CASCADE,
+                        enabled, prefix, year, code, separator, padding, next)
+
+inventory_loans        (id, item_id FK→inventory_items ON DELETE CASCADE,
+                        status CHECK(status IN ('requested','contract_provided',
+                          'contract_signed','active','returned','rejected','withdrawn')),
+                        token UNIQUE NULL,       -- öffentlicher Status-Link (nur bei Anfragen)
+                        borrower, borrower_email NULL, purpose NULL,
+                        start_date NULL, end_date NULL,
+                        requested_quantity DEFAULT 1,   -- angefragt (unveränderlich)
+                        returned_at NULL,               -- NULL = laufend
+                        notes NULL, borrower_note NULL, -- borrower_note: über Status-Link sichtbar
+                        card_id FK→cards NULL ON DELETE SET NULL,  -- Tracking-Karte
+                        created_at, created_by FK→users NULL)
+
+inventory_loan_items   (loan_id FK→inventory_loans ON DELETE CASCADE,
+                        item_id FK→inventory_items ON DELETE CASCADE,
+                        quantity CHECK(quantity >= 1), PRIMARY KEY(loan_id, item_id))
+
+inventory_defects      (id, item_id FK→inventory_items ON DELETE CASCADE, description,
+                        resolved_at NULL, created_at, created_by FK→users NULL)
+
+inventory_attachments  (id, item_id FK→inventory_items ON DELETE CASCADE,
+                        loan_id FK→inventory_loans NULL ON DELETE SET NULL,
+                        kind CHECK(kind IN ('receipt','loan_request','loan_contract','other')),
+                        filename, path, mime, size, uploaded_at, uploaded_by FK→users NULL)
+
+inventory_overview_config  (id PK DEFAULT 1, min_price)   -- Singleton, Cent
+user_inventory_board_order (user_id, board_id, position, PRIMARY KEY(user_id, board_id))
+```
+
+---
+
 ## Deployment (Docker)
 
 Bereitstellung am Ende **containerisiert** via `Dockerfile` + `docker-compose.yml`.
@@ -392,6 +550,9 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Verwalter-exklusiv bleiben nur Antragsnummer, Anweisungsdatum, Überweisungsdatum und Archiv-Status (UI **und** REST-API).
 - **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Zugriff via `canAccessBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
 - **Öffentliches Nachreichen ist append-only**, ohne Spalten-Gate/Frist (bis 30 PDFs je Karte) — gewollt; gegen Missbrauch zusätzlich ratenbegrenzt.
+- **Öffentliches Inventar ist eine Whitelist, keine Blacklist:** `PUBLIC_INVENTORY_FIELD_KEYS` listet auf, was *nach außen darf* (Bezeichnung, Kategorie, Verfügbarkeit) — neue Item-Felder sind damit automatisch **nicht** öffentlich. Standort, Preis, Seriennummer, Belege und „aktuell bei" bleiben intern; öffentlich erscheint nur die Ausleihfrist ohne Person.
+- **Leih-System-Boards sind serverseitig gegen Verwaltung gesperrt:** `requireBoardManage` weist Boards mit `inventory_board_id` mit 404 ab — sonst ließen sich Done-Spalte/Archiv-Trigger/Nextcloud darauf aktivieren und würden laufende Leihkarten wegräumen. Ihre Zugriffs- und Mitgliederliste spiegelt bewusst das Inventar statt eigener Freigaben (eine Freigabequelle, kein Auseinanderlaufen).
+- **Leihvorgänge sind kartengeführt:** Die Kartenspalte ist die *einzige* Quelle des Vorgangsstatus (auch rückwärts). Wer das Leihboard sehen darf, kann damit den Ausleihstatus ändern — bewusst, weil das Gremium ohnehin im Kanban arbeitet und zwei getrennte Statusquellen auseinanderliefen.
 - **Proxy-Header werden vertraut:** Hinter **genau einem** vertrauenswürdigen nginx werden `X-Forwarded-*`/`X-Real-IP` direkt genutzt (Schema/Host/Client-IP). `AUTH_TRUST_HOST` ist bei der eigenen iron-session-Auth ein No-op.
 - **SSO-Vertrauensannahme (JIT):** `preferred_username` muss vom SSO autoritativ/unveränderlich vergeben werden (das muss der eingesetzte OIDC-Provider garantieren); darauf basieren Konto-Adoption und die `ADMIN_USER`-Beförderung.
 - **Rate-Limiting ist in-memory** (ein Container = eine Instanz). Bei horizontaler Skalierung → geteilter Speicher (Redis) nötig.
@@ -418,6 +579,15 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
 ---
 
 ## Hinweise
+
+### Dokumentation im Repo
+- **`CLAUDE.md`** (diese Datei) — Fachkonzept, Datenmodell, bewusste Entscheidungen. Bei fachlichen Änderungen **mitpflegen**.
+- **`README.md`** — Betrieb: Setup, `.env`, Deployment, Backups. Aktuell.
+- **`docs/API.md`** — REST-API `/api/v1` (Tokens, Scopes, Endpunkte).
+- **`lib/db/schema.ts`** — die **maßgebliche** Schemaquelle (Drizzle). Die SQL-Blöcke hier sind konzeptionelle Beschreibung; im Zweifel gilt das Schema.
+- ⚠️ **`IMPLEMENTATION_PLAN.md` ist historisch** (Bauplan der Erstumsetzung) und in Teilen überholt — er nennt noch SQLite, die Tabelle `antraege`, `/intern/antrag/{id}` und lokale Passwörter. **Nicht als Referenz verwenden.**
+
+### Sonstiges
 - Credentials nicht in den Code committen → `.env`-Datei verwenden
 - Board-eigene Nextcloud-Zugangsdaten werden **verschlüsselt** in der DB gespeichert (AES-256-GCM, Schlüssel aus `.env`), nie im Klartext
 - Signatur-Zertifikate (`.p12` + Passphrase) werden ebenfalls **verschlüsselt** gespeichert (gleicher `ENCRYPTION_KEY`)
