@@ -34,6 +34,10 @@ export function CardEditor({
   priorities,
   accounts,
   canManage,
+  // Feedback-Karten nennen das Feld „Einreicher"; alle anderen bleiben bei
+  // „Antragsteller". Nur die Beschriftung — Spalte und API-Feld heißen
+  // weiterhin `applicant`.
+  applicantLabel = "Antragsteller",
 }: {
   cardId: number;
   boardId: number;
@@ -60,6 +64,7 @@ export function CardEditor({
   priorities: PriorityOption[];
   accounts: AccountOption[];
   canManage: boolean;
+  applicantLabel?: string;
 }) {
   const valuesRef = useRef<CardValues>({
     title: initial.title,
@@ -163,7 +168,7 @@ export function CardEditor({
     ),
     applicant: (
       <div>
-        <label className="label">Antragsteller</label>
+        <label className="label">{applicantLabel}</label>
         <input
           defaultValue={valuesRef.current.applicant}
           className="input"

@@ -35,6 +35,24 @@ export const RL_LOCATIONS = {
   windowMs: 60_000,
 } as const;
 
+// Feedback hat EIGENE Buckets — ein Ansturm auf die Feedback-API verbraucht
+// nichts vom Kontingent der Antrags-API und umgekehrt.
+export const RL_FEEDBACK_BURST = {
+  scope: "public-api-feedback-submit-burst",
+  limit: 60,
+  windowMs: 60_000,
+} as const;
+export const RL_FEEDBACK_DAY = {
+  scope: "public-api-feedback-submit-day",
+  limit: 5_000,
+  windowMs: 24 * 60 * 60 * 1000,
+} as const;
+export const RL_FEEDBACK_AREAS = {
+  scope: "public-api-feedback-areas",
+  limit: 300,
+  windowMs: 60_000,
+} as const;
+
 export type FieldIssue = { field: string; message: string };
 
 /** Einheitliche JSON-Fehlerantwort der öffentlichen API. */
@@ -90,5 +108,17 @@ export function publicApplicationLinks(token: string): {
   return {
     statusUrl: `${base}/status/${token}`,
     receiptPdfUrl: `${base}/status/${token}/pdf`,
+  };
+}
+
+/** Öffentliche Links eines Feedbacks — eigene Routen, nicht die der Anträge. */
+export function publicFeedbackLinks(token: string): {
+  statusUrl: string;
+  receiptPdfUrl: string;
+} {
+  const base = appBaseUrl();
+  return {
+    statusUrl: `${base}/feedback/status/${token}`,
+    receiptPdfUrl: `${base}/feedback/status/${token}/pdf`,
   };
 }

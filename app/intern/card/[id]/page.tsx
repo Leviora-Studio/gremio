@@ -32,6 +32,7 @@ import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { BackButton } from "@/components/BackButton";
 import type { AttachmentKind } from "@/lib/constants";
+import { getFeedbackByCardId } from "@/lib/public-feedback-submission";
 import { deleteCardAction, deleteCommentAction } from "./actions";
 
 function fmt(d: Date) {
@@ -135,7 +136,12 @@ export default async function AntragDetailPage({
       )[0]
     : null;
 
-  const statusLink = `${env.APP_BASE_URL}/status/${card.token}`;
+  // Feedback-Karten haben eine eigene Statusseite; die Antragsroute liefert für
+  // sie bewusst 404. Der interne Link muss deshalb mitziehen.
+  const feedback = await getFeedbackByCardId(card.id);
+  const statusLink = feedback
+    ? `${env.APP_BASE_URL}/feedback/status/${card.token}`
+    : `${env.APP_BASE_URL}/status/${card.token}`;
   const manage = canManageBoard(user, board);
 
   const comments = await db
@@ -195,6 +201,18 @@ export default async function AntragDetailPage({
             <span className="text-slate-500">Herkunft (Standort):</span> {location.name}
           </div>
         )}
+        {feedback && (
+          <>
+            <div>
+              <span className="text-slate-500">Herkunft:</span> Feedback
+            </div>
+            <div>
+              {/* Snapshot-Name: bleibt auch dann korrekt, wenn der Bereich
+                  später umbenannt oder gelöscht wurde. */}
+              <span className="text-slate-500">Bereich:</span> {feedback.areaName}
+            </div>
+          </>
+        )}
         <div className="sm:col-span-2">
           <span className="text-slate-500">Status-Link:</span>{" "}
           <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
@@ -242,6 +260,7 @@ export default async function AntragDetailPage({
           priorities={priorities}
           accounts={accounts}
           canManage={manage}
+          applicantLabel={feedback ? "Einreicher" : "Antragsteller"}
         />
       </section>
 

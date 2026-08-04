@@ -12,6 +12,7 @@ import {
   boardStatuses,
   boardTemplateStatuses,
   cards,
+  feedbackAreas,
   inventoryBoards,
   locations,
   type InventoryBoard,
@@ -141,6 +142,16 @@ export async function locationReferencingBoard(boardId: number) {
   return rows[0];
 }
 
+/** Feedback-Bereich, der dieses Board als Ziel nutzt — Löschschutz wie beim Standort. */
+export async function feedbackAreaReferencingBoard(boardId: number) {
+  const rows = await db
+    .select({ id: feedbackAreas.id, name: feedbackAreas.name })
+    .from(feedbackAreas)
+    .where(eq(feedbackAreas.targetBoardId, boardId))
+    .limit(1);
+  return rows[0];
+}
+
 export class BoardDeleteBlockedError extends Error {
   constructor(message: string) {
     super(message);
@@ -154,6 +165,12 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
   if (ref) {
     throw new BoardDeleteBlockedError(
       `Board wird vom Standort „${ref.name}" als Ziel verwendet. Bitte zuerst das Standort-Routing umstellen.`,
+    );
+  }
+  const fbRef = await feedbackAreaReferencingBoard(boardId);
+  if (fbRef) {
+    throw new BoardDeleteBlockedError(
+      `Board wird vom Feedback-Bereich „${fbRef.name}" als Ziel verwendet. Bitte zuerst das Routing unter „Umfragen" umstellen.`,
     );
   }
   // System-Board (Leihvorgänge) wird über das Inventar verwaltet, nicht hier.

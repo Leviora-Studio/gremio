@@ -12,7 +12,7 @@ Drizzle ORM), Tailwind CSS, `dnd-kit`, iron-session, Custom-OIDC-Client (`jose`)
 `sharp`, `pdf-lib`, `webdav`.
 
 API-Doku: [docs/API.md](docs/API.md) (interne Bearer-Token-API) ·
-[docs/PUBLIC_API.md](docs/PUBLIC_API.md) (öffentliche Antrags-API für native
+[docs/PUBLIC_API.md](docs/PUBLIC_API.md) (öffentliche Antrags- und Feedback-API für native
 Apps, interaktiv unter `/api/public/docs`).
 
 ---

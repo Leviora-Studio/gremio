@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { buildConfirmationPdf } from "@/lib/pdf";
+import { isFeedbackToken } from "@/lib/public-feedback-submission";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,11 @@ export async function GET(
     .where(eq(cards.token, token))
     .limit(1);
   if (!antrag) return new Response("Not found", { status: 404 });
+  // Feedback hat eine eigene Bestätigung (/feedback/status/{token}/pdf) mit
+  // anderen Feldern — hier bewusst 404 statt einer irreführenden „Antrags"-PDF.
+  if (await isFeedbackToken(token)) {
+    return new Response("Not found", { status: 404 });
+  }
 
   const pdf = await buildConfirmationPdf({
     title: antrag.title,

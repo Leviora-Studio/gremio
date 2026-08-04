@@ -14,6 +14,7 @@ import { PublicSubmitForm } from "@/components/PublicSubmitForm";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { StatusLinkBox } from "@/components/StatusLinkBox";
+import { isFeedbackToken } from "@/lib/public-feedback-submission";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,10 @@ export default async function StatusPage({
     .limit(1);
 
   if (!antrag) notFound();
+  // Feedback-Karten haben ihre EIGENE Statusseite (/feedback/status/{token}).
+  // Hier bewusst 404: Diese Seite zeigt Dokumente, Nachreichen und Quittungen —
+  // alles, was es für Feedback nicht gibt.
+  if (await isFeedbackToken(token)) notFound();
 
   // Board-Gates: bestimmt, ob/welcher „Einreichen"-Button gezeigt wird.
   const [board] = await db

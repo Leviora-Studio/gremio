@@ -9,6 +9,7 @@ import {
   cards,
   boards,
   groups,
+  feedbackAreas,
   locations,
   users,
 } from "@/lib/db/schema";
@@ -24,6 +25,11 @@ export default async function AdminOverview() {
     { label: "Gruppen", value: await tally(groups), href: "/admin/groups" },
     { label: "Boards", value: await tally(boards), href: "/admin/boards" },
     { label: "Standorte", value: await tally(locations), href: "/admin/standorte" },
+    {
+      label: "Feedback-Bereiche",
+      value: await tally(feedbackAreas),
+      href: "/admin/umfragen",
+    },
     { label: "Karten", value: await tally(cards) },
   ];
   return (

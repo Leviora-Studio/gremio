@@ -1,8 +1,8 @@
 # Gremio — Öffentliche API (`/api/public/v1`)
 
-Öffentliche, **nicht authentifizierte** API zum Einreichen von Anträgen. Sie ist
-für **direkte native Android-/iOS-Clients** gedacht: kein zwischengeschalteter
-Backend-Server, kein API-Token.
+Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und
+**Feedback**. Sie ist für **direkte native Android-/iOS-Clients** gedacht: kein
+zwischengeschalteter Backend-Server, kein API-Token.
 
 > **Abgrenzung:** Die authentifizierte Bearer-Token-API für interne Werkzeuge
 > liegt unter `/api/v1` und ist in [API.md](API.md) beschrieben. Sie hat mit
@@ -146,20 +146,100 @@ Status-Tokens, interne URLs oder Secrets.
 
 ---
 
+## `GET /api/public/v1/feedback-areas`
+
+Liefert genau die Feedback-Bereiche, die auch im öffentlichen Formular unter
+`/feedback` zur Auswahl stehen: **aktiviert** und **vollständig geroutet**
+(Ziel-Board und Zielspalte vorhanden, Zielspalte gehört zum Ziel-Board).
+Sortiert nach `position` aufsteigend.
+
+```json
+{ "areas": [ { "id": 1, "name": "Bibliothek" } ] }
+```
+
+Statuscodes: `200`, `429`, `500`.
+
+---
+
+## `POST /api/public/v1/feedback`
+
+Nimmt **ausschließlich `application/json`** entgegen (anders als der
+Antrags-Endpunkt, der Dateien überträgt). Body-Grenze: **32 KiB**.
+
+### Felder
+
+| Feld | Typ | Pflicht | Regeln |
+|------|-----|---------|--------|
+| `areaId` | integer | ✅ | ID aus `GET /feedback-areas` |
+| `submitterName` | string | ✅ | getrimmt, 1–200 Zeichen |
+| `feedback` | string | ✅ | getrimmt, 1–10.000 Zeichen |
+
+Zeilenenden werden auf `\n` normalisiert; **innere** Absätze bleiben erhalten.
+Der Kartentitel entsteht automatisch aus den ersten 120 Zeichen des Feedbacks
+(mit `…` gekürzt) — der vollständige Text steht im Kartenfeld „Notizen" und
+unverändert in der öffentlichen Statusansicht.
+
+### Beispiel
+
+```bash
+curl -X POST "https://gremio.example/api/public/v1/feedback" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -d '{"areaId":1,"submitterName":"Max Mustermann","feedback":"Die Öffnungszeiten sollten verlängert werden."}'
+```
+
+```json
+{
+  "statusUrl": "https://gremio.example/feedback/status/abc123",
+  "receiptPdfUrl": "https://gremio.example/feedback/status/abc123/pdf",
+  "number": "F_0042_2026"
+}
+```
+
+`number` ist `null`, wenn die Board-Nummerierung deaktiviert ist. Die Antwort
+enthält bewusst **nichts Internes**: keine Karten-ID, kein Board, keine Spalte,
+keine Notizen.
+
+> **Eigene Statusrouten:** Feedback nutzt `/feedback/status/{token}` — die
+> Antragsroute `/status/{token}` liefert für einen Feedback-Token `404` (und
+> umgekehrt). Beide Seiten zeigen unterschiedliche Dinge; eine Verwechslung
+> würde Feedback als Antrag darstellen.
+
+### Statuscodes
+
+| Code | Bedeutung |
+|------|-----------|
+| `201` | Feedback neu angelegt |
+| `200` | Idempotenz-Replay (Header `Idempotency-Replayed: true`) |
+| `400` | Ungültige Felder oder fehlender/ungültiger `Idempotency-Key` |
+| `404` | Bereich nicht verfügbar |
+| `409` | `Idempotency-Key` mit anderen Daten wiederverwendet |
+| `413` | Body größer als 32 KiB |
+| `415` | Content-Type ist nicht `application/json` |
+| `429` | Rate-Limit (siehe unten) |
+| `500` | Unerwarteter interner Fehler (generische Meldung) |
+
+---
+
 ## Idempotenz — so muss die App es machen
 
 Mobile Netze brechen Verbindungen ab. Ohne Idempotenz entstünde bei jedem Retry
-ein **weiterer Antrag**. Deshalb ist der Header Pflicht.
+ein **weiterer Antrag** bzw. ein weiteres Feedback. Deshalb ist der Header bei
+`POST /applications` **und** `POST /feedback` Pflicht. Beide nutzen dieselbe
+Mechanik, aber **getrennte Scopes** (`public-application` bzw. `public-feedback`)
+— derselbe Key kann also einmal für einen Antrag und einmal für ein Feedback
+verwendet werden, ohne zu kollidieren.
 
-1. Für einen neuen Antragsentwurf **eine UUID** als `Idempotency-Key` erzeugen.
+1. Für einen neuen Entwurf **eine UUID** als `Idempotency-Key` erzeugen.
 2. Key und Entwurf **lokal auf dem Gerät speichern**.
 3. Antrag absenden.
 4. Bei **Timeout oder Netzwerkfehler denselben Key und dieselben Daten** erneut
    senden.
 5. **Erst nach erfolgreicher Antwort** den Status-Link speichern und den lokalen
    Entwurf als abgeschlossen markieren.
-6. Für einen wirklich neuen Antrag einen **neuen** Key erzeugen.
-7. **Niemals** denselben Key für unterschiedliche Anträge verwenden.
+6. Für einen wirklich neuen Antrag bzw. ein neues Feedback einen **neuen** Key
+   erzeugen.
+7. **Niemals** denselben Key für unterschiedliche Einreichungen verwenden.
 
 ### Verhalten im Detail
 
@@ -203,6 +283,12 @@ Mobilfunk-/Carrier-NAT-Adressen erscheinen (viele Nutzer teilen sich eine IP).
 | `POST /applications` (Burst) | 60 pro IP und Minute |
 | `POST /applications` (Backstop) | 5.000 pro IP und 24 Stunden |
 | `GET /locations` | 300 pro IP und Minute |
+| `POST /feedback` (Burst) | 60 pro IP und Minute |
+| `POST /feedback` (Backstop) | 5.000 pro IP und 24 Stunden |
+| `GET /feedback-areas` | 300 pro IP und Minute |
+
+Anträge und Feedback haben **eigene Buckets**: Ein Ansturm auf die
+Feedback-API verbraucht nichts vom Kontingent der Antrags-API und umgekehrt.
 
 Burst und Backstop haben **getrennte Buckets** — ein Treffer des einen ersetzt
 den anderen nicht. Bei Überschreitung: `429` als JSON mit `Retry-After`.
@@ -234,6 +320,12 @@ Für die App bedeutet das:
 nachgereichte Dateien. Der **Studierendenausweis bleibt intern** und wird über
 keine token-basierte Route ausgeliefert.
 
+Beim **Feedback** gilt dasselbe für den Link. Die Feedback-Statusseite zeigt den
+**Snapshot der Einreichung** (`feedback_submissions`), nicht die womöglich
+später intern bearbeiteten Kartendaten — interne Notizen werden dadurch nicht
+versehentlich öffentlich. Ausnahme ist `applicantNote`, der bewusst öffentliche
+Hinweis des Gremiums.
+
 ---
 
 ## Betrieb
@@ -242,4 +334,8 @@ Bei großen Uploads muss der Reverse-Proxy mitspielen. Die Beispielkonfiguration
 [`deploy/nginx.conf.example`](../deploy/nginx.conf.example) setzt
 `client_max_body_size 105m` (4 × 25 MB + Overhead) — dieselbe Grenze gilt für
 diese API. Ohne passende Einstellung antwortet **nginx** mit `413`, bevor die
-Anwendung den Request überhaupt sieht.
+Anwendung den Request überhaupt sieht. Für `POST /feedback` (reines JSON, 32 KiB)
+spielt das keine Rolle.
+
+**Migrationen:** Die Feedback-Tabellen kommen mit Migration `0054`; sie wird beim
+Containerstart automatisch angewendet und ist rein additiv.

@@ -9,6 +9,7 @@ import {
   type PreparedUpload,
   type Tx,
 } from "@/lib/public-application-submission";
+import { normalizeFeedbackText } from "@/lib/feedback-constants";
 
 /**
  * Idempotenz für öffentliche API-Schreibzugriffe.
@@ -19,8 +20,9 @@ import {
  * kanonischen Fingerprint des Requests.
  */
 
-/** Scope dieses Endpunkts (die Tabelle ist für weitere Endpunkte offen). */
+/** Scopes der Endpunkte (die Tabelle ist für weitere Endpunkte offen). */
 export const SCOPE_PUBLIC_APPLICATION = "public-application";
+export const SCOPE_PUBLIC_FEEDBACK = "public-feedback";
 
 // Advisory-Lock-Namespace ("AI" = API Idempotency). Serialisiert Lookup und
 // Anlage je (scope, key) — zwei parallele Requests mit demselben Key können so
@@ -92,6 +94,33 @@ export function computeRequestFingerprint(
         : `file:${slot.field}:0`,
     );
   }
+  return sha256(lines.join("\n"));
+}
+
+/**
+ * Kanonischer Fingerprint einer FEEDBACK-Einreichung.
+ *
+ * Bewusst NICHT über den rohen JSON-Body: Property-Reihenfolge, Einrückung und
+ * Escaping unterscheiden sich zwischen Clients und Retries, ohne dass das
+ * Feedback ein anderes wäre.
+ *
+ * Der Text wird exakt so normalisiert wie beim Speichern (`\r\n`/`\r` → `\n`,
+ * außen trimmen) — INNERE Umbrüche und Leerzeichen bleiben erhalten, denn sie
+ * sind Inhalt: Ein geänderter Absatz ist ein anderes Feedback und muss zu 409
+ * führen.
+ */
+export function computeFeedbackFingerprint(fields: {
+  areaId: unknown;
+  submitterName: unknown;
+  feedback: unknown;
+}): string {
+  const areaId = Number.parseInt(String(fields.areaId ?? "").trim(), 10);
+  const lines = [
+    "v1",
+    `areaId:${Number.isFinite(areaId) ? areaId : ""}`,
+    `submitterName:${String(fields.submitterName ?? "").trim()}`,
+    `feedback:${normalizeFeedbackText(fields.feedback)}`,
+  ];
   return sha256(lines.join("\n"));
 }
 

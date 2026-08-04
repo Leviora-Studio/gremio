@@ -4,10 +4,18 @@
 import { MAX_UPLOAD_BYTES } from "@/lib/constants";
 import { MAX_IDEMPOTENCY_KEY_LENGTH } from "@/lib/public-api-idempotency";
 import {
+  RL_FEEDBACK_AREAS,
+  RL_FEEDBACK_BURST,
+  RL_FEEDBACK_DAY,
   RL_LOCATIONS,
   RL_SUBMIT_BURST,
   RL_SUBMIT_DAY,
 } from "@/lib/public-api";
+import {
+  FEEDBACK_MAX_LENGTH,
+  FEEDBACK_TITLE_MAX_LENGTH,
+  SUBMITTER_NAME_MAX_LENGTH,
+} from "@/lib/feedback-constants";
 
 /**
  * OpenAPI 3.1 der ÖFFENTLICHEN API — EINZIGE Quelle.
@@ -23,6 +31,8 @@ import {
  */
 
 const MAX_UPLOAD_MB = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
+/** Body-Grenze des Feedback-Endpunkts — spiegelt MAX_BODY_BYTES der Route. */
+const FEEDBACK_MAX_BODY_KIB = 32;
 
 const IDEMPOTENCY_DESCRIPTION = `Pflicht. Eindeutiger Schlüssel dieser Einreichung — empfohlen ist eine UUID v4.
 
@@ -34,6 +44,20 @@ Zulässig ist druckbares ASCII mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. G
 
 const rateLimitResponse = {
   description: `Rate-Limit erreicht. Grenzen: ${RL_SUBMIT_BURST.limit} Einreichungen pro IP und Minute, ${RL_SUBMIT_DAY.limit} pro IP und 24 h, ${RL_LOCATIONS.limit} Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des Browserformulars bleibt davon unberührt.`,
+  headers: {
+    "Retry-After": {
+      description: "Sekunden bis zum nächsten zulässigen Versuch.",
+      schema: { type: "integer" },
+    },
+  },
+  content: {
+    "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } },
+  },
+} as const;
+
+// Eigene Beschreibung: Feedback hat eigene Buckets und eigene Grenzen.
+const feedbackRateLimitResponse = {
+  description: `Rate-Limit erreicht. Grenzen: ${RL_FEEDBACK_BURST.limit} Einreichungen pro IP und Minute, ${RL_FEEDBACK_DAY.limit} pro IP und 24 h, ${RL_FEEDBACK_AREAS.limit} Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die Antrags-API und das Browserformular bleiben davon unberührt.`,
   headers: {
     "Retry-After": {
       description: "Sekunden bis zum nächsten zulässigen Versuch.",
@@ -60,12 +84,15 @@ export const openApiPublicSpec = {
   info: {
     title: "Gremio — Öffentliche API",
     version: "1.0.0",
-    summary: "Antragseinreichung für native Android-/iOS-Clients.",
-    description: `Öffentliche, **nicht authentifizierte** API zum Einreichen von Anträgen.
+    summary:
+      "Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.",
+    description: `Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
 
 Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen zwischengeschalteten Backend-Server und keine API-Authentifizierung. Native Clients unterliegen keinem Browser-CORS, deshalb setzt diese API **bewusst keine CORS-Header**. Aus einem Webbrowser heraus ist sie damit nicht cross-origin nutzbar.
 
-**Status-Link:** Die Antwort enthält \`statusUrl\` — einen geheimen Link, der wie ein Bearer-Token wirkt. Wer ihn besitzt, sieht den öffentlichen Antragsstatus. Die App muss ihn lokal speichern und vertraulich behandeln (nicht loggen, nicht teilen). Er wird nicht per E-Mail verschickt und lässt sich nicht wiederherstellen.
+**Status-Link:** Die Antwort enthält \`statusUrl\` — einen geheimen Link, der wie ein Bearer-Token wirkt. Wer ihn besitzt, sieht die zugehörige öffentliche Statusansicht. Die App muss ihn lokal speichern und vertraulich behandeln (nicht loggen, nicht teilen). Er wird nicht per E-Mail verschickt und lässt sich nicht wiederherstellen. Anträge und Feedback haben getrennte Statusrouten (\`/status/…\` bzw. \`/feedback/status/…\`).
+
+**Rate-Limits:** Anträge und Feedback haben vollständig getrennte Kontingente; das Browserformular wiederum ein eigenes.
 
 **Uploads:** max. ${MAX_UPLOAD_MB} MB pro Datei. Der Studierendenausweis wird ausschließlich intern verarbeitet und ist über die öffentliche Statusseite nicht abrufbar.`,
     license: {
@@ -80,6 +107,10 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
     {
       name: "Öffentliche Antragstellung",
       description: "Standorte abrufen und Anträge einreichen.",
+    },
+    {
+      name: "Öffentliches Feedback",
+      description: "Feedback-Bereiche abrufen und Feedback einreichen.",
     },
   ],
   paths: {
@@ -265,6 +296,180 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
         },
       },
     },
+    "/api/public/v1/feedback-areas": {
+      get: {
+        tags: ["Öffentliches Feedback"],
+        summary: "Auswählbare Feedback-Bereiche abrufen",
+        description:
+          "Liefert genau die Bereiche, die auch im öffentlichen Feedback-Formular zur Auswahl stehen: aktiviert und vollständig geroutet (Ziel-Board und Zielspalte vorhanden, Zielspalte gehört zum Ziel-Board). Sortiert nach `position` aufsteigend.",
+        operationId: "listPublicFeedbackAreas",
+        security: [],
+        responses: {
+          "200": {
+            description: "Liste der auswählbaren Bereiche.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/FeedbackAreasResponse" },
+                examples: {
+                  standard: {
+                    value: {
+                      areas: [
+                        { id: 1, name: "Bibliothek" },
+                        { id: 2, name: "Mensa" },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "429": feedbackRateLimitResponse,
+          "500": errorResponse("Unerwarteter interner Fehler."),
+        },
+      },
+    },
+    "/api/public/v1/feedback": {
+      post: {
+        tags: ["Öffentliches Feedback"],
+        summary: "Feedback einreichen",
+        description: `Reicht Feedback als \`application/json\` ein und legt es als Karte im Ziel-Board des gewählten Bereichs an.
+
+Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf ${FEEDBACK_TITLE_MAX_LENGTH} Zeichen); der **vollständige** Text steht im Kartenfeld „Notizen" und unverändert in der öffentlichen Statusansicht.
+
+**Empfohlener Ablauf in der App**
+
+1. Bereiche über \`GET /api/public/v1/feedback-areas\` abrufen.
+2. Für einen neuen Feedback-Entwurf eine UUID als \`Idempotency-Key\` erzeugen.
+3. Key und Entwurf lokal auf dem Gerät speichern.
+4. Feedback absenden.
+5. Bei Timeout oder Netzwerkfehler denselben Key und dieselben Daten erneut senden.
+6. Erst nach erfolgreicher Antwort den Status-Link speichern und den Entwurf als abgeschlossen markieren.
+7. Für ein wirklich neues Feedback einen neuen Key erzeugen.
+8. Niemals denselben Key für unterschiedliches Feedback verwenden.`,
+        operationId: "createPublicFeedback",
+        security: [],
+        parameters: [
+          {
+            name: "Idempotency-Key",
+            in: "header",
+            required: true,
+            description: IDEMPOTENCY_DESCRIPTION,
+            schema: {
+              type: "string",
+              minLength: 16,
+              maxLength: MAX_IDEMPOTENCY_KEY_LENGTH,
+              examples: ["550e8400-e29b-41d4-a716-446655440000"],
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/FeedbackSubmissionRequest" },
+              examples: {
+                standard: {
+                  value: {
+                    areaId: 1,
+                    submitterName: "Max Mustermann",
+                    feedback: "Die Öffnungszeiten sollten verlängert werden.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Feedback wurde neu angelegt.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/FeedbackSubmissionResponse",
+                },
+                examples: {
+                  standard: {
+                    value: {
+                      statusUrl: "https://gremio.example/feedback/status/abc123",
+                      receiptPdfUrl:
+                        "https://gremio.example/feedback/status/abc123/pdf",
+                      number: "F_0042_2026",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "200": {
+            description:
+              "Idempotenz-Replay: derselbe Key mit identischen Daten. Es wurde nichts erneut angelegt; die Antwort entspricht der ursprünglichen Einreichung.",
+            headers: {
+              "Idempotency-Replayed": {
+                description:
+                  "Immer `true` — die Antwort stammt aus einer früheren Einreichung.",
+                schema: { type: "string", enum: ["true"] },
+              },
+            },
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/FeedbackSubmissionResponse",
+                },
+              },
+            },
+          },
+          "400": {
+            description:
+              "Ungültige Eingabe (fehlende Felder, zu lange Werte, kein JSON-Objekt) oder fehlender/ungültiger `Idempotency-Key`.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ValidationError" },
+                examples: {
+                  feld: {
+                    value: {
+                      error: "Bitte Feedback eingeben.",
+                      issues: [
+                        { field: "feedback", message: "Bitte Feedback eingeben." },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "404": errorResponse(
+            "Der gewählte Bereich existiert nicht, ist deaktiviert oder nicht vollständig geroutet.",
+          ),
+          "409": {
+            description:
+              "Der `Idempotency-Key` wurde bereits für eine andere Einreichung verwendet (abweichende Daten).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ErrorResponse" },
+                examples: {
+                  standard: {
+                    value: {
+                      error:
+                        "Der Idempotency-Key wurde bereits für eine andere Einreichung verwendet.",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "413": errorResponse(
+            `Der Request-Body überschreitet ${FEEDBACK_MAX_BODY_KIB} KiB.`,
+          ),
+          "415": errorResponse(
+            "Falscher Content-Type — erforderlich ist `application/json`.",
+          ),
+          "429": feedbackRateLimitResponse,
+          "500": errorResponse(
+            "Unerwarteter interner Fehler. Die Meldung ist bewusst generisch.",
+          ),
+        },
+      },
+    },
   },
   components: {
     schemas: {
@@ -288,6 +493,82 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
           locations: {
             type: "array",
             items: { $ref: "#/components/schemas/PublicLocation" },
+          },
+        },
+      },
+      FeedbackArea: {
+        type: "object",
+        description: "Ein auswählbarer Feedback-Bereich.",
+        required: ["id", "name"],
+        properties: {
+          id: {
+            type: "integer",
+            description: "Wird als `areaId` beim Einreichen übergeben.",
+            examples: [1],
+          },
+          name: { type: "string", examples: ["Bibliothek"] },
+        },
+      },
+      FeedbackAreasResponse: {
+        type: "object",
+        required: ["areas"],
+        properties: {
+          areas: {
+            type: "array",
+            items: { $ref: "#/components/schemas/FeedbackArea" },
+          },
+        },
+      },
+      FeedbackSubmissionRequest: {
+        type: "object",
+        required: ["areaId", "submitterName", "feedback"],
+        properties: {
+          areaId: {
+            type: "integer",
+            description:
+              "ID eines Bereichs aus `GET /api/public/v1/feedback-areas`.",
+            examples: [1],
+          },
+          submitterName: {
+            type: "string",
+            minLength: 1,
+            maxLength: SUBMITTER_NAME_MAX_LENGTH,
+            description: "Name des Einreichers (wird getrimmt).",
+            examples: ["Max Mustermann"],
+          },
+          feedback: {
+            type: "string",
+            minLength: 1,
+            maxLength: FEEDBACK_MAX_LENGTH,
+            description: `Der Feedbacktext (wird getrimmt, Zeilenenden werden auf \`\\n\` normalisiert). Innere Absätze bleiben erhalten. Maximal ${FEEDBACK_MAX_LENGTH} Zeichen.`,
+            examples: ["Die Öffnungszeiten sollten verlängert werden."],
+          },
+        },
+      },
+      FeedbackSubmissionResponse: {
+        type: "object",
+        description:
+          "Enthält bewusst nur die öffentlichen Links und die Nummer — keine Karten-ID, kein Board, keine Spalte, keine internen Notizen.",
+        required: ["statusUrl", "receiptPdfUrl", "number"],
+        properties: {
+          statusUrl: {
+            type: "string",
+            format: "uri",
+            description:
+              "Geheimer öffentlicher Status-Link. Lokal speichern, vertraulich behandeln, nicht loggen.",
+            examples: ["https://gremio.example/feedback/status/abc123"],
+          },
+          receiptPdfUrl: {
+            type: "string",
+            format: "uri",
+            description: "Eingangsbestätigung als PDF (gleicher Token).",
+            examples: ["https://gremio.example/feedback/status/abc123/pdf"],
+          },
+          number: {
+            type: ["string", "null"],
+            description:
+              "Kartennummer, falls die Board-Nummerierung aktiv ist — sonst `null`.",
+            examples: ["F_0042_2026"],
           },
         },
       },

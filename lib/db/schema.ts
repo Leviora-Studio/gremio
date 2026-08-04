@@ -734,6 +734,58 @@ export const apiIdempotencyKeys = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Umfragen / Feedback
+// ---------------------------------------------------------------------------
+// Feedback-Bereiche routen öffentliche Einreichungen — fachlich exakt wie die
+// Standorte des Antragsformulars, nur für /feedback. Bewusst eine eigene
+// Tabelle statt eines Flags an `locations`: die beiden Formulare haben eigene
+// Bereichslisten, und ein Standort soll nicht versehentlich im Feedback
+// auftauchen (oder umgekehrt).
+export const feedbackAreas = pgTable("feedback_areas", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  position: integer("position").notNull().default(0),
+  // Wie bei `locations` bewusst RESTRICT statt CASCADE: Ein Board/eine Spalte
+  // darf nicht stillschweigend verschwinden, während ein Bereich noch darauf
+  // routet — der Admin muss das Routing erst umstellen.
+  targetBoardId: integer("target_board_id").references(() => boards.id, {
+    onDelete: "restrict",
+  }),
+  targetStatusId: integer("target_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "restrict" },
+  ),
+  createdAt: createdAt(),
+});
+
+// Herkunfts-Snapshot je Feedback-Karte.
+//
+// Zwei Aufgaben: (1) Feedback-Karten zuverlässig von Antragskarten unterscheiden
+// — auch dann noch, wenn der Bereich später gelöscht wurde; (2) die
+// ursprüngliche Einreichung unveränderlich festhalten. Intern darf das Gremium
+// `cards.applicant`/`cards.notes` bearbeiten; die öffentliche Statusseite und
+// die PDF-Eingangsbestätigung zeigen trotzdem weiter das, was eingereicht wurde.
+export const feedbackSubmissions = pgTable("feedback_submissions", {
+  id: serial("id").primaryKey(),
+  // Genau eine Einreichung je Karte; verschwindet die Karte, verschwindet auch
+  // der Snapshot.
+  cardId: integer("card_id")
+    .notNull()
+    .unique()
+    .references(() => cards.id, { onDelete: "cascade" }),
+  // SET NULL: Wird ein Bereich gelöscht, bleiben Karte und Snapshot bestehen —
+  // der Name unten trägt die Herkunft weiter.
+  areaId: integer("area_id").references(() => feedbackAreas.id, {
+    onDelete: "set null",
+  }),
+  areaName: text("area_name").notNull(), // Snapshot des Bereichsnamens
+  submitterName: text("submitter_name").notNull(),
+  feedbackText: text("feedback_text").notNull(),
+  createdAt: createdAt(),
+});
+
+// ---------------------------------------------------------------------------
 // Inventar- & Entleihsystem
 // ---------------------------------------------------------------------------
 // Inventar-Boards: eigenständige Listen (z. B. je StuRa-Standort oder Fach-
@@ -1094,6 +1146,8 @@ export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;
 export type ApiIdempotencyKey = typeof apiIdempotencyKeys.$inferSelect;
+export type FeedbackArea = typeof feedbackAreas.$inferSelect;
+export type FeedbackSubmission = typeof feedbackSubmissions.$inferSelect;
 export type InventoryBoard = typeof inventoryBoards.$inferSelect;
 export type InventoryBoardAccess = typeof inventoryBoardAccess.$inferSelect;
 export type InventoryOption = typeof inventoryOptions.$inferSelect;

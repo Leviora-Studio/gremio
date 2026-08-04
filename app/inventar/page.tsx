@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { getPublicInventoryBoards } from "@/lib/inventory-public";
+import { PublicNav } from "@/components/PublicNav";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Inventar — Ausleihe" };
@@ -12,9 +13,7 @@ export default async function PublicInventoryHome() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
-      <Link href="/" className="btn-primary mb-4 shadow-sm">
-        📝 Finanzantrag stellen →
-      </Link>
+      <PublicNav current="inventar" />
       <h1 className="text-2xl font-bold">Inventar &amp; Ausleihe</h1>
       <p className="mb-6 mt-2 text-slate-600">
         Stöbere im verfügbaren Inventar und frage einen Gegenstand zur Ausleihe

@@ -4,7 +4,7 @@
 Web-App zur Verwaltung von Anträgen in Gremien (z. B. Studierendenvertretungen, Vereinen, Ausschüssen).
 
 Zwei Bereiche:
-- **Öffentlich** — Studierende reichen Anträge über ein Formular ein, sehen Statusseite; außerdem öffentliches **Inventar** mit Ausleih-Anfrage (siehe „Inventar- & Entleihsystem")
+- **Öffentlich** — Studierende reichen Anträge über ein Formular ein, sehen Statusseite; außerdem öffentliches **Feedback** (siehe „Umfragen & Feedback") und öffentliches **Inventar** mit Ausleih-Anfrage (siehe „Inventar- & Entleihsystem")
 - **Intern** — das Gremium verwaltet Anträge auf **mehreren Kanban-Boards** (Login erforderlich)
 
 Die Boards sind **allgemeine Kanban-Boards** und auch **unabhängig vom öffentlichen Formular** nutzbar. Das öffentliche Formular ist nur *eine* Quelle: Eingaben werden je nach gewähltem **Standort** automatisch in ein vom Admin festgelegtes Board + Spalte eingespeist (siehe „Standorte & Formular-Routing").
@@ -256,6 +256,9 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /                        → Antragsformular (öffentlich)
 /status/{token}          → Statusseite für Antragsteller (öffentlich, nur per Token): Status ansehen, Dokumente ansehen, PDFs nachreichen
 /status/{token}/pdf      → Eingangsbestätigung als PDF (öffentlich, nur per Token)
+/feedback                → Öffentliches Feedback-Formular (Bereichsauswahl, Name, Freitext)
+/feedback/status/{token} → Statusseite eines Feedbacks (öffentlich, nur per Token)
+/feedback/status/{token}/pdf → Feedback-Eingangsbestätigung als PDF
 /inventar                → Öffentliche Inventare (nur vom Admin freigegebene) — Einstieg
 /inventar/{id}           → Öffentliche Inventarliste: suchen/filtern + Ausleihe anfragen
 /inventar/status/{token} → Statusseite eines Leihvorgangs (öffentlich, nur per Token)
@@ -298,6 +301,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /admin/inventar          → Inventare: öffentliche Sichtbarkeit je Inventar-Board schalten (nur Admin)
 /admin/inventar/gesamt   → Gesamtinventar konfigurieren: einbezogene Boards + Mindestpreis (nur Admin)
 /admin/standorte         → Standorte: anlegen/umbenennen/löschen + aktivieren/deaktivieren + Ziel-Board/-Spalte (nur Admin)
+/admin/umfragen          → Feedback-Bereiche: wie Standorte, aber fürs Feedback-Formular (nur Admin)
 /admin/priorities        → Prioritäten: Bezeichnung + Farbe je Stufe anpassen (nur Admin)
 /admin/accounts          → Konten: Auswahloptionen für das Kartenfeld „Konto" verwalten (nur Admin)
 /admin/formular          → Antragsformular: Dateien („Wichtige Dokumente") verwalten, die öffentlich auf der Antragsseite erscheinen (nur Admin)
@@ -519,6 +523,37 @@ inventory_attachments  (id, item_id FK→inventory_items ON DELETE CASCADE,
 
 inventory_overview_config  (id PK DEFAULT 1, min_price)   -- Singleton, Cent
 user_inventory_board_order (user_id, board_id, position, PRIMARY KEY(user_id, board_id))
+```
+
+---
+
+## Umfragen & Feedback
+
+Öffentliches Feedback unter `/feedback` — fachlich wie das Antragsformular, nur ohne Dateien. Statt **Standorten** gibt es **Feedback-Bereiche** (`feedback_areas`), die der Admin unter `/admin/umfragen` („Umfragen & Feedback-Routing") verwaltet: anlegen, umbenennen, löschen, Ziel-Board + Ziel-Spalte setzen, aktivieren/deaktivieren. Es gelten dieselben Regeln wie bei Standorten — nur aktivierte und **vollständig geroutete** Bereiche erscheinen öffentlich, die Zielspalte muss zum Ziel-Board gehören, und Board/Spalte sind gegen Löschen geschützt (`ON DELETE RESTRICT` + verständliche Meldung).
+
+Eine Einreichung erzeugt eine **normale Kanban-Karte**:
+- `cards.applicant` = Name des Einreichers, `cards.notes` = **vollständiger** Feedbacktext
+- `cards.title` = automatisch aus dem Text abgeleitet (auf 120 Zeichen gekürzt, mit `…`)
+- `cards.location_id` = NULL (Feedback läuft nicht über das Standort-Routing)
+- Status-Token, Aktivitätseintrag und Kartennummer wie bei Anträgen
+
+Dazu entsteht in **derselben Transaktion** ein unveränderlicher Snapshot in `feedback_submissions`. Er hat zwei Aufgaben: Feedback-Karten zuverlässig von Antragskarten unterscheiden (auch nachdem der Bereich gelöscht wurde) und die **Originaleinreichung** festhalten. Die öffentliche Statusseite und das PDF zeigen deshalb den Snapshot — bearbeitet das Gremium intern `applicant`/`notes`, ändert das die öffentliche Ansicht nicht.
+
+**Getrennte Statusrouten:** `/status/{token}` und `/feedback/status/{token}` weisen den jeweils fremden Token-Typ mit **404** ab (inklusive der PDF-Routen). Intern zeigt die Kartendetailansicht „Herkunft: Feedback" samt Bereichsnamen und beschriftet `applicant` als **„Einreicher"** statt „Antragsteller" (nur die Anzeige — Spalte und API-Feld heißen weiter `applicant`).
+
+Die Fachlogik liegt in `lib/public-feedback-submission.ts` und wird von **beiden** Wegen genutzt: der Server-Action des Formulars und dem API-Handler `POST /api/public/v1/feedback`. Das Formular hat zusätzlich Honeypot, signierte Zeitfalle und einen eigenen Rate-Limit-Scope (`feedback-submit`, 10/min); die API stattdessen verpflichtende Idempotenz (Scope `public-feedback`) und eigene Limits.
+
+```sql
+feedback_areas       (id, name UNIQUE, enabled DEFAULT false, position,
+                      target_board_id  FK→boards         NULL ON DELETE RESTRICT,
+                      target_status_id FK→board_statuses NULL ON DELETE RESTRICT,
+                      created_at)
+
+feedback_submissions (id, card_id UNIQUE FK→cards ON DELETE CASCADE,
+                      area_id FK→feedback_areas NULL ON DELETE SET NULL,
+                      area_name, submitter_name, feedback_text, created_at)
+-- area_name/submitter_name/feedback_text = Snapshot der Einreichung; bleibt auch
+-- nach Umbenennen oder Löschen des Bereichs erhalten.
 ```
 
 ---

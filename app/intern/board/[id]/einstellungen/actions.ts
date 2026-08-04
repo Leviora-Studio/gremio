@@ -173,11 +173,12 @@ export async function deleteStatusAction(
       .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
   } catch (err) {
     const code = (err as { code?: string }).code ?? "";
-    // 23503 = foreign_key_violation (Karten oder Standort referenzieren die Spalte)
+    // 23503 = foreign_key_violation (Karten, Standort oder Feedback-Bereich
+    // referenzieren die Spalte).
     if (code === "23503") {
       return {
         error:
-          "Spalte enthält Karten oder ist Ziel eines Standorts. Bitte zuerst leeren bzw. Routing umstellen.",
+          "Spalte enthält Karten oder ist Ziel eines Standorts bzw. eines Feedback-Bereichs. Bitte zuerst leeren bzw. Routing umstellen.",
       };
     }
     throw err;
