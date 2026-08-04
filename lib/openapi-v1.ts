@@ -166,7 +166,10 @@ export const openApiV1Spec = {
   openapi: "3.1.0",
   info: {
     title: "Gremio Internal API",
-    version: "v1",
+    // Version des DOKUMENTS (semver) — gleiche Konvention wie in
+    // lib/openapi-public.ts. NICHT die Pfad-Version: die steckt im Namespace
+    // `/api/v1` und im Feld `version` der Discovery-Antwort und bleibt `v1`.
+    version: "1.0.0",
     summary: "Token-geschützte API für Boards und Karten.",
     description: `Interne REST-API von Gremio für **eigene Werkzeuge und Integrationen**.
 
