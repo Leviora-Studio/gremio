@@ -9,6 +9,48 @@ Karten **anlegen, ändern, verschieben und löschen**.
 > `/api/public/v1` — siehe [PUBLIC_API.md](PUBLIC_API.md). Sie hat einen eigenen
 > Namespace, eigene Rate-Limits und verlangt einen `Idempotency-Key`.
 
+## Interaktive Dokumentation (Swagger UI)
+
+| Was | Adresse | Zugang |
+|-----|---------|--------|
+| **Swagger UI (intern)** | `/api/v1/docs` | **Anmeldung erforderlich** (Gremio-Web-Session) |
+| **OpenAPI-JSON (intern)** | `/api/v1/openapi.json` | **Anmeldung erforderlich**, sonst `401` |
+| YAML im Repo | [`openapi-v1.yaml`](openapi-v1.yaml) | generiert, nicht von Hand pflegen |
+
+Die Oberfläche zeigt alle Endpunkte dieser Seite mit Schemas, Beispielen und
+Fehlerantworten und erlaubt „Try it out" direkt im Browser.
+
+**Zwei getrennte Stufen — die Anmeldung ersetzt den Token nicht:**
+
+1. Die **Web-Session** berechtigt nur dazu, die Dokumentation zu *öffnen*. Ohne
+   Anmeldung leitet `/api/v1/docs` auf `/login`, und `/api/v1/openapi.json`
+   antwortet mit `401`.
+2. Für **„Try it out"** hinterlegst du oben rechts über **Authorize** deinen
+   eigenen API-Token. Er bleibt im Browser; der Server erzeugt zu keinem
+   Zeitpunkt selbst einen Token aus deiner Session.
+3. Die aufgerufene Route prüft den Bearer-Token **unabhängig davon** erneut —
+   inklusive Rechtestufe, Board-Beschränkung und aller Board-, Gruppen- und
+   Rollenrechte. Ein Aufruf ohne oder mit ungültigem Token ergibt `401`, ein
+   Schreibzugriff mit einem `read`-Token `403`.
+
+Swagger sendet den Token als:
+
+```
+Authorization: Bearer grm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+YAML neu erzeugen (aus `lib/openapi-v1.ts`):
+
+```bash
+npm run openapi:internal:yaml
+```
+
+`npm run openapi:yaml` erzeugt beide Spezifikationen, `npm run openapi:public:yaml`
+nur die öffentliche. Öffentliche und interne Spezifikation bleiben bewusst
+**getrennte Dokumente** — die öffentliche Doku unter
+[`/api/public/docs`](PUBLIC_API.md) enthält keine internen Routen, und
+umgekehrt.
+
 ## Authentifizierung
 
 Jede Anfrage benötigt einen **persönlichen API-Token** im Header:

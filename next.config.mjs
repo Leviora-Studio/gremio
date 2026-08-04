@@ -22,6 +22,13 @@ const nextConfig = {
   // /api/public/docs/assets/[file]). Ohne diesen Hinweis nimmt der
   // Standalone-Output sie nicht mit, weil sie nirgends importiert werden.
   outputFileTracingIncludes: {
+    // Swagger-Assets stehen nicht im Import-Graph (werden zur Laufzeit gelesen)
+    // — beide Asset-Routen brauchen sie deshalb explizit im Standalone-Output.
+    "/api/docs/assets/[file]": [
+      "./node_modules/swagger-ui-dist/swagger-ui.css",
+      "./node_modules/swagger-ui-dist/swagger-ui-bundle.js",
+      "./node_modules/swagger-ui-dist/swagger-ui-standalone-preset.js",
+    ],
     "/api/public/docs/assets/[file]": [
       "./node_modules/swagger-ui-dist/swagger-ui.css",
       "./node_modules/swagger-ui-dist/swagger-ui-bundle.js",
