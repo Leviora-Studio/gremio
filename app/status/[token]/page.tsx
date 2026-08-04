@@ -2,27 +2,17 @@
 // Copyright (C) 2026 Erik Engler
 
 import { notFound } from "next/navigation";
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { cards, boards, boardStatuses, attachments } from "@/lib/db/schema";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import { env } from "@/lib/env";
 import { formatDateTime } from "@/lib/dates";
-import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
 import { PublicUploadForm } from "@/components/PublicUploadForm";
 import { PublicSubmitForm } from "@/components/PublicSubmitForm";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { StatusLinkBox } from "@/components/StatusLinkBox";
-import { isFeedbackToken } from "@/lib/public-feedback-submission";
+import { getApplicationStatusByToken } from "@/lib/public-status";
 
 export const dynamic = "force-dynamic";
-
-const NAMED_PUBLIC: { kind: string; label: string }[] = [
-  { kind: "finance_request", label: "Finanzantrag" },
-  { kind: "annex_a", label: "Anlage A" },
-  { kind: "annex_b", label: "Anlage B" },
-];
 
 function fmt(d: Date) {
   return formatDateTime(d, "long");
@@ -34,75 +24,18 @@ export default async function StatusPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const [antrag] = await db
-    .select({
-      id: cards.id,
-      boardId: cards.boardId,
-      statusId: cards.statusId,
-      number: cards.number,
-      title: cards.title,
-      applicant: cards.applicant,
-      createdAt: cards.createdAt,
-      updatedAt: cards.updatedAt,
-      resubmittedAt: cards.resubmittedAt,
-      applicantNote: cards.applicantNote,
-      statusName: boardStatuses.name,
-      isArchiveTrigger: boardStatuses.isArchiveTrigger,
-    })
-    .from(cards)
-    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(eq(cards.token, token))
-    .limit(1);
-
+  // Gemeinsamer Loader mit der öffentlichen API — was dort nicht drinsteht,
+  // ist auch hier nicht sichtbar (und umgekehrt). `undefined` deckt beides ab:
+  // unbekannter Token UND Feedback-Token (Feedback hat eine eigene Seite).
+  const antrag = await getApplicationStatusByToken(token);
   if (!antrag) notFound();
-  // Feedback-Karten haben ihre EIGENE Statusseite (/feedback/status/{token}).
-  // Hier bewusst 404: Diese Seite zeigt Dokumente, Nachreichen und Quittungen —
-  // alles, was es für Feedback nicht gibt.
-  if (await isFeedbackToken(token)) notFound();
 
-  // Board-Gates: bestimmt, ob/welcher „Einreichen"-Button gezeigt wird.
-  const [board] = await db
-    .select({
-      resubmitStatusId: boards.resubmitStatusId,
-      receiptFromStatusId: boards.receiptFromStatusId,
-      receiptToStatusId: boards.receiptToStatusId,
-    })
-    .from(boards)
-    .where(eq(boards.id, antrag.boardId))
-    .limit(1);
-
-  // Liegt der Antrag in der Archiv-Spalte (Nextcloud-Trigger), ist er
-  // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.
-  const isArchived = !!antrag.isArchiveTrigger;
-  const canResubmit =
-    !isArchived &&
-    !!board?.resubmitStatusId &&
-    antrag.statusId === board.resubmitStatusId;
-  const canReceipt =
-    !isArchived &&
-    !!board?.receiptFromStatusId &&
-    !!board?.receiptToStatusId &&
-    antrag.statusId === board.receiptFromStatusId;
+  const isArchived = antrag.archived;
+  const canResubmit = antrag.submitMode === "resubmission";
+  const canReceipt = antrag.submitMode === "receipt";
   const submitLabel = canResubmit
     ? "Nachreichung einreichen"
     : "Quittung einreichen";
-
-  const atts = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(
-        eq(attachments.cardId, antrag.id),
-        inArray(attachments.kind, [...PUBLIC_ATTACHMENT_KINDS]),
-      ),
-    )
-    .orderBy(asc(attachments.uploadedAt));
-
-  const named = NAMED_PUBLIC.map((n) => ({
-    label: n.label,
-    file: atts.find((a) => a.kind === n.kind) ?? null,
-  })).filter((n) => n.file);
-  const others = atts.filter((a) => a.kind === "other");
 
   const link = `${env.APP_BASE_URL}/status/${token}`;
 
@@ -178,34 +111,27 @@ export default async function StatusPage({
       {/* Dokumente (nur ansehen) */}
       <div className="card mt-6 space-y-3 p-6">
         <h2 className="text-lg font-semibold">Dokumente</h2>
-        {named.length === 0 && others.length === 0 ? (
+        {antrag.documents.length === 0 ? (
           <p className="text-sm text-slate-500">
             Aktuell sind keine Dokumente hinterlegt.
           </p>
         ) : (
           <ul className="space-y-2 text-sm">
-            {named.map((n) => (
-              <li key={n.file!.id}>
+            {antrag.documents.map((d) => (
+              <li key={d.id}>
+                {/* Benannte Slots zeigen ihr Label plus den Dateinamen;
+                    nachgereichte Dateien nur den Dateinamen. */}
                 <AttachmentLink
-                  id={n.file!.id}
-                  filename={n.file!.filename}
-                  label={n.label}
-                  mime={n.file!.mime}
-                  src={`/api/status/${token}/attachment/${n.file!.id}`}
+                  id={d.id}
+                  filename={d.filename}
+                  label={d.kind === "other" ? undefined : d.label}
+                  mime={d.mime}
+                  src={`/api/status/${token}/attachment/${d.id}`}
                   className="text-brand-600 hover:underline"
                 />
-                <span className="text-slate-400"> — {n.file!.filename}</span>
-              </li>
-            ))}
-            {others.map((a) => (
-              <li key={a.id}>
-                <AttachmentLink
-                  id={a.id}
-                  filename={a.filename}
-                  mime={a.mime}
-                  src={`/api/status/${token}/attachment/${a.id}`}
-                  className="text-brand-600 hover:underline"
-                />
+                {d.kind !== "other" && (
+                  <span className="text-slate-400"> — {d.filename}</span>
+                )}
               </li>
             ))}
           </ul>

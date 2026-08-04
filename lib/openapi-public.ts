@@ -8,9 +8,11 @@ import {
   RL_FEEDBACK_BURST,
   RL_FEEDBACK_DAY,
   RL_LOCATIONS,
+  RL_STATUS,
   RL_SUBMIT_BURST,
   RL_SUBMIT_DAY,
 } from "@/lib/public-api";
+import { MAX_STATUS_URL_LENGTH } from "@/lib/public-status-url";
 import {
   ANONYMOUS_SUBMITTER,
   FEEDBACK_MAX_LENGTH,
@@ -70,6 +72,21 @@ const feedbackRateLimitResponse = {
   },
 } as const;
 
+// Statusabfrage: eigener, großzügiger Bucket fürs Polling nativer Apps.
+// Bewusst OHNE Tageslimit — viele Geräte teilen sich eine Carrier-NAT-IP.
+const statusRateLimitResponse = {
+  description: `Rate-Limit erreicht: ${RL_STATUS.limit} Statusabfragen pro IP und Minute. Eigener Bucket — Einreichungen und Bereichs-/Standortabrufe bleiben davon unberührt. Es gibt bewusst kein zusätzliches Tageslimit.`,
+  headers: {
+    "Retry-After": {
+      description: "Sekunden bis zum nächsten zulässigen Versuch.",
+      schema: { type: "integer" },
+    },
+  },
+  content: {
+    "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } },
+  },
+} as const;
+
 const errorResponse = (description: string) =>
   ({
     description,
@@ -84,7 +101,8 @@ export const openApiPublicSpec = {
   openapi: "3.1.0",
   info: {
     title: "Gremio — Öffentliche API",
-    version: "1.0.0",
+    // 1.1.0: rückwärtskompatible Erweiterung um POST /status (Minor).
+    version: "1.1.0",
     summary:
       "Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.",
     description: `Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
@@ -112,6 +130,11 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
     {
       name: "Öffentliches Feedback",
       description: "Feedback-Bereiche abrufen und Feedback einreichen.",
+    },
+    {
+      name: "Öffentlicher Status",
+      description:
+        "Status eines Antrags oder Feedbacks anhand des Status-Links abrufen.",
     },
   ],
   paths: {
@@ -479,9 +502,353 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
         },
       },
     },
+    "/api/public/v1/status": {
+      post: {
+        tags: ["Öffentlicher Status"],
+        operationId: "resolvePublicStatus",
+        summary: "Status per Status-Link abrufen",
+        security: [],
+        description: `Liefert den aktuellen Stand eines Antrags oder Feedbacks anhand des Status-Links, den die App beim Einreichen erhalten hat.
+
+**Warum POST für einen lesenden Abruf?** Der Status-Link ist ein Geheimnis. Als Query-Parameter (\`?statusUrl=…\`) landete er in Browser-Historien, Proxy- und Access-Logs, Monitoring und Referrer-Headern. Im JSON-Body bleibt er davon verschont.
+
+Der Endpunkt **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivität, keine Datei. Er braucht deshalb **keinen \`Idempotency-Key\`** — beliebig oft aufrufbar.
+
+**Unterstützte Links** (beide nur auf dieser Instanz):
+* \`{APP_BASE_URL}/status/{token}\` → Antrag
+* \`{APP_BASE_URL}/feedback/status/{token}\` → Feedback
+
+**Nicht unterstützt:** Ausleih-/Inventarstatus (\`/inventar/status/…\`), PDF-Links, Attachment- und Stream-URLs sowie interne Kartenlinks. Solche Eingaben ergeben \`400\`.
+
+**Sicherheit:** Der Link wird ausschließlich lokal geprüft und **niemals vom Server abgerufen**. Behandle ihn wie ein Bearer-Credential: nicht loggen, nicht an Analytics geben, nicht teilen.
+
+**Umfang:** Ausgegeben wird ausschließlich, was auch die öffentliche Webansicht zeigt — keine internen IDs, Notizen, Kommentare oder Dateipfade. Der **Studierendenausweis** erscheint nie.
+
+**Polling:** Die App darf regelmäßig abfragen. Bei \`429\` den Header \`Retry-After\` beachten.`,
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PublicStatusRequest" },
+              examples: {
+                antrag: {
+                  summary: "Antrag",
+                  value: { statusUrl: "https://gremio.example/status/abc123" },
+                },
+                feedback: {
+                  summary: "Feedback",
+                  value: {
+                    statusUrl:
+                      "https://gremio.example/feedback/status/xyz789",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description:
+              "Aktueller Status. Der Typ steht in `type` — `application` oder `feedback`.",
+            headers: {
+              "Cache-Control": {
+                description: "Immer `no-store`.",
+                schema: { type: "string" },
+              },
+            },
+            content: {
+              "application/json": {
+                schema: {
+                  oneOf: [
+                    {
+                      $ref: "#/components/schemas/PublicApplicationStatusResponse",
+                    },
+                    {
+                      $ref: "#/components/schemas/PublicFeedbackStatusResponse",
+                    },
+                  ],
+                  discriminator: {
+                    propertyName: "type",
+                    mapping: {
+                      application:
+                        "#/components/schemas/PublicApplicationStatusResponse",
+                      feedback:
+                        "#/components/schemas/PublicFeedbackStatusResponse",
+                    },
+                  },
+                },
+                examples: {
+                  antrag: {
+                    summary: "Antrag",
+                    value: {
+                      type: "application",
+                      statusUrl: "https://gremio.example/status/abc123",
+                      receiptPdfUrl:
+                        "https://gremio.example/status/abc123/pdf",
+                      number: "A_0042_2026",
+                      submittedAt: "2026-08-04T10:15:00.000Z",
+                      updatedAt: "2026-08-05T08:30:00.000Z",
+                      application: {
+                        title: "Grillabend am FB5",
+                        applicant: "Max Mustermann",
+                      },
+                      status: {
+                        name: "In Bearbeitung",
+                        resubmittedAt: null,
+                        archived: false,
+                      },
+                      publicNote: "Bitte reiche noch eine Quittung nach.",
+                      documents: [
+                        {
+                          kind: "finance_request",
+                          label: "Finanzantrag",
+                          filename: "Finanzantrag.pdf",
+                          mimeType: "application/pdf",
+                          downloadUrl:
+                            "https://gremio.example/api/status/abc123/attachment/12",
+                        },
+                      ],
+                      availableActions: {
+                        canUploadDocuments: true,
+                        submitMode: "receipt",
+                      },
+                    },
+                  },
+                  feedback: {
+                    summary: "Feedback",
+                    value: {
+                      type: "feedback",
+                      statusUrl:
+                        "https://gremio.example/feedback/status/xyz789",
+                      receiptPdfUrl:
+                        "https://gremio.example/feedback/status/xyz789/pdf",
+                      number: "F_0042_2026",
+                      submittedAt: "2026-08-04T10:15:00.000Z",
+                      updatedAt: "2026-08-05T08:30:00.000Z",
+                      feedback: {
+                        area: "Bibliothek",
+                        submitterName: "Max Mustermann",
+                        text: "Die Öffnungszeiten sollten verlängert werden.",
+                      },
+                      status: { name: "In Bearbeitung" },
+                      publicNote: null,
+                      documents: [],
+                      availableActions: {
+                        canUploadDocuments: false,
+                        submitMode: null,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "400": errorResponse(
+            "Fehlender, formal ungültiger oder nicht unterstützter Status-Link (fremder Origin, Query/Fragment, PDF-/Attachment-/Inventarpfad, unbekanntes Feld oder ungültiges JSON).",
+          ),
+          "404": errorResponse(
+            "Der Vorgang wurde nicht gefunden. Bewusst identisch für unbekannten Token, gelöschten Vorgang und Token des falschen Typs (z. B. Feedback-Token auf dem Antragspfad).",
+          ),
+          "413": errorResponse("Der Body ist größer als 8 KiB."),
+          "415": errorResponse("Content-Type ist nicht application/json."),
+          "429": statusRateLimitResponse,
+          "500": errorResponse(
+            "Unerwarteter interner Fehler. Die Meldung ist bewusst generisch.",
+          ),
+        },
+      },
+    },
   },
   components: {
     schemas: {
+      PublicStatusRequest: {
+        type: "object",
+        description: "Der Status-Link, den die App beim Einreichen erhalten hat.",
+        required: ["statusUrl"],
+        additionalProperties: false,
+        properties: {
+          statusUrl: {
+            type: "string",
+            format: "uri",
+            maxLength: MAX_STATUS_URL_LENGTH,
+            description:
+              "Vollständiger Status-Link dieser Instanz — `/status/{token}` (Antrag) oder `/feedback/status/{token}` (Feedback). Query-Parameter, Fragmente, Zugangsdaten in der URL sowie PDF-, Attachment-, Stream-, Inventar- und interne Pfade werden abgelehnt.",
+            examples: ["https://gremio.example/status/abc123"],
+          },
+        },
+      },
+      PublicStatusDocument: {
+        type: "object",
+        description:
+          "Ein öffentlich sichtbares Dokument des Vorgangs — exakt die Dateien, die auch die Webansicht anbietet. Der Studierendenausweis ist NIE enthalten.",
+        required: ["kind", "label", "filename", "mimeType", "downloadUrl"],
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["finance_request", "annex_a", "annex_b", "other"],
+            description: "`other` = öffentlich nachgereichte Datei bzw. Quittung.",
+          },
+          label: {
+            type: "string",
+            description:
+              "Anzeigename wie in der Webansicht; bei nachgereichten Dateien der Dateiname.",
+          },
+          filename: { type: "string" },
+          mimeType: { type: "string", examples: ["application/pdf"] },
+          downloadUrl: {
+            type: "string",
+            format: "uri",
+            description:
+              "Absoluter Download-Link über die token-geschützte Route. Enthält keine Dateisystem- oder Nextcloud-Pfade; die Zuordnung von Token und Anhang wird serverseitig weiterhin geprüft.",
+          },
+        },
+      },
+      PublicStatusActions: {
+        type: "object",
+        description:
+          "Welche Aktionen die öffentliche Webansicht gerade anbietet. Dieser Endpunkt stellt nur den Status bereit — die Aktionen selbst laufen über die Weboberfläche.",
+        required: ["canUploadDocuments", "submitMode"],
+        properties: {
+          canUploadDocuments: {
+            type: "boolean",
+            description:
+              "Dürfen weitere Dateien hinzugefügt werden? Bei archivierten Vorgängen `false`. Für Feedback immer `false`.",
+          },
+          submitMode: {
+            type: ["string", "null"],
+            enum: ["resubmission", "receipt", null],
+            description:
+              "`resubmission` = Nachreichung einreichbar, `receipt` = Quittung einreichbar, `null` = kein Einreichen-Knopf. Ergibt sich aus den Board-Gates und dem aktuellen Stand; die Zielspalte wird bewusst nicht ausgegeben.",
+          },
+        },
+      },
+      PublicApplicationStatusResponse: {
+        type: "object",
+        description: "Status eines Antrags.",
+        required: [
+          "type",
+          "statusUrl",
+          "receiptPdfUrl",
+          "number",
+          "submittedAt",
+          "updatedAt",
+          "application",
+          "status",
+          "publicNote",
+          "documents",
+          "availableActions",
+        ],
+        properties: {
+          type: { type: "string", const: "application" },
+          statusUrl: {
+            type: "string",
+            format: "uri",
+            description:
+              "Kanonischer Status-Link, aus `APP_BASE_URL` erzeugt (nicht aus der Eingabe übernommen).",
+          },
+          receiptPdfUrl: { type: "string", format: "uri" },
+          number: {
+            type: ["string", "null"],
+            description: "Antragsnummer; `null`, wenn die Board-Nummerierung aus ist.",
+          },
+          submittedAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          application: {
+            type: "object",
+            required: ["title", "applicant"],
+            properties: {
+              title: { type: "string", description: "Antragsgegenstand." },
+              applicant: { type: ["string", "null"] },
+            },
+          },
+          status: {
+            type: "object",
+            required: ["name", "resubmittedAt", "archived"],
+            properties: {
+              name: {
+                type: ["string", "null"],
+                description: "Öffentlicher Name der aktuellen Spalte.",
+              },
+              resubmittedAt: {
+                type: ["string", "null"],
+                format: "date-time",
+                description: "Zeitpunkt einer öffentlichen Nachreichung.",
+              },
+              archived: {
+                type: "boolean",
+                description:
+                  "Vorgang liegt in der Archiv-Spalte und ist damit öffentlich abgeschlossen.",
+              },
+            },
+          },
+          publicNote: {
+            type: ["string", "null"],
+            description:
+              "Bewusst öffentlicher Hinweis des Gremiums. Interne Notizen erscheinen NIE.",
+          },
+          documents: {
+            type: "array",
+            items: { $ref: "#/components/schemas/PublicStatusDocument" },
+          },
+          availableActions: {
+            $ref: "#/components/schemas/PublicStatusActions",
+          },
+        },
+      },
+      PublicFeedbackStatusResponse: {
+        type: "object",
+        description:
+          "Status eines Feedbacks. Bereich, Name und Text stammen aus dem unveränderlichen Snapshot der Einreichung — spätere interne Änderungen wirken sich nicht aus.",
+        required: [
+          "type",
+          "statusUrl",
+          "receiptPdfUrl",
+          "number",
+          "submittedAt",
+          "updatedAt",
+          "feedback",
+          "status",
+          "publicNote",
+          "documents",
+          "availableActions",
+        ],
+        properties: {
+          type: { type: "string", const: "feedback" },
+          statusUrl: { type: "string", format: "uri" },
+          receiptPdfUrl: { type: "string", format: "uri" },
+          number: { type: ["string", "null"] },
+          submittedAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          feedback: {
+            type: "object",
+            required: ["area", "submitterName", "text"],
+            properties: {
+              area: { type: "string", description: "Bereich zum Zeitpunkt der Einreichung." },
+              submitterName: {
+                type: "string",
+                description: `Name des Einreichers; ohne Angabe „${ANONYMOUS_SUBMITTER}".`,
+              },
+              text: { type: "string", description: "Ursprünglicher Feedbacktext." },
+            },
+          },
+          status: {
+            type: "object",
+            required: ["name"],
+            properties: {
+              name: { type: ["string", "null"] },
+            },
+          },
+          publicNote: { type: ["string", "null"] },
+          documents: {
+            type: "array",
+            description: "Für Feedback immer leer.",
+            items: { $ref: "#/components/schemas/PublicStatusDocument" },
+          },
+          availableActions: {
+            $ref: "#/components/schemas/PublicStatusActions",
+          },
+        },
+      },
       PublicLocation: {
         type: "object",
         description: "Ein auswählbarer Standort.",

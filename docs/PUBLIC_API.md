@@ -235,6 +235,147 @@ keine Notizen.
 
 ---
 
+## `POST /api/public/v1/status`
+
+Liefert den aktuellen Stand eines Antrags oder Feedbacks anhand des
+Status-Links. **Keine Anmeldung, kein API-Token, kein `Idempotency-Key`** — der
+Endpunkt ist ausschließlich lesend.
+
+### Warum POST für einen lesenden Abruf?
+
+Der Status-Link ist ein Geheimnis. Als Query-Parameter (`?statusUrl=…`) landete
+er in Browser-Historien, Proxy- und Access-Logs, Monitoring-URLs und
+Referrer-Headern. Im JSON-Body bleibt er davon verschont.
+
+Der Aufruf **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivität,
+keine Datei. Er ist beliebig oft wiederholbar.
+
+### Unterstützte Links
+
+| Form | Typ |
+|------|-----|
+| `{APP_BASE_URL}/status/{token}` | Antrag |
+| `{APP_BASE_URL}/feedback/status/{token}` | Feedback |
+
+**Nicht unterstützt** (ergibt `400`): Ausleih-/Inventarstatus
+(`/inventar/status/…`), PDF-Links, Attachment- und Stream-URLs, interne
+Kartenlinks, fremde Hosts, Links mit Query-Parametern, Fragment oder
+Zugangsdaten.
+
+Der Server ruft den übergebenen Link **niemals** ab. Er wird nur lokal geparst,
+strukturell gegen `APP_BASE_URL` geprüft und dann als Token gegen die eigene
+Datenbank verwendet.
+
+### Anfrage
+
+```bash
+curl -X POST "https://gremio.example/api/public/v1/status" \
+  -H "Content-Type: application/json" \
+  -d '{"statusUrl":"https://gremio.example/status/abc123"}'
+```
+
+Nur `application/json`, Body maximal 8 KiB, nur das Feld `statusUrl`.
+
+### Antwort — Antrag
+
+```json
+{
+  "type": "application",
+  "statusUrl": "https://gremio.example/status/abc123",
+  "receiptPdfUrl": "https://gremio.example/status/abc123/pdf",
+  "number": "A_0042_2026",
+  "submittedAt": "2026-08-04T10:15:00.000Z",
+  "updatedAt": "2026-08-05T08:30:00.000Z",
+  "application": {
+    "title": "Grillabend am FB5",
+    "applicant": "Max Mustermann"
+  },
+  "status": {
+    "name": "In Bearbeitung",
+    "resubmittedAt": null,
+    "archived": false
+  },
+  "publicNote": "Bitte reiche noch eine Quittung nach.",
+  "documents": [
+    {
+      "kind": "finance_request",
+      "label": "Finanzantrag",
+      "filename": "Finanzantrag.pdf",
+      "mimeType": "application/pdf",
+      "downloadUrl": "https://gremio.example/api/status/abc123/attachment/12"
+    }
+  ],
+  "availableActions": {
+    "canUploadDocuments": true,
+    "submitMode": "receipt"
+  }
+}
+```
+
+`availableActions` spiegelt, was die Webansicht gerade anbietet:
+`submitMode` ist `resubmission` (Nachreichung), `receipt` (Quittung) oder
+`null` (kein Einreichen-Knopf). Bei archivierten Anträgen ist
+`canUploadDocuments` `false` und `submitMode` `null`. Die Aktionen selbst laufen
+über die Weboberfläche — dieser Endpunkt stellt nur den Status bereit.
+
+### Antwort — Feedback
+
+```json
+{
+  "type": "feedback",
+  "statusUrl": "https://gremio.example/feedback/status/xyz789",
+  "receiptPdfUrl": "https://gremio.example/feedback/status/xyz789/pdf",
+  "number": "F_0042_2026",
+  "submittedAt": "2026-08-04T10:15:00.000Z",
+  "updatedAt": "2026-08-05T08:30:00.000Z",
+  "feedback": {
+    "area": "Bibliothek",
+    "submitterName": "Max Mustermann",
+    "text": "Die Öffnungszeiten sollten verlängert werden."
+  },
+  "status": { "name": "In Bearbeitung" },
+  "publicNote": null,
+  "documents": [],
+  "availableActions": { "canUploadDocuments": false, "submitMode": null }
+}
+```
+
+Bereich, Name und Text stammen aus dem **Snapshot** der Einreichung — bearbeitet
+das Gremium intern, ändert sich die Antwort nicht. Feedback hat keine Anhänge
+und keine öffentlichen Aktionen.
+
+### Was NICHT ausgegeben wird
+
+Karten-, Board- und Status-IDs, Positionen, interne Notizen, Kommentare,
+Aktivitätsverlauf, Zuweisungen, Prioritäten, Dateisystem- oder Nextcloud-Pfade,
+der hochladende interne Nutzer — und der **Studierendenausweis**, weder als
+Eintrag noch als Download-Link.
+
+Der Token erscheint nicht als eigenes Feld; er steckt bereits in `statusUrl`.
+
+### Fehler
+
+| Code | Bedeutung |
+|------|-----------|
+| `400` | Fehlender oder ungültiger Link, fremder Origin, nicht unterstützter Pfad, ungültiges JSON, unbekanntes Feld |
+| `404` | Vorgang nicht gefunden |
+| `413` | Body größer als 8 KiB |
+| `415` | Content-Type ist nicht `application/json` |
+| `429` | Rate-Limit — `Retry-After` beachten |
+
+`404` ist bewusst **identisch** für unbekannten Token, gelöschten Vorgang und
+Token des falschen Typs (Feedback-Token auf dem Antragspfad und umgekehrt).
+Fehlermeldungen enthalten weder Token noch Link.
+
+### Polling
+
+Die App darf regelmäßig abfragen — das Limit von 600 Anfragen pro IP und Minute
+ist dafür ausgelegt. Bei `429` den Header `Retry-After` beachten. Antworten
+tragen `Cache-Control: no-store` und `Referrer-Policy: no-referrer` und dürfen
+nicht zwischengespeichert werden.
+
+---
+
 ## Idempotenz — so muss die App es machen
 
 Mobile Netze brechen Verbindungen ab. Ohne Idempotenz entstünde bei jedem Retry
@@ -243,6 +384,9 @@ ein **weiterer Antrag** bzw. ein weiteres Feedback. Deshalb ist der Header bei
 Mechanik, aber **getrennte Scopes** (`public-application` bzw. `public-feedback`)
 — derselbe Key kann also einmal für einen Antrag und einmal für ein Feedback
 verwendet werden, ohne zu kollidieren.
+
+> `POST /status` braucht **keinen** `Idempotency-Key`: Der Endpunkt ist rein
+> lesend und legt nichts an. Er ist beliebig oft wiederholbar.
 
 1. Für einen neuen Entwurf **eine UUID** als `Idempotency-Key` erzeugen.
 2. Key und Entwurf **lokal auf dem Gerät speichern**.
@@ -300,6 +444,7 @@ Mobilfunk-/Carrier-NAT-Adressen erscheinen (viele Nutzer teilen sich eine IP).
 | `POST /feedback` (Burst) | 60 pro IP und Minute |
 | `POST /feedback` (Backstop) | 5.000 pro IP und 24 Stunden |
 | `GET /feedback-areas` | 300 pro IP und Minute |
+| `POST /status` | 600 pro IP und Minute (kein Tageslimit) |
 
 Anträge und Feedback haben **eigene Buckets**: Ein Ansturm auf die
 Feedback-API verbraucht nichts vom Kontingent der Antrags-API und umgekehrt.

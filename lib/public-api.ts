@@ -53,6 +53,16 @@ export const RL_FEEDBACK_AREAS = {
   windowMs: 60_000,
 } as const;
 
+// Statusabfrage: bewusst großzügig, weil native Apps pollen und viele Geräte
+// hinter derselben Carrier-NAT-IP erscheinen. KEIN zusätzliches Tageslimit —
+// das träfe sonst ganze Mobilfunk-Zellen. Eigener Bucket, unabhängig von allen
+// Einreichungs-Limits.
+export const RL_STATUS = {
+  scope: "public-api-status",
+  limit: 600,
+  windowMs: 60_000,
+} as const;
+
 export type FieldIssue = { field: string; message: string };
 
 /** Einheitliche JSON-Fehlerantwort der öffentlichen API. */

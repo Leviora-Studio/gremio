@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Erik Engler
+
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { attachments, boards, boardStatuses, cards } from "@/lib/db/schema";
+import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
+import { isFeedbackToken } from "@/lib/public-feedback-submission";
+
+/**
+ * Gemeinsame LESENDE Sicht auf den öffentlichen Antragsstatus — genutzt von
+ *   1. der Webansicht `/status/{token}`
+ *   2. dem öffentlichen API-Endpunkt `POST /api/public/v1/status`
+ *
+ * Der Zweck ist, dass Webansicht und API nicht auseinanderlaufen können: Was
+ * hier nicht drinsteht, sieht auch niemand. Insbesondere die Sichtbarkeit der
+ * Anhänge und die Berechnung der verfügbaren Aktionen liegen genau EINMAL vor.
+ *
+ * Für Feedback gibt es die entsprechende Funktion `getFeedbackByToken()` in
+ * `lib/public-feedback-submission.ts` (Snapshot-basiert).
+ */
+
+/** Öffentlich sichtbare Anhänge mit ihren Anzeige-Labels, in fester Reihenfolge. */
+const NAMED_PUBLIC_KINDS = [
+  { kind: "finance_request", label: "Finanzantrag" },
+  { kind: "annex_a", label: "Anlage A" },
+  { kind: "annex_b", label: "Anlage B" },
+] as const;
+
+export type PublicDocument = {
+  id: number;
+  kind: string;
+  /** Anzeigename des Slots; bei nachgereichten Dateien der Dateiname. */
+  label: string;
+  filename: string;
+  mime: string;
+};
+
+/**
+ * Welchen „Einreichen"-Knopf zeigt die Webansicht gerade?
+ *   resubmission = Nachreichung, receipt = Quittung, null = keinen.
+ */
+export type SubmitMode = "resubmission" | "receipt" | null;
+
+export type PublicApplicationStatus = {
+  token: string;
+  number: string | null;
+  title: string;
+  applicant: string | null;
+  statusName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  resubmittedAt: Date | null;
+  applicantNote: string | null;
+  /** Antrag liegt in der Archiv-Trigger-Spalte → öffentlich abgeschlossen. */
+  archived: boolean;
+  /** Dürfen öffentlich weitere Dateien hinzugefügt werden? */
+  canUploadDocuments: boolean;
+  submitMode: SubmitMode;
+  documents: PublicDocument[];
+};
+
+/**
+ * Lädt den öffentlichen Antragsstatus zu einem Token.
+ *
+ * Gibt `undefined` zurück, wenn es den Token nicht gibt ODER er zu einem
+ * FEEDBACK gehört — Feedback hat eine eigene Statusseite und darf hier nicht
+ * als Antrag erscheinen. Beide Fälle sind bewusst nicht unterscheidbar.
+ */
+export async function getApplicationStatusByToken(
+  token: string,
+): Promise<PublicApplicationStatus | undefined> {
+  if (!token) return undefined;
+
+  const [row] = await db
+    .select({
+      id: cards.id,
+      boardId: cards.boardId,
+      statusId: cards.statusId,
+      number: cards.number,
+      title: cards.title,
+      applicant: cards.applicant,
+      createdAt: cards.createdAt,
+      updatedAt: cards.updatedAt,
+      resubmittedAt: cards.resubmittedAt,
+      applicantNote: cards.applicantNote,
+      statusName: boardStatuses.name,
+      isArchiveTrigger: boardStatuses.isArchiveTrigger,
+    })
+    .from(cards)
+    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+    .where(eq(cards.token, token))
+    .limit(1);
+  if (!row) return undefined;
+  if (await isFeedbackToken(token)) return undefined;
+
+  // Board-Gates: bestimmen, ob/welcher „Einreichen"-Knopf erscheint.
+  const [board] = await db
+    .select({
+      resubmitStatusId: boards.resubmitStatusId,
+      receiptFromStatusId: boards.receiptFromStatusId,
+      receiptToStatusId: boards.receiptToStatusId,
+    })
+    .from(boards)
+    .where(eq(boards.id, row.boardId))
+    .limit(1);
+
+  // Liegt der Antrag in der Archiv-Spalte (Nextcloud-Trigger), ist er
+  // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.
+  const archived = !!row.isArchiveTrigger;
+  const canResubmit =
+    !archived &&
+    !!board?.resubmitStatusId &&
+    row.statusId === board.resubmitStatusId;
+  const canReceipt =
+    !archived &&
+    !!board?.receiptFromStatusId &&
+    !!board?.receiptToStatusId &&
+    row.statusId === board.receiptFromStatusId;
+
+  const atts = await db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.cardId, row.id),
+        // Whitelist aus den Konstanten — der Studierendenausweis steht dort
+        // bewusst NICHT drin und kann so nie öffentlich werden.
+        inArray(attachments.kind, [...PUBLIC_ATTACHMENT_KINDS]),
+      ),
+    )
+    .orderBy(asc(attachments.uploadedAt));
+
+  const documents: PublicDocument[] = [];
+  for (const n of NAMED_PUBLIC_KINDS) {
+    const file = atts.find((a) => a.kind === n.kind);
+    if (file) {
+      documents.push({
+        id: file.id,
+        kind: file.kind,
+        label: n.label,
+        filename: file.filename,
+        mime: file.mime,
+      });
+    }
+  }
+  // Nachgereichte Dateien haben keinen festen Slot-Namen — dort ist der
+  // Dateiname zugleich das Label (wie in der Webansicht).
+  for (const a of atts.filter((x) => x.kind === "other")) {
+    documents.push({
+      id: a.id,
+      kind: a.kind,
+      label: a.filename,
+      filename: a.filename,
+      mime: a.mime,
+    });
+  }
+
+  return {
+    token,
+    number: row.number,
+    title: row.title,
+    applicant: row.applicant,
+    statusName: row.statusName,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    resubmittedAt: row.resubmittedAt,
+    applicantNote: row.applicantNote,
+    archived,
+    // Exakt die Bedingung der Webansicht: Uploads entfallen erst mit dem Archiv.
+    canUploadDocuments: !archived,
+    submitMode: canResubmit ? "resubmission" : canReceipt ? "receipt" : null,
+    documents,
+  };
+}

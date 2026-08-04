@@ -63,6 +63,14 @@ const nextConfig = {
           },
         ],
       },
+      // NACH der Sammelregel, damit dieser Wert gewinnt: Beim Statusabruf wird
+      // ein geheimer Status-Link übertragen — hier soll gar kein Referrer
+      // hinausgehen, nicht bloß die Origin. Header aus dem Route-Handler
+      // reichen nicht, weil die Konfiguration sie überschreibt.
+      {
+        source: "/api/public/v1/status",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };
