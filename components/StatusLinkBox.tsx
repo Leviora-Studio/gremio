@@ -78,48 +78,51 @@ export function StatusLinkBox({
 
   return (
     <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 sm:p-5">
-      {/* flex-wrap + min-w: Reicht der Platz nicht, rutscht der PDF-Button unter
-          den Link, statt ihn auf drei Zeilen zu quetschen. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div className="min-w-[18rem] flex-1">
-          <p className="text-sm font-medium text-red-700">
-            Bitte speichere diesen Link:
-          </p>
-          <div className="mt-1.5 flex items-start gap-2">
-            <a
-              href={link}
-              className="min-w-0 break-all text-lg font-semibold leading-snug text-red-900 underline decoration-red-300 underline-offset-2 hover:decoration-red-600 sm:text-xl"
-            >
-              {link}
-            </a>
-            <button
-              type="button"
-              onClick={copy}
-              aria-label={copied ? "Link kopiert" : "Link kopieren"}
-              title={copied ? "Kopiert!" : "Link kopieren"}
-              className="mt-0.5 shrink-0 rounded-md border border-red-300 bg-white p-1.5 text-red-700 transition hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </button>
-          </div>
-          {/* Erfolg signalisiert sichtbar der grüne Haken im Button; hier nur
-              fürs Screenreader-Publikum (sr-only → reserviert keine Leerzeile).
-              Ein Fehlschlag braucht dagegen sichtbaren Text. */}
-          <p aria-live="polite" className="sr-only">
-            {status === "copied" ? "Link kopiert." : ""}
-          </p>
-          {status === "failed" && (
-            <p className="mt-1.5 text-sm font-medium text-red-800">
-              Dein Browser erlaubt kein automatisches Kopieren — bitte markiere
-              den Link von Hand.
-            </p>
-          )}
-          <p className="mt-1.5 text-sm text-red-800">
-            Ohne diesen Link kommst du nicht mehr an {subject} — er wird nicht
-            per E-Mail verschickt.
-          </p>
-        </div>
+      <p className="text-sm font-medium text-red-700">
+        Bitte speichere diesen Link:
+      </p>
 
+      {/* Der Link bekommt die volle Kastenbreite — er ist lang, und je weniger
+          er umbricht, desto leichter lässt er sich lesen und markieren. Nur das
+          Kopiericon steht daneben. */}
+      <div className="mt-1.5 flex items-start gap-2">
+        <a
+          href={link}
+          className="min-w-0 flex-1 break-all text-lg font-semibold leading-snug text-red-900 underline decoration-red-300 underline-offset-2 hover:decoration-red-600 sm:text-xl"
+        >
+          {link}
+        </a>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={copied ? "Link kopiert" : "Link kopieren"}
+          title={copied ? "Kopiert!" : "Link kopieren"}
+          className="mt-0.5 shrink-0 rounded-md border border-red-300 bg-white p-1.5 text-red-700 transition hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+      </div>
+
+      {/* Erfolg signalisiert sichtbar der grüne Haken im Button; hier nur fürs
+          Screenreader-Publikum (sr-only → reserviert keine Leerzeile). Ein
+          Fehlschlag braucht dagegen sichtbaren Text. */}
+      <p aria-live="polite" className="sr-only">
+        {status === "copied" ? "Link kopiert." : ""}
+      </p>
+      {status === "failed" && (
+        <p className="mt-1.5 text-sm font-medium text-red-800">
+          Dein Browser erlaubt kein automatisches Kopieren — bitte markiere den
+          Link von Hand.
+        </p>
+      )}
+
+      {/* Hinweistext und PDF-Button teilen sich die Fußzeile. flex-wrap: auf
+          schmalen Bildschirmen rutscht der Button unter den Text. */}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="min-w-[14rem] flex-1 text-sm text-red-800">
+          Ohne diesen Link kommst du nicht mehr an {subject} — er wird nicht per
+          E-Mail verschickt.
+        </p>
         {pdfHref && (
           <a href={pdfHref} className="btn-primary shrink-0 whitespace-nowrap">
             Eingangsbestätigung (PDF)
