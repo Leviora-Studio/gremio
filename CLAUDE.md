@@ -532,7 +532,7 @@ user_inventory_board_order (user_id, board_id, position, PRIMARY KEY(user_id, bo
 Öffentliches Feedback unter `/feedback` — fachlich wie das Antragsformular, nur ohne Dateien. Statt **Standorten** gibt es **Feedback-Bereiche** (`feedback_areas`), die der Admin unter `/admin/umfragen` („Umfragen & Feedback-Routing") verwaltet: anlegen, umbenennen, löschen, Ziel-Board + Ziel-Spalte setzen, aktivieren/deaktivieren. Es gelten dieselben Regeln wie bei Standorten — nur aktivierte und **vollständig geroutete** Bereiche erscheinen öffentlich, die Zielspalte muss zum Ziel-Board gehören, und Board/Spalte sind gegen Löschen geschützt (`ON DELETE RESTRICT` + verständliche Meldung).
 
 Eine Einreichung erzeugt eine **normale Kanban-Karte**:
-- `cards.applicant` = Name des Einreichers, `cards.notes` = **vollständiger** Feedbacktext
+- `cards.applicant` = Name des Einreichers — **optional**; ohne Angabe wird `Anonym` gespeichert (`normalizeSubmitterName`, gilt für Formular und API). `cards.notes` = **vollständiger** Feedbacktext
 - `cards.title` = automatisch aus dem Text abgeleitet (auf 120 Zeichen gekürzt, mit `…`)
 - `cards.location_id` = NULL (Feedback läuft nicht über das Standort-Routing)
 - Status-Token, Aktivitätseintrag und Kartennummer wie bei Anträgen

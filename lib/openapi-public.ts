@@ -12,6 +12,7 @@ import {
   RL_SUBMIT_DAY,
 } from "@/lib/public-api";
 import {
+  ANONYMOUS_SUBMITTER,
   FEEDBACK_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
   SUBMITTER_NAME_MAX_LENGTH,
@@ -369,9 +370,17 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
               schema: { $ref: "#/components/schemas/FeedbackSubmissionRequest" },
               examples: {
                 standard: {
+                  summary: "Mit Namen",
                   value: {
                     areaId: 1,
                     submitterName: "Max Mustermann",
+                    feedback: "Die Öffnungszeiten sollten verlängert werden.",
+                  },
+                },
+                anonym: {
+                  summary: `Ohne Namen (wird zu „${ANONYMOUS_SUBMITTER}")`,
+                  value: {
+                    areaId: 1,
                     feedback: "Die Öffnungszeiten sollten verlängert werden.",
                   },
                 },
@@ -521,7 +530,7 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
       },
       FeedbackSubmissionRequest: {
         type: "object",
-        required: ["areaId", "submitterName", "feedback"],
+        required: ["areaId", "feedback"],
         properties: {
           areaId: {
             type: "integer",
@@ -531,9 +540,13 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
           },
           submitterName: {
             type: "string",
-            minLength: 1,
             maxLength: SUBMITTER_NAME_MAX_LENGTH,
-            description: "Name des Einreichers (wird getrimmt).",
+            description:
+              `OPTIONAL. Name des Einreichers (wird getrimmt). Fehlt das Feld ` +
+              `oder ist es leer, wird „${ANONYMOUS_SUBMITTER}" gespeichert — ` +
+              `Feedback ist also auch anonym möglich. Für die Idempotenz sind ` +
+              `ein fehlender Name und „${ANONYMOUS_SUBMITTER}" derselbe Request ` +
+              `(kein 409 beim Retry).`,
             examples: ["Max Mustermann"],
           },
           feedback: {

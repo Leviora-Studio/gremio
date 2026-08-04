@@ -171,8 +171,13 @@ Antrags-Endpunkt, der Dateien überträgt). Body-Grenze: **32 KiB**.
 | Feld | Typ | Pflicht | Regeln |
 |------|-----|---------|--------|
 | `areaId` | integer | ✅ | ID aus `GET /feedback-areas` |
-| `submitterName` | string | ✅ | getrimmt, 1–200 Zeichen |
+| `submitterName` | string | — | getrimmt, max. 200 Zeichen. **Optional:** fehlt das Feld oder ist es leer, wird `Anonym` gespeichert |
 | `feedback` | string | ✅ | getrimmt, 1–10.000 Zeichen |
+
+Feedback ist damit auch **anonym** möglich. Für die Idempotenz gelten ein
+fehlender Name und ein explizites `"Anonym"` als **derselbe** Request — ein
+Retry, der das Feld einmal weglässt und einmal mitsendet, ergibt also einen
+Replay (`200`) und keinen Konflikt.
 
 Zeilenenden werden auf `\n` normalisiert; **innere** Absätze bleiben erhalten.
 Der Kartentitel entsteht automatisch aus den ersten 120 Zeichen des Feedbacks
@@ -186,6 +191,15 @@ curl -X POST "https://gremio.example/api/public/v1/feedback" \
   -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
   -H "Content-Type: application/json" \
   -d '{"areaId":1,"submitterName":"Max Mustermann","feedback":"Die Öffnungszeiten sollten verlängert werden."}'
+```
+
+Anonym — `submitterName` einfach weglassen:
+
+```bash
+curl -X POST "https://gremio.example/api/public/v1/feedback" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -d '{"areaId":1,"feedback":"Die Öffnungszeiten sollten verlängert werden."}'
 ```
 
 ```json

@@ -41,7 +41,11 @@ export default async function FeedbackStatusPage({
       <LiveRefresh src={`/api/status/${token}/stream`} />
       <ScrollToTop />
 
-      <StatusLinkBox link={link} pdfHref={`/feedback/status/${token}/pdf`} />
+      <StatusLinkBox
+        link={link}
+        pdfHref={`/feedback/status/${token}/pdf`}
+        subject="dein Feedback"
+      />
 
       <h1 className="mt-8 text-2xl font-bold">Status deines Feedbacks</h1>
 

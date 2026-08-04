@@ -10,6 +10,23 @@ export const SUBMITTER_NAME_MAX_LENGTH = 200;
 /** Länge des automatisch abgeleiteten Kartentitels (inkl. Auslassungszeichen). */
 export const FEEDBACK_TITLE_MAX_LENGTH = 120;
 
+/** Ersatzname, wenn der Einreicher seinen Namen weglässt. */
+export const ANONYMOUS_SUBMITTER = "Anonym";
+
+/**
+ * Normalisiert den Namen des Einreichers für Speicherung UND Fingerprint
+ * identisch: trimmen, und wenn nichts übrig bleibt, „Anonym" einsetzen. Der
+ * Name ist optional — Feedback soll auch anonym möglich sein.
+ *
+ * Bewusst dieselbe Funktion für beide Zwecke: Ein Retry, der einmal "" und
+ * einmal "Anonym" schickt, ist logisch dieselbe Einreichung und darf deshalb
+ * keinen 409 auslösen (er ergibt denselben Fingerprint).
+ */
+export function normalizeSubmitterName(raw: unknown): string {
+  const name = String(raw ?? "").trim();
+  return name === "" ? ANONYMOUS_SUBMITTER : name;
+}
+
 /**
  * Normalisiert den Feedbacktext für Speicherung UND Fingerprint identisch:
  * Zeilenenden auf `\n` vereinheitlichen und außen trimmen. INNERE Umbrüche und

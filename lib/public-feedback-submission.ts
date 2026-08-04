@@ -14,10 +14,12 @@ import {
 import { assignCardNumberTx } from "@/lib/numbering";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import {
+  ANONYMOUS_SUBMITTER,
   FEEDBACK_MAX_LENGTH,
   SUBMITTER_NAME_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
   normalizeFeedbackText,
+  normalizeSubmitterName,
   deriveFeedbackTitle,
 } from "@/lib/feedback-constants";
 import type { Tx } from "@/lib/public-application-submission";
@@ -39,19 +41,22 @@ import type { Tx } from "@/lib/public-application-submission";
 // damit Client-Komponenten sie importieren können. Für Server-Aufrufer hier
 // weiterreichen, damit es eine erwartbare Importstelle gibt.
 export {
+  ANONYMOUS_SUBMITTER,
   FEEDBACK_MAX_LENGTH,
   SUBMITTER_NAME_MAX_LENGTH,
   FEEDBACK_TITLE_MAX_LENGTH,
   normalizeFeedbackText,
+  normalizeSubmitterName,
   deriveFeedbackTitle,
 };
 
 const schema = z.object({
   areaId: z.coerce.number().int().positive("Bitte einen Bereich wählen."),
+  // OPTIONAL: Ohne Angabe wird „Anonym" gespeichert (siehe
+  // normalizeSubmitterName). Deshalb kein min(1) — nur die Längenobergrenze,
+  // die erst NACH der Normalisierung greift.
   submitterName: z
     .string()
-    .trim()
-    .min(1, "Bitte deinen Namen angeben.")
     .max(
       SUBMITTER_NAME_MAX_LENGTH,
       `Der Name darf höchstens ${SUBMITTER_NAME_MAX_LENGTH} Zeichen lang sein.`,
@@ -120,7 +125,9 @@ export async function submitPublicFeedback<T = never>(
   // --- 1. Felder ----------------------------------------------------------
   const parsed = schema.safeParse({
     areaId: raw.areaId,
-    submitterName: raw.submitterName,
+    // Leer → „Anonym"; die Längenprüfung greift damit auf dem Wert, der
+    // tatsächlich gespeichert wird.
+    submitterName: normalizeSubmitterName(raw.submitterName),
     // Vor der Längenprüfung normalisieren, damit CRLF nicht doppelt zählt.
     feedback: normalizeFeedbackText(raw.feedback),
   });

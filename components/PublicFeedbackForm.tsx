@@ -10,6 +10,7 @@ import {
   type FeedbackState,
 } from "@/app/feedback/actions";
 import {
+  ANONYMOUS_SUBMITTER,
   FEEDBACK_MAX_LENGTH,
   SUBMITTER_NAME_MAX_LENGTH,
 } from "@/lib/feedback-constants";
@@ -42,7 +43,8 @@ export function PublicFeedbackForm({
 
     const need: string[] = [];
     if (!hasText("areaId")) need.push("Bereich");
-    if (!hasText("submitterName")) need.push("Name");
+    // Der Name ist bewusst NICHT dabei — leer lassen ist erlaubt und wird
+    // serverseitig zu „Anonym".
     if (!hasText("feedback")) need.push("Feedback");
 
     setMissing(need);
@@ -87,17 +89,20 @@ export function PublicFeedbackForm({
 
       <div>
         <label htmlFor="fb-name" className="label">
-          Dein Name *
+          Dein Name (optional)
         </label>
         <input
           id="fb-name"
           name="submitterName"
-          required
           maxLength={SUBMITTER_NAME_MAX_LENGTH}
           className="input"
-          placeholder="z. B. Max Mustermann"
+          placeholder={`Leer lassen für „${ANONYMOUS_SUBMITTER}"`}
           defaultValue={state.values?.submitterName ?? ""}
         />
+        <p className="mt-1 text-sm text-slate-500">
+          Lässt du das Feld leer, erscheint dein Feedback als „
+          {ANONYMOUS_SUBMITTER}".
+        </p>
       </div>
 
       <div>

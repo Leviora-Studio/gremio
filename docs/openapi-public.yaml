@@ -347,9 +347,15 @@ paths:
               $ref: "#/components/schemas/FeedbackSubmissionRequest"
             examples:
               standard:
+                summary: Mit Namen
                 value:
                   areaId: 1
                   submitterName: Max Mustermann
+                  feedback: Die Öffnungszeiten sollten verlängert werden.
+              anonym:
+                summary: Ohne Namen (wird zu „Anonym")
+                value:
+                  areaId: 1
                   feedback: Die Öffnungszeiten sollten verlängert werden.
       responses:
         "200":
@@ -484,7 +490,6 @@ components:
       type: object
       required:
         - areaId
-        - submitterName
         - feedback
       properties:
         areaId:
@@ -494,9 +499,10 @@ components:
             - 1
         submitterName:
           type: string
-          minLength: 1
           maxLength: 200
-          description: Name des Einreichers (wird getrimmt).
+          description: OPTIONAL. Name des Einreichers (wird getrimmt). Fehlt das Feld oder ist es leer, wird
+            „Anonym" gespeichert — Feedback ist also auch anonym möglich. Für die Idempotenz sind
+            ein fehlender Name und „Anonym" derselbe Request (kein 409 beim Retry).
           examples:
             - Max Mustermann
         feedback:

@@ -9,7 +9,10 @@ import {
   type PreparedUpload,
   type Tx,
 } from "@/lib/public-application-submission";
-import { normalizeFeedbackText } from "@/lib/feedback-constants";
+import {
+  normalizeFeedbackText,
+  normalizeSubmitterName,
+} from "@/lib/feedback-constants";
 
 /**
  * Idempotenz für öffentliche API-Schreibzugriffe.
@@ -108,6 +111,11 @@ export function computeRequestFingerprint(
  * außen trimmen) — INNERE Umbrüche und Leerzeichen bleiben erhalten, denn sie
  * sind Inhalt: Ein geänderter Absatz ist ein anderes Feedback und muss zu 409
  * führen.
+ *
+ * Der Name läuft durch dieselbe Normalisierung wie beim Speichern, inklusive
+ * des „Anonym"-Ersatzes. Ein Retry, der den Namen einmal weglässt und einmal
+ * explizit „Anonym" schickt, ist damit logisch dieselbe Einreichung und wird
+ * als Replay erkannt statt mit 409 abgewiesen.
  */
 export function computeFeedbackFingerprint(fields: {
   areaId: unknown;
@@ -118,7 +126,7 @@ export function computeFeedbackFingerprint(fields: {
   const lines = [
     "v1",
     `areaId:${Number.isFinite(areaId) ? areaId : ""}`,
-    `submitterName:${String(fields.submitterName ?? "").trim()}`,
+    `submitterName:${normalizeSubmitterName(fields.submitterName)}`,
     `feedback:${normalizeFeedbackText(fields.feedback)}`,
   ];
   return sha256(lines.join("\n"));
