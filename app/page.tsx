@@ -20,7 +20,7 @@ export default async function Home() {
     .select({ id: formDocuments.id, filename: formDocuments.filename })
     .from(formDocuments)
     .orderBy(asc(formDocuments.position), asc(formDocuments.id));
-  const guard = makeFormGuard();
+  const guard = await makeFormGuard();
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">

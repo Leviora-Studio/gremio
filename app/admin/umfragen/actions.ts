@@ -4,11 +4,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, max } from "drizzle-orm";
+import { and, eq, isNotNull, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { boardStatuses, feedbackAreas } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 /**
  * Verwaltung der Feedback-Bereiche (Admin-Reiter „Umfragen").
@@ -43,11 +44,20 @@ export async function createFeedbackAreaAction(
   const [row] = await db
     .select({ m: max(feedbackAreas.position) })
     .from(feedbackAreas);
-  await db.insert(feedbackAreas).values({
-    name: parsed.data.name,
-    enabled: false,
-    position: (row?.m ?? -1) + 1,
-  });
+  try {
+    await db.insert(feedbackAreas).values({
+      name: parsed.data.name,
+      enabled: false,
+      position: (row?.m ?? -1) + 1,
+    });
+  } catch (e) {
+    // Wie bei den Standorten: Die Prüfung oben sieht einen gleichzeitig
+    // angelegten Datensatz noch nicht, der UNIQUE-Index schon.
+    if (isUniqueViolation(e)) {
+      return { error: "Bereichs-Name bereits vergeben." };
+    }
+    throw e;
+  }
   revalidatePath("/admin/umfragen");
   return { success: `Bereich „${parsed.data.name}" angelegt.` };
 }
@@ -72,10 +82,17 @@ export async function renameFeedbackAreaAction(
   }
   // Bereits eingereichtes Feedback behält seinen Bereichsnamen: der Snapshot in
   // feedback_submissions.area_name wird bewusst NICHT mitgeändert.
-  await db
-    .update(feedbackAreas)
-    .set({ name: parsed.data.name })
-    .where(eq(feedbackAreas.id, areaId));
+  try {
+    await db
+      .update(feedbackAreas)
+      .set({ name: parsed.data.name })
+      .where(eq(feedbackAreas.id, areaId));
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { error: "Bereichs-Name bereits vergeben." };
+    }
+    throw e;
+  }
   revalidatePath("/admin/umfragen");
   return { success: "Umbenannt." };
 }
@@ -140,10 +157,29 @@ export async function toggleFeedbackAreaEnabledAction(
   if (!area.enabled && (!area.targetBoardId || !area.targetStatusId)) {
     return { error: "Erst Ziel-Board und Spalte festlegen, dann aktivieren." };
   }
-  await db
+  // Bedingtes UPDATE (Begründung siehe app/admin/standorte/actions.ts): Sonst
+  // ließe sich ein Bereich aktivieren, dem ein zweiter Admin gerade das
+  // Routingziel entzogen hat.
+  const geaendert = await db
     .update(feedbackAreas)
     .set({ enabled: !area.enabled })
-    .where(eq(feedbackAreas.id, areaId));
+    .where(
+      area.enabled
+        ? and(eq(feedbackAreas.id, areaId), eq(feedbackAreas.enabled, true))
+        : and(
+            eq(feedbackAreas.id, areaId),
+            eq(feedbackAreas.enabled, false),
+            isNotNull(feedbackAreas.targetBoardId),
+            isNotNull(feedbackAreas.targetStatusId),
+          ),
+    )
+    .returning({ id: feedbackAreas.id });
   revalidatePath("/admin/umfragen");
+  if (!geaendert.length) {
+    return {
+      error:
+        "Der Bereich wurde zwischenzeitlich geändert. Bitte die Seite neu laden.",
+    };
+  }
   return { success: area.enabled ? "Deaktiviert." : "Aktiviert." };
 }

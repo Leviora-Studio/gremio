@@ -32,6 +32,7 @@ export function PublicFeedbackForm({
     {} as FeedbackState,
   );
   const [missing, setMissing] = useState<string[]>([]);
+  const aktuellerGuard = state.guard ?? guard;
 
   // Wie im Antragsformular bewusst KEIN <form action={action}>: React 19 setzt
   // das Formular nach einer Action zurück und würde dabei den (womöglich langen)
@@ -66,9 +67,10 @@ export function PublicFeedbackForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
-      {/* Zeitfalle (signiert) */}
-      <input type="hidden" name="ts" value={guard.ts} />
-      <input type="hidden" name="sig" value={guard.sig} />
+      {/* Zeitfalle (signiert). Nach einem abgelaufenen Token liefert die Action
+          ein frisches mit — sonst scheiterte der zweite Versuch genauso. */}
+      <input type="hidden" name="ts" value={aktuellerGuard.ts} />
+      <input type="hidden" name="sig" value={aktuellerGuard.sig} />
       {/* Honeypot: für Menschen unsichtbar, Bots füllen es aus → still verworfen */}
       <div className="absolute left-[-9999px] top-[-9999px]" aria-hidden="true">
         <label>

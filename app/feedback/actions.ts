@@ -4,7 +4,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { isHoneypotFilled, isHumanTiming } from "@/lib/antispam";
+import {
+  checkFormTiming,
+  FORM_GUARD_EXPIRED_MESSAGE,
+  isHoneypotFilled,
+  makeFormGuard,
+} from "@/lib/antispam";
 import { allowFormRequest, FEEDBACK_FORM_RATE_LIMIT } from "@/lib/rate-limit";
 import { submitPublicFeedback } from "@/lib/public-feedback-submission";
 
@@ -14,8 +19,16 @@ export type FeedbackValues = {
   feedback: string;
 };
 // Eingaben werden bei einem Fehler zurückgegeben, damit das Formular sie behält
-// (ein langer Freitext soll nie verloren gehen).
-export type FeedbackState = { error?: string; ok?: boolean; values?: FeedbackValues };
+// (ein langer Freitext soll nie verloren gehen). `guard` ist ein FRISCHES
+// Zeitfallen-Token: Ohne das behielte das Formular sein abgelaufenes Token, und
+// der zweite Versuch scheiterte genauso — der Hinweis „bitte erneut absenden"
+// wäre eine Sackgasse.
+export type FeedbackState = {
+  error?: string;
+  ok?: boolean;
+  values?: FeedbackValues;
+  guard?: { ts: string; sig: string };
+};
 
 /**
  * Öffentliche Feedback-Einreichung über das Browserformular.
@@ -44,13 +57,22 @@ export async function submitFeedbackAction(
     };
   }
 
-  // Spam-Schutz wie beim Antragsformular: Bots werden still verworfen
-  // (gefälschte „Danke"-Bestätigung), ohne dass etwas angelegt wird.
-  if (
-    isHoneypotFilled(formData.get("website")) ||
-    !isHumanTiming(formData.get("ts"), formData.get("sig"))
-  ) {
+  // Spam-Schutz wie beim Antragsformular. Honeypot und „zu schnell ausgefüllt"
+  // werden still verworfen (gefälschte „Danke"-Bestätigung), ohne dass etwas
+  // angelegt wird — der Bot soll nicht lernen, woran er scheitert.
+  const timing = await checkFormTiming(formData.get("ts"), formData.get("sig"));
+  if (isHoneypotFilled(formData.get("website")) || timing === "too_fast") {
     return { ok: true };
+  }
+  // Abgelaufenes/fremdes Token trifft dagegen auch echte Nutzer (zu lange
+  // offener Tab, Netzwechsel). Hier wäre eine stille Fake-Bestätigung fatal:
+  // Sie würfe den getippten Freitext weg und behauptete, er sei angekommen.
+  if (timing === "invalid") {
+    return {
+      error: FORM_GUARD_EXPIRED_MESSAGE,
+      values,
+      guard: await makeFormGuard(),
+    };
   }
 
   const result = await submitPublicFeedback(values, {

@@ -4,11 +4,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, max } from "drizzle-orm";
+import { and, eq, isNotNull, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { boardStatuses, locations } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export type State = { error?: string; success?: string };
 
@@ -33,11 +34,21 @@ export async function createLocationAction(
   if (exists.length) return { error: "Standort-Name bereits vergeben." };
 
   const [row] = await db.select({ m: max(locations.position) }).from(locations);
-  await db.insert(locations).values({
-    name: parsed.data.name,
-    enabled: false,
-    position: (row?.m ?? -1) + 1,
-  });
+  try {
+    await db.insert(locations).values({
+      name: parsed.data.name,
+      enabled: false,
+      position: (row?.m ?? -1) + 1,
+    });
+  } catch (e) {
+    // Zwei Admins legen gleichzeitig denselben Namen an: Die Prüfung oben sieht
+    // den anderen Datensatz noch nicht, der UNIQUE-Index schlägt zu. Vorher war
+    // das ein 500er statt einer verständlichen Meldung.
+    if (isUniqueViolation(e)) {
+      return { error: "Standort-Name bereits vergeben." };
+    }
+    throw e;
+  }
   revalidatePath("/admin/standorte");
   return { success: `Standort „${parsed.data.name}" angelegt.` };
 }
@@ -60,10 +71,17 @@ export async function renameLocationAction(
   if (clash[0] && clash[0].id !== locationId) {
     return { error: "Standort-Name bereits vergeben." };
   }
-  await db
-    .update(locations)
-    .set({ name: parsed.data.name })
-    .where(eq(locations.id, locationId));
+  try {
+    await db
+      .update(locations)
+      .set({ name: parsed.data.name })
+      .where(eq(locations.id, locationId));
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { error: "Standort-Name bereits vergeben." };
+    }
+    throw e;
+  }
   revalidatePath("/admin/standorte");
   return { success: "Umbenannt." };
 }
@@ -126,10 +144,32 @@ export async function toggleLocationEnabledAction(
   if (!loc.enabled && (!loc.targetBoardId || !loc.targetStatusId)) {
     return { error: "Erst Ziel-Board und Spalte festlegen, dann aktivieren." };
   }
-  await db
+  // Bedingtes UPDATE statt „gelesenen Stand zurückschreiben": Zwischen dem
+  // SELECT oben und dem UPDATE kann ein zweiter Admin das Ziel entfernt (und
+  // damit deaktiviert) haben — der Standort wäre danach aktiviert OHNE
+  // Routingziel. `enabled` wird deshalb zusätzlich als Compare-and-Swap
+  // geprüft, und beim Aktivieren muss das Ziel in derselben Anweisung noch
+  // gesetzt sein.
+  const geaendert = await db
     .update(locations)
     .set({ enabled: !loc.enabled })
-    .where(eq(locations.id, locationId));
+    .where(
+      loc.enabled
+        ? and(eq(locations.id, locationId), eq(locations.enabled, true))
+        : and(
+            eq(locations.id, locationId),
+            eq(locations.enabled, false),
+            isNotNull(locations.targetBoardId),
+            isNotNull(locations.targetStatusId),
+          ),
+    )
+    .returning({ id: locations.id });
   revalidatePath("/admin/standorte");
+  if (!geaendert.length) {
+    return {
+      error:
+        "Der Standort wurde zwischenzeitlich geändert. Bitte die Seite neu laden.",
+    };
+  }
   return { success: loc.enabled ? "Deaktiviert." : "Aktiviert." };
 }

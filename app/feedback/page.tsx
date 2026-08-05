@@ -13,7 +13,7 @@ export default async function FeedbackPage() {
   // Nur aktivierte UND vollständig/korrekt geroutete Bereiche (identische
   // Bedingung wie die API und die Einreichungslogik).
   const areas = await listPublicFeedbackAreas();
-  const guard = makeFormGuard();
+  const guard = await makeFormGuard();
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">

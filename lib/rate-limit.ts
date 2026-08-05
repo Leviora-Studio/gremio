@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { createHmac } from "node:crypto";
-import { headers } from "next/headers";
+import { clientIpHmac } from "@/lib/client-ip";
 import { deriveKey } from "@/lib/crypto";
 
 // Zweckgebundener HMAC-Schlüssel (nicht das rohe AUTH_SECRET) zur IP-Pseudonymisierung.
@@ -149,25 +148,12 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
 }
 
 /**
- * Pseudonymer Client-Schlüssel aus der ECHTEN Client-IP. Hinter genau einem
- * vertrauenswürdigen nginx ist das `X-Real-IP` (= $remote_addr) bzw. der
- * LETZTE X-Forwarded-For-Eintrag (den nginx anhängt) — NICHT der erste, den
- * der Client selbst fälschen könnte. Die IP wird nur als HMAC (mit einem aus
- * AUTH_SECRET abgeleiteten Unterschlüssel) gespeichert, nie im Klartext.
+ * Pseudonymer Client-Schlüssel aus der ECHTEN Client-IP (Herleitung siehe
+ * `lib/client-ip.ts`). Die IP wird nur als HMAC (mit einem aus AUTH_SECRET
+ * abgeleiteten Unterschlüssel) verwendet, nie im Klartext gespeichert.
  */
 export async function clientKey(scope: string): Promise<string> {
-  const h = await headers();
-  const realIp = h.get("x-real-ip")?.trim();
-  const hops = (h.get("x-forwarded-for") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const ip = realIp || hops[hops.length - 1] || "unknown";
-  const mac = createHmac("sha256", IP_HMAC_KEY)
-    .update(ip)
-    .digest("hex")
-    .slice(0, 24);
-  return `${scope}:${mac}`;
+  return `${scope}:${await clientIpHmac(IP_HMAC_KEY)}`;
 }
 
 /**
