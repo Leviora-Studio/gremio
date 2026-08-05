@@ -82,10 +82,20 @@ npm run dev                   # http://localhost:3000
 | `npm run dev` | Entwicklungsserver |
 | `npm run build` / `npm start` | Produktions-Build / -Start |
 | `npm run lint` | ESLint |
+| `npm test` | Regressionstests (Node-Test-Runner über `tsx`) |
 | `npm run db:generate` | Drizzle-Migration aus dem Schema erzeugen |
 | `npm run db:migrate` | Migrationen anwenden |
 | `npm run db:seed` | Startbestand: 4 Standorte, Prioritäten, Board-Template (kein Admin) |
 | `npm run db:setup` | `db:migrate` + `db:seed` |
+| `npm run openapi:yaml` | `docs/openapi-*.yaml` aus den TS-Quellen neu erzeugen |
+
+Die Tests unter `tests/` halten je EINEN behobenen Fehler fest und schlagen ohne
+den zugehörigen Fix fehl. Die datenbankgestützten überspringen sich selbst, wenn
+`DATABASE_URL` auf keine erreichbare Instanz zeigt:
+
+```bash
+DATABASE_URL=postgres://gremio:PASSWORT@localhost:5432/gremio npm test
+```
 
 ---
 
@@ -172,6 +182,13 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
 - Board-Nextcloud-Zugangsdaten **AES-256-GCM-verschlüsselt** in der DB; ausgehende
   WebDAV-Requests sind SSRF-gehärtet (DNS-Pinning, kein Redirect, https-Pflicht).
 - REST-API ist eine **Teilmenge** der Web-Rechte (nie mehr).
+- Öffentliche Formulare: Honeypot plus **signierte, an den Client gebundene
+  Zeitfalle** (6 h gültig). Ratenbegrenzung getrennt je Scope-Familie — ein
+  gefluteter öffentlicher Scope kann die Anmeldung nicht aussperren.
+- Freie Texte werden an der **Eingangsgrenze** bereinigt (`lib/text.ts`): NUL und
+  Steuerzeichen kommen weder in die Datenbank noch in die PDF-Bestätigung.
+- `npm audit --omit=dev` ist **ohne Befund**; verbleibende Funde betreffen nur
+  den Build-/Dev-Baum (esbuild über drizzle-kit).
 
 ---
 

@@ -40,17 +40,25 @@ const TARGETS: Target[] = [
 ];
 
 // Ohne Argument beide; sonst nur die genannten (public|internal).
-const wanted = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-const selected = wanted.length
-  ? TARGETS.filter((t) => wanted.includes(t.key))
-  : TARGETS;
-
-if (!selected.length) {
-  console.error(
-    `Unbekanntes Ziel: ${wanted.join(", ")}. Erlaubt: public, internal.`,
-  );
+//
+// JEDES unbekannte Argument bricht ab. Vorher wurde gefiltert: `openapi:yaml
+// public itnernal` erzeugte klaglos nur die öffentliche Datei, und der Tippfehler
+// fiel erst auf, wenn jemand die veraltete interne YAML im Repo bemerkte.
+// Optionen (`-x`) wurden ebenso stillschweigend verworfen — das Skript kennt
+// keine.
+const args = process.argv.slice(2);
+const bekannt = new Set(TARGETS.map((t) => t.key));
+const unbekannt = args.filter((a) => !bekannt.has(a as Target["key"]));
+if (unbekannt.length) {
+  for (const a of unbekannt) {
+    console.error(`Unbekanntes Argument: ${a}`);
+  }
+  console.error("Erlaubt sind: public, internal (ohne Argument: beide).");
   process.exit(1);
 }
+const selected = args.length
+  ? TARGETS.filter((t) => args.includes(t.key))
+  : TARGETS;
 
 for (const t of selected) {
   const target = join(process.cwd(), "docs", t.file);

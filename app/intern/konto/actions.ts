@@ -109,7 +109,7 @@ export async function resyncProfileAction(): Promise<{
   ok: boolean;
   error?: string;
 }> {
-  const user = await requireUser();
+  await requireUser();
   if (!(await allowRequest("resync", 5, 60_000))) {
     return { ok: false, error: "Zu viele Versuche. Bitte kurz warten." };
   }

@@ -300,33 +300,3 @@ export default async function InventoryBoardSettingsPage({
     </div>
   );
 }
-
-function Field({
-  name,
-  label,
-  defaultValue,
-  placeholder,
-  type = "text",
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <div>
-      <label className="label" htmlFor={`num-${name}`}>
-        {label}
-      </label>
-      <input
-        id={`num-${name}`}
-        name={name}
-        type={type}
-        className="input"
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}

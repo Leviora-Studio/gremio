@@ -52,8 +52,15 @@ function swaggerDistDirs(): string[] {
  * (die interne Doku-Seite und die interne openapi.json sind es nicht).
  */
 export async function serveSwaggerAsset(file: string): Promise<Response> {
+  // `Object.hasOwn` statt Index-Zugriff: Ein Objektliteral erbt von
+  // Object.prototype, `ALLOWED_ASSETS["constructor"]` lieferte also den
+  // Function-Konstruktor — ein wahrheitswerter Treffer, der als Content-Type
+  // weiterverwendet worden wäre. Dasselbe gilt für "toString", "valueOf" und
+  // die übrigen geerbten Namen; der Pfadparameter ist nutzerkontrolliert.
+  if (!Object.hasOwn(ALLOWED_ASSETS, file)) {
+    return new Response("Not found", { status: 404 });
+  }
   const contentType = ALLOWED_ASSETS[file];
-  if (!contentType) return new Response("Not found", { status: 404 });
 
   let buf: Buffer | null = null;
   for (const dir of swaggerDistDirs()) {
@@ -84,6 +91,19 @@ function esc(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Wert für die Einbettung in einen `<script>`-Block.
+ *
+ * `JSON.stringify` allein genügt dafür NICHT: Es lässt `<` unverändert, und ein
+ * enthaltenes `</script>` beendet den Block mitten im String — der Rest wäre
+ * Markup. Die Werte hier stammen zwar aus dem Code und nicht von außen, aber
+ * eine Einbettung, die nur wegen ihrer Aufrufer sicher ist, bleibt eine
+ * Stolperfalle für die nächste Änderung.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
 /**
@@ -127,7 +147,7 @@ export function swaggerHtml(opts: {
     <script src="${SWAGGER_ASSET_BASE}/swagger-ui-standalone-preset.js"></script>
     <script>
       window.ui = SwaggerUIBundle({
-        url: ${JSON.stringify(opts.specUrl)},
+        url: ${jsonForScript(opts.specUrl)},
         dom_id: "#swagger-ui",
         deepLinking: true,
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
