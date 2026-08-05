@@ -5,6 +5,8 @@
 // sie importieren können, ohne den server-only Datenzugriff in den Browser zu
 // ziehen — gleiche Aufteilung wie bei `inventory-attachment-kinds.ts`.
 
+import { sanitizeMultiLine, sanitizeSingleLine } from "@/lib/text";
+
 export const FEEDBACK_MAX_LENGTH = 10_000;
 export const SUBMITTER_NAME_MAX_LENGTH = 200;
 /** Länge des automatisch abgeleiteten Kartentitels (inkl. Auslassungszeichen). */
@@ -23,7 +25,12 @@ export const ANONYMOUS_SUBMITTER = "Anonym";
  * keinen 409 auslösen (er ergibt denselben Fingerprint).
  */
 export function normalizeSubmitterName(raw: unknown): string {
-  const name = String(raw ?? "").trim();
+  // Einzeilig bereinigen: innerer Whitespace (auch Umbrüche und Tabulatoren)
+  // wird zu einfachen Leerzeichen, Steuer- und Zero-Width-Zeichen fallen weg.
+  // Ohne das könnte ein Einreicher über Umbrüche im Namen zusätzliche Zeilen
+  // in der PDF-Bestätigung erzeugen, und ein Name aus lauter Zero-Width-Zeichen
+  // umginge den „Anonym"-Rückfall.
+  const name = sanitizeSingleLine(raw);
   return name === "" ? ANONYMOUS_SUBMITTER : name;
 }
 
@@ -35,9 +42,9 @@ export function normalizeSubmitterName(raw: unknown): string {
  * anderen Fingerprint führen.
  */
 export function normalizeFeedbackText(raw: unknown): string {
-  return String(raw ?? "")
-    .replace(/\r\n?/g, "\n")
-    .trim();
+  // Zusätzlich Steuerzeichen entfernen: NUL lehnt PostgreSQL ab, TAB und CR
+  // sprengen den WinAnsi-Encoder der PDF-Bestätigung.
+  return sanitizeMultiLine(raw);
 }
 
 /**
@@ -52,11 +59,16 @@ export function normalizeFeedbackText(raw: unknown): string {
  */
 export function deriveFeedbackTitle(feedback: string): string {
   const oneLine = feedback.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= FEEDBACK_TITLE_MAX_LENGTH) {
+  // NACH CODEPOINTS zählen und schneiden, nicht nach UTF-16-Codeunits: `slice`
+  // trennt sonst mitten durch ein Surrogatpaar (z. B. 118 ASCII-Zeichen + Emoji),
+  // der String wird ill-formed und PostgreSQL speichert ein U+FFFD — der
+  // Kartentitel endete mit Zeichenmüll.
+  const chars = Array.from(oneLine);
+  if (chars.length <= FEEDBACK_TITLE_MAX_LENGTH) {
     return oneLine || "Feedback";
   }
   // Platz für das „…" freihalten.
-  const cut = oneLine.slice(0, FEEDBACK_TITLE_MAX_LENGTH - 1);
+  const cut = chars.slice(0, FEEDBACK_TITLE_MAX_LENGTH - 1).join("");
   const lastSpace = cut.lastIndexOf(" ");
   // Nur an der Wortgrenze trennen, wenn dabei nicht zu viel verloren geht.
   const head =

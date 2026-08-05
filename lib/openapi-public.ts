@@ -46,7 +46,7 @@ const IDEMPOTENCY_DESCRIPTION = `Pflicht. Eindeutiger Schlüssel dieser Einreich
 Zulässig ist druckbares ASCII mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.`;
 
 const rateLimitResponse = {
-  description: `Rate-Limit erreicht. Grenzen: ${RL_SUBMIT_BURST.limit} Einreichungen pro IP und Minute, ${RL_SUBMIT_DAY.limit} pro IP und 24 h, ${RL_LOCATIONS.limit} Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des Browserformulars bleibt davon unberührt.`,
+  description: `Rate-Limit erreicht. Grenzen: ${RL_SUBMIT_BURST.limit} Einreichungen pro IP und Minute, ${RL_SUBMIT_DAY.limit} pro IP und Stunde, ${RL_LOCATIONS.limit} Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des Browserformulars bleibt davon unberührt.`,
   headers: {
     "Retry-After": {
       description: "Sekunden bis zum nächsten zulässigen Versuch.",
@@ -60,7 +60,7 @@ const rateLimitResponse = {
 
 // Eigene Beschreibung: Feedback hat eigene Buckets und eigene Grenzen.
 const feedbackRateLimitResponse = {
-  description: `Rate-Limit erreicht. Grenzen: ${RL_FEEDBACK_BURST.limit} Einreichungen pro IP und Minute, ${RL_FEEDBACK_DAY.limit} pro IP und 24 h, ${RL_FEEDBACK_AREAS.limit} Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die Antrags-API und das Browserformular bleiben davon unberührt.`,
+  description: `Rate-Limit erreicht. Grenzen: ${RL_FEEDBACK_BURST.limit} Einreichungen pro IP und Minute, ${RL_FEEDBACK_DAY.limit} pro IP und Stunde, ${RL_FEEDBACK_AREAS.limit} Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die Antrags-API und das Browserformular bleiben davon unberührt.`,
   headers: {
     "Retry-After": {
       description: "Sekunden bis zum nächsten zulässigen Versuch.",

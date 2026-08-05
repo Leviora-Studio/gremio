@@ -19,6 +19,7 @@ import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { allowFormRequest } from "@/lib/rate-limit";
+import { resolveApplicationCardId } from "@/lib/public-status";
 
 export type PublicUploadState = { error?: string; success?: string };
 
@@ -41,6 +42,10 @@ export async function addPublicFileAction(
     .where(eq(cards.token, token))
     .limit(1);
   if (!row?.card) return { error: "Antrag nicht gefunden." };
+  // Feedback-Tokens hier abweisen (siehe resolveApplicationCardId).
+  if ((await resolveApplicationCardId(token)) == null) {
+    return { error: "Antrag nicht gefunden." };
+  }
   const card = row.card;
 
   // Sperre: Sobald der Antrag in der Archiv-Spalte (Nextcloud-Trigger) liegt,
@@ -118,6 +123,9 @@ export async function submitPublicAction(
     .where(eq(cards.token, token))
     .limit(1);
   if (!card) return { error: "Antrag nicht gefunden." };
+  if ((await resolveApplicationCardId(token)) == null) {
+    return { error: "Antrag nicht gefunden." };
+  }
   const [board] = await db
     .select()
     .from(boards)

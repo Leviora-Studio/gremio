@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, attachments } from "@/lib/db/schema";
 import { absPath, contentDisposition } from "@/lib/attachments";
+import { resolveApplicationCardId } from "@/lib/public-status";
 import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,12 @@ export async function GET(
     .limit(1);
 
   if (!row || row.cardToken !== token || !PUBLIC.has(row.att.kind)) {
+    return new Response("Not found", { status: 404 });
+  }
+  // Feedback-Tokens gehören NICHT hierher: Eine Feedback-Karte ist eine ganz
+  // normale Karte, an die intern Dateien gehängt werden können — die
+  // öffentliche Feedback-Fläche ist aber als reiner Text spezifiziert.
+  if ((await resolveApplicationCardId(token)) == null) {
     return new Response("Not found", { status: 404 });
   }
 

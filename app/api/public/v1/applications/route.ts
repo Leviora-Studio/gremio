@@ -10,6 +10,7 @@ import {
   enforceRateLimits,
   publicApiError,
   publicApplicationLinks,
+  readLimitedBody,
   RL_SUBMIT_BURST,
   RL_SUBMIT_DAY,
 } from "@/lib/public-api";
@@ -59,9 +60,18 @@ export async function POST(req: Request) {
       "Content-Type muss multipart/form-data sein.",
     );
   }
-  const declaredLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
-    return publicApiError(413, "Die Anfrage ist zu groß.");
+  // Angekündigte Länge zuerst prüfen — das spart das Lesen offensichtlich zu
+  // großer Anfragen. Verlassen darf man sich darauf NICHT: Bei
+  // `Transfer-Encoding: chunked` fehlt der Header per Definition, bei HTTP/2
+  // regelmäßig. `Number(null)` ist 0 und `Number.isFinite(0)` true — die
+  // Prüfung lief dann folgenlos durch. Die verbindliche Grenze setzt deshalb
+  // `readLimitedBody` beim tatsächlichen Lesen durch.
+  const declaredRaw = req.headers.get("content-length");
+  if (declaredRaw != null) {
+    const declared = Number(declaredRaw);
+    if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) {
+      return publicApiError(413, "Die Anfrage ist zu groß.");
+    }
   }
 
   // --- Idempotency-Key ----------------------------------------------------
@@ -74,10 +84,20 @@ export async function POST(req: Request) {
   }
   const keyHash = hashIdempotencyKey(rawKey);
 
-  // --- Body lesen ---------------------------------------------------------
+  // --- Body lesen (mit harter Grenze) -------------------------------------
+  // Erst vollständig unter Aufsicht lesen, dann parsen: `req.formData()` würde
+  // den Body sonst ungebremst puffern.
+  const raw = await readLimitedBody(req, MAX_REQUEST_BYTES);
+  if (!raw.ok) {
+    return raw.reason === "too_large"
+      ? publicApiError(413, "Die Anfrage ist zu groß.")
+      : publicApiError(400, "Der Request-Body konnte nicht gelesen werden.");
+  }
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await new Response(raw.body, {
+      headers: { "content-type": contentType },
+    }).formData();
   } catch {
     return publicApiError(400, "Der multipart/form-data-Body ist ungültig.");
   }

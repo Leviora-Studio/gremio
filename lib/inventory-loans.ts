@@ -9,6 +9,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notInArray,
   ne,
   or,
   sql,
@@ -1046,11 +1047,20 @@ export async function getActiveLoanMap(
         or(
           // Kartengeführt: Karte liegt in der „ausgeliehen"-Spalte (und der
           // Vorgang ist nicht bereits zurückgegeben).
+          //
+          // Die Endzustände `rejected`/`withdrawn` sind ausgenommen: Sie
+          // erreicht `syncLoanFromCard` nicht mehr (sein UPDATE ist auf
+          // PENDING_LOAN_STATUSES beschränkt), und weder `withdrawLoan` noch
+          // `rejectLoan` räumen die Tracking-Karte weg. Landet so eine
+          // liegengebliebene Karte danach in der Aktiv-Spalte, galt die Menge
+          // sonst dauerhaft als verliehen, ohne dass ein Statuswechsel das je
+          // korrigiert hätte — der Gegenstand wäre für immer „vergriffen".
           and(
             isNotNull(inventoryBoards.loanActiveStatusId),
             isNotNull(inventoryLoans.cardId),
             eq(cards.statusId, inventoryBoards.loanActiveStatusId),
             isNull(inventoryLoans.returnedAt),
+            notInArray(inventoryLoans.status, ["rejected", "withdrawn"]),
           ),
           // Fallback: klassischer aktiver Vorgang ohne Karten-Trigger.
           and(

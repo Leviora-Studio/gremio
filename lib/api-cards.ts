@@ -32,6 +32,7 @@ import { maybeSetTriggerDates } from "@/lib/instruction";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { assignCardNumber } from "@/lib/numbering";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
+import { sanitizeSingleLine } from "@/lib/text";
 import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import { deleteStoredFile } from "@/lib/attachments";
@@ -52,8 +53,13 @@ const date = z
 /** Schreibbare Kartenfelder über die API (POST/PATCH). */
 export const cardWriteSchema = z
   .object({
-    title: z.string().trim().min(1).max(200).optional(),
-    applicant: z.string().max(200).nullish(),
+    // Einzeilig bereinigt (NUL, TAB, CR) — dieselbe Eingangsgrenze wie beim
+    // öffentlichen Formular, damit die PDF-Bestätigung nicht an intern
+    // eingefügten Steuerzeichen scheitert.
+    title: z.preprocess(sanitizeSingleLine, z.string().min(1).max(200)).optional(),
+    applicant: z
+      .preprocess((v) => (v == null ? v : sanitizeSingleLine(v)), z.string().max(200))
+      .nullish(),
     budgetTitle: z.string().max(200).nullish(),
     number: z.string().max(100).nullish(),
     statusId: z.number().int().positive().optional(),

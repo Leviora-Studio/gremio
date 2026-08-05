@@ -439,10 +439,10 @@ Mobilfunk-/Carrier-NAT-Adressen erscheinen (viele Nutzer teilen sich eine IP).
 | Endpunkt | Grenze |
 |----------|--------|
 | `POST /applications` (Burst) | 60 pro IP und Minute |
-| `POST /applications` (Backstop) | 5.000 pro IP und 24 Stunden |
+| `POST /applications` (Backstop) | 500 pro IP und Stunde |
 | `GET /locations` | 300 pro IP und Minute |
 | `POST /feedback` (Burst) | 100 pro IP und Minute |
-| `POST /feedback` (Backstop) | 5.000 pro IP und 24 Stunden |
+| `POST /feedback` (Backstop) | 500 pro IP und Stunde |
 | `GET /feedback-areas` | 300 pro IP und Minute |
 | `POST /status` | 600 pro IP und Minute (kein Tageslimit) |
 

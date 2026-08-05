@@ -10,7 +10,7 @@ import { formatDateTime } from "@/lib/dates";
  * (Emoji, nicht-lateinische Schriften) durch "?" ersetzen — sonst wirft
  * pdf-lib "WinAnsi cannot encode …" und der PDF-Abruf liefert 500.
  */
-function winAnsiSafe(s: string): string {
+export function winAnsiSafe(s: string, opts: { keepNewlines?: boolean } = {}): string {
   const mapped = (s ?? "")
     .replace(/[‘’‚′´`]/g, "'")
     .replace(/[“”„″]/g, '"')
@@ -20,13 +20,23 @@ function winAnsiSafe(s: string): string {
   let out = "";
   for (const ch of mapped) {
     const c = ch.codePointAt(0) ?? 0;
-    // Tab/LF/CR, druckbares ASCII (0x20–0x7E), Latin-1 (0xA0–0xFF: ä ö ü ß …).
-    const ok =
-      c === 9 ||
-      c === 10 ||
-      c === 13 ||
-      (c >= 0x20 && c <= 0x7e) ||
-      (c >= 0xa0 && c <= 0xff);
+    // ACHTUNG: TAB (9), LF (10) und CR (13) sind für den WinAnsi-Encoder von
+    // pdf-lib KEINE darstellbaren Zeichen — `drawText` wirft daran. Früher
+    // ließ diese Funktion sie ausdrücklich durch und war damit die Ursache
+    // dauerhafter 500er auf den Eingangsbestätigungen.
+    //   TAB → Leerzeichen, CR → verworfen (Zeilenenden sind vorher auf \n
+    //   normalisiert), LF nur, wenn der aufrufende Builder selbst umbricht.
+    if (c === 9) {
+      out += " ";
+      continue;
+    }
+    if (c === 13) continue;
+    if (c === 10) {
+      out += opts.keepNewlines ? ch : " ";
+      continue;
+    }
+    // druckbares ASCII (0x20–0x7E) und Latin-1 (0xA0–0xFF: ä ö ü ß …).
+    const ok = (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff);
     out += ok ? ch : "?";
   }
   return out;
@@ -189,8 +199,9 @@ export async function buildFeedbackConfirmationPdf(data: {
     const size = opts.size ?? 11;
     const f = opts.bold ? bold : font;
     const color = opts.color ? rgb(...opts.color) : rgb(0.1, 0.1, 0.1);
-    // Absätze einzeln umbrechen, damit Leerzeilen erhalten bleiben.
-    const paragraphs = winAnsiSafe(text).split("\n");
+    // Absätze einzeln umbrechen, damit Leerzeilen erhalten bleiben. Dieser
+    // Builder teilt selbst an \n auf, darf die Umbrüche also behalten.
+    const paragraphs = winAnsiSafe(text, { keepNewlines: true }).split("\n");
     for (let p = 0; p < paragraphs.length; p++) {
       const lines = paragraphs[p] === "" ? [""] : wrapText(paragraphs[p], f, size, maxWidth);
       for (let i = 0; i < lines.length; i++) {

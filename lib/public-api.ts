@@ -24,10 +24,15 @@ export const RL_SUBMIT_BURST = {
   limit: 60,
   windowMs: 60_000,
 } as const;
+// Backstop gegen Dauerlast. Bewusst ein STUNDEN-Fenster statt 24 h: Ein
+// 24-Stunden-Fenster hinterlässt Zähler, die einen ganzen Tag lang nicht
+// aufräumbar sind — genau die haben früher den Speicher des Limiters gesättigt.
+// Die Schutzwirkung ist gleich (bei 60/min wären 3.600/h möglich, 500 greift
+// also früher), das Aufräumen läuft aber wieder auf menschlicher Zeitskala.
 export const RL_SUBMIT_DAY = {
   scope: "public-api-submit-day",
-  limit: 5_000,
-  windowMs: 24 * 60 * 60 * 1000,
+  limit: 500,
+  windowMs: 60 * 60 * 1000,
 } as const;
 export const RL_LOCATIONS = {
   scope: "public-api-locations",
@@ -47,10 +52,11 @@ export const RL_FEEDBACK_BURST = {
   limit: 100,
   windowMs: 60_000,
 } as const;
+// Stunden-Backstop wie bei den Anträgen (Begründung siehe RL_SUBMIT_DAY).
 export const RL_FEEDBACK_DAY = {
   scope: "public-api-feedback-submit-day",
-  limit: 5_000,
-  windowMs: 24 * 60 * 60 * 1000,
+  limit: 500,
+  windowMs: 60 * 60 * 1000,
 } as const;
 export const RL_FEEDBACK_AREAS = {
   scope: "public-api-feedback-areas",
@@ -69,6 +75,55 @@ export const RL_STATUS = {
 } as const;
 
 export type FieldIssue = { field: string; message: string };
+
+/** Ergebnis von `readLimitedBody`. */
+export type LimitedBody =
+  | { ok: true; body: ArrayBuffer }
+  | { ok: false; reason: "too_large" | "unreadable" };
+
+/**
+ * Liest den Request-Body und bricht bei Überschreitung der Grenze WÄHREND des
+ * Lesens ab — statt der `Content-Length`-Zusage des Clients zu vertrauen.
+ *
+ * Nötig, weil der Header bei `Transfer-Encoding: chunked` fehlt und bei HTTP/2
+ * regelmäßig nicht gesetzt ist; eine reine Header-Prüfung weist dann nur
+ * Clients ab, die ihre Größe selbst ehrlich ankündigen. `bodySizeLimit` aus
+ * next.config.mjs gilt ausschließlich für Server Actions, nicht für Route
+ * Handler — ohne vorgelagertes nginx (`client_max_body_size`) wäre der Body
+ * sonst unbegrenzt.
+ */
+export async function readLimitedBody(
+  req: Request,
+  maxBytes: number,
+): Promise<LimitedBody> {
+  const reader = req.body?.getReader();
+  if (!reader) return { ok: true, body: new ArrayBuffer(0) };
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { ok: false, reason: "too_large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  // Als ArrayBuffer zurückgeben: `new Response(...)` akzeptiert ihn direkt.
+  return { ok: true, body: out.buffer as ArrayBuffer };
+}
 
 /** Einheitliche JSON-Fehlerantwort der öffentlichen API. */
 export function publicApiError(

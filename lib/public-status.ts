@@ -35,6 +35,35 @@ const NAMED_PUBLIC_KINDS = (
   ["finance_request", "annex_a", "annex_b"] as const
 ).map((kind) => ({ kind, label: ATTACHMENT_KIND_LABELS[kind] }));
 
+/**
+ * Ist dieser Token ein ANTRAGS-Token? Feedback-Karten sind ganz normale Karten
+ * auf einem echten Board — ohne diese Prüfung könnte ein Gremiumsmitglied dort
+ * intern eine PDF anhängen, und der Einreicher lüde sie über seinen
+ * Feedback-Token herunter, obwohl die Feedback-Statusseite bewusst gar keine
+ * Dokumentenliste zeigt.
+ *
+ * Für die schreibenden bzw. dateiliefernden Antrags-Einstiege, die die Karte
+ * selbst nachschlagen: Anhang-Route und die beiden Server Actions. Statusseite
+ * und PDF-Route haben ihre eigene Sperre (`getApplicationStatusByToken` bzw.
+ * `isFeedbackToken`) — nur ein Einstieg ohne Sperre reicht, um die Trennung
+ * auszuhebeln. Gibt `null` zurück, wenn der Token unbekannt ist ODER zu einem
+ * Feedback gehört; die Aufrufer machen daraus dieselbe generische „nicht
+ * gefunden"-Antwort.
+ */
+export async function resolveApplicationCardId(
+  token: string,
+): Promise<number | null> {
+  if (!token) return null;
+  const [row] = await db
+    .select({ id: cards.id })
+    .from(cards)
+    .where(eq(cards.token, token))
+    .limit(1);
+  if (!row) return null;
+  if (await isFeedbackToken(token)) return null;
+  return row.id;
+}
+
 export type PublicDocument = {
   id: number;
   kind: string;

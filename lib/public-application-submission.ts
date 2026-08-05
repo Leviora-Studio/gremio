@@ -25,6 +25,7 @@ import {
   slotFileName,
   validateUpload,
 } from "@/lib/attachments";
+import { sanitizeSingleLine } from "@/lib/text";
 import { assignCardNumberTx } from "@/lib/numbering";
 import { generateToken, isTokenConflict } from "@/lib/token";
 
@@ -45,10 +46,18 @@ import { generateToken, isTokenConflict } from "@/lib/token";
 // Drizzle-Transaktionshandle (für Hooks, die in der Transaktion mitlaufen).
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+// Titel und Antragsteller werden VOR der Prüfung einzeilig bereinigt: NUL
+// lehnt PostgreSQL ab, TAB und CR sprengen den WinAnsi-Encoder der PDF-
+// Eingangsbestätigung. Die öffentliche API reicht sonst Rohstrings durch —
+// Zod prüft nur die Länge.
 const schema = z.object({
   locationId: z.coerce.number().int().positive("Bitte einen Standort wählen."),
-  title: z.string().min(1, "Bitte einen Antragsgegenstand angeben.").max(200),
-  applicant: z.string().min(1, "Bitte den Antragsteller angeben.").max(200),
+  title: z
+    .preprocess(sanitizeSingleLine, z.string())
+    .pipe(z.string().min(1, "Bitte einen Antragsgegenstand angeben.").max(200)),
+  applicant: z
+    .preprocess(sanitizeSingleLine, z.string())
+    .pipe(z.string().min(1, "Bitte den Antragsteller angeben.").max(200)),
 });
 
 /** Die vier Datei-Slots des öffentlichen Formulars, in fester Reihenfolge. */
