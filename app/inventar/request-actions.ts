@@ -5,7 +5,7 @@
 
 import { join } from "node:path";
 import { redirect } from "next/navigation";
-import { allowRequest } from "@/lib/rate-limit";
+import { allowFormRequest } from "@/lib/rate-limit";
 import {
   getAvailableGroupUnits,
   getAvailableItemQuantity,
@@ -48,7 +48,7 @@ export async function createInventoryLoanRequestAction(
     quantity: String(formData.get("quantity") ?? "1"),
   };
 
-  if (!(await allowRequest("inventory-request", 5, 60_000))) {
+  if (!(await allowFormRequest("inventory-request"))) {
     return {
       error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut.",
       values,

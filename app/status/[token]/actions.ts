@@ -18,7 +18,7 @@ import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
-import { allowRequest } from "@/lib/rate-limit";
+import { allowFormRequest } from "@/lib/rate-limit";
 
 export type PublicUploadState = { error?: string; success?: string };
 
@@ -31,7 +31,7 @@ export async function addPublicFileAction(
   _prev: PublicUploadState,
   formData: FormData,
 ): Promise<PublicUploadState> {
-  if (!(await allowRequest("public-upload", 10, 60_000))) {
+  if (!(await allowFormRequest("public-upload"))) {
     return { error: "Zu viele Uploads. Bitte versuche es in einer Minute erneut." };
   }
   const [row] = await db
@@ -109,7 +109,7 @@ export async function submitPublicAction(
   _prev: PublicUploadState,
   _formData: FormData,
 ): Promise<PublicUploadState> {
-  if (!(await allowRequest("public-submit", 10, 60_000))) {
+  if (!(await allowFormRequest("public-submit"))) {
     return { error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut." };
   }
   const [card] = await db

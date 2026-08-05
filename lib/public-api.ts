@@ -37,9 +37,14 @@ export const RL_LOCATIONS = {
 
 // Feedback hat EIGENE Buckets — ein Ansturm auf die Feedback-API verbraucht
 // nichts vom Kontingent der Antrags-API und umgekehrt.
+//
+// Der Burst liegt bewusst über dem der Anträge und ist identisch zum
+// Browserformular (FEEDBACK_FORM_RATE_LIMIT): Feedback ist niedrigschwellig —
+// kurz getippt, keine Dateien — und wird typischerweise von vielen Leuten
+// gleichzeitig abgegeben, etwa direkt nach einer Sitzung.
 export const RL_FEEDBACK_BURST = {
   scope: "public-api-feedback-submit-burst",
-  limit: 60,
+  limit: 100,
   windowMs: 60_000,
 } as const;
 export const RL_FEEDBACK_DAY = {

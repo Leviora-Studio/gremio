@@ -4,7 +4,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { allowRequest } from "@/lib/rate-limit";
+import { allowFormRequest } from "@/lib/rate-limit";
 import { AUSWEIS_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
 import {
@@ -30,7 +30,7 @@ export async function uploadSignedContractAction(
   _prev: PublicContractState,
   formData: FormData,
 ): Promise<PublicContractState> {
-  if (!(await allowRequest("inventory-contract", 10, 60_000))) {
+  if (!(await allowFormRequest("inventory-contract"))) {
     return {
       error: "Zu viele Uploads. Bitte versuche es in einer Minute erneut.",
     };
@@ -69,7 +69,7 @@ export async function submitContractAction(
   _prev: PublicContractState,
   _formData: FormData,
 ): Promise<PublicContractState> {
-  if (!(await allowRequest("inventory-contract", 10, 60_000))) {
+  if (!(await allowFormRequest("inventory-contract"))) {
     return {
       error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut.",
     };

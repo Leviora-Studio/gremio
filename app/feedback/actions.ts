@@ -5,7 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { isHoneypotFilled, isHumanTiming } from "@/lib/antispam";
-import { allowRequest } from "@/lib/rate-limit";
+import { allowFormRequest, FEEDBACK_FORM_RATE_LIMIT } from "@/lib/rate-limit";
 import { submitPublicFeedback } from "@/lib/public-feedback-submission";
 
 export type FeedbackValues = {
@@ -35,8 +35,9 @@ export async function submitFeedbackAction(
   };
 
   // Eigener Scope: beeinflusst weder das Antragsformular ("submit") noch die
-  // öffentliche API ("public-api-*").
-  if (!(await allowRequest("feedback-submit", 10, 60_000))) {
+  // öffentliche API ("public-api-*"). Feedback hat ein höheres Limit als die
+  // übrigen Formulare — identisch zum API-Weg.
+  if (!(await allowFormRequest("feedback-submit", FEEDBACK_FORM_RATE_LIMIT))) {
     return {
       error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut.",
       values,

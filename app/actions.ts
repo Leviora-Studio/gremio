@@ -5,7 +5,7 @@
 
 import { redirect } from "next/navigation";
 import { isHoneypotFilled, isHumanTiming } from "@/lib/antispam";
-import { allowRequest } from "@/lib/rate-limit";
+import { allowFormRequest } from "@/lib/rate-limit";
 import { submitPublicApplication } from "@/lib/public-application-submission";
 
 export type SubmitState = { error?: string; ok?: boolean };
@@ -24,7 +24,7 @@ export async function submitAntragAction(
 ): Promise<SubmitState> {
   // Ratenbegrenzung pro Client (gegen Massen-Einreichungen / Disk-Fill).
   // Eigener Scope — die öffentliche API nutzt bewusst getrennte Buckets.
-  if (!(await allowRequest("submit", 5, 60_000))) {
+  if (!(await allowFormRequest("submit"))) {
     return { error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut." };
   }
   // Spam-Schutz: Honeypot + signierte Zeitfalle. Bots werden still verworfen

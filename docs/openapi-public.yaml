@@ -262,7 +262,7 @@ paths:
                       - id: 2
                         name: Mensa
         "429": &a2
-          description: "Rate-Limit erreicht. Grenzen: 60 Einreichungen pro IP und Minute, 5000 pro IP und 24
+          description: "Rate-Limit erreicht. Grenzen: 100 Einreichungen pro IP und Minute, 5000 pro IP und 24
             h, 300 Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die
             Antrags-API und das Browserformular bleiben davon unberührt."
           headers:

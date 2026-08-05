@@ -72,6 +72,41 @@ export async function allowRequest(
   return rateLimit(await clientKey(scope), limit, windowMs);
 }
 
+/**
+ * Einheitliches Limit der ÖFFENTLICHEN Browser-Formulare (Server Actions):
+ * 20 Vorgänge pro Minute und IP.
+ *
+ * Bewusst nicht knapper: Gezählt wird pro IP, und ganze Hochschulen oder
+ * Wohnheime teilen sich oft EINE öffentliche Adresse (NAT). 20 Einreichungen
+ * in derselben Minute aus einem solchen Netz sind ein realistischer Normalfall,
+ * kein Missbrauch. Gegen Bots wirken hier zusätzlich Honeypot und signierte
+ * Zeitfalle — das Rate-Limit ist nur der grobe Notnagel gegen Massen-Einsendungen.
+ *
+ * Die öffentliche API hat eigene, deutlich höhere Limits (siehe lib/public-api.ts);
+ * der angemeldete Bereich zählt teils pro Nutzer statt pro IP.
+ */
+export const FORM_RATE_LIMIT = { limit: 20, windowMs: 60_000 } as const;
+
+/**
+ * Feedback ist die niedrigschwelligste Funktion: kurz getippt, keine Dateien,
+ * oft nach einer Sitzung von vielen Leuten gleichzeitig. Deshalb bewusst
+ * großzügiger als die übrigen Formulare — dasselbe Limit gilt auch für den
+ * API-Weg (siehe RL_FEEDBACK_BURST in lib/public-api.ts).
+ */
+export const FEEDBACK_FORM_RATE_LIMIT = { limit: 100, windowMs: 60_000 } as const;
+
+/**
+ * Prüft das Formular-Limit für den aktuellen Client. Jeder Scope hat einen
+ * EIGENEN Zähler — ein ausgeschöpftes Antragsformular blockiert also weder
+ * Feedback noch Ausleihe.
+ */
+export async function allowFormRequest(
+  scope: string,
+  cfg: { limit: number; windowMs: number } = FORM_RATE_LIMIT,
+): Promise<boolean> {
+  return allowRequest(scope, cfg.limit, cfg.windowMs);
+}
+
 export type RateLimitResult = {
   allowed: boolean;
   /** Sekunden bis zum Zurücksetzen des Fensters (nur bei allowed=false sinnvoll). */
