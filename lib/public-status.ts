@@ -4,7 +4,10 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, boards, boardStatuses, cards } from "@/lib/db/schema";
-import { PUBLIC_ATTACHMENT_KINDS } from "@/lib/constants";
+import {
+  ATTACHMENT_KIND_LABELS,
+  PUBLIC_ATTACHMENT_KINDS,
+} from "@/lib/constants";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
 
 /**
@@ -20,12 +23,17 @@ import { isFeedbackToken } from "@/lib/public-feedback-submission";
  * `lib/public-feedback-submission.ts` (Snapshot-basiert).
  */
 
-/** Öffentlich sichtbare Anhänge mit ihren Anzeige-Labels, in fester Reihenfolge. */
-const NAMED_PUBLIC_KINDS = [
-  { kind: "finance_request", label: "Finanzantrag" },
-  { kind: "annex_a", label: "Anlage A" },
-  { kind: "annex_b", label: "Anlage B" },
-] as const;
+/**
+ * Öffentlich sichtbare benannte Slots in fester Anzeige-Reihenfolge. Die
+ * Beschriftung kommt aus `ATTACHMENT_KIND_LABELS` — dieselbe Quelle wie die
+ * Board-Einstellungen, damit beide nicht auseinanderlaufen.
+ *
+ * Der Studierendenausweis fehlt hier bewusst: Er ist rein intern und darf
+ * öffentlich weder auftauchen noch abrufbar sein.
+ */
+const NAMED_PUBLIC_KINDS = (
+  ["finance_request", "annex_a", "annex_b"] as const
+).map((kind) => ({ kind, label: ATTACHMENT_KIND_LABELS[kind] }));
 
 export type PublicDocument = {
   id: number;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { MAX_UPLOAD_BYTES } from "@/lib/constants";
+import { ATTACHMENT_KIND_LABELS, MAX_UPLOAD_BYTES } from "@/lib/constants";
 import { MAX_IDEMPOTENCY_KEY_LENGTH } from "@/lib/public-api-idempotency";
 import {
   RL_FEEDBACK_AREAS,
@@ -601,7 +601,9 @@ Der Endpunkt **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivit
                       documents: [
                         {
                           kind: "finance_request",
-                          label: "Finanzantrag",
+                          // Aus der gemeinsamen Label-Quelle — das Beispiel
+                          // veraltet damit nicht bei einer Umbenennung.
+                          label: ATTACHMENT_KIND_LABELS.finance_request,
                           filename: "Finanzantrag.pdf",
                           mimeType: "application/pdf",
                           downloadUrl:

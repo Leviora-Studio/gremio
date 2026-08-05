@@ -38,6 +38,24 @@ export const NAMED_SLOT_KINDS: AttachmentKind[] = [
   "student_card",
 ];
 
+/**
+ * Anzeigenamen der Anhang-Slots — EINZIGE Quelle für die Beschriftung.
+ * Schlüssel ist `attachments.kind`; das Label wird NICHT in der Datenbank
+ * gespeichert, sondern immer hieraus abgeleitet. Ein Umbenennen wirkt damit
+ * sofort auch für alte Anträge, ohne Migration.
+ *
+ * Bewusst NICHT hierher gehört `SLOT_LABEL` in `lib/attachments.ts`: Das sind
+ * Bausteine für automatische DATEINAMEN und deshalb ohne Leerzeichen
+ * („AnlageA"). Beide zusammenzulegen würde erzeugte Dateinamen verändern.
+ */
+export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
+  finance_request: "Finanzantrag",
+  annex_a: "Anlage A",
+  annex_b: "Anlage B",
+  student_card: "Studierendenausweis",
+  other: "Weitere Dateien",
+};
+
 // Pro Board konfigurierbare Kartenfelder (Sichtbarkeit). Titel, Erstellungs-
 // zeitpunkt und Letzte Änderung sind IMMER sichtbar und nicht enthalten.
 // "titel" ist immer sichtbar und daher NICHT abschaltbar (nicht enthalten).
@@ -95,10 +113,14 @@ export const CARD_FIELD_LABELS: Record<CardFieldKey, string> = {
   decision_ref: "Beschlussreferenz",
   priority: "Priorität",
   account: "Konto",
-  finance_request: "Finanzantrag",
-  annex_a: "Anlage A",
-  annex_b: "Anlage B",
-  student_card: "Studierendenausweis",
+  // Die vier Anhang-Slots beziehen ihre Beschriftung aus der gemeinsamen
+  // Quelle, damit Board-Einstellungen und öffentliche Ansicht nicht
+  // auseinanderlaufen. `other_pdfs` ist ein Feld-Schlüssel ohne eigenen Slot
+  // (entspricht kind 'other') und behält deshalb seinen eigenen Text.
+  finance_request: ATTACHMENT_KIND_LABELS.finance_request,
+  annex_a: ATTACHMENT_KIND_LABELS.annex_a,
+  annex_b: ATTACHMENT_KIND_LABELS.annex_b,
+  student_card: ATTACHMENT_KIND_LABELS.student_card,
   other_pdfs: "Dateien (PDF)",
   notes: "Notizen",
   applicant_note: "Hinweis für Antragsteller",

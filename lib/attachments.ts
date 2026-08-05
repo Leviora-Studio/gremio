@@ -7,7 +7,12 @@ import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
 import { MAX_UPLOAD_BYTES, type AttachmentKind } from "@/lib/constants";
 
-// Anzeige-Labels der benannten Slots für den automatischen Dateinamen.
+// Bausteine für den automatischen DATEINAMEN — bewusst NICHT identisch mit
+// `ATTACHMENT_KIND_LABELS` (lib/constants.ts): hier ohne Leerzeichen
+// („AnlageA"), damit Dateinamen wie „A03_2026_AnlageA.pdf" entstehen. Wer die
+// Anzeige-Beschriftung ändert, ändert damit absichtlich NICHT die Dateinamen
+// bereits abgelegter oder künftiger Anhänge.
+//
 // 'other' (Weitere PDFs / Quittungen) ist bewusst NICHT enthalten → bleibt
 // unter seinem Originalnamen (Quittungen benennt der Antragsteller selbst).
 const SLOT_LABEL: Partial<Record<AttachmentKind, string>> = {
