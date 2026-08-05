@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import { notFound } from "next/navigation";
-import { env } from "@/lib/env";
+import { appBaseUrl } from "@/lib/public-api";
 import { formatDateTime } from "@/lib/dates";
 import { getFeedbackByToken } from "@/lib/public-feedback-submission";
 import { LiveRefresh } from "@/components/LiveRefresh";
@@ -33,7 +33,7 @@ export default async function FeedbackStatusPage({
   // Kein Feedback zu diesem Token (oder ein Antrags-Token) → 404.
   if (!fb) notFound();
 
-  const link = `${env.APP_BASE_URL}/feedback/status/${token}`;
+  const link = `${appBaseUrl()}/feedback/status/${token}`;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">

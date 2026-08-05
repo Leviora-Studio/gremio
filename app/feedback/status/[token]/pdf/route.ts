@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { env } from "@/lib/env";
+import { appBaseUrl } from "@/lib/public-api";
 import { buildFeedbackConfirmationPdf } from "@/lib/pdf";
 import { getFeedbackByToken } from "@/lib/public-feedback-submission";
 
@@ -27,7 +27,7 @@ export async function GET(
     submitterName: fb.submitterName,
     feedbackText: fb.feedbackText,
     eingang: fb.createdAt,
-    statusLink: `${env.APP_BASE_URL}/feedback/status/${token}`,
+    statusLink: `${appBaseUrl()}/feedback/status/${token}`,
     number: fb.number,
   });
 

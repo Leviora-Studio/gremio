@@ -11,6 +11,7 @@ import {
 } from "@/lib/realtime";
 import { startDoneArchiveScheduler } from "@/lib/done-archive";
 import { startArchiveRetryScheduler } from "@/lib/archive";
+import { startIdempotencySweeper } from "@/lib/public-api-idempotency";
 import { isPublicHost } from "@/lib/url-guard";
 
 let done = false;
@@ -93,5 +94,7 @@ export async function runStartupBootstrap(): Promise<void> {
   startDoneArchiveScheduler();
   // Nextcloud-Archiv-Retry: fehlgeschlagene Uploads periodisch wiederholen.
   startArchiveRetryScheduler();
+  // Idempotenz-Schlüssel der öffentlichen API nach Ablauf der Frist entfernen.
+  startIdempotencySweeper();
   console.log("[bootstrap] Migrationen angewendet (kein Auto-Seed).");
 }

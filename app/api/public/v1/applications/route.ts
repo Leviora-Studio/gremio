@@ -125,12 +125,13 @@ export async function POST(req: Request) {
     {
       activityDetail: "Antrag über die öffentliche API eingereicht",
       // Läuft als Erstes in der Transaktion — vor jedem Schreibzugriff.
-      preflightTx: async (tx, prepared) => {
+      preflightTx: async (tx, prepared, validated) => {
         // Serialisiert parallele Requests mit demselben Key: der zweite wartet
         // hier, sieht anschließend den Datensatz des ersten und antwortet als
         // Replay. So kann nie eine zweite Karte entstehen.
         await lockIdempotencyKeyTx(tx, SCOPE_PUBLIC_APPLICATION, keyHash);
-        requestHash = computeRequestFingerprint(fields, prepared);
+        // Über die GEPRÜFTEN Felder, nicht über die Rohwerte aus dem Formular.
+        requestHash = computeRequestFingerprint(validated, prepared);
         const hit = await findIdempotencyRecordTx(
           tx,
           SCOPE_PUBLIC_APPLICATION,

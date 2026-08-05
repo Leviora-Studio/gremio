@@ -90,6 +90,18 @@ export type FeedbackSuccess = {
 /** Vorzeitiger, gewollter Abbruch aus `preflightTx` (z. B. Idempotenz-Replay). */
 export type FeedbackAborted<T> = { ok: false; reason: "aborted"; value: T };
 
+/**
+ * Die GEPRÜFTEN Felder, exakt so, wie sie gespeichert werden (Name bereits auf
+ * „Anonym" zurückgefallen, Text normalisiert). Begründung wie bei den Anträgen:
+ * Der Idempotenz-Fingerprint muss über die gespeicherten Werte laufen, sonst
+ * wird ein logisch identischer Retry als Konflikt abgewiesen.
+ */
+export type ValidatedFeedbackFields = {
+  areaId: number;
+  submitterName: string;
+  feedback: string;
+};
+
 export type FeedbackOptions<T> = {
   /** Text des Aktivitätseintrags (unterscheidet Formular und API). */
   activityDetail: string;
@@ -98,7 +110,10 @@ export type FeedbackOptions<T> = {
    * Aufrufer einen Wert zurück, wird abgebrochen und der Wert durchgereicht —
    * die Transaktion bleibt schreibfrei. Genutzt für Advisory-Lock + Lookup.
    */
-  preflightTx?: (tx: Tx) => Promise<T | null>;
+  preflightTx?: (
+    tx: Tx,
+    validated: ValidatedFeedbackFields,
+  ) => Promise<T | null>;
   /**
    * Läuft am ENDE derselben Transaktion, nachdem Karte, Snapshot, Aktivität und
    * Nummer geschrieben sind — für den Idempotenz-Datensatz.
@@ -213,7 +228,11 @@ export async function submitPublicFeedback<T = never>(
       try {
         await db.transaction(async (tx) => {
           if (opts.preflightTx) {
-            const early = await opts.preflightTx(tx);
+            const early = await opts.preflightTx(tx, {
+              areaId: parsed.data.areaId,
+              submitterName,
+              feedback: feedbackText,
+            });
             if (early != null) {
               aborted = { value: early };
               return; // schreibfreier Commit

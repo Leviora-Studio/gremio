@@ -3,7 +3,7 @@
 
 import { notFound } from "next/navigation";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
-import { env } from "@/lib/env";
+import { appBaseUrl } from "@/lib/public-api";
 import { formatDateTime } from "@/lib/dates";
 import { PublicUploadForm } from "@/components/PublicUploadForm";
 import { PublicSubmitForm } from "@/components/PublicSubmitForm";
@@ -37,7 +37,7 @@ export default async function StatusPage({
     ? "Nachreichung einreichen"
     : "Quittung einreichen";
 
-  const link = `${env.APP_BASE_URL}/status/${token}`;
+  const link = `${appBaseUrl()}/status/${token}`;
 
   return (
     // Etwas breiter als die übrigen öffentlichen Seiten: Der Status-Link oben

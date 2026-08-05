@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import {
   enforceRateLimits,
   publicApiError,
+  readLimitedBody,
   RL_STATUS,
 } from "@/lib/public-api";
 import {
@@ -60,24 +61,36 @@ export async function POST(req: Request) {
     });
   }
 
-  const declaredLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return publicApiError(413, "Die Anfrage ist zu groß.", {
-      headers: SECURITY_HEADERS,
-    });
+  // Angekündigte Länge nur als Abkürzung — verbindlich ist die Grenze beim
+  // Lesen. Bei `chunked`/HTTP-2 fehlt der Header oft, und `Number(null)` ist 0:
+  // Die Prüfung lief dann folgenlos durch.
+  const declaredRaw = req.headers.get("content-length");
+  if (declaredRaw != null) {
+    const declared = Number(declaredRaw);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      return publicApiError(413, "Die Anfrage ist zu groß.", {
+        headers: SECURITY_HEADERS,
+      });
+    }
   }
 
-  // Auch ohne (oder mit gelogener) Content-Length hart begrenzen.
-  const raw = await req.text();
-  if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
-    return publicApiError(413, "Die Anfrage ist zu groß.", {
-      headers: SECURITY_HEADERS,
-    });
+  // Beim Lesen begrenzen und Lesefehler abfangen: `req.text()` warf bei einem
+  // abgebrochenen Client-Upload eine ungefangene Ausnahme — die Route
+  // antwortete dann mit einem 500er statt mit einem sauberen 400.
+  const rawBody = await readLimitedBody(req, MAX_BODY_BYTES);
+  if (!rawBody.ok) {
+    return rawBody.reason === "too_large"
+      ? publicApiError(413, "Die Anfrage ist zu groß.", {
+          headers: SECURITY_HEADERS,
+        })
+      : publicApiError(400, "Der Request-Body konnte nicht gelesen werden.", {
+          headers: SECURITY_HEADERS,
+        });
   }
 
   let body: unknown;
   try {
-    body = JSON.parse(raw);
+    body = JSON.parse(Buffer.from(rawBody.body).toString("utf8"));
   } catch {
     return publicApiError(400, "Der JSON-Body ist ungültig.", {
       headers: SECURITY_HEADERS,

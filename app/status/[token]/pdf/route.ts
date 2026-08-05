@@ -4,7 +4,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
-import { env } from "@/lib/env";
+import { appBaseUrl } from "@/lib/public-api";
 import { buildConfirmationPdf } from "@/lib/pdf";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
 
@@ -31,7 +31,7 @@ export async function GET(
     title: antrag.title,
     applicant: antrag.applicant,
     eingang: antrag.createdAt,
-    statusLink: `${env.APP_BASE_URL}/status/${token}`,
+    statusLink: `${appBaseUrl()}/status/${token}`,
     number: antrag.number,
   });
 

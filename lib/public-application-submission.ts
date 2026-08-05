@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -83,6 +84,14 @@ export type PreparedUpload = {
   mime: string;
   size: number;
   bytes: Buffer;
+  /**
+   * SHA-256 des Inhalts, berechnet beim Einlesen — also VOR der Transaktion.
+   * Der Idempotenz-Fingerprint der API braucht ihn; würde er erst in
+   * `preflightTx` gebildet, liefe das Hashen von bis zu vier Uploads innerhalb
+   * der offenen Transaktion und unter dem Advisory-Lock des Idempotenz-Keys.
+   * Bei großen Anhängen hielte jeder Request die Sperre entsprechend lange.
+   */
+  sha256: string;
 };
 
 export type FieldIssue = { field: string; message: string };
@@ -109,6 +118,20 @@ export type SubmissionSuccess = {
 /** Vorzeitiger, gewollter Abbruch aus `preflightTx` (z. B. Idempotenz-Replay). */
 export type SubmissionAborted<T> = { ok: false; reason: "aborted"; value: T };
 
+/**
+ * Die GEPRÜFTEN Textfelder, exakt so, wie sie in der Karte landen (bereinigt,
+ * getrimmt, `locationId` als Zahl). Der Idempotenz-Fingerprint muss über diese
+ * Werte laufen und nicht über die Rohdaten: Sonst ergeben zwei Requests, die
+ * dieselbe Karte erzeugen (etwa mit zusätzlichem Leerzeichen oder Tabulator im
+ * Titel), verschiedene Fingerprints — der Retry eines Clients wäre dann ein
+ * 409 statt eines Replays.
+ */
+export type ValidatedApplicationFields = {
+  locationId: number;
+  title: string;
+  applicant: string;
+};
+
 export type SubmissionOptions<T> = {
   /** Text des Aktivitätseintrags (unterscheidet Formular und API). */
   activityDetail: string;
@@ -118,7 +141,11 @@ export type SubmissionOptions<T> = {
    * der Wert durchgereicht (`reason: "aborted"`) — die Transaktion bleibt dabei
    * schreibfrei. Genutzt für Advisory-Lock + Idempotenz-Lookup.
    */
-  preflightTx?: (tx: Tx, prepared: PreparedUpload[]) => Promise<T | null>;
+  preflightTx?: (
+    tx: Tx,
+    prepared: PreparedUpload[],
+    validated: ValidatedApplicationFields,
+  ) => Promise<T | null>;
   /**
    * Läuft am ENDE derselben Transaktion, nachdem Karte, Aktivität, Nummer und
    * Anhänge geschrieben sind. Genutzt, um den Idempotenz-Datensatz atomar mit
@@ -262,13 +289,15 @@ export async function submitPublicApplication<T = never>(
   // Danach arbeiten Fingerprint (API) und Speicherung auf denselben Bytes.
   const prepared: PreparedUpload[] = [];
   for (const p of picked) {
+    const bytes = Buffer.from(await p.file.arrayBuffer());
     prepared.push({
       kind: p.slot.kind,
       field: p.slot.field,
       originalName: p.file.name,
       mime: resolveMime(p.file),
       size: p.file.size,
-      bytes: Buffer.from(await p.file.arrayBuffer()),
+      bytes,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
     });
   }
 
@@ -305,7 +334,11 @@ export async function submitPublicApplication<T = never>(
           // Vor JEDEM Schreibzugriff: Aufrufer darf abbrechen (Idempotenz).
           // Die Transaktion bleibt dann schreibfrei — ein Commit ohne Wirkung.
           if (opts.preflightTx) {
-            const early = await opts.preflightTx(tx, prepared);
+            const early = await opts.preflightTx(tx, prepared, {
+              locationId: parsed.data.locationId,
+              title: parsed.data.title,
+              applicant: parsed.data.applicant,
+            });
             if (early != null) {
               aborted = { value: early };
               return;

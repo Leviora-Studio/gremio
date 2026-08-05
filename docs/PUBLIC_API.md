@@ -417,11 +417,24 @@ Zwei wirklich parallele Requests mit demselben Key erzeugen genau **eine** Karte
 Nach einem fehlgeschlagenen und vollständig zurückgerollten Request ist derselbe
 Key **weiterhin verwendbar** — es bleibt kein blockierender Datensatz zurück.
 
+### Aufbewahrungsfrist: 30 Tage
+
+Ein Idempotenz-Datensatz wird **30 Tage** nach seiner Anlage automatisch
+entfernt. Danach verhält sich derselbe Key wie ein neuer: Ein Retry **nach**
+Ablauf der Frist legt eine **zweite** Einreichung an und liefert `201` statt
+`200`. Für den vorgesehenen Zweck — Wiederholung nach Timeout, Netzabbruch oder
+Offline-Phase — ist die Frist mehr als ausreichend; ein Client sollte einen
+Entwurf ohnehin nicht wochenlang unabgeschlossen liegen lassen.
+
+Der Wert ist absichtlich endlich: Ohne Frist wüchse die Schlüsseltabelle
+unbegrenzt mit.
+
 ### Was zählt als „identisch"?
 
-Verglichen wird ein kanonischer SHA-256-Fingerprint aus:
+Verglichen wird ein kanonischer SHA-256-Fingerprint aus den **geprüften** Werten
+— also genau denen, die in der Karte landen (bereinigt und getrimmt):
 
-* normalisierter `locationId`, `title`, `applicant`,
+* `locationId`, `title`, `applicant`,
 * Vorhandensein jedes der vier Datei-Slots,
 * serverseitig ermitteltem MIME-Typ und **Inhalts-Hash** jeder vorhandenen Datei.
 

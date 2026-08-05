@@ -2,7 +2,10 @@
 // Copyright (C) 2026 Erik Engler
 
 import { ATTACHMENT_KIND_LABELS, MAX_UPLOAD_BYTES } from "@/lib/constants";
-import { MAX_IDEMPOTENCY_KEY_LENGTH } from "@/lib/public-api-idempotency";
+import {
+  IDEMPOTENCY_TTL_DAYS,
+  MAX_IDEMPOTENCY_KEY_LENGTH,
+} from "@/lib/public-api-idempotency";
 import {
   RL_FEEDBACK_AREAS,
   RL_FEEDBACK_BURST,
@@ -43,7 +46,9 @@ const IDEMPOTENCY_DESCRIPTION = `Pflicht. Eindeutiger Schlüssel dieser Einreich
 * Bei einem **Retry** (Timeout, Netzwerkfehler) denselben Schlüssel mit **identischen Daten** erneut senden — die Antwort ist dann \`200\` mit \`Idempotency-Replayed: true\` und es entsteht **keine** zweite Karte.
 * Derselbe Schlüssel mit **veränderten Daten** führt zu \`409 Conflict\`.
 
-Zulässig ist druckbares ASCII mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.`;
+Zulässig ist druckbares ASCII mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.
+
+Ein Schlüssel wird **${IDEMPOTENCY_TTL_DAYS} Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein Retry nach Ablauf der Frist legt eine **zweite** Einreichung an (\`201\` statt \`200\`).`;
 
 const rateLimitResponse = {
   description: `Rate-Limit erreicht. Grenzen: ${RL_SUBMIT_BURST.limit} Einreichungen pro IP und Minute, ${RL_SUBMIT_DAY.limit} pro IP und Stunde, ${RL_LOCATIONS.limit} Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des Browserformulars bleibt davon unberührt.`,

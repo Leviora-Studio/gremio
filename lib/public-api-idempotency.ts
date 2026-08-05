@@ -3,16 +3,15 @@
 
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
 import { apiIdempotencyKeys } from "@/lib/db/schema";
 import {
   APPLICATION_FILE_SLOTS,
   type PreparedUpload,
   type Tx,
+  type ValidatedApplicationFields,
 } from "@/lib/public-application-submission";
-import {
-  normalizeFeedbackText,
-  normalizeSubmitterName,
-} from "@/lib/feedback-constants";
+import type { ValidatedFeedbackFields } from "@/lib/public-feedback-submission";
 
 /**
  * Idempotenz für öffentliche API-Schreibzugriffe.
@@ -68,32 +67,36 @@ export function hashIdempotencyKey(key: string): string {
  *
  * Bewusst NICHT über den rohen Multipart-Body: Boundary, Feldreihenfolge und
  * Dateiname ändern sich bei einem Retry regelmäßig, ohne dass der Antrag ein
- * anderer wäre. Stattdessen über die normalisierten Felder und den INHALT der
- * Dateien — ein logisch identischer Retry ergibt denselben Hash, eine geänderte
- * Datei oder ein geänderter Titel einen anderen.
+ * anderer wäre. Stattdessen über die GEPRÜFTEN Felder (`ValidatedApplicationFields`
+ * — genau die Werte, die in der Karte landen) und den INHALT der Dateien: Ein
+ * logisch identischer Retry ergibt denselben Hash, eine geänderte Datei oder ein
+ * geänderter Titel einen anderen.
  *
- * Enthalten sind: normalisierte locationId/title/applicant, für jeden der vier
- * Slots das Vorhandensein und — falls vorhanden — der serverseitig ermittelte
- * MIME-Typ plus SHA-256 des Dateiinhalts. Der Dateiname bleibt bewusst außen vor.
+ * Die eigene Normalisierung von früher (`String(v).trim()`) hätte die
+ * Eingangsbereinigung aus `lib/text.ts` nachbauen müssen und wäre bei jeder
+ * Änderung daran auseinandergelaufen: Zwei Requests, die dieselbe Karte
+ * erzeugen, hätten verschiedene Fingerprints bekommen und der Retry eines
+ * Clients wäre als 409 gelandet statt als Replay.
+ *
+ * Der SHA-256 der Dateien kommt fertig aus `PreparedUpload` (beim Einlesen
+ * berechnet, vor der Transaktion). Der Dateiname bleibt bewusst außen vor.
  */
 export function computeRequestFingerprint(
-  fields: { locationId: unknown; title: unknown; applicant: unknown },
+  fields: ValidatedApplicationFields,
   prepared: PreparedUpload[],
 ): string {
-  const norm = (v: unknown) => String(v ?? "").trim();
-  const locationId = Number.parseInt(norm(fields.locationId), 10);
   const lines: string[] = [
     "v1",
-    `locationId:${Number.isFinite(locationId) ? locationId : ""}`,
-    `title:${norm(fields.title)}`,
-    `applicant:${norm(fields.applicant)}`,
+    `locationId:${fields.locationId}`,
+    `title:${fields.title}`,
+    `applicant:${fields.applicant}`,
   ];
   // Feste Slot-Reihenfolge → die Multipart-Reihenfolge ist irrelevant.
   for (const slot of APPLICATION_FILE_SLOTS) {
     const up = prepared.find((p) => p.field === slot.field);
     lines.push(
       up
-        ? `file:${slot.field}:1:${up.mime}:${sha256(up.bytes)}`
+        ? `file:${slot.field}:1:${up.mime}:${up.sha256}`
         : `file:${slot.field}:0`,
     );
   }
@@ -112,22 +115,20 @@ export function computeRequestFingerprint(
  * sind Inhalt: Ein geänderter Absatz ist ein anderes Feedback und muss zu 409
  * führen.
  *
- * Der Name läuft durch dieselbe Normalisierung wie beim Speichern, inklusive
- * des „Anonym"-Ersatzes. Ein Retry, der den Namen einmal weglässt und einmal
+ * Gebildet wird er über die GEPRÜFTEN Felder (`ValidatedFeedbackFields`) — also
+ * über die Werte, die tatsächlich gespeichert werden, inklusive des
+ * „Anonym"-Ersatzes. Ein Retry, der den Namen einmal weglässt und einmal
  * explizit „Anonym" schickt, ist damit logisch dieselbe Einreichung und wird
  * als Replay erkannt statt mit 409 abgewiesen.
  */
-export function computeFeedbackFingerprint(fields: {
-  areaId: unknown;
-  submitterName: unknown;
-  feedback: unknown;
-}): string {
-  const areaId = Number.parseInt(String(fields.areaId ?? "").trim(), 10);
+export function computeFeedbackFingerprint(
+  fields: ValidatedFeedbackFields,
+): string {
   const lines = [
     "v1",
-    `areaId:${Number.isFinite(areaId) ? areaId : ""}`,
-    `submitterName:${normalizeSubmitterName(fields.submitterName)}`,
-    `feedback:${normalizeFeedbackText(fields.feedback)}`,
+    `areaId:${fields.areaId}`,
+    `submitterName:${fields.submitterName}`,
+    `feedback:${fields.feedback}`,
   ];
   return sha256(lines.join("\n"));
 }
@@ -196,4 +197,66 @@ export async function insertIdempotencyRecordTx(
   await tx
     .insert(apiIdempotencyKeys)
     .values({ scope, keyHash, requestHash, cardId });
+}
+
+// ---------------------------------------------------------------------------
+// Aufbewahrung
+// ---------------------------------------------------------------------------
+
+/**
+ * Wie lange ein Idempotenz-Datensatz gilt.
+ *
+ * Ohne Ablauf wuchs die Tabelle unbegrenzt: Jede API-Einreichung legt eine Zeile
+ * an, und gelöscht wurde nur, was am Kartenlöschen mithing (`ON DELETE CASCADE`)
+ * — Karten bleiben aber dauerhaft bestehen. Nach einem Jahr Betrieb wäre die
+ * Tabelle so groß wie die Kartentabelle, ohne dass ein einziger Eintrag davon
+ * noch gebraucht würde.
+ *
+ * 30 Tage sind großzügig bemessen: Ein Retry eines nativen Clients kommt
+ * innerhalb von Sekunden bis Minuten, im Offline-Fall innerhalb von Tagen. Nach
+ * Ablauf verhält sich derselbe Key wie ein neuer — ein Retry NACH 30 Tagen legt
+ * also einen zweiten Antrag an. Das ist in der API-Doku zugesichert.
+ */
+export const IDEMPOTENCY_TTL_DAYS = 30;
+
+/**
+ * Entfernt abgelaufene Idempotenz-Datensätze. Gibt die Anzahl zurück.
+ *
+ * Löscht NUR die Schlüsselzeilen, nie Karten: Die Fremdschlüsselrichtung zeigt
+ * von hier auf `cards`, nicht umgekehrt.
+ */
+export async function pruneExpiredIdempotencyKeys(): Promise<number> {
+  const rows = await db
+    .delete(apiIdempotencyKeys)
+    .where(
+      sql`${apiIdempotencyKeys.createdAt} < now() - ${sql.raw(`interval '${IDEMPOTENCY_TTL_DAYS} days'`)}`,
+    )
+    .returning({ id: apiIdempotencyKeys.id });
+  if (rows.length > 0) {
+    console.log(
+      `[idempotency] ${rows.length} abgelaufene Schlüssel entfernt (älter als ${IDEMPOTENCY_TTL_DAYS} Tage).`,
+    );
+  }
+  return rows.length;
+}
+
+// --- Scheduler (eine Instanz je Prozess) -----------------------------------
+const g = globalThis as unknown as { __idempotencySweeperStarted?: boolean };
+
+/**
+ * Startet das tägliche Aufräumen (idempotent). Läuft einmal beim Start und
+ * danach alle 24 Stunden — der Datensatz ist unkritisch, ein exakter Zeitpunkt
+ * spielt keine Rolle.
+ */
+export function startIdempotencySweeper(): void {
+  if (g.__idempotencySweeperStarted) return;
+  g.__idempotencySweeperStarted = true;
+  const tick = () => {
+    pruneExpiredIdempotencyKeys().catch((e) =>
+      console.error("[idempotency] Aufräumen fehlgeschlagen:", e),
+    );
+  };
+  tick();
+  const timer = setInterval(tick, 24 * 60 * 60 * 1000);
+  timer.unref?.();
 }

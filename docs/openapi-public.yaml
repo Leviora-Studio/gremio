@@ -68,8 +68,8 @@ paths:
                       - id: 4
                         name: Zentrale
         "429": &a1
-          description: "Rate-Limit erreicht. Grenzen: 60 Einreichungen pro IP und Minute, 5000 pro IP und 24
-            h, 300 Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des
+          description: "Rate-Limit erreicht. Grenzen: 60 Einreichungen pro IP und Minute, 500 pro IP und
+            Stunde, 300 Standort-Abrufe pro IP und Minute. Getrennte Buckets; das Limit des
             Browserformulars bleibt davon unberührt."
           headers:
             Retry-After:
@@ -134,6 +134,10 @@ paths:
 
             Zulässig ist druckbares ASCII mit 16–128 Zeichen. Gespeichert wird nur ein SHA-256-Hash,
             nie der Klartext.
+
+
+            Ein Schlüssel wird **30 Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein
+            Retry nach Ablauf der Frist legt eine **zweite** Einreichung an (`201` statt `200`).
           schema:
             type: string
             minLength: 16
@@ -262,8 +266,8 @@ paths:
                       - id: 2
                         name: Mensa
         "429": &a2
-          description: "Rate-Limit erreicht. Grenzen: 100 Einreichungen pro IP und Minute, 5000 pro IP und 24
-            h, 300 Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die
+          description: "Rate-Limit erreicht. Grenzen: 100 Einreichungen pro IP und Minute, 500 pro IP und
+            Stunde, 300 Bereichs-Abrufe pro IP und Minute. Vollständig getrennte Buckets — die
             Antrags-API und das Browserformular bleiben davon unberührt."
           headers:
             Retry-After:
@@ -335,6 +339,10 @@ paths:
 
             Zulässig ist druckbares ASCII mit 16–128 Zeichen. Gespeichert wird nur ein SHA-256-Hash,
             nie der Klartext.
+
+
+            Ein Schlüssel wird **30 Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein
+            Retry nach Ablauf der Frist legt eine **zweite** Einreichung an (`201` statt `200`).
           schema:
             type: string
             minLength: 16

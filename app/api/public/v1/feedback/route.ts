@@ -9,6 +9,7 @@ import {
   enforceRateLimits,
   publicApiError,
   publicFeedbackLinks,
+  readLimitedBody,
   RL_FEEDBACK_BURST,
   RL_FEEDBACK_DAY,
 } from "@/lib/public-api";
@@ -48,12 +49,23 @@ export async function POST(req: Request) {
 
   // --- Transport prüfen ---------------------------------------------------
   const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().split(";")[0].trim().endsWith("/json")) {
+  // `startsWith("application/json")` statt `endsWith("/json")`: Letzteres nahm
+  // auch `text/json` oder frei erfundene Typen an. Der Suffix `+json`
+  // (application/problem+json o. ä.) ist hier ebenfalls nicht vorgesehen.
+  if (
+    !contentType.toLowerCase().split(";")[0].trim().startsWith("application/json")
+  ) {
     return publicApiError(415, "Content-Type muss application/json sein.");
   }
-  const declaredLength = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return publicApiError(413, "Die Anfrage ist zu groß.");
+  // Angekündigte Länge nur als Abkürzung — verbindlich ist die Grenze beim
+  // Lesen (`readLimitedBody`). Bei `chunked`/HTTP-2 fehlt der Header oft, und
+  // `Number(null)` ist 0: Die Prüfung lief dann folgenlos durch.
+  const declaredRaw = req.headers.get("content-length");
+  if (declaredRaw != null) {
+    const declared = Number(declaredRaw);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      return publicApiError(413, "Die Anfrage ist zu groß.");
+    }
   }
 
   // --- Idempotency-Key ----------------------------------------------------
@@ -67,20 +79,20 @@ export async function POST(req: Request) {
   const keyHash = hashIdempotencyKey(rawKey);
 
   // --- Body lesen ---------------------------------------------------------
-  // Auch ohne (oder mit gelogener) Content-Length hart begrenzen.
-  let raw: string;
-  try {
-    raw = await req.text();
-  } catch {
-    return publicApiError(400, "Der Request-Body konnte nicht gelesen werden.");
-  }
-  if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
-    return publicApiError(413, "Die Anfrage ist zu groß.");
+  // Beim Lesen begrenzen statt erst danach zu messen: `req.text()` puffert
+  // sonst den gesamten Body, egal wie groß er ist.
+  const rawBody = await readLimitedBody(req, MAX_BODY_BYTES);
+  if (!rawBody.ok) {
+    return rawBody.reason === "too_large"
+      ? publicApiError(413, "Die Anfrage ist zu groß.")
+      : publicApiError(400, "Der Request-Body konnte nicht gelesen werden.");
   }
 
   let body: { areaId?: unknown; submitterName?: unknown; feedback?: unknown };
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(
+      Buffer.from(rawBody.body).toString("utf8"),
+    );
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return publicApiError(400, "Der JSON-Body muss ein Objekt sein.");
     }
@@ -89,23 +101,47 @@ export async function POST(req: Request) {
     return publicApiError(400, "Der JSON-Body ist ungültig.");
   }
 
+  // Typen der Felder ausdrücklich prüfen. JSON kann Zahlen, Objekte und Arrays
+  // transportieren, die Bereinigung macht daraus stillschweigend einen leeren
+  // String: `submitterName: 42` wurde zu „Anonym", `feedback: {}` zu einer
+  // irreführenden „Bitte Feedback eingeben."-Meldung. Ein falsch typisiertes
+  // Feld soll stattdessen genau das sagen.
+  if (body.submitterName != null && typeof body.submitterName !== "string") {
+    return publicApiError(400, "Feld 'submitterName' muss eine Zeichenkette sein.", {
+      issues: [{ field: "submitterName", message: "Erwartet wird eine Zeichenkette." }],
+    });
+  }
+  if (typeof body.feedback !== "string") {
+    return publicApiError(400, "Feld 'feedback' muss eine Zeichenkette sein.", {
+      issues: [{ field: "feedback", message: "Erwartet wird eine Zeichenkette." }],
+    });
+  }
+  if (typeof body.areaId !== "number" && typeof body.areaId !== "string") {
+    return publicApiError(400, "Feld 'areaId' muss eine Zahl sein.", {
+      issues: [{ field: "areaId", message: "Erwartet wird eine Zahl." }],
+    });
+  }
+
   const fields = {
     areaId: body.areaId,
     submitterName: body.submitterName,
     feedback: body.feedback,
   };
-  // Aus den normalisierten Feldern — unabhängig von Property-Reihenfolge und
-  // Formatierung des JSON.
-  const requestHash = computeFeedbackFingerprint(fields);
+  // Wird in preflightTx aus den GEPRÜFTEN Feldern berechnet und in withinTx
+  // erneut gebraucht (gleiche Transaktion, gleicher Wert).
+  let requestHash = "";
 
   const result = await submitPublicFeedback<Preflight>(fields, {
     activityDetail: "Feedback über die öffentliche API eingereicht",
     // Läuft als Erstes in der Transaktion — vor jedem Schreibzugriff.
-    preflightTx: async (tx) => {
+    preflightTx: async (tx, validated) => {
       // Serialisiert parallele Requests mit demselben Key: der zweite wartet
       // hier, sieht anschließend den Datensatz des ersten und antwortet als
       // Replay. So kann nie eine zweite Karte entstehen.
       await lockIdempotencyKeyTx(tx, SCOPE_PUBLIC_FEEDBACK, keyHash);
+      // Über die GEPRÜFTEN Felder — unabhängig von Property-Reihenfolge und
+      // Formatierung des JSON, und identisch zu dem, was gespeichert wird.
+      requestHash = computeFeedbackFingerprint(validated);
       const hit = await findIdempotencyRecordTx(
         tx,
         SCOPE_PUBLIC_FEEDBACK,
