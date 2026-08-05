@@ -5,6 +5,7 @@ import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   cards,
+  inventoryAttachments,
   inventoryItemCategories,
   inventoryItems,
   inventoryLoanItems,
@@ -15,6 +16,7 @@ import {
   type InventoryNumbering,
   type InventoryOption,
 } from "@/lib/db/schema";
+import { deleteStoredFile } from "@/lib/attachments";
 import { buildInventoryNumber } from "@/lib/numbering";
 import {
   getActiveLoanMap,
@@ -419,6 +421,18 @@ export async function updateInventoryItem(
  *    ihr Karten-Titel (×N) wird nach dem Entfernen aktualisiert.
  */
 export async function deleteInventoryItem(id: number): Promise<void> {
+  // Dateipfade VOR dem Löschen sichern: Der FK-Cascade entfernt zwar die Zeilen
+  // in inventory_attachments, nicht aber die Dateien im Upload-Verzeichnis.
+  // Ohne diesen Schritt blieben Kaufbelege, Leihverträge und vor allem
+  // Studierendenausweise dauerhaft auf der Platte liegen, obwohl der Gegenstand
+  // gelöscht wurde (Aufbewahrungs-/Datenschutzproblem).
+  const filePaths = (
+    await db
+      .select({ path: inventoryAttachments.path })
+      .from(inventoryAttachments)
+      .where(eq(inventoryAttachments.itemId, id))
+  ).map((r) => r.path);
+
   // Karten der Vorgänge, die dieses Stück als Leit-Stück haben (werden cascaded).
   const leadCardIds = (
     await db
@@ -456,6 +470,11 @@ export async function deleteInventoryItem(id: number): Promise<void> {
       await tx.delete(cards).where(inArray(cards.id, leadCardIds));
     }
   });
+
+  // Erst NACH dem Commit die Dateien entfernen: Rollt die Transaktion zurück,
+  // bleiben Zeilen und Dateien zusammen erhalten. Fehlschläge hier sind
+  // unkritisch (deleteStoredFile schluckt sie) — die Zeilen sind bereits weg.
+  for (const p of filePaths) await deleteStoredFile(p);
 
   // Titel der überlebenden Vorgangs-Karten nachziehen (Stückzahl hat sich geändert).
   for (const loanId of survivingLoanIds) {

@@ -79,7 +79,15 @@ export function parseStatusLink(raw: unknown): ParsedStatusLink {
   for (const p of PATH_PATTERNS) {
     const m = p.re.exec(path);
     if (!m) continue;
-    const token = decodeURIComponent(m[1]);
+    // decodeURIComponent wirft bei kaputter Prozent-Kodierung („%ZZ", „%").
+    // Ohne dieses catch würde ein solcher Link eine unbehandelte Ausnahme und
+    // damit 500 statt 400 erzeugen — von außen ohne Anmeldung auslösbar.
+    let token: string;
+    try {
+      token = decodeURIComponent(m[1]);
+    } catch {
+      return { ok: false, reason: "path" };
+    }
     // Token gegen das tatsächlich erzeugte Format prüfen, bevor irgendetwas
     // die Datenbank sieht.
     if (!isValidStatusToken(token)) return { ok: false, reason: "path" };
