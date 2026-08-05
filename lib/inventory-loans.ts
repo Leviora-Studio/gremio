@@ -6,6 +6,7 @@ import {
   asc,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -342,6 +343,16 @@ export async function removeLoanItem(
 ): Promise<void> {
   // Lesen + Ändern + Leit-Stück-Umzug atomar (kein TOCTOU zwischen den Schritten).
   await db.transaction(async (tx) => {
+    // Serialisieren gegen ein zweites Entfernen AM SELBEN VORGANG. Eine
+    // Transaktion allein reichte nicht: Unter READ COMMITTED sehen zwei
+    // gleichzeitige Aufrufe beide dieselbe Ausgangsmenge, und beide zogen 1 ab.
+    // Bei Menge 2 endete das auf 0 und verletzte
+    // `inventory_loan_items_quantity` (CHECK quantity >= 1) → HTTP 500; beim
+    // `totalUnits <= 1`-Tor konnte so sogar der letzte Stück-Eintrag
+    // verschwinden und ein Vorgang ohne Stück zurückbleiben.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${LOAN_ITEMS_LOCK_NS}, ${loanId})`,
+    );
     const rows = await tx
       .select({
         id: inventoryLoanItems.itemId,
@@ -356,6 +367,8 @@ export async function removeLoanItem(
 
     if (row.quantity > 1) {
       // Mengen-Zeile: nur um eine Einheit reduzieren, Zeile bleibt bestehen.
+      // `quantity > 1` steht zusätzlich in der WHERE-Klausel — als zweiter
+      // Riegel gegen die CHECK-Verletzung, unabhängig von der Sperre oben.
       await tx
         .update(inventoryLoanItems)
         .set({ quantity: sql`${inventoryLoanItems.quantity} - 1` })
@@ -363,6 +376,7 @@ export async function removeLoanItem(
           and(
             eq(inventoryLoanItems.loanId, loanId),
             eq(inventoryLoanItems.itemId, itemId),
+            gt(inventoryLoanItems.quantity, 1),
           ),
         );
       return;
@@ -448,36 +462,47 @@ export async function returnLoan(loanId: number): Promise<void> {
 }
 
 export async function deleteLoan(loanId: number): Promise<void> {
-  // Verknüpfte Tracking-Karte mitlöschen, damit keine Karteileiche übrig bleibt.
-  const [loan] = await db
-    .select({ cardId: inventoryLoans.cardId })
-    .from(inventoryLoans)
-    .where(eq(inventoryLoans.id, loanId))
-    .limit(1);
+  // Alle Datenbankschritte in EINER Transaktion. Vorher waren es vier einzelne
+  // Anweisungen: Brach eine davon ab (Verbindungsabbruch, Neustart), blieb ein
+  // halb gelöschter Vorgang zurück — etwa gelöschte Ausweiszeilen bei noch
+  // existierendem Vorgang oder ein gelöschter Vorgang mit verwaister
+  // Tracking-Karte auf dem Leihboard.
+  //
+  // Die Dateien werden bewusst ERST NACH dem Commit vom Datenträger geräumt:
+  // Ein Rollback kann eine gelöschte Datei nicht zurückholen, umgekehrt ist ein
+  // übrig gebliebenes Dateifragment ohne Datenbankzeile folgenlos.
+  const geloeschteDateien: string[] = [];
+  await db.transaction(async (tx) => {
+    // Verknüpfte Tracking-Karte mitlöschen, damit keine Karteileiche übrig bleibt.
+    const [loan] = await tx
+      .select({ cardId: inventoryLoans.cardId })
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.id, loanId))
+      .limit(1);
+    if (!loan) return;
 
-  // Studierendenausweise dieses Vorgangs VORHER löschen (Zeile + Datei).
-  // `inventory_attachments.loan_id` ist ON DELETE SET NULL — der Ausweis bliebe
-  // sonst als unzugeordnetes Ausweisdokument am Gegenstand hängen. Die übrigen
-  // Arten (Belege/Verträge) bleiben als Historie bewusst erhalten.
-  const cards_ = await db
-    .select({ id: inventoryAttachments.id, path: inventoryAttachments.path })
-    .from(inventoryAttachments)
-    .where(
-      and(
-        eq(inventoryAttachments.loanId, loanId),
-        eq(inventoryAttachments.kind, "student_card"),
-      ),
-    );
-  for (const c of cards_) {
-    await db
+    // Studierendenausweise dieses Vorgangs VORHER löschen (Zeile + Datei).
+    // `inventory_attachments.loan_id` ist ON DELETE SET NULL — der Ausweis bliebe
+    // sonst als unzugeordnetes Ausweisdokument am Gegenstand hängen. Die übrigen
+    // Arten (Belege/Verträge) bleiben als Historie bewusst erhalten.
+    const ausweise = await tx
       .delete(inventoryAttachments)
-      .where(eq(inventoryAttachments.id, c.id));
-    await deleteStoredFile(c.path);
-  }
+      .where(
+        and(
+          eq(inventoryAttachments.loanId, loanId),
+          eq(inventoryAttachments.kind, "student_card"),
+        ),
+      )
+      .returning({ path: inventoryAttachments.path });
+    geloeschteDateien.push(...ausweise.map((a) => a.path));
 
-  await db.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
-  if (loan?.cardId != null) {
-    await db.delete(cards).where(eq(cards.id, loan.cardId));
+    await tx.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
+    if (loan.cardId != null) {
+      await tx.delete(cards).where(eq(cards.id, loan.cardId));
+    }
+  });
+  for (const path of geloeschteDateien) {
+    await deleteStoredFile(path);
   }
 }
 
@@ -508,6 +533,10 @@ export class LoanCapacityError extends Error {
 // ("LR" = Loan Request) — verhindert Überbuchung durch zwei gleichzeitige
 // Anfragen, die beide noch die alte Verfügbarkeit gesehen haben.
 const LOAN_REQUEST_LOCK_NS = 0x4c52;
+
+// Namespace für den Lock, der Stück-Zuordnungen EINES Vorgangs serialisiert
+// (pg_advisory_xact_lock(ns, loanId)); "LI" = Loan Items.
+const LOAN_ITEMS_LOCK_NS = 0x4c49;
 
 /**
  * Öffentliche Entleih-Anfrage anlegen (status='requested' + Status-Token) —
@@ -800,27 +829,6 @@ export async function advanceLoanToContractProvided(
 }
 
 /**
- * Auto: Vertrag unterschrieben. Gibt zurück, ob der Status wirklich
- * weitergestellt wurde (false, wenn der Vorgang die Vertragsphase bereits
- * verlassen hat — dann darf auch die Karte nicht mehr bewegt werden).
- */
-export async function advanceLoanToContractSigned(
-  loanId: number,
-): Promise<boolean> {
-  const rows = await db
-    .update(inventoryLoans)
-    .set({ status: "contract_signed" })
-    .where(
-      and(
-        eq(inventoryLoans.id, loanId),
-        inArray(inventoryLoans.status, ["requested", "contract_provided"]),
-      ),
-    )
-    .returning({ id: inventoryLoans.id });
-  return rows.length > 0;
-}
-
-/**
  * Entleiher sendet den Vertrag ein (öffentlich, token-gesichert): Vorgang auf
  * „Vertrag unterschrieben" setzen UND — falls kartengeführt — die verknüpfte
  * Karte in die „Vertrag unterschrieben"-Spalte des Leihboards bewegen, damit der
@@ -828,75 +836,108 @@ export async function advanceLoanToContractSigned(
  * nicht (mehr) in der Vertragsphase ist. Gibt zurück, ob etwas passiert ist.
  */
 export async function submitLoanContract(loanId: number): Promise<boolean> {
-  const [loan] = await db
-    .select({
-      status: inventoryLoans.status,
-      cardId: inventoryLoans.cardId,
-    })
+  const [pre] = await db
+    .select({ cardId: inventoryLoans.cardId })
     .from(inventoryLoans)
     .where(eq(inventoryLoans.id, loanId))
     .limit(1);
-  if (!loan) return false;
-  if (loan.status !== "requested" && loan.status !== "contract_provided") {
-    return false;
-  }
-  // 1) Vorgangsstatus weiterstellen — nur fortfahren, wenn wirklich advanced
-  //    (sonst hat ein paralleler Schritt den Vorgang schon weitergebracht).
-  const advanced = await advanceLoanToContractSigned(loanId);
-  if (!advanced) return false;
+  if (!pre) return false;
 
-  // 2) Kartengeführt: Karte NUR aus der Quell-Spalte („Vertrag bereitgestellt")
-  //    in die Ziel-Spalte („Vertrag unterschrieben") bewegen — Quell-Gate wie
-  //    beim Quittungs-Von→Nach-Zug. Steht die Karte woanders (früher/später),
-  //    wird nichts bewegt (nie rückwärts, kein Überspringen).
-  if (loan.cardId == null) return true;
-  const [card] = await db
-    .select({ id: cards.id, boardId: cards.boardId, statusId: cards.statusId })
-    .from(cards)
-    .where(eq(cards.id, loan.cardId))
-    .limit(1);
-  if (!card) return true;
-  const cols = await db
-    .select({ id: boardStatuses.id, name: boardStatuses.name })
-    .from(boardStatuses)
-    .where(
-      and(
-        eq(boardStatuses.boardId, card.boardId),
-        inArray(boardStatuses.name, [
-          LOAN_CONTRACT_PROVIDED_COLUMN,
-          LOAN_CONTRACT_SIGNED_COLUMN,
-        ]),
-      ),
-    );
-  const from = cols.find((c) => c.name === LOAN_CONTRACT_PROVIDED_COLUMN);
-  const to = cols.find((c) => c.name === LOAN_CONTRACT_SIGNED_COLUMN);
-  // Quell-Gate: nur bewegen, wenn die Karte in der Quell-Spalte steht.
-  if (!from || !to || card.statusId !== from.id) return true;
-  const [maxRow] = await db
-    .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
-    .from(cards)
-    .where(
-      and(
-        eq(cards.boardId, card.boardId),
-        eq(cards.statusId, to.id),
-        isNull(cards.archivedAt),
-      ),
-    );
-  await db
-    .update(cards)
-    .set({
-      statusId: to.id,
-      position: (maxRow?.m ?? -1) + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(cards.id, card.id));
-  await db.insert(cardActivity).values({
-    cardId: card.id,
-    userId: null,
-    type: "status",
-    detail: "Vertrag vom Entleiher eingesendet → Vertrag unterschrieben",
+  // Alles in EINER Transaktion, serialisiert über denselben Advisory-Lock wie
+  // `syncLoanFromCard` (Namespace + cardId). Vorher liefen Statuswechsel und
+  // Kartenzug als getrennte Anweisungen: Ein gleichzeitiger Kartenzug des
+  // Gremiums konnte die Karte zwischen Lesen und Schreiben verschieben, der
+  // Vorgang stand danach auf „contract_signed", die Karte aber irgendwo anders
+  // — genau die zwei auseinanderlaufenden Statusquellen, die das kartengeführte
+  // Modell vermeiden soll. Bricht etwas ab, wird auch der Statuswechsel
+  // zurückgerollt.
+  //
+  // Vorgänge ohne Karte haben keine sinnvolle Lock-Kennung; sie brauchen auch
+  // keine, weil dort nur die eine bedingte UPDATE-Anweisung läuft.
+  return await db.transaction(async (tx) => {
+    if (pre.cardId != null) {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(${LOAN_SYNC_LOCK_NS}, ${pre.cardId})`,
+      );
+    }
+
+    // 1) Vorgangsstatus weiterstellen — nur fortfahren, wenn wirklich advanced
+    //    (sonst hat ein paralleler Schritt den Vorgang schon weitergebracht).
+    //    Innerhalb der Sperre frisch gelesen; `cardId` kann sich nicht ändern.
+    const advanced = await tx
+      .update(inventoryLoans)
+      .set({ status: "contract_signed" })
+      .where(
+        and(
+          eq(inventoryLoans.id, loanId),
+          inArray(inventoryLoans.status, ["requested", "contract_provided"]),
+        ),
+      )
+      .returning({ cardId: inventoryLoans.cardId });
+    if (!advanced.length) return false;
+
+    // 2) Kartengeführt: Karte NUR aus der Quell-Spalte („Vertrag bereitgestellt")
+    //    in die Ziel-Spalte („Vertrag unterschrieben") bewegen — Quell-Gate wie
+    //    beim Quittungs-Von→Nach-Zug. Steht die Karte woanders (früher/später),
+    //    wird nichts bewegt (nie rückwärts, kein Überspringen).
+    const cardId = advanced[0].cardId;
+    if (cardId == null) return true;
+    const [card] = await tx
+      .select({ id: cards.id, boardId: cards.boardId })
+      .from(cards)
+      .where(eq(cards.id, cardId))
+      .limit(1);
+    if (!card) return true;
+    const cols = await tx
+      .select({ id: boardStatuses.id, name: boardStatuses.name })
+      .from(boardStatuses)
+      .where(
+        and(
+          eq(boardStatuses.boardId, card.boardId),
+          inArray(boardStatuses.name, [
+            LOAN_CONTRACT_PROVIDED_COLUMN,
+            LOAN_CONTRACT_SIGNED_COLUMN,
+          ]),
+        ),
+      );
+    const from = cols.find((c) => c.name === LOAN_CONTRACT_PROVIDED_COLUMN);
+    const to = cols.find((c) => c.name === LOAN_CONTRACT_SIGNED_COLUMN);
+    if (!from || !to) return true;
+    const [maxRow] = await tx
+      .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
+      .from(cards)
+      .where(
+        and(
+          eq(cards.boardId, card.boardId),
+          eq(cards.statusId, to.id),
+          isNull(cards.archivedAt),
+        ),
+      );
+    // Quell-Gate als Compare-and-Swap in der WHERE-Klausel: Die Spalte wird im
+    // selben Schritt geprüft und gesetzt. Ein zwischenzeitlicher Kartenzug
+    // (der auf dieselbe Sperre wartet) trifft danach auf `statusId != from.id`
+    // und bewegt nichts.
+    const moved = await tx
+      .update(cards)
+      .set({
+        statusId: to.id,
+        position: (maxRow?.m ?? -1) + 1,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(cards.id, card.id), eq(cards.statusId, from.id)))
+      .returning({ id: cards.id });
+    // Aktivitätseintrag nur, wenn die Karte tatsächlich bewegt wurde — sonst
+    // stünde in der Historie ein Statuswechsel, den es nie gab.
+    if (moved.length) {
+      await tx.insert(cardActivity).values({
+        cardId: card.id,
+        userId: null,
+        type: "status",
+        detail: "Vertrag vom Entleiher eingesendet → Vertrag unterschrieben",
+      });
+    }
+    return true;
   });
-  return true;
 }
 
 export type BoardLoanCard = {

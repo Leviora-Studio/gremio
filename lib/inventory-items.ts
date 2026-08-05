@@ -482,14 +482,32 @@ export async function deleteInventoryItem(id: number): Promise<void> {
   }
 }
 
-/** Bestehende, nicht-leere Obergruppen-Namen eines Boards (alphabetisch). */
+/**
+ * Bestehende, nicht-leere Obergruppen-Namen eines Boards (alphabetisch).
+ *
+ * `publicOnly` beschränkt auf Obergruppen, die mindestens EIN öffentlich
+ * sichtbares Stück haben (entleihbar + Zustand aktiv) — dieselbe Bedingung wie
+ * in `lib/inventory-public.ts`. Ohne diese Beschränkung bestätigte die
+ * öffentliche Anfrageseite auch rein interne Obergruppennamen: Wer den Namen
+ * riet, bekam ein Formular statt einer 404 und konnte so die interne
+ * Gruppenbenennung durchprobieren.
+ */
 export async function listInventoryGroupNames(
   boardId: number,
+  opts: { publicOnly?: boolean } = {},
 ): Promise<string[]> {
   const rows = await db
     .selectDistinct({ groupName: inventoryItems.groupName })
     .from(inventoryItems)
-    .where(eq(inventoryItems.boardId, boardId));
+    .where(
+      opts.publicOnly
+        ? and(
+            eq(inventoryItems.boardId, boardId),
+            eq(inventoryItems.lendable, true),
+            eq(inventoryItems.condition, "active"),
+          )
+        : eq(inventoryItems.boardId, boardId),
+    );
   return rows
     .map((r) => (r.groupName ?? "").trim())
     .filter((g) => g !== "")

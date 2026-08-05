@@ -37,6 +37,15 @@ export async function uploadSignedContractAction(
   }
   const loan = await getLoanByToken(token);
   if (!loan) return { error: "Vorgang nicht gefunden." };
+  // Dasselbe Statustor wie beim Einsenden: Ohne diese Prüfung konnte der
+  // Entleiher noch Dateien an einen längst abgelehnten, zurückgezogenen,
+  // laufenden oder zurückgegebenen Vorgang hängen — die Statusseite bleibt über
+  // den Token ja dauerhaft erreichbar. Die Uploads landen unlöschbar
+  // (append-only) am Gegenstand und wären für das Gremium nicht mehr
+  // zuzuordnen.
+  if (loan.status !== "requested" && loan.status !== "contract_provided") {
+    return { error: "Für diesen Vorgang sind keine Uploads mehr möglich." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File)) return { error: "Keine Datei ausgewählt." };
@@ -91,8 +100,16 @@ export async function submitContractAction(
   return { ok: true };
 }
 
-/** Einreicher zieht seine Anfrage zurück (nur solange noch nicht angenommen). */
+/**
+ * Einreicher zieht seine Anfrage zurück (nur solange noch nicht angenommen).
+ *
+ * Ratenbegrenzt wie die übrigen öffentlichen Aktionen: Die Aktion schlägt bei
+ * jedem Aufruf eine Datenbanktransaktion an und war als einzige des öffentlichen
+ * Leih-Ablaufs ungebremst. Sie liefert nichts an die Oberfläche zurück, deshalb
+ * gibt es hier keine Meldung — die Seite lädt einfach unverändert neu.
+ */
 export async function withdrawRequestAction(token: string): Promise<void> {
+  if (!(await allowFormRequest("inventory-request"))) return;
   const loan = await getLoanByToken(token);
   if (!loan) return;
   await withdrawLoan(loan.id);

@@ -43,8 +43,9 @@ export default async function PublicLoanRequestPage({
 
   let target: LoanRequestTarget;
   if (groupParam) {
-    // Nur real existierende Obergruppen dieses Boards zulassen.
-    const groups = await listInventoryGroupNames(board.id);
+    // Nur Obergruppen zulassen, die auch in der öffentlichen Liste stehen —
+    // eine rein interne Gruppe darf hier nicht einmal ihre Existenz bestätigen.
+    const groups = await listInventoryGroupNames(board.id, { publicOnly: true });
     if (!groups.includes(groupParam)) notFound();
     const { available } = await getAvailableGroupUnits(board.id, groupParam, 0);
     target = {
