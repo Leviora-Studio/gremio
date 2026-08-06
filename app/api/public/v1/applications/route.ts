@@ -13,6 +13,7 @@ import {
   readLimitedBody,
   RL_SUBMIT_BURST,
   RL_SUBMIT_DAY,
+  withPublicApi500,
 } from "@/lib/public-api";
 import { submitPublicApplication } from "@/lib/public-application-submission";
 import {
@@ -47,7 +48,7 @@ type Preflight =
  * (`lib/public-application-submission.ts`) — beide können nicht auseinander-
  * laufen. Zusätzlich hier: verpflichtende Idempotenz und eigene Rate-Limits.
  */
-export async function POST(req: Request) {
+export const POST = withPublicApi500(async function POST(req: Request) {
   // --- Rate-Limits (eigene Buckets, unabhängig vom Formular) ---------------
   const limited = await enforceRateLimits([RL_SUBMIT_BURST, RL_SUBMIT_DAY]);
   if (limited) return limited;
@@ -79,7 +80,7 @@ export async function POST(req: Request) {
   if (!isValidIdempotencyKey(rawKey)) {
     return publicApiError(
       400,
-      `Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII, 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen; empfohlen: UUID v4).`,
+      `Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII ohne Leerzeichen, 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen; empfohlen: UUID v4).`,
     );
   }
   const keyHash = hashIdempotencyKey(rawKey);
@@ -218,4 +219,4 @@ export async function POST(req: Request) {
     { ...publicApplicationLinks(result.token), number: result.number },
     { status: 201, headers: { "Cache-Control": "no-store" } },
   );
-}
+}, "Beim Einreichen ist ein Fehler aufgetreten. Bitte versuche es erneut.");

@@ -10,7 +10,12 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import { StatusLinkBox } from "@/components/StatusLinkBox";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Status deines Feedbacks — Gremio" };
+export const metadata = {
+  title: "Status deines Feedbacks — Gremio",
+  // Tokengebundene Seite: Landet der geheime Link doch einmal öffentlich,
+  // sollen Suchmaschinen ihn wenigstens nicht indexieren.
+  robots: { index: false, follow: false },
+};
 
 /**
  * Öffentliche Statusseite eines Feedbacks.

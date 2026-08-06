@@ -4,16 +4,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, max } from "drizzle-orm";
+import { and, eq, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, attachments, boards, boardStatuses } from "@/lib/db/schema";
 import { MAX_PUBLIC_OTHER_FILES, PDF_MIME } from "@/lib/constants";
 import {
+  deleteStoredFile,
   nextReceiptIndex,
   receiptFileName,
   saveAntragFile,
   validateUpload,
 } from "@/lib/attachments";
+import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
@@ -35,12 +37,18 @@ export async function addPublicFileAction(
   if (!(await allowFormRequest("public-upload"))) {
     return { error: "Zu viele Uploads. Bitte versuche es in einer Minute erneut." };
   }
-  const [row] = await db
-    .select({ card: cards, isArchiveTrigger: boardStatuses.isArchiveTrigger })
-    .from(cards)
-    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(eq(cards.token, token))
-    .limit(1);
+  let row: { card: typeof cards.$inferSelect; isArchiveTrigger: boolean | null } | undefined;
+  try {
+    [row] = await db
+      .select({ card: cards, isArchiveTrigger: boardStatuses.isArchiveTrigger })
+      .from(cards)
+      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+      .where(eq(cards.token, token))
+      .limit(1);
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "public-upload");
+  }
   if (!row?.card) return { error: "Antrag nicht gefunden." };
   // Feedback-Tokens hier abweisen (siehe resolveApplicationCardId).
   if ((await resolveApplicationCardId(token)) == null) {
@@ -76,20 +84,40 @@ export async function addPublicFileAction(
   // Quittungen automatisch fortlaufend benennen: <Antragsnummer>_Q1, _Q2 …
   // Lücken werden wiederverwendet; vorhandene Dateien bleiben unverändert.
   const saved = await saveAntragFile(card.id, file);
-  const index = nextReceiptIndex(
-    card.number,
-    existing.map((e) => e.filename),
-  );
-  const displayName = receiptFileName(card.number, index, saved.filename);
-  await db.insert(attachments).values({
-    cardId: card.id,
-    kind: "other",
-    filename: displayName,
-    path: saved.relPath,
-    mime: saved.mime,
-    size: saved.size,
-    uploadedBy: null,
+  // Grenze ATOMAR durchsetzen: Die Zählung oben ist nur die freundliche
+  // Vorprüfung — parallele Uploads sahen beide denselben Stand und konnten die
+  // Obergrenze überschreiten. Der Advisory-Lock (Namespace "PU" = Public
+  // Upload, je Karte) serialisiert die Uploads einer Karte; gezählt wird
+  // innerhalb der Sperre erneut.
+  const inserted = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5055}, ${card.id})`);
+    const fresh = await tx
+      .select({ id: attachments.id, filename: attachments.filename })
+      .from(attachments)
+      .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, "other")));
+    if (fresh.length >= MAX_PUBLIC_OTHER_FILES) return null;
+    const index = nextReceiptIndex(
+      card.number,
+      fresh.map((e) => e.filename),
+    );
+    const displayName = receiptFileName(card.number, index, saved.filename);
+    await tx.insert(attachments).values({
+      cardId: card.id,
+      kind: "other",
+      filename: displayName,
+      path: saved.relPath,
+      mime: saved.mime,
+      size: saved.size,
+      uploadedBy: null,
+    });
+    return displayName;
   });
+  if (inserted == null) {
+    // Grenze im Rennen erreicht → frisch geschriebene Datei wieder entfernen.
+    await deleteStoredFile(saved.relPath);
+    return { error: "Maximale Anzahl an Dateien erreicht." };
+  }
+  const displayName = inserted;
   await db.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
   await logActivity(
     card.id,
@@ -117,11 +145,17 @@ export async function submitPublicAction(
   if (!(await allowFormRequest("public-submit"))) {
     return { error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut." };
   }
-  const [card] = await db
-    .select()
-    .from(cards)
-    .where(eq(cards.token, token))
-    .limit(1);
+  let card: typeof cards.$inferSelect | undefined;
+  try {
+    [card] = await db
+      .select()
+      .from(cards)
+      .where(eq(cards.token, token))
+      .limit(1);
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "public-submit");
+  }
   if (!card) return { error: "Antrag nicht gefunden." };
   if ((await resolveApplicationCardId(token)) == null) {
     return { error: "Antrag nicht gefunden." };

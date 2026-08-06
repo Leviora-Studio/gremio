@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
 import { MAX_UPLOAD_BYTES, type AttachmentKind } from "@/lib/constants";
+import { sanitizeSingleLine } from "@/lib/text";
 
 // Bausteine für den automatischen DATEINAMEN — bewusst NICHT identisch mit
 // `ATTACHMENT_KIND_LABELS` (lib/constants.ts): hier ohne Leerzeichen
@@ -169,6 +170,20 @@ function sanitize(name: string): string {
   return name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || "datei";
 }
 
+/**
+ * ANZEIGE-Name eines Uploads für die Datenbank — Eingangsbereinigung wie bei
+ * allen freien Nutzertexten (`lib/text.ts`): Der Dateiname kommt bei
+ * öffentlichen Uploads (Studierendenausweis der Leih-Anfrage, unterschriebener
+ * Leihvertrag) direkt vom Client und kann NUL und andere Steuerzeichen
+ * enthalten. NUL lehnt PostgreSQL ab — der Insert der Anhang-Zeile warf dann
+ * einen von außen auslösbaren 500. Der DISK-Pfad war davon nie betroffen
+ * (`sanitize` oben ist strenger); hier geht es nur um den gespeicherten
+ * Anzeigenamen.
+ */
+export function displayFileName(raw: string): string {
+  return sanitizeSingleLine(raw) || "datei";
+}
+
 export function absPath(relPath: string): string {
   return join(env.UPLOAD_DIR, relPath);
 }
@@ -189,7 +204,7 @@ export async function saveAntragFile(
   await writeFile(abs, buf);
   return {
     relPath: rel,
-    filename: file.name,
+    filename: displayFileName(file.name),
     mime: resolveMime(file),
     size: buf.length,
   };
@@ -207,7 +222,7 @@ export async function saveNamedFile(
   await writeFile(abs, buf);
   return {
     relPath: rel,
-    filename: file.name,
+    filename: displayFileName(file.name),
     mime: resolveMime(file),
     size: buf.length,
   };

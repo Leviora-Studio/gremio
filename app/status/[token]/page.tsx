@@ -13,6 +13,11 @@ import { StatusLinkBox } from "@/components/StatusLinkBox";
 import { getApplicationStatusByToken } from "@/lib/public-status";
 
 export const dynamic = "force-dynamic";
+export const metadata = {
+  title: "Status deines Antrags — Gremio",
+  // Tokengebundene Seite: nicht in Suchmaschinen aufnehmen (geheimer Link).
+  robots: { index: false, follow: false },
+};
 
 function fmt(d: Date) {
   return formatDateTime(d, "long");

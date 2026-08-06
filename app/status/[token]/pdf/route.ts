@@ -7,6 +7,8 @@ import { cards } from "@/lib/db/schema";
 import { appBaseUrl } from "@/lib/public-api";
 import { buildConfirmationPdf } from "@/lib/pdf";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
+import { dbErrorWithoutParams } from "@/lib/db-errors";
+import { allowFormRequest } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +16,26 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  // PDF-Erzeugung kostet CPU — als einziger öffentlicher Einstieg war diese
+  // Route bisher ungebremst (Formular, Uploads und API haben alle ein Limit).
+  if (!(await allowFormRequest("status-pdf"))) {
+    return new Response("Zu viele Anfragen. Bitte später erneut versuchen.", {
+      status: 429,
+    });
+  }
   const { token } = await params;
-  const [antrag] = await db
-    .select()
-    .from(cards)
-    .where(eq(cards.token, token))
-    .limit(1);
+  let antrag: typeof cards.$inferSelect | undefined;
+  try {
+    [antrag] = await db
+      .select()
+      .from(cards)
+      .where(eq(cards.token, token))
+      .limit(1);
+  } catch (e) {
+    // Kein Durchreichen: Drizzle-Fehlertexte enthalten die Query-Parameter —
+    // hier also den geheimen Status-Token, der nie in Logs landen darf.
+    throw dbErrorWithoutParams(e, "status-pdf");
+  }
   if (!antrag) return new Response("Not found", { status: 404 });
   // Feedback hat eine eigene Bestätigung (/feedback/status/{token}/pdf) mit
   // anderen Feldern — hier bewusst 404 statt einer irreführenden „Antrags"-PDF.

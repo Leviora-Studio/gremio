@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups, userGroups } from "@/lib/db/schema";
@@ -10,6 +11,10 @@ import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { deleteGroupAction } from "./actions";
 
 export default async function GroupsPage() {
+  // Nicht nur im Layout: Guard in JEDEM Handler (CLAUDE.md) — Layout-Guards
+  // greifen bei segmentgenauen RSC-Navigationsrequests nicht zwingend.
+  await requireAdmin();
+
   const rows = await db
     .select({
       id: groups.id,

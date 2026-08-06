@@ -4,6 +4,7 @@
 import { appBaseUrl } from "@/lib/public-api";
 import { buildFeedbackConfirmationPdf } from "@/lib/pdf";
 import { getFeedbackByToken } from "@/lib/public-feedback-submission";
+import { allowFormRequest } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +18,13 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
+  // PDF-Erzeugung kostet CPU (der Feedbacktext darf 10.000 Zeichen inkl.
+  // Umbrüchen haben) — gleicher Zügel wie die übrigen öffentlichen Einstiege.
+  if (!(await allowFormRequest("status-pdf"))) {
+    return new Response("Zu viele Anfragen. Bitte später erneut versuchen.", {
+      status: 429,
+    });
+  }
   const { token } = await params;
   const fb = await getFeedbackByToken(token);
   // Kein Feedback zu diesem Token (oder ein Antrags-Token) → 404.

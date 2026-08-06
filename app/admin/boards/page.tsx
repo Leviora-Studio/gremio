@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boards, users } from "@/lib/db/schema";
@@ -11,6 +12,10 @@ import { FilterableList } from "@/components/FilterableList";
 import { deleteBoardAdminConfirmedAction, transferOwnerAction } from "./actions";
 
 export default async function AdminBoardsPage() {
+  // Nicht nur im Layout: Guard in JEDEM Handler (CLAUDE.md) — Layout-Guards
+  // greifen bei segmentgenauen RSC-Navigationsrequests nicht zwingend.
+  await requireAdmin();
+
   const rows = await db
     .select({
       id: boards.id,

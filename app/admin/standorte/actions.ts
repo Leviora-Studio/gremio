@@ -9,12 +9,18 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { boardStatuses, locations } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
+import { sanitizeSingleLine } from "@/lib/text";
 
 export type State = { error?: string; success?: string };
 
+// sanitizeSingleLine statt roher String: trimmt (vorher unterlief „Zentrale "
+// die Eindeutigkeitsprüfung), entfernt NUL (pg-Fehler → 500) und lässt
+// Nur-Zero-Width-Namen als leer durchfallen — wie bei den Feedback-Bereichen.
 const nameSchema = z.object({
-  name: z.string().min(1, "Name erforderlich.").max(80),
+  name: z
+    .preprocess(sanitizeSingleLine, z.string())
+    .pipe(z.string().min(1, "Name erforderlich.").max(80)),
 });
 
 export async function createLocationAction(
@@ -99,12 +105,13 @@ export async function setLocationTargetAction(
   formData: FormData,
 ): Promise<State> {
   await requireAdmin();
-  const boardRaw = formData.get("boardId");
-  const statusRaw = formData.get("statusId");
-  const boardId = boardRaw ? Number(boardRaw) : null;
-  const statusId = statusRaw ? Number(statusRaw) : null;
+  // „Kein Ziel gewählt" (leer) und „ungültiger Wert" (NaN/Nachkommastellen)
+  // strikt trennen: `Number("abc")` ist NaN und damit falsy — ein kaputter
+  // Wert hätte sonst STILL das Routing entfernt und den Standort deaktiviert.
+  const boardStr = String(formData.get("boardId") ?? "").trim();
+  const statusStr = String(formData.get("statusId") ?? "").trim();
 
-  if (!boardId) {
+  if (!boardStr) {
     await db
       .update(locations)
       .set({ targetBoardId: null, targetStatusId: null, enabled: false })
@@ -112,8 +119,16 @@ export async function setLocationTargetAction(
     revalidatePath("/admin/standorte");
     return { success: "Ziel entfernt (Standort deaktiviert)." };
   }
-  if (!statusId) {
+  const boardId = Number(boardStr);
+  if (!Number.isInteger(boardId) || boardId <= 0) {
+    return { error: "Ungültiges Ziel-Board." };
+  }
+  if (!statusStr) {
     return { error: "Bitte auch eine Ziel-Spalte wählen." };
+  }
+  const statusId = Number(statusStr);
+  if (!Number.isInteger(statusId) || statusId <= 0) {
+    return { error: "Ungültige Ziel-Spalte." };
   }
   const [status] = await db
     .select({ id: boardStatuses.id })
@@ -123,10 +138,20 @@ export async function setLocationTargetAction(
   if (!status) {
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
   }
-  await db
-    .update(locations)
-    .set({ targetBoardId: boardId, targetStatusId: statusId })
-    .where(eq(locations.id, locationId));
+  try {
+    await db
+      .update(locations)
+      .set({ targetBoardId: boardId, targetStatusId: statusId })
+      .where(eq(locations.id, locationId));
+  } catch (e) {
+    // Board/Spalte wurde zwischen Prüfung und UPDATE gelöscht (RESTRICT-FK).
+    if (isForeignKeyViolation(e)) {
+      return {
+        error: "Board oder Spalte wurde zwischenzeitlich gelöscht. Bitte neu wählen.",
+      };
+    }
+    throw e;
+  }
   revalidatePath("/admin/standorte");
   return { success: "Ziel gespeichert." };
 }

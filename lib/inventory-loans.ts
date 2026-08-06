@@ -31,7 +31,9 @@ import {
   type InventoryLoan,
 } from "@/lib/db/schema";
 import { deleteStoredFile } from "@/lib/attachments";
+import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { generateToken, isTokenConflict } from "@/lib/token";
+import { sanitizeMultiLine, sanitizeSingleLine } from "@/lib/text";
 import {
   LOAN_CONTRACT_PROVIDED_COLUMN,
   LOAN_CONTRACT_SIGNED_COLUMN,
@@ -134,6 +136,31 @@ export type LoanInput = {
   endDate: string | null;
   notes: string | null;
 };
+
+/**
+ * Eingangsbereinigung der freien Texte eines Vorgangs (`lib/text.ts`) — hier im
+ * gemeinsamen Service, damit ÖFFENTLICHE Anfrage und interner Weg nicht
+ * auseinanderlaufen (dasselbe Muster wie `submitPublicApplication`). Ohne sie
+ * wanderten NUL- und andere Steuerzeichen bis in den INSERT: NUL lehnt
+ * PostgreSQL ab — die öffentliche Anfrage endete dann in einem von außen
+ * auslösbaren 500 statt einer Validierungsmeldung.
+ */
+function normalizeLoanInput(data: LoanInput): LoanInput {
+  const single = (v: string | null): string | null => {
+    if (v == null) return null;
+    const s = sanitizeSingleLine(v);
+    return s === "" ? null : s;
+  };
+  return {
+    borrower: sanitizeSingleLine(data.borrower),
+    borrowerEmail: single(data.borrowerEmail),
+    purpose: single(data.purpose),
+    startDate: data.startDate,
+    endDate: data.endDate,
+    // Mehrzeilig: innere Umbrüche sind Inhalt (interne Notizen).
+    notes: data.notes == null ? null : sanitizeMultiLine(data.notes) || null,
+  };
+}
 
 /** Alle Entleihvorgänge, die ein Gegenstand (mit)betrifft (neueste zuerst). */
 export async function listLoans(itemId: number): Promise<InventoryLoan[]> {
@@ -415,8 +442,9 @@ export async function removeLoanItem(
 export async function createLoan(
   units: LoanUnit[],
   createdBy: number | null,
-  data: LoanInput,
+  rawData: LoanInput,
 ): Promise<number> {
+  const data = normalizeLoanInput(rawData);
   const totalQty = units.reduce((s, u) => s + u.quantity, 0);
   // maybeCreateTrackingCard vergibt einen Karten-Token; kollidiert er (faktisch
   // unmöglich), bricht die Transaktion ab → erneut versuchen (wie createLoanRequest).
@@ -511,9 +539,12 @@ export async function setLoanBorrowerNote(
   loanId: number,
   note: string | null,
 ): Promise<void> {
+  // Öffentlich sichtbarer Text (Status-Link) → gleiche Eingangsbereinigung wie
+  // die übrigen freien Texte; leer bereinigt = kein Hinweis.
+  const clean = note == null ? null : sanitizeMultiLine(note) || null;
   await db
     .update(inventoryLoans)
-    .set({ borrowerNote: note })
+    .set({ borrowerNote: clean })
     .where(eq(inventoryLoans.id, loanId));
 }
 
@@ -551,9 +582,10 @@ const LOAN_ITEMS_LOCK_NS = 0x4c49;
  */
 export async function createLoanRequest(
   units: LoanUnit[],
-  data: LoanInput,
+  rawData: LoanInput,
   studentCard: { filename: string; relPath: string; mime: string; size: number },
 ): Promise<{ id: number; token: string }> {
+  const data = normalizeLoanInput(rawData);
   const totalQty = units.reduce((s, u) => s + u.quantity, 0);
   const leadItemId = units[0].itemId;
 
@@ -1023,12 +1055,17 @@ export async function getLoanByToken(
   token: string,
 ): Promise<InventoryLoan | undefined> {
   if (!token) return undefined;
-  const [row] = await db
-    .select()
-    .from(inventoryLoans)
-    .where(eq(inventoryLoans.token, token))
-    .limit(1);
-  return row;
+  try {
+    const [row] = await db
+      .select()
+      .from(inventoryLoans)
+      .where(eq(inventoryLoans.token, token))
+      .limit(1);
+    return row;
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "loan-status-loader");
+  }
 }
 
 export type ActiveLoan = {

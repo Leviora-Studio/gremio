@@ -9,7 +9,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { boardStatuses, feedbackAreas } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
+import { sanitizeSingleLine } from "@/lib/text";
 
 /**
  * Verwaltung der Feedback-Bereiche (Admin-Reiter „Umfragen").
@@ -21,8 +22,12 @@ import { isUniqueViolation } from "@/lib/db-errors";
  */
 export type State = { error?: string; success?: string };
 
+// sanitizeSingleLine statt nur trim: NUL im Namen ließe sonst den INSERT mit
+// einem pg-Fehler (500) scheitern, und Zero-Width-Namen wirkten „nicht leer".
 const nameSchema = z.object({
-  name: z.string().trim().min(1, "Name erforderlich.").max(80),
+  name: z
+    .preprocess(sanitizeSingleLine, z.string())
+    .pipe(z.string().min(1, "Name erforderlich.").max(80)),
 });
 
 export async function createFeedbackAreaAction(
@@ -111,12 +116,13 @@ export async function setFeedbackAreaTargetAction(
   formData: FormData,
 ): Promise<State> {
   await requireAdmin();
-  const boardRaw = formData.get("boardId");
-  const statusRaw = formData.get("statusId");
-  const boardId = boardRaw ? Number(boardRaw) : null;
-  const statusId = statusRaw ? Number(statusRaw) : null;
+  // „Kein Ziel gewählt" (leer) und „ungültiger Wert" (NaN/Nachkommastellen)
+  // strikt trennen: `Number("abc")` ist NaN und damit falsy — ein kaputter
+  // Wert hätte sonst STILL das Routing entfernt und den Bereich deaktiviert.
+  const boardStr = String(formData.get("boardId") ?? "").trim();
+  const statusStr = String(formData.get("statusId") ?? "").trim();
 
-  if (!boardId) {
+  if (!boardStr) {
     // Ohne Ziel gibt es nichts zu routen → Bereich zwangsweise deaktivieren.
     await db
       .update(feedbackAreas)
@@ -125,8 +131,16 @@ export async function setFeedbackAreaTargetAction(
     revalidatePath("/admin/umfragen");
     return { success: "Ziel entfernt (Bereich deaktiviert)." };
   }
-  if (!statusId) {
+  const boardId = Number(boardStr);
+  if (!Number.isInteger(boardId) || boardId <= 0) {
+    return { error: "Ungültiges Ziel-Board." };
+  }
+  if (!statusStr) {
     return { error: "Bitte auch eine Ziel-Spalte wählen." };
+  }
+  const statusId = Number(statusStr);
+  if (!Number.isInteger(statusId) || statusId <= 0) {
+    return { error: "Ungültige Ziel-Spalte." };
   }
   const [status] = await db
     .select({ id: boardStatuses.id })
@@ -136,10 +150,20 @@ export async function setFeedbackAreaTargetAction(
   if (!status) {
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
   }
-  await db
-    .update(feedbackAreas)
-    .set({ targetBoardId: boardId, targetStatusId: statusId })
-    .where(eq(feedbackAreas.id, areaId));
+  try {
+    await db
+      .update(feedbackAreas)
+      .set({ targetBoardId: boardId, targetStatusId: statusId })
+      .where(eq(feedbackAreas.id, areaId));
+  } catch (e) {
+    // Board/Spalte wurde zwischen Prüfung und UPDATE gelöscht (RESTRICT-FK).
+    if (isForeignKeyViolation(e)) {
+      return {
+        error: "Board oder Spalte wurde zwischenzeitlich gelöscht. Bitte neu wählen.",
+      };
+    }
+    throw e;
+  }
   revalidatePath("/admin/umfragen");
   return { success: "Ziel gespeichert." };
 }

@@ -19,6 +19,7 @@ import {
 } from "@/lib/inventory-loans";
 import { saveNamedFile, validateUpload } from "@/lib/attachments";
 import { STUDENT_CARD_MIME } from "@/lib/inventory-attachment-kinds";
+import { sanitizeSingleLine } from "@/lib/text";
 
 // Eingaben werden bei einem Fehler zurückgegeben, damit das Formular sie behält.
 export type RequestValues = {
@@ -39,12 +40,16 @@ export async function createInventoryLoanRequestAction(
   _prev: RequestState,
   formData: FormData,
 ): Promise<RequestState> {
+  // Freitexte an der EINGANGSGRENZE bereinigen (`lib/text.ts`), wie bei den
+  // übrigen öffentlichen Formularen: NUL lehnt PostgreSQL ab (der Insert warf
+  // sonst einen von außen auslösbaren 500), und ein Name nur aus Steuer-/
+  // Zero-Width-Zeichen überlebte die Pflichtfeld-Prüfung, obwohl er leer ist.
   const values: RequestValues = {
-    borrower: String(formData.get("borrower") ?? "").trim(),
-    email: String(formData.get("email") ?? "").trim(),
+    borrower: sanitizeSingleLine(formData.get("borrower")),
+    email: sanitizeSingleLine(formData.get("email")),
     startDate: String(formData.get("startDate") ?? ""),
     endDate: String(formData.get("endDate") ?? ""),
-    purpose: String(formData.get("purpose") ?? "").trim(),
+    purpose: sanitizeSingleLine(formData.get("purpose")),
     quantity: String(formData.get("quantity") ?? "1"),
   };
 

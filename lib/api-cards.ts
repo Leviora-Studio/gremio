@@ -60,7 +60,11 @@ export const cardWriteSchema = z
     applicant: z
       .preprocess((v) => (v == null ? v : sanitizeSingleLine(v)), z.string().max(200))
       .nullish(),
-    budgetTitle: z.string().max(200).nullish(),
+    // 60 = kanonische Länge des Haushaltstitels (Matching-Schlüssel der
+    // Finanzübersicht, wie Web-UI und Plan-Editor). Vorher erlaubte das Schema
+    // 200 Zeichen und buildCardValues kürzte still auf 60 — der Client bekam
+    // 200 OK, gespeichert war aber etwas anderes.
+    budgetTitle: z.string().max(60).nullish(),
     number: z.string().max(100).nullish(),
     statusId: z.number().int().positive().optional(),
     position: z.number().int().min(0).optional(),
@@ -355,6 +359,13 @@ export async function createCardViaApi(
           type: "created",
           detail: "Karte erstellt (API)",
         });
+        // Gewünschte Einfüge-Position anwenden (Spec: „ohne position am Ende
+        // der Spalte" — mit position also an dieser Stelle). Vorher wurde das
+        // Feld beim Anlegen stillschweigend ignoriert und die Karte landete
+        // trotz 201 immer am Spaltenende.
+        if (input.position != null) {
+          await repositionCard(tx, board.id, statusId, c.id, input.position);
+        }
         return c.id;
       });
       break;

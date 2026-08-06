@@ -3,6 +3,7 @@
 
 import { API_TOKEN_PREFIX } from "@/lib/api-token";
 import { CARD_FIELD_KEYS } from "@/lib/constants";
+import { MAX_AMOUNT_CENTS } from "@/lib/money";
 
 /**
  * OpenAPI 3.1 der INTERNEN API (`/api/v1`) — EINZIGE Quelle.
@@ -161,6 +162,12 @@ const cardExample = {
   approvedAmountCents: 25000,
   notes: null,
 };
+
+// POST/PATCH laden die Karte nach dem Schreiben FRISCH und ohne Join —
+// `statusName` (und `boardName`) fehlen dort. Eigenes Antwort-Beispiel, damit
+// Clients diese Felder nicht aus dem Beispiel „lernen" und dann vermissen.
+const { statusName: _nurInListenAntworten, ...cardWriteResponseExample } =
+  cardExample;
 
 export const openApiV1Spec = {
   openapi: "3.1.0",
@@ -343,7 +350,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CardEnvelope" },
-                example: { card: cardExample },
+                example: { card: cardWriteResponseExample },
               },
             },
           },
@@ -452,7 +459,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CardEnvelope" },
-                example: { card: cardExample },
+                example: { card: cardWriteResponseExample },
               },
             },
           },
@@ -733,7 +740,12 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
         properties: {
           title: { type: "string", minLength: 1, maxLength: 200 },
           applicant: { type: ["string", "null"], maxLength: 200 },
-          budgetTitle: { type: ["string", "null"], maxLength: 200 },
+          budgetTitle: {
+            type: ["string", "null"],
+            maxLength: 60,
+            description:
+              "Verknüpfungs-Schlüssel zur Finanzübersicht (max. 60 Zeichen, wie im Haushaltsplan-Editor).",
+          },
           number: {
             type: ["string", "null"],
             maxLength: 100,
@@ -778,8 +790,16 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
             format: "date",
             description: "Nur für Board-Verwalter.",
           },
-          approvedAmountCents: { type: ["integer", "null"], minimum: 0 },
-          actualAmountCents: { type: ["integer", "null"], minimum: 0 },
+          approvedAmountCents: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: MAX_AMOUNT_CENTS,
+          },
+          actualAmountCents: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: MAX_AMOUNT_CENTS,
+          },
           notes: { type: ["string", "null"], maxLength: 20000 },
           applicantNote: { type: ["string", "null"], maxLength: 20000 },
           archived: {

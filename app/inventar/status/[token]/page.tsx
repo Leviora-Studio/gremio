@@ -18,7 +18,11 @@ import { env } from "@/lib/env";
 import { withdrawRequestAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Anfrage-Status — Inventar" };
+export const metadata = {
+  title: "Anfrage-Status — Inventar",
+  // Tokengebundene Seite: nicht in Suchmaschinen aufnehmen (geheimer Link).
+  robots: { index: false, follow: false },
+};
 
 const STATUS: Record<string, { label: string; cls: string; hint: string }> = {
   requested: {

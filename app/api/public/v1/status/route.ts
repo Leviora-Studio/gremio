@@ -7,6 +7,7 @@ import {
   publicApiError,
   readLimitedBody,
   RL_STATUS,
+  withPublicApi500,
 } from "@/lib/public-api";
 import {
   attachmentUrlFor,
@@ -50,7 +51,7 @@ const SECURITY_HEADERS = {
 /** Bewusst identisch für unbekannten Token, gelöschte Karte und falschen Typ. */
 const NOT_FOUND = "Der Vorgang wurde nicht gefunden.";
 
-export async function POST(req: Request) {
+export const POST = withPublicApi500(async function POST(req: Request) {
   const limited = await enforceRateLimits([RL_STATUS]);
   if (limited) return limited;
 
@@ -200,4 +201,4 @@ export async function POST(req: Request) {
     },
     { status: 200, headers: SECURITY_HEADERS },
   );
-}
+});

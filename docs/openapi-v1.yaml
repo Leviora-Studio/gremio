@@ -200,8 +200,7 @@ paths:
                 $ref: "#/components/schemas/CardList"
               example:
                 cards:
-                  - &a3
-                    id: 42
+                  - id: 42
                     boardId: 1
                     statusId: 10
                     statusName: Eingegangen
@@ -214,7 +213,7 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: &a5
+                    assigneeUserIds: &a3
                       - 7
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
@@ -262,7 +261,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: *a3
+                card: &a5
+                  id: 42
+                  boardId: 1
+                  statusId: 10
+                  position: 0
+                  title: Grillabend am FB5
+                  locationId: 4
+                  archivedAt: null
+                  createdAt: 2026-01-02T10:15:00.000Z
+                  updatedAt: 2026-01-02T10:15:00.000Z
+                  applicant: Max Mustermann
+                  number: A_0042_2026
+                  priorityId: 3
+                  assigneeUserIds: *a3
+                  deadline: 2026-02-01
+                  approvedAmountCents: 25000
+                  notes: null
         "400": &a6
           description: "Ungültige Eingabe: kaputtes JSON, unbekanntes Body-Feld, Schema-Verstoß, ein am Board
             **deaktiviertes** Feld, eine nicht zum Board gehörende `statusId`, eine unbekannte
@@ -350,7 +365,7 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: *a5
+                    assigneeUserIds: *a3
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
@@ -397,7 +412,7 @@ paths:
                   applicant: Max Mustermann
                   number: A_0042_2026
                   priorityId: 3
-                  assigneeUserIds: *a5
+                  assigneeUserIds: *a3
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
@@ -469,7 +484,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: *a3
+                card: *a5
         "400": *a6
         "401": *a1
         "403": *a7
@@ -887,7 +902,9 @@ components:
           type:
             - string
             - "null"
-          maxLength: 200
+          maxLength: 60
+          description: Verknüpfungs-Schlüssel zur Finanzübersicht (max. 60 Zeichen, wie im
+            Haushaltsplan-Editor).
         number:
           type:
             - string
@@ -963,11 +980,13 @@ components:
             - integer
             - "null"
           minimum: 0
+          maximum: 2000000000
         actualAmountCents:
           type:
             - integer
             - "null"
           minimum: 0
+          maximum: 2000000000
         notes:
           type:
             - string

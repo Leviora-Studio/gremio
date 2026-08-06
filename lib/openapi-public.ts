@@ -46,7 +46,7 @@ const IDEMPOTENCY_DESCRIPTION = `Pflicht. Eindeutiger Schlüssel dieser Einreich
 * Bei einem **Retry** (Timeout, Netzwerkfehler) denselben Schlüssel mit **identischen Daten** erneut senden — die Antwort ist dann \`200\` mit \`Idempotency-Replayed: true\` und es entsteht **keine** zweite Karte.
 * Derselbe Schlüssel mit **veränderten Daten** führt zu \`409 Conflict\`.
 
-Zulässig ist druckbares ASCII mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.
+Zulässig ist druckbares ASCII **ohne Leerzeichen** mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.
 
 Ein Schlüssel wird **${IDEMPOTENCY_TTL_DAYS} Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein Retry nach Ablauf der Frist legt eine **zweite** Einreichung an (\`201\` statt \`200\`).`;
 
@@ -107,7 +107,10 @@ export const openApiPublicSpec = {
   info: {
     title: "Gremio — Öffentliche API",
     // 1.1.0: rückwärtskompatible Erweiterung um POST /status (Minor).
-    version: "1.1.0",
+    // 1.1.1: Wortlaut präzisiert (Idempotency-Key: druckbares ASCII OHNE
+    //        Leerzeichen); POST /feedback lehnt unbekannte JSON-Felder mit
+    //        400 ab (vorher still ignoriert).
+    version: "1.1.1",
     summary:
       "Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.",
     description: `Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
@@ -285,7 +288,7 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
                   idempotencyKey: {
                     value: {
                       error:
-                        "Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII, 16–128 Zeichen; empfohlen: UUID v4).",
+                        "Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII ohne Leerzeichen, 16–128 Zeichen; empfohlen: UUID v4).",
                     },
                   },
                 },
@@ -905,6 +908,9 @@ Der Endpunkt **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivit
       FeedbackSubmissionRequest: {
         type: "object",
         required: ["areaId", "feedback"],
+        description:
+          "Unbekannte Felder werden mit `400` abgelehnt (Tippfehler-Schutz — ein vertipptes `submiterName` erzeugte sonst still eine anonyme Einreichung).",
+        additionalProperties: false,
         properties: {
           areaId: {
             type: "integer",

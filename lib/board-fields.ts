@@ -26,8 +26,9 @@ export async function getVisibleFieldKeys(
 /**
  * Abbildung API-Eingabefeld → board_card_fields-Schlüssel. Felder ohne Eintrag
  * (title, statusId, position, archived) sind keine optionalen Board-Felder:
- * Titel/Status/Position sind Kern-Operationen jedes Mitglieds; `archived` ist
- * verwalter-exklusiv und separat geprüft.
+ * Titel/Status/Position sind Kern-Operationen jedes Mitglieds; `archived` wird
+ * separat geprüft (nur `false` = Wiederherstellen ist zulässig, das darf — wie
+ * im Web-Archiv — jedes Board-Mitglied; manuelles Archivieren kann niemand).
  */
 export const API_FIELD_TO_KEY: Record<string, string> = {
   applicant: "applicant",

@@ -8,6 +8,7 @@ import {
   ATTACHMENT_KIND_LABELS,
   PUBLIC_ATTACHMENT_KINDS,
 } from "@/lib/constants";
+import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
 
 /**
@@ -54,11 +55,18 @@ export async function resolveApplicationCardId(
   token: string,
 ): Promise<number | null> {
   if (!token) return null;
-  const [row] = await db
-    .select({ id: cards.id })
-    .from(cards)
-    .where(eq(cards.token, token))
-    .limit(1);
+  let row: { id: number } | undefined;
+  try {
+    [row] = await db
+      .select({ id: cards.id })
+      .from(cards)
+      .where(eq(cards.token, token))
+      .limit(1);
+  } catch (e) {
+    // Drizzle-Fehlertexte enthalten die Query-Parameter — hier den geheimen
+    // Status-Token, der nie in Logs landen darf. Param-frei weiterwerfen.
+    throw dbErrorWithoutParams(e, "status-loader");
+  }
   if (!row) return null;
   if (await isFeedbackToken(token)) return null;
   return row.id;
@@ -109,25 +117,31 @@ export async function getApplicationStatusByToken(
 ): Promise<PublicApplicationStatus | undefined> {
   if (!token) return undefined;
 
-  const [row] = await db
-    .select({
-      id: cards.id,
-      boardId: cards.boardId,
-      statusId: cards.statusId,
-      number: cards.number,
-      title: cards.title,
-      applicant: cards.applicant,
-      createdAt: cards.createdAt,
-      updatedAt: cards.updatedAt,
-      resubmittedAt: cards.resubmittedAt,
-      applicantNote: cards.applicantNote,
-      statusName: boardStatuses.name,
-      isArchiveTrigger: boardStatuses.isArchiveTrigger,
-    })
-    .from(cards)
-    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(eq(cards.token, token))
-    .limit(1);
+  let row;
+  try {
+    [row] = await db
+      .select({
+        id: cards.id,
+        boardId: cards.boardId,
+        statusId: cards.statusId,
+        number: cards.number,
+        title: cards.title,
+        applicant: cards.applicant,
+        createdAt: cards.createdAt,
+        updatedAt: cards.updatedAt,
+        resubmittedAt: cards.resubmittedAt,
+        applicantNote: cards.applicantNote,
+        statusName: boardStatuses.name,
+        isArchiveTrigger: boardStatuses.isArchiveTrigger,
+      })
+      .from(cards)
+      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+      .where(eq(cards.token, token))
+      .limit(1);
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "status-loader");
+  }
   if (!row) return undefined;
   if (await isFeedbackToken(token)) return undefined;
 

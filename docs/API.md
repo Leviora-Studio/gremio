@@ -171,17 +171,19 @@ curl -X PATCH -H "Authorization: Bearer grm_…" \
 ```
 → `200 { "card": { … } }`
 
-Schreibbare Felder: `title`, `applicant`, `budgetTitle`, `number`, `statusId`,
-`position`, `priorityId`, `accountId`, `assigneeUserId`, `creatorUserId`,
-`deadline`, `meeting`, `decisionRef`, `instructionDate`, `approvedAmountCents`,
-`actualAmountCents`, `notes`, `applicantNote`, `archived` (nur `false` =
-wiederherstellen; `true`/manuelles Archivieren wird mit 400 abgelehnt, da es im
-Web ebenfalls keine manuelle Archivierung gibt). `number`, `instructionDate` und
-`archived` sind verwalter-exklusiv; deaktivierte Board-Felder werden mit 400
-abgelehnt.
+Schreibbare Felder: `title`, `applicant`, `budgetTitle` (max. 60 Zeichen),
+`number`, `statusId`, `position`, `priorityId`, `accountId`, `assigneeUserIds`
+(Array, ersetzt die Zuweisungen vollständig), `creatorUserId`, `deadline`,
+`meeting`, `decisionRef`, `instructionDate`, `transferDate`,
+`approvedAmountCents`, `actualAmountCents`, `notes`, `applicantNote`,
+`archived` (nur `false` = wiederherstellen; `true`/manuelles Archivieren wird
+mit 400 abgelehnt, da es im Web ebenfalls keine manuelle Archivierung gibt).
+`number`, `instructionDate` und `transferDate` sind verwalter-exklusiv;
+Wiederherstellen (`archived: false`) darf — wie im Web — jedes Board-Mitglied.
+Deaktivierte Board-Felder werden mit 400 abgelehnt.
 
 Referenzen werden geprüft: `statusId` muss zum Board gehören; `priorityId`/
-`accountId` müssen existieren; `assigneeUserId`/`creatorUserId` müssen
+`accountId` müssen existieren; `assigneeUserIds`/`creatorUserId` müssen
 Board-Zugriff haben (sonst `400`).
 
 ### `DELETE /api/v1/cards/{id}`
@@ -195,8 +197,9 @@ Karte und ihre Anhänge löschen. → `200 { "ok": true }`
 | 201  | Karte erstellt |
 | 400  | Ungültige Eingabe |
 | 401  | Token fehlt/ungültig |
-| 403  | Token hat nur Lese-Rechte (`scope=read`) bei Schreibzugriff |
+| 403  | Token hat nur Lese-Rechte (`scope=read`) bei Schreibzugriff **oder** verwalter-exklusives Feld ohne Verwalterrecht |
 | 404  | Board/Karte nicht gefunden **oder** kein Zugriff (auch Board-Scope) |
+| 409  | Leihvorgang-Board: Karten dort sind über die API nur lesbar (Anlegen/Ändern/Löschen läuft übers Inventar) |
 
 > Zugriffskontrolle: Wer ein Board nicht sehen darf, bekommt `404` (nicht `403`)
 > — die Existenz wird nicht preisgegeben.

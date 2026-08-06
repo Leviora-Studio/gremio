@@ -31,6 +31,7 @@ import {
   type AttachmentKind,
 } from "@/lib/constants";
 import { deleteStoredFile, saveAntragFile, validateUpload } from "@/lib/attachments";
+import { sanitizeMultiLine, sanitizeSingleLine } from "@/lib/text";
 import { maybeArchive } from "@/lib/archive";
 import {
   assigneeActivityDetail,
@@ -103,19 +104,23 @@ export async function saveCardAction(
   const visible = await visibleFields(board.id);
   const update: Partial<typeof cards.$inferInsert> = { updatedAt: new Date() };
 
+  // Freie Texte laufen — wie REST-API und öffentliches Formular — durch die
+  // Eingangsbereinigung (`lib/text.ts`): NUL lehnt PostgreSQL ab (das Auto-
+  // Speichern endete sonst in einem generischen Fehler), TAB/CR sprengen den
+  // WinAnsi-Encoder der PDF-Bestätigung.
   if (typeof values.title === "string") {
-    const t = values.title.trim();
+    const t = sanitizeSingleLine(values.title);
     // Leeren Titel ignorieren — jede Karte muss einen Titel behalten.
     if (t) update.title = t.slice(0, 200);
   }
   if (visible.has("applicant") && typeof values.applicant === "string") {
-    update.applicant = values.applicant.trim().slice(0, 200);
+    update.applicant = sanitizeSingleLine(values.applicant).slice(0, 200);
   }
   if (visible.has("budget_title") && "budgetTitle" in values) {
-    const v = values.budgetTitle;
+    const v = sanitizeSingleLine(values.budgetTitle);
     // Auf 60 begrenzt wie der Plan-haushaltstitel — sonst könnte ein Karten-
     // Haushaltstitel > 60 Zeichen nie auf eine Planzeile matchen.
-    update.budgetTitle = v ? String(v).slice(0, 60) : null;
+    update.budgetTitle = v ? v.slice(0, 60) : null;
   }
   // Antragsnummer ist nur durch Board-Verwalter editierbar; der Zähler bleibt
   // davon unberührt (er erhöht sich nur bei der automatischen Vergabe).
@@ -124,8 +129,8 @@ export async function saveCardAction(
     "number" in values &&
     canManageBoard(user, board)
   ) {
-    const v = values.number;
-    update.number = v && String(v).trim() ? String(v).trim().slice(0, 100) : null;
+    const v = sanitizeSingleLine(values.number);
+    update.number = v ? v.slice(0, 100) : null;
   }
 
   const members = await getBoardMemberUsers(board);
@@ -163,9 +168,8 @@ export async function saveCardAction(
     update.meeting = values.meeting || null;
   }
   if (visible.has("decision_ref") && "decisionRef" in values) {
-    update.decisionRef = values.decisionRef
-      ? String(values.decisionRef).slice(0, 200)
-      : null;
+    const v = sanitizeSingleLine(values.decisionRef);
+    update.decisionRef = v ? v.slice(0, 200) : null;
   }
   // Anweisungsdatum ist — wie die Antragsnummer — verwalter-exklusiv
   // (Konsistenz mit REST-API und CLAUDE.md).
@@ -243,12 +247,14 @@ export async function saveCardAction(
     }
   }
   if (visible.has("notes") && "notes" in values) {
-    update.notes = values.notes ? String(values.notes).slice(0, 20000) : null;
+    // Mehrzeilig: innere Umbrüche bleiben erhalten (sanitizeMultiLine).
+    const v = sanitizeMultiLine(values.notes);
+    update.notes = v ? v.slice(0, 20000) : null;
   }
   if (visible.has("applicant_note") && "applicantNote" in values) {
-    update.applicantNote = values.applicantNote
-      ? String(values.applicantNote).slice(0, 20000)
-      : null;
+    // Öffentlich sichtbarer Hinweis (Statusseite) → gleiche Bereinigung.
+    const v = sanitizeMultiLine(values.applicantNote);
+    update.applicantNote = v ? v.slice(0, 20000) : null;
   }
 
   await db.update(cards).set(update).where(eq(cards.id, card.id));
@@ -491,7 +497,9 @@ export async function addCommentAction(
   formData: FormData,
 ): Promise<State> {
   const { user, card } = await loadCard(cardId);
-  const body = String(formData.get("body") ?? "").trim();
+  // Mehrzeilig bereinigen wie Notizen: NUL lehnt PostgreSQL ab (500), innere
+  // Umbrüche bleiben erhalten.
+  const body = sanitizeMultiLine(formData.get("body"));
   if (!body) return { error: "Kommentar darf nicht leer sein." };
   await db.insert(cardComments).values({
     cardId: card.id,
@@ -508,6 +516,9 @@ export async function deleteCommentAction(
   commentId: number,
 ): Promise<void> {
   const { user, board, card } = await loadCard(cardId);
+  // Manipulierte RPC-Argumente dürfen keinen pg-Fehler/500 auslösen
+  // (gleiches Muster wie deleteAttachmentAction).
+  if (!Number.isInteger(commentId)) return;
   const [c] = await db
     .select()
     .from(cardComments)

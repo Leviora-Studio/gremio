@@ -161,6 +161,38 @@ export async function enforceRateLimits(
 }
 
 /**
+ * Fängt UNERWARTETE Fehler eines öffentlichen Handlers ab und antwortet mit dem
+ * dokumentierten JSON-Fehlerformat statt Nexts HTML-Fehlerseite.
+ *
+ * Die OpenAPI-Spezifikation sichert für alle öffentlichen Endpunkte einen
+ * 500er als `application/json` zu — ohne diesen Mantel bekamen native Clients
+ * bei einem Datenbankausfall (oder einem Fehler VOR den try-Blöcken der
+ * Fachlogik, z. B. beim Standort-Lookup) text/html. Geloggt wird nur die
+ * Fehlermeldung — nie Request-Daten oder Tokens.
+ */
+export function withPublicApi500<A extends unknown[]>(
+  handler: (...args: A) => Promise<Response>,
+  message = "Interner Fehler. Bitte später erneut versuchen.",
+): (...args: A) => Promise<Response> {
+  return async (...args: A): Promise<Response> => {
+    try {
+      return await handler(...args);
+    } catch (e) {
+      // NUR die erste Zeile loggen: `DrizzleQueryError.message` enthält ab der
+      // zweiten Zeile die Query-PARAMETER — bei Token-Abfragen also den
+      // geheimen Status-Token. Der SQLSTATE aus `cause` bleibt fürs Debugging.
+      const firstLine = (e instanceof Error ? e.message : String(e)).split("\n")[0];
+      const code = (e as { cause?: { code?: string } })?.cause?.code;
+      console.error(
+        `[public-api] Unerwarteter Fehler${code ? ` (SQLSTATE ${code})` : ""}:`,
+        firstLine,
+      );
+      return publicApiError(500, message);
+    }
+  };
+}
+
+/**
  * Kanonische öffentliche Basis-URL. Ausschließlich aus `APP_BASE_URL` — niemals
  * aus `Host`/`X-Forwarded-Host`, die der Client frei setzen kann (sonst ließe
  * sich der Status-Link auf eine fremde Domain umbiegen).

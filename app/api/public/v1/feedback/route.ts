@@ -12,6 +12,7 @@ import {
   readLimitedBody,
   RL_FEEDBACK_BURST,
   RL_FEEDBACK_DAY,
+  withPublicApi500,
 } from "@/lib/public-api";
 import { submitPublicFeedback } from "@/lib/public-feedback-submission";
 import {
@@ -42,7 +43,7 @@ type Preflight = { kind: "replay"; cardId: number } | { kind: "conflict" };
  * mit dem Browserformular (`lib/public-feedback-submission.ts`). Zusätzlich hier:
  * verpflichtende Idempotenz und eigene Rate-Limits.
  */
-export async function POST(req: Request) {
+export const POST = withPublicApi500(async function POST(req: Request) {
   // --- Rate-Limits (eigene Buckets, getrennt von Anträgen und Formular) ----
   const limited = await enforceRateLimits([RL_FEEDBACK_BURST, RL_FEEDBACK_DAY]);
   if (limited) return limited;
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
   if (!isValidIdempotencyKey(rawKey)) {
     return publicApiError(
       400,
-      `Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII, 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen; empfohlen: UUID v4).`,
+      `Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII ohne Leerzeichen, 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen; empfohlen: UUID v4).`,
     );
   }
   const keyHash = hashIdempotencyKey(rawKey);
@@ -99,6 +100,15 @@ export async function POST(req: Request) {
     body = parsed as typeof body;
   } catch {
     return publicApiError(400, "Der JSON-Body ist ungültig.");
+  }
+
+  // Unbekannte Felder ablehnen — gleiche Tippfehler-Konvention wie POST /status:
+  // Ein vertipptes `submiterName` erzeugte sonst still eine „Anonym"-Einreichung,
+  // ohne dass der Client je erfährt, dass sein Feld ins Leere ging.
+  const KNOWN_FIELDS = ["areaId", "submitterName", "feedback"];
+  const unknown = Object.keys(body).filter((k) => !KNOWN_FIELDS.includes(k));
+  if (unknown.length) {
+    return publicApiError(400, `Unbekanntes Feld: ${unknown.join(", ")}.`);
   }
 
   // Typen der Felder ausdrücklich prüfen. JSON kann Zahlen, Objekte und Arrays
@@ -222,4 +232,4 @@ export async function POST(req: Request) {
     { ...publicFeedbackLinks(result.token), number: result.number },
     { status: 201, headers: { "Cache-Control": "no-store" } },
   );
-}
+}, "Beim Einreichen ist ein Fehler aufgetreten. Bitte versuche es erneut.");

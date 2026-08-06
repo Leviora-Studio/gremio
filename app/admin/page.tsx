@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth";
 import { count } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
@@ -20,6 +21,10 @@ async function tally(table: PgTable): Promise<number> {
 }
 
 export default async function AdminOverview() {
+  // Nicht nur im Layout: Guard in JEDEM Handler (CLAUDE.md) — Layout-Guards
+  // greifen bei segmentgenauen RSC-Navigationsrequests nicht zwingend.
+  await requireAdmin();
+
   const stats: { label: string; value: number; href?: string }[] = [
     { label: "Nutzer", value: await tally(users), href: "/admin/users" },
     { label: "Gruppen", value: await tally(groups), href: "/admin/groups" },

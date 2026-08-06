@@ -2,11 +2,16 @@
 // Copyright (C) 2026 Erik Engler
 
 import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 import { boards, boardStatuses, locations } from "@/lib/db/schema";
 import { LocationEditor } from "@/components/admin/LocationEditor";
 import { CreateLocationForm } from "@/components/admin/CreateLocationForm";
 
 export default async function StandortePage() {
+  // Nicht nur im Layout: Guard in JEDEM Handler (CLAUDE.md) — Layout-Guards
+  // greifen bei segmentgenauen RSC-Navigationsrequests nicht zwingend.
+  await requireAdmin();
+
   const allLocations = await db
     .select()
     .from(locations)

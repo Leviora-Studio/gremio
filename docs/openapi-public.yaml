@@ -3,7 +3,7 @@
 openapi: 3.1.0
 info:
   title: Gremio — Öffentliche API
-  version: 1.1.0
+  version: 1.1.1
   summary: Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.
   description: >-
     Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
@@ -132,8 +132,8 @@ paths:
             * Derselbe Schlüssel mit **veränderten Daten** führt zu `409 Conflict`.
 
 
-            Zulässig ist druckbares ASCII mit 16–128 Zeichen. Gespeichert wird nur ein SHA-256-Hash,
-            nie der Klartext.
+            Zulässig ist druckbares ASCII **ohne Leerzeichen** mit 16–128 Zeichen. Gespeichert wird
+            nur ein SHA-256-Hash, nie der Klartext.
 
 
             Ein Schlüssel wird **30 Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein
@@ -202,8 +202,8 @@ paths:
                         message: Bitte einen Antragsgegenstand angeben.
                 idempotencyKey:
                   value:
-                    error: "Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII, 16–128 Zeichen;
-                      empfohlen: UUID v4)."
+                    error: "Header 'Idempotency-Key' fehlt oder ist ungültig (druckbares ASCII ohne Leerzeichen, 16–128
+                      Zeichen; empfohlen: UUID v4)."
         "404":
           description: Der gewählte Standort existiert nicht, ist deaktiviert oder nicht vollständig geroutet.
           content:
@@ -337,8 +337,8 @@ paths:
             * Derselbe Schlüssel mit **veränderten Daten** führt zu `409 Conflict`.
 
 
-            Zulässig ist druckbares ASCII mit 16–128 Zeichen. Gespeichert wird nur ein SHA-256-Hash,
-            nie der Klartext.
+            Zulässig ist druckbares ASCII **ohne Leerzeichen** mit 16–128 Zeichen. Gespeichert wird
+            nur ein SHA-256-Hash, nie der Klartext.
 
 
             Ein Schlüssel wird **30 Tage** aufbewahrt. Danach verhält er sich wie ein neuer: Ein
@@ -897,6 +897,9 @@ components:
       required:
         - areaId
         - feedback
+      description: Unbekannte Felder werden mit `400` abgelehnt (Tippfehler-Schutz — ein vertipptes
+        `submiterName` erzeugte sonst still eine anonyme Einreichung).
+      additionalProperties: false
       properties:
         areaId:
           type: integer

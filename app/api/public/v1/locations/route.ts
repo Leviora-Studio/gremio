@@ -5,7 +5,11 @@ import { NextResponse } from "next/server";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, locations } from "@/lib/db/schema";
-import { enforceRateLimits, RL_LOCATIONS } from "@/lib/public-api";
+import {
+  enforceRateLimits,
+  RL_LOCATIONS,
+  withPublicApi500,
+} from "@/lib/public-api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +23,7 @@ export const runtime = "nodejs";
  *
  * Bewusst OHNE CORS-Header: native Apps unterliegen keinem Browser-CORS.
  */
-export async function GET() {
+export const GET = withPublicApi500(async function GET() {
   const limited = await enforceRateLimits([RL_LOCATIONS]);
   if (limited) return limited;
 
@@ -43,4 +47,4 @@ export async function GET() {
     { locations: rows },
     { headers: { "Cache-Control": "no-store" } },
   );
-}
+});

@@ -47,6 +47,7 @@ const FAMILY_CAPS: Record<string, number> = {
   "feedback-submit": 5_000,
   "public-upload": 5_000,
   "public-submit": 5_000,
+  "status-pdf": 5_000,
   "inventory-request": 5_000,
   "inventory-contract": 5_000,
   "oidc-login": 5_000,

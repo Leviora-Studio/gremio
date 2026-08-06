@@ -3,6 +3,7 @@
 
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { isForeignKeyViolation } from "@/lib/db-errors";
 import {
   attachments,
   boardArchive,
@@ -192,10 +193,23 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
     .innerJoin(cards, eq(cards.id, attachments.cardId))
     .where(eq(cards.boardId, boardId));
 
-  await db.transaction(async (tx) => {
-    await tx.delete(cards).where(eq(cards.boardId, boardId));
-    await tx.delete(boards).where(eq(boards.id, boardId));
-  });
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(cards).where(eq(cards.boardId, boardId));
+      await tx.delete(boards).where(eq(boards.id, boardId));
+    });
+  } catch (e) {
+    // Die Vorab-Prüfungen oben laufen VOR der Transaktion: Routet ein Admin im
+    // Fenster dazwischen einen Standort/Feedback-Bereich auf dieses Board (oder
+    // eine seiner Spalten), schlägt der RESTRICT-FK zu. Das ist derselbe
+    // fachliche Grund — also dieselbe verständliche Meldung statt eines 500ers.
+    if (isForeignKeyViolation(e)) {
+      throw new BoardDeleteBlockedError(
+        "Board wird inzwischen von einem Standort oder Feedback-Bereich als Ziel verwendet. Bitte zuerst das Routing umstellen.",
+      );
+    }
+    throw e;
+  }
 
   // Nach erfolgreichem Commit: Dateien von der Platte entfernen (best effort).
   for (const a of atts) await deleteStoredFile(a.path);

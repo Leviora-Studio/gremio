@@ -79,9 +79,9 @@ Dieselben Feldnamen wie im öffentlichen Formular:
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 ```
 
-Druckbares ASCII, 16–128 Zeichen; empfohlen ist eine **UUID v4**. Fehlt der
-Header oder ist er ungültig → `400`. Gespeichert wird nur ein SHA-256-Hash, nie
-der Klartext.
+Druckbares ASCII **ohne Leerzeichen**, 16–128 Zeichen; empfohlen ist eine
+**UUID v4**. Fehlt der Header oder ist er ungültig → `400`. Gespeichert wird
+nur ein SHA-256-Hash, nie der Klartext.
 
 ### Beispiel
 
@@ -225,7 +225,7 @@ keine Notizen.
 |------|-----------|
 | `201` | Feedback neu angelegt |
 | `200` | Idempotenz-Replay (Header `Idempotency-Replayed: true`) |
-| `400` | Ungültige Felder oder fehlender/ungültiger `Idempotency-Key` |
+| `400` | Ungültige oder unbekannte Felder, fehlender/ungültiger `Idempotency-Key` |
 | `404` | Bereich nicht verfügbar |
 | `409` | `Idempotency-Key` mit anderen Daten wiederverwendet |
 | `413` | Body größer als 32 KiB |
@@ -362,6 +362,7 @@ Der Token erscheint nicht als eigenes Feld; er steckt bereits in `statusUrl`.
 | `413` | Body größer als 8 KiB |
 | `415` | Content-Type ist nicht `application/json` |
 | `429` | Rate-Limit — `Retry-After` beachten |
+| `500` | Unerwarteter interner Fehler (generische Meldung) |
 
 `404` ist bewusst **identisch** für unbekannten Token, gelöschten Vorgang und
 Token des falschen Typs (Feedback-Token auf dem Antragspfad und umgekehrt).

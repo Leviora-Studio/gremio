@@ -39,3 +39,31 @@ export function isUniqueViolation(e: unknown, constraintHint?: string): boolean 
   if (!constraintHint) return true;
   return (constraint ?? "").includes(constraintHint);
 }
+
+/**
+ * Verletzung eines FOREIGN-KEY-Constraints (SQLSTATE 23503) — z. B. Spalte/Board
+ * löschen, während ein Standort oder Feedback-Bereich darauf routet
+ * (`ON DELETE RESTRICT`), oder ein Routing-Ziel setzen, das gerade gelöscht
+ * wurde. WICHTIG: immer über diese Funktion prüfen, nie direkt `err.code`
+ * lesen — Drizzle verpackt den pg-Fehler in `DrizzleQueryError` und hängt ihn
+ * nur an `cause`; ein direkter `code`-Vergleich ist toter Code.
+ */
+export function isForeignKeyViolation(e: unknown): boolean {
+  return pgError(e).code === "23503";
+}
+
+/**
+ * Param-freie Fassung eines Datenbankfehlers zum Weiterwerfen/Loggen.
+ *
+ * `DrizzleQueryError.message` enthält ab der zweiten Zeile die
+ * Query-PARAMETER (`params: …`) — bei Token-Abfragen also den geheimen
+ * Status-Token, der so in Server-Logs landen würde (Next loggt unbehandelte
+ * Fehler samt Message). Der SQLSTATE bleibt fürs Debugging erhalten, `cause`
+ * bewusst nicht (dessen Message/Detail kann ebenfalls Werte enthalten).
+ */
+export function dbErrorWithoutParams(e: unknown, context: string): Error {
+  const { code } = pgError(e);
+  return new Error(
+    `${context}: Datenbankfehler${code ? ` (SQLSTATE ${code})` : ""}`,
+  );
+}

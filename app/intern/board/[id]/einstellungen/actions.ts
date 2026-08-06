@@ -21,6 +21,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { requireBoardManage } from "@/lib/authz";
+import { isForeignKeyViolation } from "@/lib/db-errors";
 import { BoardDeleteBlockedError, deleteBoardCascade } from "@/lib/boards";
 import {
   ARCHIVE_FOLDER_FIELD_KEYS,
@@ -71,7 +72,9 @@ export async function addStatusAction(
   formData: FormData,
 ): Promise<void> {
   await requireBoardManage(boardId);
-  const name = String(formData.get("name") ?? "").trim();
+  // Länge kappen wie beim Board-Namen (nameSchema: 120) — sonst ließe sich ein
+  // beliebig großer Spaltenname speichern, der überall mitgerendert wird.
+  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
   if (!name) return;
   const [row] = await db
     .select({ m: max(boardStatuses.position) })
@@ -89,7 +92,9 @@ export async function renameStatusAction(
   formData: FormData,
 ): Promise<State> {
   await requireBoardManage(boardId);
-  const name = String(formData.get("name") ?? "").trim();
+  // Manipulierte RPC-Argumente dürfen keinen pg-Fehler/500 auslösen.
+  if (!Number.isInteger(statusId)) return { error: "Ungültige Spalte." };
+  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
   if (!name) return { error: "Name erforderlich." };
   await db
     .update(boardStatuses)
@@ -160,22 +165,41 @@ export async function deleteStatusAction(
   statusId: number,
 ): Promise<State> {
   await requireBoardManage(boardId);
-  const [row] = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId));
-  if (Number(row?.c ?? 0) <= 1) {
-    return { error: "Das Board braucht mindestens eine Spalte." };
-  }
+  if (!Number.isInteger(statusId)) return { error: "Ungültige Spalte." };
   try {
-    await db
-      .delete(boardStatuses)
-      .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
+    // Zählen und Löschen unter einem Advisory-Lock je Board („BS" = Board
+    // Statuses): Zwei parallele Löschungen der letzten beiden (leeren) Spalten
+    // sahen sonst beide count=2 und ließen das Board mit NULL Spalten zurück —
+    // unter READ COMMITTED verhindert das auch ein einzelnes bedingtes DELETE
+    // nicht zuverlässig (die Transaktionen löschen verschiedene Zeilen und
+    // blockieren einander nicht). Gleiches Muster wie im Leihmodul.
+    const deleted = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x4253}, ${boardId})`);
+      const [row] = await tx
+        .select({ c: sql<number>`count(*)` })
+        .from(boardStatuses)
+        .where(eq(boardStatuses.boardId, boardId));
+      if (Number(row?.c ?? 0) <= 1) return null;
+      return tx
+        .delete(boardStatuses)
+        .where(
+          and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)),
+        )
+        .returning({ id: boardStatuses.id });
+    });
+    if (deleted == null) {
+      return { error: "Das Board braucht mindestens eine Spalte." };
+    }
+    if (!deleted.length) {
+      // Spalte existierte nicht (mehr) — nichts zu löschen.
+      return { error: "Spalte nicht gefunden." };
+    }
   } catch (err) {
-    const code = (err as { code?: string }).code ?? "";
-    // 23503 = foreign_key_violation (Karten, Standort oder Feedback-Bereich
-    // referenzieren die Spalte).
-    if (code === "23503") {
+    // foreign_key_violation: Karten, Standort oder Feedback-Bereich referenzieren
+    // die Spalte. WICHTIG: über isForeignKeyViolation prüfen — Drizzle hängt den
+    // pg-Fehler nur an `cause`, ein direkter `err.code`-Vergleich war toter Code
+    // und ließ den Verwalter mit einem 500er statt dieser Meldung zurück.
+    if (isForeignKeyViolation(err)) {
       return {
         error:
           "Spalte enthält Karten oder ist Ziel eines Standorts bzw. eines Feedback-Bereichs. Bitte zuerst leeren bzw. Routing umstellen.",
@@ -457,6 +481,8 @@ export async function removeAccessAction(
   accessId: number,
 ): Promise<void> {
   await requireBoardManage(boardId);
+  // Manipulierte RPC-Argumente dürfen keinen pg-Fehler/500 auslösen.
+  if (!Number.isInteger(accessId)) return;
   await db
     .delete(boardAccess)
     .where(and(eq(boardAccess.id, accessId), eq(boardAccess.boardId, boardId)));

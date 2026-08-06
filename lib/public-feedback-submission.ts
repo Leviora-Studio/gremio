@@ -11,6 +11,7 @@ import {
   feedbackAreas,
   feedbackSubmissions,
 } from "@/lib/db/schema";
+import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { assignCardNumberTx } from "@/lib/numbering";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import {
@@ -341,25 +342,30 @@ export async function getFeedbackByToken(
   token: string,
 ): Promise<FeedbackView | undefined> {
   if (!token) return undefined;
-  const [row] = await db
-    .select({
-      cardId: cards.id,
-      token: cards.token,
-      statusName: boardStatuses.name,
-      createdAt: cards.createdAt,
-      updatedAt: cards.updatedAt,
-      applicantNote: cards.applicantNote,
-      number: cards.number,
-      areaName: feedbackSubmissions.areaName,
-      submitterName: feedbackSubmissions.submitterName,
-      feedbackText: feedbackSubmissions.feedbackText,
-    })
-    .from(feedbackSubmissions)
-    .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
-    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(eq(cards.token, token))
-    .limit(1);
-  return row?.token ? { ...row, token: row.token } : undefined;
+  try {
+    const [row] = await db
+      .select({
+        cardId: cards.id,
+        token: cards.token,
+        statusName: boardStatuses.name,
+        createdAt: cards.createdAt,
+        updatedAt: cards.updatedAt,
+        applicantNote: cards.applicantNote,
+        number: cards.number,
+        areaName: feedbackSubmissions.areaName,
+        submitterName: feedbackSubmissions.submitterName,
+        feedbackText: feedbackSubmissions.feedbackText,
+      })
+      .from(feedbackSubmissions)
+      .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
+      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+      .where(eq(cards.token, token))
+      .limit(1);
+    return row?.token ? { ...row, token: row.token } : undefined;
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "feedback-status-loader");
+  }
 }
 
 /**
@@ -368,13 +374,18 @@ export async function getFeedbackByToken(
  */
 export async function isFeedbackToken(token: string): Promise<boolean> {
   if (!token) return false;
-  const [row] = await db
-    .select({ id: feedbackSubmissions.id })
-    .from(feedbackSubmissions)
-    .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
-    .where(eq(cards.token, token))
-    .limit(1);
-  return !!row;
+  try {
+    const [row] = await db
+      .select({ id: feedbackSubmissions.id })
+      .from(feedbackSubmissions)
+      .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
+      .where(eq(cards.token, token))
+      .limit(1);
+    return !!row;
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "feedback-token-check");
+  }
 }
 
 /** Herkunfts-Snapshot einer Karte — für die interne Detailansicht. */
