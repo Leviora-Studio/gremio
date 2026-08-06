@@ -2,9 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import { NextResponse } from "next/server";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { boardStatuses, locations } from "@/lib/db/schema";
+import { listPublicLocations } from "@/lib/public-application-submission";
 import {
   enforceRateLimits,
   RL_LOCATIONS,
@@ -27,21 +25,10 @@ export const GET = withPublicApi500(async function GET() {
   const limited = await enforceRateLimits([RL_LOCATIONS]);
   if (limited) return limited;
 
-  const rows = await db
-    .select({ id: locations.id, name: locations.name })
-    .from(locations)
-    // INNER JOIN auf die Zielspalte: erzwingt, dass sie existiert UND zum
-    // Ziel-Board gehört (eine verwaiste Zuordnung fällt so heraus).
-    .innerJoin(
-      boardStatuses,
-      and(
-        eq(boardStatuses.id, locations.targetStatusId),
-        eq(boardStatuses.boardId, locations.targetBoardId),
-      ),
-    )
-    .where(and(eq(locations.enabled, true), isNotNull(locations.targetBoardId)))
-    // Gleiche Reihenfolge wie im öffentlichen Formular.
-    .orderBy(asc(locations.position), asc(locations.id));
+  // Gemeinsame Quelle mit dem Browserformular (`app/page.tsx`): Der INNER JOIN
+  // auf die Zielspalte erzwingt, dass sie existiert UND zum Ziel-Board gehört —
+  // eine verwaiste Zuordnung fällt heraus. Reihenfolge identisch zum Formular.
+  const rows = await listPublicLocations();
 
   return NextResponse.json(
     { locations: rows },

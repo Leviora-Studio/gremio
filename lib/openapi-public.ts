@@ -45,6 +45,7 @@ const IDEMPOTENCY_DESCRIPTION = `Pflicht. Eindeutiger Schlüssel dieser Einreich
 * Für **jeden neuen Antrag** einen **neuen** Schlüssel erzeugen.
 * Bei einem **Retry** (Timeout, Netzwerkfehler) denselben Schlüssel mit **identischen Daten** erneut senden — die Antwort ist dann \`200\` mit \`Idempotency-Replayed: true\` und es entsteht **keine** zweite Karte.
 * Derselbe Schlüssel mit **veränderten Daten** führt zu \`409 Conflict\`.
+* Der Schlüssel ist an den **einreichenden Client** gebunden (pseudonyme Kennung, kein Cookie/Login): Ein Replay gibt den geheimen Status-Link zurück und geht deshalb nur an denselben Client. Von einer anderen Adresse ergibt derselbe Schlüssel ebenfalls \`409\`. Wechselt das Netz zwischen Absenden und Retry (z. B. WLAN → Mobilfunk), einfach mit einem **neuen** Schlüssel erneut senden.
 
 Zulässig ist druckbares ASCII **ohne Leerzeichen** mit 16–${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen. Gespeichert wird nur ein SHA-256-Hash, nie der Klartext.
 
@@ -300,7 +301,7 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
           ),
           "409": {
             description:
-              "Der `Idempotency-Key` wurde bereits für eine andere Einreichung verwendet (abweichende Daten).",
+              "Der `Idempotency-Key` wurde bereits für eine andere Einreichung verwendet — entweder mit abweichenden Daten oder von einem anderen Client. Ein Replay gibt den geheimen Status-Link zurück und ist deshalb an den ursprünglichen Einreicher gebunden. Abhilfe in beiden Fällen: einen neuen Schlüssel erzeugen.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -308,7 +309,7 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
                   standard: {
                     value: {
                       error:
-                        "Der Idempotency-Key wurde bereits für eine andere Einreichung verwendet.",
+                        "Der Idempotency-Key wurde bereits für eine andere Einreichung oder von einem anderen Client verwendet.",
                     },
                   },
                 },
@@ -482,7 +483,7 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
           ),
           "409": {
             description:
-              "Der `Idempotency-Key` wurde bereits für eine andere Einreichung verwendet (abweichende Daten).",
+              "Der `Idempotency-Key` wurde bereits für eine andere Einreichung verwendet — entweder mit abweichenden Daten oder von einem anderen Client. Ein Replay gibt den geheimen Status-Link zurück und ist deshalb an den ursprünglichen Einreicher gebunden. Abhilfe in beiden Fällen: einen neuen Schlüssel erzeugen.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -490,7 +491,7 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
                   standard: {
                     value: {
                       error:
-                        "Der Idempotency-Key wurde bereits für eine andere Einreichung verwendet.",
+                        "Der Idempotency-Key wurde bereits für eine andere Einreichung oder von einem anderen Client verwendet.",
                     },
                   },
                 },

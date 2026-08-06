@@ -4,6 +4,8 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { clientIpHmac } from "@/lib/client-ip";
+import { deriveKey } from "@/lib/crypto";
 import { apiIdempotencyKeys } from "@/lib/db/schema";
 import {
   APPLICATION_FILE_SLOTS,
@@ -60,6 +62,30 @@ const sha256 = (data: string | Buffer): string =>
 /** Der Klartext-Key wird NIE gespeichert — nur dieser Hash. */
 export function hashIdempotencyKey(key: string): string {
   return sha256(key.trim());
+}
+
+// Zweckgebundener HMAC-Schlüssel für die Client-Bindung (nicht das rohe
+// AUTH_SECRET und nicht derselbe Unterschlüssel wie Rate-Limit/Zeitfalle —
+// ein Wert aus dem einen Zweck verrät so nichts über den anderen).
+const IDEMPOTENCY_CLIENT_KEY = deriveKey("public-api-idempotency-client");
+
+/**
+ * Pseudonyme Kennung des einreichenden Clients (HMAC der Client-IP, nie die IP
+ * selbst — DSGVO, siehe `lib/client-ip.ts`).
+ *
+ * ZWECK: Ein Replay gibt den geheimen Status-Link der ursprünglichen
+ * Einreichung zurück. Ohne diese Bindung genügte ein erratener oder
+ * abgefangener `Idempotency-Key` samt identischer Daten, um an den Vorgang
+ * eines FREMDEN Einreichers zu kommen — beim Feedback besteht der Fingerprint
+ * nur aus Bereich, Name und Text.
+ *
+ * GRENZE: Die Kennung ist eine IP, kein Gerät. Hinter demselben NAT (Hochschul-
+ * netz, Carrier) teilen sich viele Clients eine Kennung; dort schützt die
+ * Bindung nicht. Sie hebt die Hürde, sie beseitigt sie nicht — der eigentliche
+ * Schutz bleibt ein zufälliger Schlüssel (UUID v4) auf Client-Seite.
+ */
+export async function idempotencyClientHash(): Promise<string> {
+  return clientIpHmac(IDEMPOTENCY_CLIENT_KEY);
 }
 
 /**
@@ -155,9 +181,33 @@ export async function lockIdempotencyKeyTx(
 
 export type IdempotencyHit = {
   cardId: number;
-  /** true = derselbe Key wurde bereits für einen ANDEREN Request verwendet. */
+  /**
+   * true = der Schlüssel gehört NICHT zu diesem Request. Zwei Gründe, bewusst
+   * nicht unterschieden: abweichende Daten (klassischer Konflikt) ODER ein
+   * anderer Client (siehe `idempotencyClientHash`). Beide führen zu 409 und zur
+   * selben Meldung — ein Aufrufer soll aus der Antwort nicht ablesen können,
+   * ob ein fremder Client denselben Schlüssel benutzt hat.
+   */
   conflict: boolean;
 };
+
+/**
+ * Gehört ein gefundener Datensatz NICHT zu diesem Request?
+ *
+ * Bewusst als eigene, DB-freie Funktion: Das ist die Sicherheitsregel hinter
+ * dem Replay — ein Replay gibt den geheimen Status-Link heraus und darf deshalb
+ * nur laufen, wenn Daten UND Client passen. Datensätze ohne `clientHash`
+ * (Altbestand aus der Zeit vor der Client-Bindung) bleiben replay-fähig; sie
+ * verfallen nach IDEMPOTENCY_TTL_DAYS von selbst.
+ */
+export function isIdempotencyConflict(
+  row: { requestHash: string; clientHash: string | null },
+  requestHash: string,
+  clientHash: string,
+): boolean {
+  if (row.requestHash !== requestHash) return true;
+  return row.clientHash != null && row.clientHash !== clientHash;
+}
 
 /**
  * Sucht einen vorhandenen Datensatz. Muss innerhalb der per
@@ -168,11 +218,13 @@ export async function findIdempotencyRecordTx(
   scope: string,
   keyHash: string,
   requestHash: string,
+  clientHash: string,
 ): Promise<IdempotencyHit | null> {
   const [row] = await tx
     .select({
       cardId: apiIdempotencyKeys.cardId,
       requestHash: apiIdempotencyKeys.requestHash,
+      clientHash: apiIdempotencyKeys.clientHash,
     })
     .from(apiIdempotencyKeys)
     .where(
@@ -183,7 +235,10 @@ export async function findIdempotencyRecordTx(
     )
     .limit(1);
   if (!row) return null;
-  return { cardId: row.cardId, conflict: row.requestHash !== requestHash };
+  return {
+    cardId: row.cardId,
+    conflict: isIdempotencyConflict(row, requestHash, clientHash),
+  };
 }
 
 /** Legt den Datensatz an — immer in derselben Transaktion wie die Karte. */
@@ -193,10 +248,11 @@ export async function insertIdempotencyRecordTx(
   keyHash: string,
   requestHash: string,
   cardId: number,
+  clientHash: string,
 ): Promise<void> {
   await tx
     .insert(apiIdempotencyKeys)
-    .values({ scope, keyHash, requestHash, cardId });
+    .values({ scope, keyHash, requestHash, cardId, clientHash });
 }
 
 // ---------------------------------------------------------------------------

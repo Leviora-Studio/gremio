@@ -32,7 +32,7 @@ import { maybeSetTriggerDates } from "@/lib/instruction";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { assignCardNumber } from "@/lib/numbering";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
-import { sanitizeSingleLine } from "@/lib/text";
+import { sanitizeMultiLine, sanitizeSingleLine } from "@/lib/text";
 import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import { deleteStoredFile } from "@/lib/attachments";
@@ -50,22 +50,40 @@ const date = z
   .refine(isValidApiDate, "Datum muss ein gültiges Datum (YYYY-MM-DD) sein")
   .nullish();
 
+/**
+ * Eingangsbereinigung der freien Texte (`lib/text.ts`) als zod-`preprocess` —
+ * dieselbe Grenze wie im öffentlichen Formular und in `saveCardAction`.
+ *
+ * WARUM ÜBERHAUPT: NUL lehnt PostgreSQL ab. Ein `notes: "a\u0000b"` lief bis in
+ * den UPDATE durch und ließ den Handler mit einem Datenbankfehler abbrechen —
+ * der Client bekam einen 500er statt einer Validierungsmeldung. TAB/CR sprengen
+ * zusätzlich den WinAnsi-Encoder der PDF-Eingangsbestätigung.
+ *
+ * WARUM TYP-ERHALTEND: Nicht-Strings werden UNVERÄNDERT durchgereicht, damit
+ * `z.string()` sie mit einer klaren Meldung abweist. Würde hier stumpf
+ * bereinigt, machte die API aus `applicant: 42` still einen leeren String und
+ * antwortete mit 200 — obwohl die OpenAPI-Spezifikation `string` zusichert.
+ */
+const singleLineInput = (v: unknown): unknown =>
+  typeof v === "string" ? sanitizeSingleLine(v) : v;
+const multiLineInput = (v: unknown): unknown =>
+  typeof v === "string" ? sanitizeMultiLine(v) : v;
+
 /** Schreibbare Kartenfelder über die API (POST/PATCH). */
 export const cardWriteSchema = z
   .object({
     // Einzeilig bereinigt (NUL, TAB, CR) — dieselbe Eingangsgrenze wie beim
     // öffentlichen Formular, damit die PDF-Bestätigung nicht an intern
-    // eingefügten Steuerzeichen scheitert.
-    title: z.preprocess(sanitizeSingleLine, z.string().min(1).max(200)).optional(),
-    applicant: z
-      .preprocess((v) => (v == null ? v : sanitizeSingleLine(v)), z.string().max(200))
-      .nullish(),
+    // eingefügten Steuerzeichen scheitert. Die Längengrenzen greifen NACH der
+    // Bereinigung, also auf dem Wert, der tatsächlich gespeichert wird.
+    title: z.preprocess(singleLineInput, z.string().min(1).max(200)).optional(),
+    applicant: z.preprocess(singleLineInput, z.string().max(200)).nullish(),
     // 60 = kanonische Länge des Haushaltstitels (Matching-Schlüssel der
     // Finanzübersicht, wie Web-UI und Plan-Editor). Vorher erlaubte das Schema
     // 200 Zeichen und buildCardValues kürzte still auf 60 — der Client bekam
     // 200 OK, gespeichert war aber etwas anderes.
-    budgetTitle: z.string().max(60).nullish(),
-    number: z.string().max(100).nullish(),
+    budgetTitle: z.preprocess(singleLineInput, z.string().max(60)).nullish(),
+    number: z.preprocess(singleLineInput, z.string().max(100)).nullish(),
     statusId: z.number().int().positive().optional(),
     position: z.number().int().min(0).optional(),
     priorityId: z.number().int().positive().nullish(),
@@ -74,13 +92,16 @@ export const cardWriteSchema = z
     creatorUserId: z.number().int().positive().nullish(),
     deadline: date,
     meeting: date,
-    decisionRef: z.string().max(200).nullish(),
+    decisionRef: z.preprocess(singleLineInput, z.string().max(200)).nullish(),
     instructionDate: date,
     transferDate: date,
     approvedAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     actualAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
-    notes: z.string().max(20000).nullish(),
-    applicantNote: z.string().max(20000).nullish(),
+    // Mehrzeilig: innere Umbrüche sind Inhalt und bleiben erhalten.
+    notes: z.preprocess(multiLineInput, z.string().max(20000)).nullish(),
+    applicantNote: z
+      .preprocess(multiLineInput, z.string().max(20000))
+      .nullish(),
     // true = archivieren (ausblenden), false = wiederherstellen.
     archived: z.boolean().optional(),
   })

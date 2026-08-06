@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -156,6 +156,36 @@ export type SubmissionOptions<T> = {
     ctx: { cardId: number; token: string; number: string | null },
   ) => Promise<void>;
 };
+
+/**
+ * Öffentlich auswählbare Standorte: aktiviert UND vollständig/korrekt geroutet.
+ *
+ * EINE Quelle für das Browserformular (`app/page.tsx`) und die öffentliche API
+ * (`GET /api/public/v1/locations`) — Gegenstück zu `listPublicFeedbackAreas`.
+ * Das Formular filterte vorher nur auf `enabled` und bot damit auch Standorte
+ * an, deren Ziel-Spalte gar nicht (mehr) zum Ziel-Board gehört: Die Auswahl
+ * erschien, die Einreichung scheiterte danach mit „Der gewählte Standort ist
+ * nicht verfügbar." — inklusive Verlust der bereits ausgewählten Dateien.
+ *
+ * Der INNER JOIN mit Board-Bedingung ist exakt dieselbe Prüfung, die
+ * `submitPublicApplication` beim Einreichen anwendet.
+ */
+export async function listPublicLocations(): Promise<
+  { id: number; name: string }[]
+> {
+  return db
+    .select({ id: locations.id, name: locations.name })
+    .from(locations)
+    .innerJoin(
+      boardStatuses,
+      and(
+        eq(boardStatuses.id, locations.targetStatusId),
+        eq(boardStatuses.boardId, locations.targetBoardId),
+      ),
+    )
+    .where(eq(locations.enabled, true))
+    .orderBy(asc(locations.position), asc(locations.id));
+}
 
 function fileOrNull(v: unknown): File | null {
   return v instanceof File && v.size > 0 ? v : null;

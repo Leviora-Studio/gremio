@@ -67,12 +67,21 @@ export async function createFeedbackAreaAction(
   return { success: `Bereich „${parsed.data.name}" angelegt.` };
 }
 
+/**
+ * Manipulierte RPC-Argumente dürfen keinen pg-Fehler (500) auslösen: Eine
+ * gebundene Action-ID landet ungeprüft in der WHERE-Klausel, und ein
+ * Nicht-Integer lässt PostgreSQL den Vergleich abweisen. Gleiches Muster wie in
+ * `app/intern/board/[id]/einstellungen/actions.ts`.
+ */
+const isValidId = (id: number): boolean => Number.isInteger(id) && id > 0;
+
 export async function renameFeedbackAreaAction(
   areaId: number,
   _prev: State,
   formData: FormData,
 ): Promise<State> {
   await requireAdmin();
+  if (!isValidId(areaId)) return { error: "Ungültiger Bereich." };
   const parsed = nameSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Ungültig." };
@@ -104,6 +113,7 @@ export async function renameFeedbackAreaAction(
 
 export async function deleteFeedbackAreaAction(areaId: number): Promise<void> {
   await requireAdmin();
+  if (!isValidId(areaId)) return;
   // feedback_submissions.area_id ist ON DELETE SET NULL → bestehende
   // Feedback-Karten und ihr Herkunfts-Snapshot bleiben erhalten.
   await db.delete(feedbackAreas).where(eq(feedbackAreas.id, areaId));
@@ -116,6 +126,7 @@ export async function setFeedbackAreaTargetAction(
   formData: FormData,
 ): Promise<State> {
   await requireAdmin();
+  if (!isValidId(areaId)) return { error: "Ungültiger Bereich." };
   // „Kein Ziel gewählt" (leer) und „ungültiger Wert" (NaN/Nachkommastellen)
   // strikt trennen: `Number("abc")` ist NaN und damit falsy — ein kaputter
   // Wert hätte sonst STILL das Routing entfernt und den Bereich deaktiviert.
@@ -172,6 +183,7 @@ export async function toggleFeedbackAreaEnabledAction(
   areaId: number,
 ): Promise<State> {
   await requireAdmin();
+  if (!isValidId(areaId)) return { error: "Ungültiger Bereich." };
   const [area] = await db
     .select()
     .from(feedbackAreas)

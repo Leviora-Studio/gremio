@@ -1,0 +1,1 @@
+ALTER TABLE "api_idempotency_keys" ADD COLUMN "client_hash" text;

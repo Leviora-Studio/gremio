@@ -83,6 +83,10 @@ Druckbares ASCII **ohne Leerzeichen**, 16–128 Zeichen; empfohlen ist eine
 **UUID v4**. Fehlt der Header oder ist er ungültig → `400`. Gespeichert wird
 nur ein SHA-256-Hash, nie der Klartext.
 
+Der Schlüssel ist zusätzlich an den **einreichenden Client** gebunden (siehe
+[Idempotenz](#idempotenz--so-muss-die-app-es-machen)) — von einer anderen
+Adresse ergibt derselbe Schlüssel `409`.
+
 ### Beispiel
 
 ```bash
@@ -118,7 +122,7 @@ gebildet — nie aus `Host` oder `X-Forwarded-Host`.
 | 200  | Idempotenz-Replay (zusätzlich `Idempotency-Replayed: true`) |
 | 400  | Ungültige Eingabe, fehlende Pflichtdatei, unzulässiger Dateityp, fehlender/ungültiger `Idempotency-Key` |
 | 404  | Standort nicht verfügbar |
-| 409  | `Idempotency-Key` bereits für eine **andere** Einreichung verwendet |
+| 409  | `Idempotency-Key` bereits für eine **andere** Einreichung oder von einem **anderen Client** verwendet |
 | 413  | Datei oder Request zu groß |
 | 415  | Content-Type ist nicht `multipart/form-data` |
 | 429  | Rate-Limit (mit `Retry-After`) |
@@ -227,7 +231,7 @@ keine Notizen.
 | `200` | Idempotenz-Replay (Header `Idempotency-Replayed: true`) |
 | `400` | Ungültige oder unbekannte Felder, fehlender/ungültiger `Idempotency-Key` |
 | `404` | Bereich nicht verfügbar |
-| `409` | `Idempotency-Key` mit anderen Daten wiederverwendet |
+| `409` | `Idempotency-Key` mit anderen Daten oder von einem anderen Client wiederverwendet |
 | `413` | Body größer als 32 KiB |
 | `415` | Content-Type ist nicht `application/json` |
 | `429` | Rate-Limit (siehe unten) |
@@ -407,6 +411,7 @@ verwendet werden, ohne zu kollidieren.
 | Neuer Key | Antrag wird angelegt → `201` |
 | Bekannter Key, **identische** Daten | Nichts wird erneut angelegt → `200` + `Idempotency-Replayed: true`, dieselbe `statusUrl`/`receiptPdfUrl`/`number` |
 | Bekannter Key, **veränderte** Daten | `409 Conflict` |
+| Bekannter Key, **anderer Client** | `409 Conflict` |
 
 Ein Replay legt **keine** zweite Karte an, speichert **keine** Dateien erneut,
 schreibt **keinen** weiteren Aktivitätseintrag und verbraucht **keine** weitere
@@ -417,6 +422,30 @@ Zwei wirklich parallele Requests mit demselben Key erzeugen genau **eine** Karte
 
 Nach einem fehlgeschlagenen und vollständig zurückgerollten Request ist derselbe
 Key **weiterhin verwendbar** — es bleibt kein blockierender Datensatz zurück.
+
+### Bindung an den Client
+
+Ein Replay gibt den **geheimen Status-Link** der ursprünglichen Einreichung
+zurück. Damit ein erratener oder abgefangener Schlüssel nicht den Vorgang eines
+fremden Einreichers preisgibt, wird zum Schlüssel eine **pseudonyme
+Client-Kennung** gespeichert (HMAC der Adresse — nie die Adresse selbst, kein
+Cookie, kein Login). Passt sie beim Replay nicht, antwortet die API mit `409`
+statt mit dem Status-Link.
+
+Die Fehlermeldung unterscheidet **nicht** zwischen „andere Daten" und „anderer
+Client" — sonst ließe sich damit prüfen, ob ein bestimmter Schlüssel bereits
+vergeben ist.
+
+**Für die App heißt das:** Wechselt das Netz zwischen Absenden und Retry (WLAN →
+Mobilfunk, Zellwechsel), kann derselbe Schlüssel `409` ergeben, obwohl der
+Antrag noch nicht angekommen ist. Richtige Reaktion auf `409`: **einen neuen
+Schlüssel erzeugen** und erneut senden. Ob die erste Einreichung durchkam, lässt
+sich anschließend über den zurückgelieferten Status-Link prüfen.
+
+> Grenze: Die Kennung ist eine Adresse, kein Gerät. Hinter demselben NAT
+> (Hochschulnetz, Mobilfunk-Carrier) teilen sich viele Clients eine Kennung —
+> dort schützt die Bindung nicht. Sie hebt die Hürde, sie ersetzt keinen
+> zufälligen Schlüssel: **UUID v4 verwenden.**
 
 ### Aufbewahrungsfrist: 30 Tage
 

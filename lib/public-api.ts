@@ -161,14 +161,40 @@ export async function enforceRateLimits(
 }
 
 /**
+ * Die auslösende Codestelle aus dem Stacktrace — ohne die Fehlermeldung.
+ *
+ * `error.stack` beginnt mit „Name: message", und die Meldung kann MEHRZEILIG
+ * sein: `DrizzleQueryError` hängt die Query-Parameter als zweite Zeile an. Ein
+ * schlichtes `stack.split("\n")[1]` liefert deshalb genau diese Parameterzeile
+ * — also den geheimen Status-Token. Gesucht wird stattdessen die erste Zeile im
+ * echten Frame-Format („    at fn (datei:zeile:spalte)"); eine Meldungszeile
+ * passt darauf nicht.
+ */
+function firstStackFrame(e: unknown): string | undefined {
+  if (!(e instanceof Error) || typeof e.stack !== "string") return undefined;
+  return e.stack
+    .split("\n")
+    .find((l) => /^\s+at\s.+:\d+:\d+\)?$/.test(l))
+    ?.trim();
+}
+
+/**
  * Fängt UNERWARTETE Fehler eines öffentlichen Handlers ab und antwortet mit dem
  * dokumentierten JSON-Fehlerformat statt Nexts HTML-Fehlerseite.
  *
  * Die OpenAPI-Spezifikation sichert für alle öffentlichen Endpunkte einen
  * 500er als `application/json` zu — ohne diesen Mantel bekamen native Clients
  * bei einem Datenbankausfall (oder einem Fehler VOR den try-Blöcken der
- * Fachlogik, z. B. beim Standort-Lookup) text/html. Geloggt wird nur die
- * Fehlermeldung — nie Request-Daten oder Tokens.
+ * Fachlogik, z. B. beim Standort-Lookup) text/html.
+ *
+ * GELOGGT WIRD NIE DIE FEHLERMELDUNG. Sie ist die einzige Stelle, an der
+ * Nutzerwerte stecken können: `DrizzleQueryError.message` hängt die
+ * Query-PARAMETER an — bei einer Token-Abfrage also den geheimen Status-Token.
+ * Früher wurde nur die erste Zeile geloggt, weil die Parameter ab der zweiten
+ * stehen; das hing aber am Meldungsformat einer Abhängigkeit und wäre bei einer
+ * Formatänderung still zu einem Token-Leck geworden. Stattdessen werden nur
+ * wertfreie Angaben geloggt: Fehlerklasse, SQLSTATE und die erste Stelle im
+ * Stacktrace — zusammen genug, um die Ursache zu finden.
  */
 export function withPublicApi500<A extends unknown[]>(
   handler: (...args: A) => Promise<Response>,
@@ -178,14 +204,13 @@ export function withPublicApi500<A extends unknown[]>(
     try {
       return await handler(...args);
     } catch (e) {
-      // NUR die erste Zeile loggen: `DrizzleQueryError.message` enthält ab der
-      // zweiten Zeile die Query-PARAMETER — bei Token-Abfragen also den
-      // geheimen Status-Token. Der SQLSTATE aus `cause` bleibt fürs Debugging.
-      const firstLine = (e instanceof Error ? e.message : String(e)).split("\n")[0];
+      const name = e instanceof Error ? e.name : typeof e;
       const code = (e as { cause?: { code?: string } })?.cause?.code;
+      const frame = firstStackFrame(e);
       console.error(
-        `[public-api] Unerwarteter Fehler${code ? ` (SQLSTATE ${code})` : ""}:`,
-        firstLine,
+        `[public-api] Unerwarteter Fehler: ${name}` +
+          (code ? ` (SQLSTATE ${code})` : "") +
+          (frame ? ` · ${frame}` : ""),
       );
       return publicApiError(500, message);
     }

@@ -23,6 +23,7 @@ import {
   deleteLoan,
   getDefectById,
   getLoanById,
+  LoanCapacityError,
   rejectLoan,
   removeLoanItem,
   returnLoan,
@@ -79,14 +80,22 @@ export async function createLoanAction(fd: FormData): Promise<void> {
     const n = typeof raw === "string" ? Number.parseInt(raw.trim(), 10) : NaN;
     quantity = Number.isInteger(n) && n >= 1 ? Math.min(n, avail) : 1;
   }
-  await createLoan([{ itemId, quantity }], userId, {
-    borrower,
-    borrowerEmail: null,
-    purpose: text(fd, "purpose"),
-    startDate: date(fd, "startDate"),
-    endDate: date(fd, "endDate"),
-    notes: text(fd, "notes", 2000),
-  });
+  try {
+    await createLoan([{ itemId, quantity }], userId, {
+      borrower,
+      borrowerEmail: null,
+      purpose: text(fd, "purpose"),
+      startDate: date(fd, "startDate"),
+      endDate: date(fd, "endDate"),
+      notes: text(fd, "notes", 2000),
+    });
+  } catch (e) {
+    // Die Menge wurde zwischen Vorprüfung und Anlage vergeben (oder das
+    // Einzelstück ist bereits verliehen). Wie die übrigen Abbrüche in dieser
+    // Datei ohne Meldung zurückkehren — die Seite lädt neu und zeigt den
+    // aktuellen Bestand. Alles andere weiterwerfen.
+    if (!(e instanceof LoanCapacityError)) throw e;
+  }
   revItem(item);
 }
 

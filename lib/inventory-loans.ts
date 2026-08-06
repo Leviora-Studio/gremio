@@ -305,9 +305,19 @@ export async function addLoanItem(
   itemId: number,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    // Serialisieren gegen parallele Zuordnungen desselben Vorgangs.
+    // ZWEI Sperren, IMMER in dieser Reihenfolge (siehe LOAN_ITEMS_LOCK_NS):
+    //  1. Stück-Sperre — gegen gleichzeitige Anfragen auf denselben Bestand
+    //     (`createLoanRequest`/`createLoan` nehmen dieselbe Sperre).
+    //  2. Vorgangs-Sperre — gegen ein gleichzeitiges `removeLoanItem` AM SELBEN
+    //     Vorgang. Ohne sie konnten Zuordnen und Entfernen ineinanderlaufen:
+    //     Das Entfernen las die Mengen, das Zuordnen erhöhte sie dazwischen,
+    //     und die anschließende DELETE-/Reduzier-Entscheidung fiel auf einem
+    //     veralteten Stand (zwei Einheiten weg statt einer).
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${itemId})`,
+    );
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${LOAN_ITEMS_LOCK_NS}, ${loanId})`,
     );
     const [loan] = await tx
       .select({ itemId: inventoryLoans.itemId })
@@ -370,9 +380,10 @@ export async function removeLoanItem(
 ): Promise<void> {
   // Lesen + Ändern + Leit-Stück-Umzug atomar (kein TOCTOU zwischen den Schritten).
   await db.transaction(async (tx) => {
-    // Serialisieren gegen ein zweites Entfernen AM SELBEN VORGANG. Eine
-    // Transaktion allein reichte nicht: Unter READ COMMITTED sehen zwei
-    // gleichzeitige Aufrufe beide dieselbe Ausgangsmenge, und beide zogen 1 ab.
+    // Serialisieren gegen ein zweites Entfernen ODER ein Zuordnen AM SELBEN
+    // VORGANG (`addLoanItem` nimmt dieselbe Sperre). Eine Transaktion allein
+    // reichte nicht: Unter READ COMMITTED sehen zwei gleichzeitige Aufrufe
+    // beide dieselbe Ausgangsmenge, und beide zogen 1 ab.
     // Bei Menge 2 endete das auf 0 und verletzte
     // `inventory_loan_items_quantity` (CHECK quantity >= 1) → HTTP 500; beim
     // `totalUnits <= 1`-Tor konnte so sogar der letzte Stück-Eintrag
@@ -438,6 +449,14 @@ export async function removeLoanItem(
 /**
  * Neuen Entleihvorgang anlegen — reserviert 1..n konkrete Stücke. `itemIds[0]`
  * ist das Leit-Stück (loans.item_id), alle Stücke landen in loan_items.
+ *
+ * Wie die öffentliche Anfrage gegen Überbuchung abgesichert: dieselben
+ * Stück-Sperren (`loanRequestLockIds`) und dieselbe Prüfung der freien Menge
+ * INNERHALB der Sperren. Vorher lief der interne Weg ganz ohne beides — die
+ * Vorprüfung der Server-Action griff nur bei Mengen-Gegenständen und war
+ * ohnehin ein TOCTOU-Fenster; ein bereits verliehenes Einzelstück ließ sich so
+ * ein zweites Mal ausleihen. Bei zu wenig freier Menge wirft die Funktion
+ * `LoanCapacityError` — der Aufrufer entscheidet, wie er das meldet.
  */
 export async function createLoan(
   units: LoanUnit[],
@@ -451,6 +470,23 @@ export async function createLoan(
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await db.transaction(async (tx) => {
+        // Sperrreihenfolge und Prüfung identisch zu createLoanRequest, damit
+        // öffentlicher und interner Weg nicht auseinanderlaufen können.
+        for (const lockItemId of loanRequestLockIds(units)) {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${lockItemId})`,
+          );
+        }
+        const free = await getFreeQuantities(
+          units.map((u) => u.itemId),
+          { tx },
+        );
+        for (const u of units) {
+          if (u.quantity > (free.get(u.itemId) ?? 0)) {
+            throw new LoanCapacityError();
+          }
+        }
+
         const [row] = await tx
           .insert(inventoryLoans)
           .values({
@@ -560,13 +596,38 @@ export class LoanCapacityError extends Error {
   }
 }
 
-// Advisory-Lock-Namespace, der Anfragen auf dasselbe Leit-Stück serialisiert
+// Advisory-Lock-Namespace, der Anfragen auf DIESELBEN Stücke serialisiert
 // ("LR" = Loan Request) — verhindert Überbuchung durch zwei gleichzeitige
 // Anfragen, die beide noch die alte Verfügbarkeit gesehen haben.
 const LOAN_REQUEST_LOCK_NS = 0x4c52;
 
+/**
+ * Die Stück-IDs, die eine Anfrage sperren muss: ALLE beteiligten Stücke,
+ * dedupliziert und AUFSTEIGEND sortiert.
+ *
+ * Nur das Leit-Stück zu sperren reichte nicht: Eine Obergruppen-Anfrage
+ * reserviert mehrere Stücke, nimmt aber nur den Lock auf `units[0]`. Eine
+ * zweite, gleichzeitige Anfrage mit einem anderen Leit-Stück — etwa die direkte
+ * Einzel-/Mengen-Anfrage auf ein Gruppenmitglied über
+ * `/inventar/{id}/anfrage?item=…` — wartete deshalb nicht, sah dieselbe freie
+ * Menge und buchte denselben Bestand ein zweites Mal (Überbuchung).
+ *
+ * Die aufsteigende Sortierung ist Pflicht: Zwei Anfragen mit überlappenden
+ * Stückmengen nehmen die Sperren so immer in derselben Reihenfolge und können
+ * einander nicht verklemmen.
+ */
+export function loanRequestLockIds(units: LoanUnit[]): number[] {
+  return [...new Set(units.map((u) => u.itemId))].sort((a, b) => a - b);
+}
+
 // Namespace für den Lock, der Stück-Zuordnungen EINES Vorgangs serialisiert
 // (pg_advisory_xact_lock(ns, loanId)); "LI" = Loan Items.
+//
+// SPERRREIHENFOLGE (verbindlich): erst LOAN_REQUEST_LOCK_NS (Stück), dann
+// LOAN_ITEMS_LOCK_NS (Vorgang). `addLoanItem` braucht beide; `removeLoanItem`
+// nimmt NUR die Vorgangs-Sperre und wartet nie auf eine Stück-Sperre, kann also
+// keinen Zyklus schließen. `createLoanRequest`/`createLoan` nehmen ausschließlich
+// Stück-Sperren. Damit ist die Reihenfolge global konsistent — kein Deadlock.
 const LOAN_ITEMS_LOCK_NS = 0x4c49;
 
 /**
@@ -594,11 +655,16 @@ export async function createLoanRequest(
       const token = generateToken();
       try {
         return await db.transaction(async (tx) => {
-          // Gegen Überbuchung serialisieren; Lock endet mit der Transaktion.
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${leadItemId})`,
-          );
-          // Verfügbarkeit INNERHALB der Sperre erneut prüfen — die Werte aus der
+          // Gegen Überbuchung serialisieren; die Locks enden mit der Transaktion.
+          // ALLE beteiligten Stücke sperren, nicht nur das Leit-Stück (siehe
+          // loanRequestLockIds) — sonst reservieren zwei gleichzeitige Anfragen
+          // mit verschiedenen Leit-Stücken dieselbe Menge doppelt.
+          for (const lockItemId of loanRequestLockIds(units)) {
+            await tx.execute(
+              sql`SELECT pg_advisory_xact_lock(${LOAN_REQUEST_LOCK_NS}, ${lockItemId})`,
+            );
+          }
+          // Verfügbarkeit INNERHALB der Sperren erneut prüfen — die Werte aus der
           // Server-Action können zwischenzeitlich veraltet sein.
           const free = await getFreeQuantities(
             units.map((u) => u.itemId),

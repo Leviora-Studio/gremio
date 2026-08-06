@@ -20,6 +20,7 @@ import {
   computeRequestFingerprint,
   findIdempotencyRecordTx,
   hashIdempotencyKey,
+  idempotencyClientHash,
   insertIdempotencyRecordTx,
   isValidIdempotencyKey,
   lockIdempotencyKeyTx,
@@ -84,6 +85,11 @@ export const POST = withPublicApi500(async function POST(req: Request) {
     );
   }
   const keyHash = hashIdempotencyKey(rawKey);
+  // Pseudonyme Client-Kennung EINMAL vor der Transaktion bestimmen (liest
+  // Request-Header). Sie bindet den Schlüssel an den Einreicher: Ein Replay
+  // gibt den geheimen Status-Link zurück und darf deshalb nur an denselben
+  // Client gehen.
+  const clientHash = await idempotencyClientHash();
 
   // --- Body lesen (mit harter Grenze) -------------------------------------
   // Erst vollständig unter Aufsicht lesen, dann parsen: `req.formData()` würde
@@ -138,6 +144,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
           SCOPE_PUBLIC_APPLICATION,
           keyHash,
           requestHash,
+          clientHash,
         );
         if (!hit) return null; // neuer Key → normal anlegen
         return hit.conflict
@@ -153,6 +160,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
           keyHash,
           requestHash,
           ctx.cardId,
+          clientHash,
         );
       },
     },
@@ -161,9 +169,12 @@ export const POST = withPublicApi500(async function POST(req: Request) {
   // --- Idempotenz-Ausgänge ------------------------------------------------
   if (!result.ok && result.reason === "aborted") {
     if (result.value.kind === "conflict") {
+      // Bewusst EINE Meldung für „andere Daten" und „anderer Client" — die
+      // Antwort verrät damit nicht, ob ein fremder Einreicher denselben
+      // Schlüssel benutzt. Beides behebt derselbe Schritt: neuen Key erzeugen.
       return publicApiError(
         409,
-        "Der Idempotency-Key wurde bereits für eine andere Einreichung verwendet.",
+        "Der Idempotency-Key wurde bereits für eine andere Einreichung oder von einem anderen Client verwendet.",
       );
     }
     // Replay: nichts wurde erneut geschrieben — keine Karte, keine Datei,

@@ -721,6 +721,15 @@ export const apiIdempotencyKeys = pgTable(
     scope: text("scope").notNull(), // z. B. 'public-application'
     keyHash: text("key_hash").notNull(), // SHA-256 des Idempotency-Key (hex)
     requestHash: text("request_hash").notNull(), // kanonischer Request-Fingerprint
+    // Pseudonyme Kennung des einreichenden Clients (HMAC der IP, siehe
+    // lib/client-ip.ts) — NIE die IP selbst. Ein Replay liefert den geheimen
+    // Status-Link zurück; ohne diese Bindung genügte ein erratener/abgefangener
+    // Idempotency-Key mit identischen Daten, um an den Vorgang eines FREMDEN
+    // Clients zu kommen. Weicht die Kennung ab, wird der Schlüssel wie ein
+    // Konflikt behandelt (409) statt als Replay beantwortet.
+    // NULL = Altbestand aus der Zeit vor dieser Prüfung; solche Zeilen bleiben
+    // replay-fähig und verfallen ohnehin nach IDEMPOTENCY_TTL_DAYS.
+    clientHash: text("client_hash"),
     // Wird die Karte gelöscht, verfällt auch der Schlüssel — sonst bliebe ein
     // Eintrag zurück, der auf nichts mehr zeigt.
     cardId: integer("card_id")

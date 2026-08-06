@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { formDocuments, locations } from "@/lib/db/schema";
+import { formDocuments } from "@/lib/db/schema";
 import { makeFormGuard } from "@/lib/antispam";
+import { listPublicLocations } from "@/lib/public-application-submission";
 import { PublicAntragForm } from "@/components/PublicAntragForm";
 import { PublicNav } from "@/components/PublicNav";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const enabled = await db
-    .select({ id: locations.id, name: locations.name })
-    .from(locations)
-    .where(eq(locations.enabled, true))
-    .orderBy(asc(locations.position));
+  // Gemeinsame Quelle mit der öffentlichen API: aktiviert UND vollständig
+  // geroutet. Ein Standort ohne gültiges Ziel darf gar nicht erst zur Auswahl
+  // stehen — die Einreichung würde ihn ohnehin abweisen.
+  const enabled = await listPublicLocations();
   const docs = await db
     .select({ id: formDocuments.id, filename: formDocuments.filename })
     .from(formDocuments)
