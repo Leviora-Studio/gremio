@@ -31,9 +31,11 @@ export type LoanRequestTarget = {
 export function PublicLoanRequestForm({
   boardId,
   target,
+  guard,
 }: {
   boardId: number;
   target: LoanRequestTarget;
+  guard: { ts: string; sig: string };
 }) {
   const [state, action, pending] = useActionState(
     createInventoryLoanRequestAction,
@@ -41,6 +43,7 @@ export function PublicLoanRequestForm({
   );
   const [missing, setMissing] = useState<string[]>([]);
   const showQuantity = target.kind !== "single";
+  const aktuellerGuard = state.guard ?? guard;
 
   // Wie im Antragsformular bewusst KEIN <form action={action}>: React 19 setzt
   // das Formular nach einer Action zurück und würde dabei die ausgewählte
@@ -70,8 +73,33 @@ export function PublicLoanRequestForm({
     startTransition(() => action(fd));
   }
 
+  // „Danke"-Bestätigung — auch für still verworfene Bot-Einsendungen. Bewusst
+  // ohne Status-Link: den gibt es nur bei einer echten Anfrage (dort leitet die
+  // Action direkt auf die Statusseite weiter).
+  if (state.ok) {
+    return (
+      <div className="text-center">
+        <p className="text-lg font-semibold text-green-700">
+          Vielen Dank — deine Anfrage wurde übermittelt.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      {/* Zeitfalle (signiert). Nach einem abgelaufenen Token liefert die Action
+          ein frisches mit — sonst scheiterte der zweite Versuch genauso. */}
+      <input type="hidden" name="ts" value={aktuellerGuard.ts} />
+      <input type="hidden" name="sig" value={aktuellerGuard.sig} />
+      {/* Honeypot: für Menschen unsichtbar, Bots füllen es aus → still verworfen */}
+      <div className="absolute left-[-9999px] top-[-9999px]" aria-hidden="true">
+        <label>
+          Website
+          <input type="text" name="website" tabIndex={-1} autoComplete="off" />
+        </label>
+      </div>
+
       {target.kind === "group" ? (
         <>
           <input type="hidden" name="boardId" value={boardId} />

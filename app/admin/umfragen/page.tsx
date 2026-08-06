@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
+import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { boards, boardStatuses, feedbackAreas } from "@/lib/db/schema";
@@ -19,7 +20,13 @@ export default async function UmfragenPage() {
     .from(feedbackAreas)
     .orderBy(feedbackAreas.position, feedbackAreas.id);
 
-  const allBoards = await db.select().from(boards).orderBy(boards.name);
+  // Leih-System-Boards sind kein zulässiges Ziel (siehe
+  // setFeedbackAreaTargetAction) — gar nicht erst anbieten.
+  const allBoards = await db
+    .select()
+    .from(boards)
+    .where(isNull(boards.inventoryBoardId))
+    .orderBy(boards.name);
   const allStatuses = await db
     .select()
     .from(boardStatuses)

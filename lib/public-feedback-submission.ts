@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
+  boards,
   boardStatuses,
   cardActivity,
   cards,
@@ -172,16 +173,21 @@ export async function submitPublicFeedback<T = never>(
   // gehören. Die beiden FKs sind einzeln gültig, auch wenn die Spalte zu einem
   // anderen Board zeigt — ohne diese Prüfung entstünde eine Karte, die auf
   // keinem Board auftaucht.
+  //
+  // Zusätzlich darf das Ziel kein Leih-System-Board sein (identische Bedingung
+  // wie in `listPublicFeedbackAreas`, Begründung dort).
   const routedStatus =
     area?.targetBoardId && area?.targetStatusId
       ? (
           await db
             .select({ id: boardStatuses.id })
             .from(boardStatuses)
+            .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
             .where(
               and(
                 eq(boardStatuses.id, area.targetStatusId),
                 eq(boardStatuses.boardId, area.targetBoardId),
+                isNull(boards.inventoryBoardId),
               ),
             )
             .limit(1)
@@ -403,7 +409,14 @@ export async function getFeedbackByCardId(
   return row;
 }
 
-/** Öffentlich auswählbare Bereiche: aktiviert UND vollständig/korrekt geroutet. */
+/**
+ * Öffentlich auswählbare Bereiche: aktiviert UND vollständig/korrekt geroutet.
+ *
+ * Leih-System-Boards (`boards.inventory_board_id`) fallen heraus — genau wie bei
+ * den Standorten: Sie tragen nur die Tracking-Karten der Leihvorgänge, und die
+ * öffentlichen Kartenrouten weisen Karten von dort mit 404 ab. Ein dorthin
+ * gerouteter Bereich lieferte also einen Status-Link ins Leere.
+ */
 export async function listPublicFeedbackAreas(): Promise<
   { id: number; name: string }[]
 > {
@@ -419,6 +432,7 @@ export async function listPublicFeedbackAreas(): Promise<
         eq(boardStatuses.boardId, feedbackAreas.targetBoardId),
       ),
     )
-    .where(eq(feedbackAreas.enabled, true))
+    .innerJoin(boards, eq(boards.id, feedbackAreas.targetBoardId))
+    .where(and(eq(feedbackAreas.enabled, true), isNull(boards.inventoryBoardId)))
     .orderBy(feedbackAreas.position, feedbackAreas.id);
 }

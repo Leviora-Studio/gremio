@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNotNull, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { boardStatuses, locations } from "@/lib/db/schema";
+import { boards, boardStatuses, locations } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
 import { sanitizeSingleLine } from "@/lib/text";
@@ -129,6 +129,23 @@ export async function setLocationTargetAction(
   const statusId = Number(statusStr);
   if (!Number.isInteger(statusId) || statusId <= 0) {
     return { error: "Ungültige Ziel-Spalte." };
+  }
+  // Leih-System-Boards scheiden als Ziel aus: Sie tragen ausschließlich die
+  // Tracking-Karten der Leihvorgänge, und die öffentlichen Kartenrouten weisen
+  // Karten von dort mit 404 ab (lib/public-status.ts). Ein dorthin gerouteter
+  // Antrag würde zwar angelegt, sein Status-Link führte aber sofort ins Leere —
+  // die REST-API lehnt das Anlegen dort aus demselben Grund mit 409 ab.
+  const [zielBoard] = await db
+    .select({ inventoryBoardId: boards.inventoryBoardId })
+    .from(boards)
+    .where(eq(boards.id, boardId))
+    .limit(1);
+  if (!zielBoard) return { error: "Ungültiges Ziel-Board." };
+  if (zielBoard.inventoryBoardId != null) {
+    return {
+      error:
+        "Leihvorgang-Boards können kein Ziel sein — sie werden über das Inventar verwaltet. Bitte ein normales Board wählen.",
+    };
   }
   const [status] = await db
     .select({ id: boardStatuses.id })

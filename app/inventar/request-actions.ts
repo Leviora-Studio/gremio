@@ -5,6 +5,12 @@
 
 import { join } from "node:path";
 import { redirect } from "next/navigation";
+import {
+  checkFormTiming,
+  FORM_GUARD_EXPIRED_MESSAGE,
+  isHoneypotFilled,
+  makeFormGuard,
+} from "@/lib/antispam";
 import { allowFormRequest } from "@/lib/rate-limit";
 import {
   getAvailableGroupUnits,
@@ -30,7 +36,16 @@ export type RequestValues = {
   purpose: string;
   quantity: string;
 };
-export type RequestState = { error?: string; values?: RequestValues };
+// `guard` ist ein FRISCHES Zeitfallen-Token: Ohne das behielte das Formular sein
+// abgelaufenes und der zweite Versuch scheiterte genauso. `ok` deckt die still
+// verworfenen Bot-Einsendungen ab (gefälschte Bestätigung) — wie bei Antrag und
+// Feedback, siehe app/actions.ts bzw. app/feedback/actions.ts.
+export type RequestState = {
+  error?: string;
+  ok?: boolean;
+  values?: RequestValues;
+  guard?: { ts: string; sig: string };
+};
 
 // Datum + Uhrzeit (datetime-local) — Pflicht.
 const isDateTime = (s: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s);
@@ -57,6 +72,32 @@ export async function createInventoryLoanRequestAction(
     return {
       error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut.",
       values,
+    };
+  }
+
+  // Spam-Schutz wie beim Antrags- und Feedback-Formular: Honeypot + signierte
+  // Zeitfalle. Bewusst VOR jeder fachlichen Prüfung und vor jedem Datei-/
+  // Datenbankzugriff — eine still verworfene Einsendung darf weder eine Datei
+  // schreiben noch einen Vorgang anlegen.
+  //
+  // Honeypot und „zu schnell ausgefüllt" täuschen eine Bestätigung vor, ohne
+  // etwas anzulegen: Der Bot soll nicht lernen, woran er scheitert. Für einen
+  // Menschen sind die 3 Sekunden hier ohnehin unerreichbar (Name, E-Mail, zwei
+  // Zeitpunkte, Zweck und ein Datei-Upload).
+  const timing = await checkFormTiming(formData.get("ts"), formData.get("sig"));
+  if (isHoneypotFilled(formData.get("website")) || timing === "too_fast") {
+    return { ok: true };
+  }
+  // Abgelaufenes/fremdes Token trifft dagegen auch echte Nutzer (zu lange
+  // offener Tab, Netzwechsel). Hier wäre eine stille Fake-Bestätigung besonders
+  // fatal: Der Entleiher hielte die Anfrage für gestellt und wartete auf eine
+  // Rückmeldung, die nie kommt. Also sichtbare Meldung samt frischem Token; die
+  // Eingaben und die gewählte Ausweis-Datei bleiben im Formular erhalten.
+  if (timing === "invalid") {
+    return {
+      error: FORM_GUARD_EXPIRED_MESSAGE,
+      values,
+      guard: await makeFormGuard(),
     };
   }
 

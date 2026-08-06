@@ -232,6 +232,7 @@ Das öffentliche Formular enthält ein Pflicht-Auswahlfeld **Standort**. Pro Sta
 - Jeder Standort ist **aktivierbar/deaktivierbar** — nur aktivierte erscheinen im öffentlichen Formular
 - Ein Standort ist erst auswählbar/aktivierbar, wenn ihm ein **Ziel-Board + Ziel-Spalte** zugewiesen wurde (sonst gäbe es kein Ziel)
 - Die Ziel-Spalte muss zum Ziel-Board gehören (App-seitig geprüft). Öffentliches Formular, `GET /api/public/v1/locations` und die Einreichungslogik benutzen dafür **dieselbe** Abfrage (`listPublicLocations`) — ein Standort mit unvollständigem/falschem Routing erscheint nirgends zur Auswahl, statt erst beim Absenden abgewiesen zu werden
+- **Leih-System-Boards sind kein zulässiges Ziel** (`boards.inventory_board_id`): Sie tragen nur die Tracking-Karten der Leihvorgänge, und die öffentlichen Antrags-/Feedback-Routen weisen Karten von dort mit 404 ab — der Status-Link führte also ins Leere. Die Admin-Auswahl bietet sie nicht an, `setLocationTargetAction` lehnt sie ab, und Auswahlliste wie Einreichungslogik filtern sie zusätzlich heraus (gilt für Feedback-Bereiche genauso)
 - **Löschschutz:** Ein Board/eine Spalte kann **nicht gelöscht** werden, solange ein Standort darauf zeigt — der Admin muss das Routing vorher umstellen (daher `locations.target_*` **nicht** `ON DELETE CASCADE`)
 - Konfiguration im Admin Panel unter `/admin/standorte`
 
@@ -453,7 +454,7 @@ Zwei Schalter bleiben **dem Admin vorbehalten**:
 ### Öffentlicher Ausleih-Ablauf
 
 1. `/inventar` listet die vom Admin freigegebenen Inventare, `/inventar/{id}` die verfügbaren Gegenstände (suchen, nach Kategorie filtern).
-2. Anfrage absenden → Vorgang `requested` + **Status-Token**; falls ein Leihboard existiert, entsteht die Karte in der ersten Spalte.
+2. Anfrage absenden → Vorgang `requested` + **Status-Token**; falls ein Leihboard existiert, entsteht die Karte in der ersten Spalte. Das Formular hat denselben Spam-Schutz wie Antrag und Feedback — **Honeypot, signierte Zeitfalle** und einen eigenen Rate-Limit-Scope (`inventory-request`); geprüft wird vor jedem Datei- und Datenbankzugriff, damit eine verworfene Einsendung weder eine Ausweis-Datei schreibt noch einen Vorgang anlegt.
 3. `/inventar/status/{token}` zeigt den Fortschritt **anhand der Kartenspalten** (Stepper) plus die Hinweise des Verleihers (`borrower_note`). Dort kann der Entleiher den bereitgestellten Vertrag herunterladen, den unterschriebenen hochladen und **„Vertrag einsenden"** — das bewegt die Karte von „Vertrag bereitgestellt" nach „Vertrag unterschrieben", aber **nur aus dieser Quell-Spalte** (nie rückwärts, kein Überspringen; gleiches Von→Nach-Prinzip wie der Quittungs-Zug auf normalen Boards). Außerdem kann er die Anfrage zurückziehen.
 
 **Öffentlich sichtbar ist eine bewusste Whitelist** (`PUBLIC_INVENTORY_FIELD_KEYS` in `lib/inventory-public.ts`): nur **Bezeichnung, Kategorie, Stückzahl/Verfügbarkeit** und ggf. „entliehen bis \<Datum\>" — **ohne Person**. **Nicht öffentlich:** Inventar-/Seriennummer, Standort, Kaufpreis, Händler, Kaufdatum, Belege, „aktuell bei" und Verträge. Gezeigt werden ausschließlich Gegenstände mit `lendable = true` **und** `condition = 'active'`.
@@ -530,7 +531,7 @@ user_inventory_board_order (user_id, board_id, position, PRIMARY KEY(user_id, bo
 
 ## Umfragen & Feedback
 
-Öffentliches Feedback unter `/feedback` — fachlich wie das Antragsformular, nur ohne Dateien. Statt **Standorten** gibt es **Feedback-Bereiche** (`feedback_areas`), die der Admin unter `/admin/umfragen` („Umfragen & Feedback-Routing") verwaltet: anlegen, umbenennen, löschen, Ziel-Board + Ziel-Spalte setzen, aktivieren/deaktivieren. Es gelten dieselben Regeln wie bei Standorten — nur aktivierte und **vollständig geroutete** Bereiche erscheinen öffentlich, die Zielspalte muss zum Ziel-Board gehören, und Board/Spalte sind gegen Löschen geschützt (`ON DELETE RESTRICT` + verständliche Meldung).
+Öffentliches Feedback unter `/feedback` — fachlich wie das Antragsformular, nur ohne Dateien. Statt **Standorten** gibt es **Feedback-Bereiche** (`feedback_areas`), die der Admin unter `/admin/umfragen` („Umfragen & Feedback-Routing") verwaltet: anlegen, umbenennen, löschen, Ziel-Board + Ziel-Spalte setzen, aktivieren/deaktivieren. Es gelten dieselben Regeln wie bei Standorten — nur aktivierte und **vollständig geroutete** Bereiche erscheinen öffentlich, die Zielspalte muss zum Ziel-Board gehören, **Leih-System-Boards scheiden als Ziel aus**, und Board/Spalte sind gegen Löschen geschützt (`ON DELETE RESTRICT` + verständliche Meldung).
 
 Eine Einreichung erzeugt eine **normale Kanban-Karte**:
 - `cards.applicant` = Name des Einreichers — **optional**; ohne Angabe wird `Anonym` gespeichert (`normalizeSubmitterName`, gilt für Formular und API). `cards.notes` = **vollständiger** Feedbacktext

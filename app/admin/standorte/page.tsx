@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Erik Engler
 
+import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { boards, boardStatuses, locations } from "@/lib/db/schema";
@@ -17,7 +18,13 @@ export default async function StandortePage() {
     .from(locations)
     .orderBy(locations.position);
 
-  const allBoards = await db.select().from(boards).orderBy(boards.name);
+  // Leih-System-Boards sind kein zulässiges Ziel (siehe setLocationTargetAction)
+  // — gar nicht erst anbieten, statt die Auswahl erst beim Speichern abzuweisen.
+  const allBoards = await db
+    .select()
+    .from(boards)
+    .where(isNull(boards.inventoryBoardId))
+    .orderBy(boards.name);
   const allStatuses = await db
     .select()
     .from(boardStatuses)

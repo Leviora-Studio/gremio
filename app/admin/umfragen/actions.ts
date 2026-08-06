@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNotNull, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { boardStatuses, feedbackAreas } from "@/lib/db/schema";
+import { boards, boardStatuses, feedbackAreas } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
 import { sanitizeSingleLine } from "@/lib/text";
@@ -152,6 +152,20 @@ export async function setFeedbackAreaTargetAction(
   const statusId = Number(statusStr);
   if (!Number.isInteger(statusId) || statusId <= 0) {
     return { error: "Ungültige Ziel-Spalte." };
+  }
+  // Wie beim Standort-Routing: Leih-System-Boards scheiden als Ziel aus
+  // (Begründung in app/admin/standorte/actions.ts).
+  const [zielBoard] = await db
+    .select({ inventoryBoardId: boards.inventoryBoardId })
+    .from(boards)
+    .where(eq(boards.id, boardId))
+    .limit(1);
+  if (!zielBoard) return { error: "Ungültiges Ziel-Board." };
+  if (zielBoard.inventoryBoardId != null) {
+    return {
+      error:
+        "Leihvorgang-Boards können kein Ziel sein — sie werden über das Inventar verwaltet. Bitte ein normales Board wählen.",
+    };
   }
   const [status] = await db
     .select({ id: boardStatuses.id })

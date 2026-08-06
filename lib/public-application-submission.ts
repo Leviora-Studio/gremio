@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import { createHash } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -169,6 +169,13 @@ export type SubmissionOptions<T> = {
  *
  * Der INNER JOIN mit Board-Bedingung ist exakt dieselbe Prüfung, die
  * `submitPublicApplication` beim Einreichen anwendet.
+ *
+ * Zusätzlich fallen Leih-System-Boards heraus (`boards.inventory_board_id`).
+ * Sie tragen ausschließlich die Tracking-Karten der Leihvorgänge, und
+ * `getApplicationStatusByToken` weist Karten von dort mit 404 ab — ein dorthin
+ * gerouteter Antrag bekäme also einen Status-Link, der sofort ins Leere führt.
+ * Die REST-API lehnt das Anlegen von Karten auf solchen Boards aus demselben
+ * Grund mit 409 ab.
  */
 export async function listPublicLocations(): Promise<
   { id: number; name: string }[]
@@ -183,7 +190,8 @@ export async function listPublicLocations(): Promise<
         eq(boardStatuses.boardId, locations.targetBoardId),
       ),
     )
-    .where(eq(locations.enabled, true))
+    .innerJoin(boards, eq(boards.id, locations.targetBoardId))
+    .where(and(eq(locations.enabled, true), isNull(boards.inventoryBoardId)))
     .orderBy(asc(locations.position), asc(locations.id));
 }
 
@@ -241,16 +249,22 @@ export async function submitPublicApplication<T = never>(
   // (die FKs verhindern das nicht, sie sind einzeln gültig). Ohne diese Prüfung
   // entstünde eine Karte, die in einer Spalte eines anderen Boards hängt und auf
   // keinem Board auftaucht.
+  //
+  // Und das Ziel darf kein Leih-System-Board sein — identische Bedingung wie in
+  // `listPublicLocations`, damit Auswahl und Einreichung nicht auseinanderlaufen
+  // (Begründung dort).
   const routedStatus =
     location?.targetBoardId && location?.targetStatusId
       ? (
           await db
             .select({ id: boardStatuses.id })
             .from(boardStatuses)
+            .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
             .where(
               and(
                 eq(boardStatuses.id, location.targetStatusId),
                 eq(boardStatuses.boardId, location.targetBoardId),
+                isNull(boards.inventoryBoardId),
               ),
             )
             .limit(1)

@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { makeFormGuard } from "@/lib/antispam";
 import { getPublicInventoryBoardById } from "@/lib/inventory-public";
 import {
   getAvailableGroupUnits,
@@ -78,6 +79,9 @@ export default async function PublicLoanRequestPage({
     notFound();
   }
 
+  // Zeitfallen-Token wie beim Antrags- und Feedback-Formular (Spam-Schutz).
+  const guard = await makeFormGuard();
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
       <div className="mb-6">
@@ -99,7 +103,11 @@ export default async function PublicLoanRequestPage({
         </div>
       ) : (
         <div className="card p-6">
-          <PublicLoanRequestForm boardId={board.id} target={target} />
+          <PublicLoanRequestForm
+            boardId={board.id}
+            target={target}
+            guard={guard}
+          />
         </div>
       )}
     </main>
