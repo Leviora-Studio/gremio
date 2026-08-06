@@ -160,20 +160,36 @@ export class BoardDeleteBlockedError extends Error {
   }
 }
 
-/** Board inkl. Karten/Anhänge/Stati/Freigaben löschen. Wirft bei Standort-Bindung. */
-export async function deleteBoardCascade(boardId: number): Promise<void> {
+/**
+ * Routing-Löschschutz eines Boards als reine Abfrage: Meldung, wenn ein Standort
+ * oder Feedback-Bereich darauf zeigt — sonst `null`.
+ *
+ * Eigene Funktion, weil sie an ZWEI Stellen gebraucht wird: `deleteBoardCascade`
+ * wirft daraus, und `deactivateLoanTrackingAction` (Inventar-Einstellungen) muss
+ * sie prüfen, BEVOR es das Leihboard vom Inventar entkoppelt. Dort lief das
+ * Entkoppeln sonst durch und erst der anschließende Löschversuch scheiterte —
+ * zurück blieb ein Inventar ohne Leihboard-Verknüpfung und ein Board, das ohne
+ * `inventory_board_id` plötzlich frei verwaltbar war (Done-Spalte/Archiv-Trigger
+ * hätten die Leihkarten weggeräumt).
+ */
+export async function boardRoutingBlocker(
+  boardId: number,
+): Promise<string | null> {
   const ref = await locationReferencingBoard(boardId);
   if (ref) {
-    throw new BoardDeleteBlockedError(
-      `Board wird vom Standort „${ref.name}" als Ziel verwendet. Bitte zuerst das Standort-Routing umstellen.`,
-    );
+    return `Board wird vom Standort „${ref.name}" als Ziel verwendet. Bitte zuerst das Standort-Routing umstellen.`;
   }
   const fbRef = await feedbackAreaReferencingBoard(boardId);
   if (fbRef) {
-    throw new BoardDeleteBlockedError(
-      `Board wird vom Feedback-Bereich „${fbRef.name}" als Ziel verwendet. Bitte zuerst das Routing unter „Umfragen" umstellen.`,
-    );
+    return `Board wird vom Feedback-Bereich „${fbRef.name}" als Ziel verwendet. Bitte zuerst das Routing unter „Umfragen" umstellen.`;
   }
+  return null;
+}
+
+/** Board inkl. Karten/Anhänge/Stati/Freigaben löschen. Wirft bei Standort-Bindung. */
+export async function deleteBoardCascade(boardId: number): Promise<void> {
+  const blocked = await boardRoutingBlocker(boardId);
+  if (blocked) throw new BoardDeleteBlockedError(blocked);
   // System-Board (Leihvorgänge) wird über das Inventar verwaltet, nicht hier.
   const [sys] = await db
     .select({ inventoryBoardId: boards.inventoryBoardId })

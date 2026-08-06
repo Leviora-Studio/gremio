@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  attachments,
   boardStatuses,
   cardActivity,
   cards,
@@ -562,6 +563,16 @@ export async function deleteLoan(loanId: number): Promise<void> {
 
     await tx.delete(inventoryLoans).where(eq(inventoryLoans.id, loanId));
     if (loan.cardId != null) {
+      // Die Tracking-Karte ist eine ganz normale Kanban-Karte: Jedes
+      // Board-Mitglied kann PDFs an sie hängen. `attachments.card_id` ist
+      // ON DELETE CASCADE — die Zeilen verschwinden mit der Karte, die DATEIEN
+      // im Upload-Verzeichnis aber nicht. Pfade deshalb vor dem Löschen sichern
+      // (gleiches Muster wie `removeCard` und `deleteBoardCascade`).
+      const kartenDateien = await tx
+        .select({ path: attachments.path })
+        .from(attachments)
+        .where(eq(attachments.cardId, loan.cardId));
+      geloeschteDateien.push(...kartenDateien.map((a) => a.path));
       await tx.delete(cards).where(eq(cards.id, loan.cardId));
     }
   });

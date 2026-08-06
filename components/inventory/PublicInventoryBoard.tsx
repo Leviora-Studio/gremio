@@ -61,8 +61,13 @@ export function PublicInventoryBoard({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((it) => {
-      if (q && !`${it.name} ${it.categoryNames.join(" ")}`.toLowerCase().includes(q))
-        return false;
+      // Die Obergruppe MUSS mitdurchsucht werden: Die Tabelle bündelt Stücke
+      // mit gleicher `groupName` zu einer Zeile und zeigt genau diesen Namen an.
+      // Ohne ihn im Suchtext fand die Suche nach dem angezeigten Namen nichts,
+      // sobald die Obergruppe anders heißt als ihre Einzelstücke („Bierbank"
+      // vs. „Bank Nr. 3"). Die interne Ansicht sucht ihn längst mit.
+      const hay = `${it.name} ${it.groupName ?? ""} ${it.categoryNames.join(" ")}`;
+      if (q && !hay.toLowerCase().includes(q)) return false;
       // Facetten: Treffer, wenn mind. eine gewählte Kategorie zutrifft (ODER).
       if (
         selectedCats.length &&
@@ -182,7 +187,7 @@ export function PublicInventoryBoard({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Suche (Bezeichnung) …"
+          placeholder="Suche (Bezeichnung, Obergruppe) …"
           className="input w-full sm:max-w-xs"
         />
 

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
 import { appBaseUrl } from "@/lib/public-api";
 import { buildConfirmationPdf } from "@/lib/pdf";
-import { isFeedbackToken } from "@/lib/public-feedback-submission";
+import { resolveApplicationCardId } from "@/lib/public-status";
 import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { allowFormRequest } from "@/lib/rate-limit";
 
@@ -37,9 +37,11 @@ export async function GET(
     throw dbErrorWithoutParams(e, "status-pdf");
   }
   if (!antrag) return new Response("Not found", { status: 404 });
-  // Feedback hat eine eigene Bestätigung (/feedback/status/{token}/pdf) mit
-  // anderen Feldern — hier bewusst 404 statt einer irreführenden „Antrags"-PDF.
-  if (await isFeedbackToken(token)) {
+  // Nur echte Antrags-Tokens. Feedback hat eine eigene Bestätigung
+  // (/feedback/status/{token}/pdf) mit anderen Feldern, Leih-Tracking-Karten
+  // haben gar keine — hier bewusst 404 statt einer irreführenden „Antrags"-PDF.
+  // Eine Quelle für alle Antrags-Einstiege statt einer eigenen Teilprüfung.
+  if ((await resolveApplicationCardId(token)) == null) {
     return new Response("Not found", { status: 404 });
   }
 

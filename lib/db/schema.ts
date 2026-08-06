@@ -1077,7 +1077,13 @@ export const inventoryDefects = pgTable("inventory_defects", {
 // die übrigen Arten. Er ist bewusst ein EIGENER kind — nicht `loan_request` —,
 // weil `loan_request` über den öffentlichen Status-Token abrufbar ist. Der
 // Ausweis wird ausschließlich intern (nach Board-Zugriffsprüfung) ausgeliefert
-// und beim Löschen des Vorgangs mitgelöscht (siehe lib/inventory-loans.ts).
+// und beim Löschen des Vorgangs mitgelöscht — auf BEIDEN Wegen: direkt über
+// `deleteLoan` (lib/inventory-loans.ts) und über den FK-Cascade, wenn das
+// Leit-Stück des Vorgangs gelöscht wird (`deleteInventoryItem` in
+// lib/inventory-items.ts). Der zweite Weg braucht eine eigene Behandlung, weil
+// `loan_id` unten ON DELETE SET NULL ist: Der Cascade nähme den Vorgang mit,
+// den Ausweis aber nicht — er bliebe unzugeordnet am Gegenstand liegen, an dem
+// er hängt (nicht zwingend das gelöschte Stück, siehe removeLoanItem).
 export const inventoryAttachments = pgTable(
   "inventory_attachments",
   {

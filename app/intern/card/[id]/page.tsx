@@ -138,10 +138,20 @@ export default async function AntragDetailPage({
 
   // Feedback-Karten haben eine eigene Statusseite; die Antragsroute liefert für
   // sie bewusst 404. Der interne Link muss deshalb mitziehen.
+  //
+  // Leih-Tracking-Karten haben GAR KEINEN Karten-Status-Link: Der öffentliche
+  // Weg des Vorgangs hängt an `inventory_loans.token`
+  // (/inventar/status/{token}) und steht auf der Vorgangsseite. Ihr
+  // `cards.token` existiert nur, weil die Spalte NOT NULL ist; die
+  // Antragsroute weist ihn inzwischen mit 404 ab — dann darf hier auch kein
+  // Link mehr stehen, der ins Leere führt.
   const feedback = await getFeedbackByCardId(card.id);
-  const statusLink = feedback
-    ? `${env.APP_BASE_URL}/feedback/status/${card.token}`
-    : `${env.APP_BASE_URL}/status/${card.token}`;
+  const statusLink =
+    board.inventoryBoardId != null
+      ? null
+      : feedback
+        ? `${env.APP_BASE_URL}/feedback/status/${card.token}`
+        : `${env.APP_BASE_URL}/status/${card.token}`;
   const manage = canManageBoard(user, board);
 
   const comments = await db
@@ -213,12 +223,14 @@ export default async function AntragDetailPage({
             </div>
           </>
         )}
-        <div className="sm:col-span-2">
-          <span className="text-slate-500">Status-Link:</span>{" "}
-          <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
-            {statusLink}
-          </a>
-        </div>
+        {statusLink && (
+          <div className="sm:col-span-2">
+            <span className="text-slate-500">Status-Link:</span>{" "}
+            <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
+              {statusLink}
+            </a>
+          </div>
+        )}
         <div className="sm:col-span-2">
           <label className="label">Status</label>
           <div>

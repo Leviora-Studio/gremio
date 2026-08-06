@@ -37,29 +37,62 @@ const NAMED_PUBLIC_KINDS = (
 ).map((kind) => ({ kind, label: ATTACHMENT_KIND_LABELS[kind] }));
 
 /**
- * Ist dieser Token ein ANTRAGS-Token? Feedback-Karten sind ganz normale Karten
- * auf einem echten Board — ohne diese Prüfung könnte ein Gremiumsmitglied dort
- * intern eine PDF anhängen, und der Einreicher lüde sie über seinen
- * Feedback-Token herunter, obwohl die Feedback-Statusseite bewusst gar keine
- * Dokumentenliste zeigt.
+ * Liegt die Karte zu diesem Token auf einem Leih-System-Board?
+ *
+ * Jede Karte braucht laut Schema einen Token (`cards.token` ist NOT NULL
+ * UNIQUE), also bekommt auch die Tracking-Karte eines Leihvorgangs einen —
+ * obwohl sie keinen braucht: Der öffentliche Ausleih-Status hängt an einem
+ * EIGENEN Token an der Vorgangszeile (`inventory_loans.token`,
+ * `/inventar/status/{token}`) und ist von dieser Sperre nicht betroffen.
+ *
+ * Ohne die Sperre lieferte `/status/{Karten-Token}` für eine Leihkarte eine
+ * vollwertige ANTRAGS-Statusseite samt Gegenstandsname, Entleihername und
+ * offenem PDF-Upload — ein Ausgabeweg, den es laut Codekommentar in
+ * `maybeCreateTrackingCard` („wird nicht veröffentlicht") gar nicht geben soll.
+ */
+async function isLoanTrackingToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  try {
+    const [row] = await db
+      .select({ inventoryBoardId: boards.inventoryBoardId })
+      .from(cards)
+      .innerJoin(boards, eq(boards.id, cards.boardId))
+      .where(eq(cards.token, token))
+      .limit(1);
+    return row?.inventoryBoardId != null;
+  } catch (e) {
+    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
+    throw dbErrorWithoutParams(e, "loan-tracking-token-check");
+  }
+}
+
+/**
+ * Ist dieser Token ein ANTRAGS-Token? Feedback- und Leih-Tracking-Karten sind
+ * ganz normale Karten auf einem echten Board — ohne diese Prüfung könnte ein
+ * Gremiumsmitglied dort intern eine PDF anhängen, und der Einreicher lüde sie
+ * über seinen Feedback-Token herunter, obwohl die Feedback-Statusseite bewusst
+ * gar keine Dokumentenliste zeigt.
  *
  * Für die schreibenden bzw. dateiliefernden Antrags-Einstiege, die die Karte
- * selbst nachschlagen: Anhang-Route und die beiden Server Actions. Statusseite
- * und PDF-Route haben ihre eigene Sperre (`getApplicationStatusByToken` bzw.
- * `isFeedbackToken`) — nur ein Einstieg ohne Sperre reicht, um die Trennung
- * auszuhebeln. Gibt `null` zurück, wenn der Token unbekannt ist ODER zu einem
- * Feedback gehört; die Aufrufer machen daraus dieselbe generische „nicht
+ * selbst nachschlagen: Anhang-Route, PDF-Route und die beiden Server Actions.
+ * Die Statusseite hat ihre eigene Sperre (`getApplicationStatusByToken`) — nur
+ * ein Einstieg ohne Sperre reicht, um die Trennung auszuhebeln. Gibt `null`
+ * zurück, wenn der Token unbekannt ist ODER zu einem Feedback bzw. einem
+ * Leihvorgang gehört; die Aufrufer machen daraus dieselbe generische „nicht
  * gefunden"-Antwort.
  */
 export async function resolveApplicationCardId(
   token: string,
 ): Promise<number | null> {
   if (!token) return null;
-  let row: { id: number } | undefined;
+  let row: { id: number; inventoryBoardId: number | null } | undefined;
   try {
+    // `cards.board_id` ist NOT NULL mit FK auf boards — der INNER JOIN verliert
+    // also keine Zeile und liefert die System-Board-Kennung gleich mit.
     [row] = await db
-      .select({ id: cards.id })
+      .select({ id: cards.id, inventoryBoardId: boards.inventoryBoardId })
       .from(cards)
+      .innerJoin(boards, eq(boards.id, cards.boardId))
       .where(eq(cards.token, token))
       .limit(1);
   } catch (e) {
@@ -68,8 +101,22 @@ export async function resolveApplicationCardId(
     throw dbErrorWithoutParams(e, "status-loader");
   }
   if (!row) return null;
+  // Leih-Tracking-Karte: eigener Status-Weg (/inventar/status/{token}).
+  if (row.inventoryBoardId != null) return null;
   if (await isFeedbackToken(token)) return null;
   return row.id;
+}
+
+/**
+ * Darf für diesen Token ein Live-Stream (SSE) laufen?
+ *
+ * Der Stream unter `/api/status/{token}/stream` bedient BEIDE öffentlichen
+ * Kartenseiten (Antrag und Feedback) — Feedback-Tokens dürfen hier deshalb
+ * nicht mitgesperrt werden, Leih-Tracking-Karten schon: Für sie gibt es keine
+ * öffentliche Kartenseite mehr, ein Änderungs-Ticker wäre nur ein Restsignal.
+ */
+export async function isPublicCardStreamToken(token: string): Promise<boolean> {
+  return !(await isLoanTrackingToken(token));
 }
 
 export type PublicDocument = {
@@ -151,10 +198,15 @@ export async function getApplicationStatusByToken(
       resubmitStatusId: boards.resubmitStatusId,
       receiptFromStatusId: boards.receiptFromStatusId,
       receiptToStatusId: boards.receiptToStatusId,
+      inventoryBoardId: boards.inventoryBoardId,
     })
     .from(boards)
     .where(eq(boards.id, row.boardId))
     .limit(1);
+  // Leih-Tracking-Karte: kein Antrag, sondern ein Leihvorgang mit eigenem
+  // öffentlichen Weg (/inventar/status/{token}). Wie ein unbekannter Token
+  // behandeln — von außen nicht unterscheidbar.
+  if (board?.inventoryBoardId != null) return undefined;
 
   // Liegt der Antrag in der Archiv-Spalte (Nextcloud-Trigger), ist er
   // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.

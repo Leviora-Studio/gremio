@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
 import { dbErrorWithoutParams } from "@/lib/db-errors";
+import { isPublicCardStreamToken } from "@/lib/public-status";
 import { cardChangeSSE } from "@/lib/sse";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,13 @@ export async function GET(
     throw dbErrorWithoutParams(e, "status-stream");
   }
   if (!card) return new Response("Not found", { status: 404 });
+  // Bedient BEIDE öffentlichen Kartenseiten (Antrag und Feedback) — Feedback
+  // darf hier also NICHT mitgesperrt werden. Leih-Tracking-Karten schon: Für
+  // sie gibt es keine öffentliche Kartenseite mehr, ein Änderungs-Ticker wäre
+  // nur ein Restsignal auf einen Vorgang mit eigenem Status-Weg.
+  if (!(await isPublicCardStreamToken(token))) {
+    return new Response("Not found", { status: 404 });
+  }
 
   return cardChangeSSE(request.signal, (c) => c.token === token);
 }

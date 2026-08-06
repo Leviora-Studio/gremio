@@ -4,6 +4,7 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  attachments,
   cards,
   inventoryAttachments,
   inventoryItemCategories,
@@ -433,15 +434,17 @@ export async function deleteInventoryItem(id: number): Promise<void> {
       .where(eq(inventoryAttachments.itemId, id))
   ).map((r) => r.path);
 
-  // Karten der Vorgänge, die dieses Stück als Leit-Stück haben (werden cascaded).
-  const leadCardIds = (
-    await db
-      .select({ cardId: inventoryLoans.cardId })
-      .from(inventoryLoans)
-      .where(eq(inventoryLoans.itemId, id))
-  )
+  // Vorgänge, die dieses Stück als Leit-Stück haben — sie verschwinden per
+  // FK-Cascade mit dem Gegenstand (`inventory_loans.item_id` ON DELETE CASCADE).
+  const leadLoans = await db
+    .select({ id: inventoryLoans.id, cardId: inventoryLoans.cardId })
+    .from(inventoryLoans)
+    .where(eq(inventoryLoans.itemId, id));
+  // Karten dieser Vorgänge (sonst verwaist auf dem Leihboard).
+  const leadCardIds = leadLoans
     .map((r) => r.cardId)
     .filter((c): c is number => c != null);
+  const leadLoanIds = leadLoans.map((r) => r.id);
 
   // Vorgänge, in denen das Stück nur Mitglied (nicht Leit-Stück) ist.
   const survivingLoanIds = Array.from(
@@ -465,8 +468,36 @@ export async function deleteInventoryItem(id: number): Promise<void> {
   );
 
   await db.transaction(async (tx) => {
+    // Studierendenausweise der mit-cascadierten Vorgänge ZUERST löschen — exakt
+    // wie in `deleteLoan`. Sie hängen am LEIT-Stück des Vorgangs, und das muss
+    // nicht dieses hier sein: Wandert die Leit-Rolle über `removeLoanItem` auf
+    // ein anderes Stück, bleibt der Ausweis am ursprünglichen Gegenstand liegen.
+    // Verschwindet dann das neue Leit-Stück, nimmt der Cascade zwar den Vorgang
+    // mit, den Ausweis aber nicht: `inventory_attachments.loan_id` ist
+    // ON DELETE SET NULL — das Ausweisdokument bliebe unzugeordnet und dauerhaft
+    // an einem fremden Gegenstand hängen (Aufbewahrungs-/Datenschutzproblem).
+    if (leadLoanIds.length) {
+      const ausweise = await tx
+        .delete(inventoryAttachments)
+        .where(
+          and(
+            inArray(inventoryAttachments.loanId, leadLoanIds),
+            eq(inventoryAttachments.kind, "student_card"),
+          ),
+        )
+        .returning({ path: inventoryAttachments.path });
+      filePaths.push(...ausweise.map((a) => a.path));
+    }
     await tx.delete(inventoryItems).where(eq(inventoryItems.id, id)); // Cascade
     if (leadCardIds.length) {
+      // Anhänge der Tracking-Karten: `attachments.card_id` ist ON DELETE
+      // CASCADE, die Dateien bleiben aber liegen. Die Karten sind normale
+      // Kanban-Karten, an die jedes Board-Mitglied PDFs hängen kann.
+      const kartenDateien = await tx
+        .select({ path: attachments.path })
+        .from(attachments)
+        .where(inArray(attachments.cardId, leadCardIds));
+      filePaths.push(...kartenDateien.map((a) => a.path));
       await tx.delete(cards).where(inArray(cards.id, leadCardIds));
     }
   });
