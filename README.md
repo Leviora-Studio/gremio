@@ -4,12 +4,24 @@
 Studierendenvertretungen, Vereinen, Verbänden oder Ausschüssen. Ein
 **öffentliches Antragsformular** speist Anträge je nach Standort in **interne
 Kanban-Boards** ein, auf denen das Gremium sie bearbeitet — mit Rollen & Gruppen,
-Finanzübersichten, Vorlagen, optionaler Nextcloud-Archivierung und einer schmalen
-REST-API.
+optionaler Nextcloud-Archivierung und einer schmalen REST-API.
+
+Vier Module teilen sich Nutzer, Gruppen und dasselbe Freigabemodell:
+
+| Modul | Bereich | Kurz |
+|-------|---------|------|
+| **Kanban / Anträge** | `/intern/board/{id}` | Anträge und beliebige andere Vorgänge auf Boards |
+| **Finanzen** | `/finanzen` | Haushaltsplan und Ausgabenauswertung über Quell-Boards |
+| **Inventar & Ausleihe** | `/intern/inventar`, `/inventar` | Gegenstände, Leihvorgänge, Anlagenverzeichnis |
+| **Vorlagen** | `/vorlagen` | Board- und Finanz-Templates |
+
+Dazu kommt öffentliches **Feedback** (`/feedback`) als zweiter Eingangskanal
+neben dem Antragsformular.
 
 Stack: **Next.js (App Router) + React + TypeScript**, **PostgreSQL** (`pg` +
-Drizzle ORM), Tailwind CSS, `dnd-kit`, iron-session, Custom-OIDC-Client (`jose`),
-`sharp`, `pdf-lib`, `webdav`.
+Drizzle ORM), Tailwind CSS, `dnd-kit`, `zod`, iron-session, Custom-OIDC-Client
+(`jose`), `sharp`, `pdf-lib`, `react-pdf` (Viewer), `@signpdf` + `node-forge`
+(PAdES-Signatur), `webdav`.
 
 API-Doku: [docs/API.md](docs/API.md) (interne Bearer-Token-API) ·
 [docs/PUBLIC_API.md](docs/PUBLIC_API.md) (öffentliche Antrags- und Feedback-API für native
@@ -27,6 +39,18 @@ Apps, interaktiv unter `/api/public/docs`).
 - **Statusseite** (`/status/{token}`): aktueller Status ansehen, Dokumente
   herunterladen (außer Studierendenausweis — bleibt intern) und **PDFs nachreichen**
   (append-only). In der Archiv-Spalte ist das Nachreichen gesperrt.
+- **Feedback-Formular** (`/feedback`): wie das Antragsformular, nur ohne Dateien.
+  Statt Standorten gibt es **Feedback-Bereiche** (`/admin/umfragen`), die ebenso
+  auf Board + Spalte routen. Der Name ist optional (sonst „Anonym"); eine
+  Einreichung erzeugt eine normale Karte plus einen unveränderlichen Snapshot,
+  damit die öffentliche Ansicht die Originaleinreichung zeigt. Eigene
+  Statusseite unter `/feedback/status/{token}`.
+- **Inventar & Ausleihe** (`/inventar`): vom Admin freigegebene Inventare
+  durchsuchen und einen Gegenstand **zur Ausleihe anfragen**. Öffentlich sichtbar
+  ist eine bewusste Whitelist — Bezeichnung, Kategorie, Verfügbarkeit, ggf.
+  „entliehen bis", **ohne Person**. Der Fortschritt läuft über
+  `/inventar/status/{token}`: Vertrag herunterladen, unterschrieben hochladen,
+  Anfrage zurückziehen.
 
 **Intern (Login via SSO)**
 - **Mehrere Kanban-Boards** mit pro Board konfigurierbaren Status-Spalten,
@@ -39,6 +63,23 @@ Apps, interaktiv unter `/api/public/docs`).
   nur Standorte mit Ziel sind aktivierbar.
 - **Finanzübersichten** mit Haushaltsplan (Einnahmen/Ausgaben), Live-/Ist-Ausgaben
   und Antragsübersicht; **XLSX-Export**.
+- **Inventar & Ausleihe** (`/intern/inventar`): eigenes Modul mit eigenen Listen
+  und Feldern, aber demselben Zugriffsmodell wie Boards. Gegenstände mit
+  Stückzahlen, Obergruppen, Mängelhistorie, Belegen und Inventarnummern; defekte
+  oder verlorene Stücke landen im Archiv. **Leihvorgänge sind kartengeführt:**
+  Jedes Inventar bekommt ein automatisch angelegtes Kanban-Board, auf dem jeder
+  Vorgang als Karte liegt — die Spalte der Karte bestimmt den Vorgangsstatus.
+  Board-übergreifend gibt es das **Gesamtinventar** (`/intern/inventar/gesamt`)
+  als Anlagenverzeichnis ab einem konfigurierbaren Mindestpreis, mit CSV-Export.
+- **PDF-Viewer und -Editor**: Anhänge öffnen sich **in der App** statt im
+  Browser-Tab. Freitext platzieren, vorhandene AcroForm-Felder ausfüllen und mit
+  dem persönlichen `.p12` **kryptografisch signieren** (PAdES, serverseitig —
+  der Privatschlüssel verlässt den Server nie). Speichern wahlweise als neue
+  Datei oder als Ersatz des Originals.
+- **Meine Aufgaben** (`/intern/aufgaben`): board-übergreifende Liste der eigenen
+  und zugewiesenen Karten, pro Board konfigurierbar.
+- **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für
+  erledigte Karten (der „Done"-Sweep räumt sie täglich weg, löscht aber nichts).
 - **Vorlagen** für Boards und Finanzpläne (Admin oder Template-Verwalter).
 - **Nextcloud-Archivierung** (optional, pro Board): erreicht ein Antrag die
   Trigger-Spalte, werden seine Dateien automatisch hochgeladen. Schlägt das fehl,
@@ -66,10 +107,26 @@ bleibt Eigentümer/Admin vorbehalten.
 ```bash
 npm install
 cp .env.example .env          # Werte anpassen (siehe „Umgebungsvariablen")
-docker compose up -d db       # PostgreSQL starten (127.0.0.1:5432)
+docker compose up -d db       # PostgreSQL starten
 npm run db:setup              # Migrationen + Seed (Standorte, Prioritäten, Board-Template — KEIN Admin)
 npm run dev                   # http://localhost:3000
 ```
+
+> **Der DB-Port ist absichtlich nicht veröffentlicht.** In `docker-compose.yml`
+> ist das `ports`-Mapping des `db`-Dienstes auskommentiert — im Betrieb erreicht
+> nur der App-Container die Datenbank über das Compose-Netz. Für `npm run dev`
+> und `db:setup` **vom Host** braucht es den Port aber. Lege dafür eine
+> (gitignorierte) `docker-compose.override.yml` an, statt die Hauptdatei zu
+> ändern:
+>
+> ```yaml
+> services:
+>   db:
+>     ports:
+>       - "127.0.0.1:5432:5432"
+> ```
+>
+> `DATABASE_URL` in der `.env` zeigt dann auf `localhost:5432`.
 
 > Der erste Admin entsteht **über das SSO**: Der in `ADMIN_USER` gesetzte
 > SSO-Benutzer wird beim **ersten Login** automatisch Admin (kein Admin im Seed,
@@ -88,6 +145,7 @@ npm run dev                   # http://localhost:3000
 | `npm run db:seed` | Startbestand: 4 Standorte, Prioritäten, Board-Template (kein Admin) |
 | `npm run db:setup` | `db:migrate` + `db:seed` |
 | `npm run openapi:yaml` | `docs/openapi-*.yaml` aus den TS-Quellen neu erzeugen |
+| `npm run openapi:public:yaml` / `openapi:internal:yaml` | nur die jeweilige Spezifikation erzeugen |
 
 Die Tests unter `tests/` halten je EINEN behobenen Fehler fest und schlagen ohne
 den zugehörigen Fix fehl. Die datenbankgestützten überspringen sich selbst, wenn
@@ -124,13 +182,21 @@ bewusst nicht.**
 ## Deployment (Docker hinter nginx)
 
 Der Container liefert **nur HTTP** auf Port 3000; **SSL/TLS terminiert nginx**
-davor. Persistente Volumes sind zwingend, sonst gehen DB und Uploads beim Rebuild
-verloren.
+davor. Nach außen gemappt wird er auf **`127.0.0.1:3010`** — genau dorthin
+proxyt das nginx-Beispiel. Persistente Volumes sind zwingend, sonst gehen DB und
+Uploads beim Rebuild verloren.
 
 ```bash
 cp .env.example .env          # echte Secrets eintragen (siehe oben)
-docker compose up -d --build  # startet PostgreSQL (db) + App
+docker compose up -d          # startet PostgreSQL (db) + App
 ```
+
+Das App-Image wird **nicht lokal gebaut**, sondern fertig aus der GitHub
+Container Registry gezogen (`ghcr.io/leviora-studio/gremio`, `pull_policy:
+always`). Eine bestimmte Version pinnt `GREMIO_TAG`, z. B.
+`GREMIO_TAG=2.7.5 docker compose up -d`; ohne Angabe gilt `:latest`. Wer aus dem
+lokalen Quellstand bauen will, ergänzt einen `build:`-Abschnitt in einer
+`docker-compose.override.yml`.
 
 - Beim Start laufen automatisch **nur die Migrationen** (Instrumentation-Hook) —
   **kein** Auto-Seed. Startbestand bei Bedarf einmalig mit `npm run db:seed`.
