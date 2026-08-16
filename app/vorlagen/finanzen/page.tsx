@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { asc, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { financeTemplates, financeTemplateItems } from "@/lib/db/schema";
 import { requireTemplateManager } from "@/lib/auth";
@@ -21,9 +21,16 @@ export default async function FinanceTemplatesPage() {
       id: financeTemplates.id,
       name: financeTemplates.name,
       description: financeTemplates.description,
-      items: sql<number>`(select count(*) from ${financeTemplateItems} where ${financeTemplateItems.templateId} = ${financeTemplates.id})`,
+      // Zählung über einen JOIN statt einer korrelierten Subquery im SELECT —
+      // siehe die gleichlautende Begründung in app/vorlagen/boards/page.tsx.
+      items: sql<number>`count(${financeTemplateItems.id})`,
     })
     .from(financeTemplates)
+    .leftJoin(
+      financeTemplateItems,
+      eq(financeTemplateItems.templateId, financeTemplates.id),
+    )
+    .groupBy(financeTemplates.id)
     .orderBy(asc(financeTemplates.name));
 
   return (

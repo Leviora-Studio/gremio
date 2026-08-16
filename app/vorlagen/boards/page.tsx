@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Erik Engler
 
 import Link from "next/link";
-import { asc, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardTemplates, boardTemplateStatuses } from "@/lib/db/schema";
 import { CreateTemplateForm } from "@/components/admin/CreateTemplateForm";
@@ -16,9 +16,19 @@ export default async function TemplatesPage() {
       id: boardTemplates.id,
       name: boardTemplates.name,
       description: boardTemplates.description,
-      columns: sql<number>`(select count(*) from ${boardTemplateStatuses} where ${boardTemplateStatuses.templateId} = ${boardTemplates.id})`,
+      // Zählung über einen JOIN statt einer korrelierten Subquery im
+      // SELECT: Drizzle lässt bei einer Abfrage OHNE Join die Tabellen-
+      // Qualifizierung der Spalten weg („… where template_id = id"), womit
+      // Postgres das unqualifizierte `id` gegen die INNERE Tabelle auflöst —
+      // die Zählung ergab dadurch immer 0 oder 1 statt der echten Spaltenzahl.
+      columns: sql<number>`count(${boardTemplateStatuses.id})`,
     })
     .from(boardTemplates)
+    .leftJoin(
+      boardTemplateStatuses,
+      eq(boardTemplateStatuses.templateId, boardTemplates.id),
+    )
+    .groupBy(boardTemplates.id)
     .orderBy(asc(boardTemplates.name));
 
   return (
