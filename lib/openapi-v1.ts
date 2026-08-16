@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Erik Engler
 
 import { API_TOKEN_PREFIX } from "@/lib/api-token";
@@ -185,7 +185,7 @@ ${AUTH_DESCRIPTION}
 **Diese Dokumentation und die Spezifikation sind selbst anmeldepflichtig** (Gremio-Web-Session). Die Anmeldung dient nur dem Öffnen der Doku — für „Try it out" wird zusätzlich ein API-Token über **Authorize** benötigt, und die aufgerufene Route prüft ihn unabhängig davon erneut.
 
 Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api/public/docs\`.`,
-    license: { name: "AGPL-3.0-or-later" },
+    license: { name: "AGPL-3.0-only" },
   },
   servers: [{ url: "/", description: "Diese Instanz" }],
   tags: [

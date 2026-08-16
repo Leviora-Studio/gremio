@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Erik Engler
 
 // Reine Konstanten/Typen (ohne DB-/Node-Imports), damit Client-Komponenten sie

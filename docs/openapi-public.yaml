@@ -29,8 +29,8 @@ info:
     **Uploads:** max. 25 MB pro Datei. Der Studierendenausweis wird ausschließlich intern
     verarbeitet und ist über die öffentliche Statusseite nicht abrufbar.
   license:
-    name: AGPL-3.0-or-later
-    identifier: AGPL-3.0-or-later
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
 servers:
   - url: /
     description: Diese Instanz

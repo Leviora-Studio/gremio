@@ -194,9 +194,13 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
 
 ## Lizenz
 
-**GNU Affero General Public License, Version 3 oder (nach deiner Wahl) jeder
-späteren Version** (`AGPL-3.0-or-later`) — Volltext der Version 3 siehe
-[`LICENSE`](LICENSE).
+**GNU Affero General Public License, Version 3** (`AGPL-3.0-only`) — Volltext
+siehe [`LICENSE`](LICENSE).
+
+Es gilt **ausschließlich Version 3**. Die sonst übliche Klausel „oder jede
+spätere Version" ist bewusst **nicht** Teil dieser Lizenzierung; spätere
+Versionen der AGPL gelten für diese Software nur, wenn der Rechteinhaber sie
+ausdrücklich freigibt.
 
 Diese Software ist freie Software: Du kannst sie unter den Bedingungen der AGPL
 weitergeben und/oder verändern. **Wichtig:** Wer eine modifizierte Version **über
@@ -207,8 +211,7 @@ ein Netzwerk** zugänglich macht (z. B. als gehostete Web-App), muss den
 Copyright (C) 2026  Erik Engler
 
 Dieses Programm ist freie Software: Sie können es unter den Bedingungen der GNU
-Affero General Public License, wie von der Free Software Foundation veröffentlicht,
-weitergeben und/oder modifizieren — entweder gemäß Version 3 der Lizenz oder (nach
-Ihrer Wahl) jeder späteren Version.
+Affero General Public License, Version 3, wie von der Free Software Foundation
+veröffentlicht, weitergeben und/oder modifizieren.
 Es wird ohne jede Gewährleistung bereitgestellt; siehe die Lizenz für Details.
 ```

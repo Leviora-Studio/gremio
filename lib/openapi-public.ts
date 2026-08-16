@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Erik Engler
 
 import { ATTACHMENT_KIND_LABELS, MAX_UPLOAD_BYTES } from "@/lib/constants";
@@ -124,8 +124,8 @@ Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen
 
 **Uploads:** max. ${MAX_UPLOAD_MB} MB pro Datei. Der Studierendenausweis wird ausschließlich intern verarbeitet und ist über die öffentliche Statusseite nicht abrufbar.`,
     license: {
-      name: "AGPL-3.0-or-later",
-      identifier: "AGPL-3.0-or-later",
+      name: "AGPL-3.0-only",
+      identifier: "AGPL-3.0-only",
     },
   },
   servers: [
