@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 // Zentrale Datums-/Zeit-Formatierung. Timestamps liegen in der DB als UTC
 // (timestamptz); angezeigt wird immer in deutscher Schreibweise und der

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 // Gemeinsamer Kern für „PDF im Viewer bearbeiten + optional signieren":
 // nimmt PDF-Bytes + die Editor-Eingaben entgegen und liefert das fertige PDF.

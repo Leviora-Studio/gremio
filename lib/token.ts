@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 import { customAlphabet } from "nanoid";
 import { TOKEN_ALPHABET, TOKEN_LENGTH } from "@/lib/constants";

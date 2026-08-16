@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 import { desc, eq, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";

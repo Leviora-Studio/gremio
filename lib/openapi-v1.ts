@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 import { API_TOKEN_PREFIX } from "@/lib/api-token";
 import { CARD_FIELD_KEYS } from "@/lib/constants";

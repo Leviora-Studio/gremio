@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 // Reine Konstanten/Funktionen (ohne DB-/Node-Imports), damit Client-Komponenten
 // sie importieren können, ohne den server-only Datenzugriff in den Browser zu

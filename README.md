@@ -208,7 +208,7 @@ ein Netzwerk** zugänglich macht (z. B. als gehostete Web-App), muss den
 **vollständigen Quellcode** dieser Version den Nutzern anbieten.
 
 ```
-Copyright (C) 2026  Erik Engler
+Copyright (C) 2026  Leviora Studio
 
 Dieses Programm ist freie Software: Sie können es unter den Bedingungen der GNU
 Affero General Public License, Version 3, wie von der Free Software Foundation

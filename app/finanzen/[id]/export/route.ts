@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 import { requireFinanceAccess } from "@/lib/finance";
 import { loadFinanceData } from "@/lib/finance-data";

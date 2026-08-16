@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 //
 // Bewusst minimaler, sicherer Service Worker für eine server-zentrierte App:
 // - Gecacht wird NUR der kleine, feste Satz unter /icons (für die Offline-Seite).

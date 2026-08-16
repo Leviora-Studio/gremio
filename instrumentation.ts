@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Erik Engler
+// Copyright (C) 2026 Leviora Studio
 
 export async function register() {
   // Nur im Node-Runtime und in Produktion automatisch migrieren/seeden.
