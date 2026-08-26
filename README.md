@@ -194,7 +194,7 @@ docker compose up -d          # startet PostgreSQL (db) + App
 Das App-Image wird **nicht lokal gebaut**, sondern fertig aus der GitHub
 Container Registry gezogen (`ghcr.io/leviora-studio/gremio`, `pull_policy:
 always`). Eine bestimmte Version pinnt `GREMIO_TAG`, z. B.
-`GREMIO_TAG=2.7.5 docker compose up -d`; ohne Angabe gilt `:latest`. Wer aus dem
+`GREMIO_TAG=2.7.6 docker compose up -d`; ohne Angabe gilt `:latest`. Wer aus dem
 lokalen Quellstand bauen will, ergänzt einen `build:`-Abschnitt in einer
 `docker-compose.override.yml`.
 
