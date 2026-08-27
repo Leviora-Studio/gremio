@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { env } from "@/lib/env";
+import { publicBaseUrl } from "@/lib/public-api";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
@@ -78,7 +78,7 @@ export default async function InventoryLoanPage({
   const to = fmtDate(loan.endDate);
   // Öffentlicher Status-Link der Anfrage (nur bei öffentlichen Anfragen mit Token).
   const statusLink = loan.token
-    ? `${env.APP_BASE_URL}/inventar/status/${loan.token}`
+    ? `${publicBaseUrl()}/inventar/status/${loan.token}`
     : null;
 
   const detail: { label: string; value: string }[] = [

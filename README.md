@@ -165,7 +165,8 @@ bewusst nicht.**
 
 | Variable | Beschreibung |
 |----------|--------------|
-| `APP_BASE_URL` | Kanonische öffentliche URL — Quelle für Status-Links **und** die OIDC-`redirect_uri`. Muss exakt der beim SSO registrierten URL entsprechen. |
+| `APP_BASE_URL` | Kanonische Basis der internen App und Quelle der OIDC-`redirect_uri`. Nur Origin, kein Pfad wie `/intern`; muss exakt zur SSO-Registrierung passen. |
+| `PUBLIC_BASE_URL` | Optionale getrennte öffentliche Basis für Status-, PDF- und Download-Links. Fehlt sie, wird rückwärtskompatibel `APP_BASE_URL` verwendet. |
 | `AUTH_SECRET` | Session-/HMAC-Basisgeheimnis, **min. 32 Zeichen** (`openssl rand -base64 48`). |
 | `ENCRYPTION_KEY` | AES-256-Schlüssel für Nextcloud-Zugangsdaten, **64 Hex-Zeichen** (`openssl rand -hex 32`). |
 | `OIDC_ISSUER` | Öffentlicher SSO-Issuer (Browser: authorize/logout, `iss`-Prüfung). In Produktion **https**. |
@@ -194,7 +195,7 @@ docker compose up -d          # startet PostgreSQL (db) + App
 Das App-Image wird **nicht lokal gebaut**, sondern fertig aus der GitHub
 Container Registry gezogen (`ghcr.io/leviora-studio/gremio`, `pull_policy:
 always`). Eine bestimmte Version pinnt `GREMIO_TAG`, z. B.
-`GREMIO_TAG=2.7.6 docker compose up -d`; ohne Angabe gilt `:latest`. Wer aus dem
+`GREMIO_TAG=2.7.7 docker compose up -d`; ohne Angabe gilt `:latest`. Wer aus dem
 lokalen Quellstand bauen will, ergänzt einen `build:`-Abschnitt in einer
 `docker-compose.override.yml`.
 

@@ -35,7 +35,8 @@ const MAX_BODY_BYTES = 8 * 1024;
  * deshalb auch keinen `Idempotency-Key`.
  *
  * Die übergebene URL wird niemals abgerufen (siehe lib/public-status-url.ts),
- * sondern nur lokal geparst und gegen APP_BASE_URL geprüft.
+ * sondern nur lokal geparst und gegen PUBLIC_BASE_URL beziehungsweise den
+ * bisherigen APP_BASE_URL-Origin geprüft.
  *
  * Ausgegeben wird ausschließlich, was die jeweilige öffentliche Webansicht
  * zeigt — dieselben Loader liefern die Daten.

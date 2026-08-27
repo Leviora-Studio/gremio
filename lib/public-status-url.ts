@@ -2,16 +2,17 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { TOKEN_ALPHABET, TOKEN_LENGTH } from "@/lib/constants";
-import { appBaseUrl } from "@/lib/public-api";
+import { appBaseUrl, publicBaseUrl } from "@/lib/public-api";
 
 /**
  * Zerlegt einen öffentlichen Status-Link in Typ und Token.
  *
  * SICHERHEIT — die übergebene URL wird NIEMALS abgerufen: kein `fetch`, kein
  * Redirect, kein DNS-Lookup. Sie wird ausschließlich lokal geparst, strukturell
- * gegen `APP_BASE_URL` geprüft und dann nur noch als Token weiterverwendet. Der
- * Datenzugriff erfolgt gegen die eigene Datenbank. Damit ist der Endpunkt kein
- * SSRF-Hebel, obwohl er eine URL entgegennimmt.
+ * gegen `PUBLIC_BASE_URL` beziehungsweise die bisherige `APP_BASE_URL` geprüft
+ * und dann nur noch als Token weiterverwendet. Der Datenzugriff erfolgt gegen
+ * die eigene Datenbank. Damit ist der Endpunkt kein SSRF-Hebel, obwohl er eine
+ * URL entgegennimmt.
  */
 
 /** Großzügig, aber begrenzt — ein Status-Link braucht ~60 Zeichen. */
@@ -47,10 +48,14 @@ export function parseStatusLink(raw: unknown): ParsedStatusLink {
   }
 
   let url: URL;
-  let base: URL;
+  let allowedBases: URL[];
   try {
     url = new URL(value);
-    base = new URL(appBaseUrl());
+    // APP_BASE_URL bleibt als Legacy-Origin erlaubt: Bereits in nativen Apps
+    // gespeicherte Statuslinks dürfen durch die Domain-Trennung nicht brechen.
+    allowedBases = [...new Set([publicBaseUrl(), appBaseUrl()])].map(
+      (base) => new URL(base),
+    );
   } catch {
     return { ok: false, reason: "malformed" };
   }
@@ -63,11 +68,13 @@ export function parseStatusLink(raw: unknown): ParsedStatusLink {
   // „https://gremio.example.evil.test" durchlassen würde. `URL.origin` deckt
   // Protokoll, Hostname und Port ab; der Port wird zusätzlich explizit
   // verglichen, weil `origin` den Standardport weglässt.
-  if (url.protocol !== base.protocol) return { ok: false, reason: "origin" };
-  if (url.hostname.toLowerCase() !== base.hostname.toLowerCase()) {
-    return { ok: false, reason: "origin" };
-  }
-  if (url.port !== base.port) return { ok: false, reason: "origin" };
+  const allowedOrigin = allowedBases.some(
+    (base) =>
+      url.protocol === base.protocol &&
+      url.hostname.toLowerCase() === base.hostname.toLowerCase() &&
+      url.port === base.port,
+  );
+  if (!allowedOrigin) return { ok: false, reason: "origin" };
 
   // Query und Fragment sind bei einem Status-Link nie sinnvoll und könnten
   // Tracking-Parameter einschleusen.
@@ -96,12 +103,12 @@ export function parseStatusLink(raw: unknown): ParsedStatusLink {
   return { ok: false, reason: "path" };
 }
 
-/** Kanonische öffentliche Links — IMMER aus APP_BASE_URL, nie aus der Eingabe. */
+/** Kanonische öffentliche Links — IMMER aus PUBLIC_BASE_URL, nie aus der Eingabe. */
 export function statusLinksFor(
   kind: StatusLinkKind,
   token: string,
 ): { statusUrl: string; receiptPdfUrl: string } {
-  const base = appBaseUrl();
+  const base = publicBaseUrl();
   const prefix = kind === "feedback" ? "/feedback/status" : "/status";
   return {
     statusUrl: `${base}${prefix}/${token}`,
@@ -111,5 +118,5 @@ export function statusLinksFor(
 
 /** Absolute Download-URL eines öffentlich sichtbaren Anhangs. */
 export function attachmentUrlFor(token: string, attachmentId: number): string {
-  return `${appBaseUrl()}/api/status/${token}/attachment/${attachmentId}`;
+  return `${publicBaseUrl()}/api/status/${token}/attachment/${attachmentId}`;
 }

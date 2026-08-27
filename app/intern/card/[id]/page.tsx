@@ -23,7 +23,7 @@ import { getAccounts } from "@/lib/accounts";
 import { getCardAssignees } from "@/lib/assignees";
 import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
-import { env } from "@/lib/env";
+import { publicBaseUrl } from "@/lib/public-api";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
@@ -150,8 +150,8 @@ export default async function AntragDetailPage({
     board.inventoryBoardId != null
       ? null
       : feedback
-        ? `${env.APP_BASE_URL}/feedback/status/${card.token}`
-        : `${env.APP_BASE_URL}/status/${card.token}`;
+        ? `${publicBaseUrl()}/feedback/status/${card.token}`
+        : `${publicBaseUrl()}/status/${card.token}`;
   const manage = canManageBoard(user, board);
 
   const comments = await db

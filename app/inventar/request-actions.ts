@@ -26,6 +26,7 @@ import {
 import { saveNamedFile, validateUpload } from "@/lib/attachments";
 import { STUDENT_CARD_MIME } from "@/lib/inventory-attachment-kinds";
 import { sanitizeSingleLine } from "@/lib/text";
+import { publicBaseUrl } from "@/lib/public-api";
 
 // Eingaben werden bei einem Fehler zurückgegeben, damit das Formular sie behält.
 export type RequestValues = {
@@ -225,5 +226,5 @@ export async function createInventoryLoanRequestAction(
   }
 
   // Außerhalb des try/catch: redirect() signalisiert über eine Exception.
-  redirect(`/inventar/status/${token}`);
+  redirect(`${publicBaseUrl()}/inventar/status/${token}`);
 }

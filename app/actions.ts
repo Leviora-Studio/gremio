@@ -12,6 +12,7 @@ import {
 } from "@/lib/antispam";
 import { allowFormRequest } from "@/lib/rate-limit";
 import { submitPublicApplication } from "@/lib/public-application-submission";
+import { publicBaseUrl } from "@/lib/public-api";
 
 // `guard` ist ein FRISCHES Zeitfallen-Token. Das Formular behält seine Eingaben
 // und Dateien über einen Fehler hinweg (siehe PublicAntragForm) — ohne neues
@@ -74,5 +75,5 @@ export async function submitAntragAction(
     return { error: "message" in result ? result.message : "Ungültige Eingabe." };
   }
 
-  redirect(`/status/${result.token}`);
+  redirect(`${publicBaseUrl()}/status/${result.token}`);
 }

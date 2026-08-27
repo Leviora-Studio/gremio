@@ -524,8 +524,10 @@ Der Kartentitel wird automatisch aus dem Feedbacktext abgeleitet (gekürzt auf $
 Der Endpunkt **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivität, keine Datei. Er braucht deshalb **keinen \`Idempotency-Key\`** — beliebig oft aufrufbar.
 
 **Unterstützte Links** (beide nur auf dieser Instanz):
-* \`{APP_BASE_URL}/status/{token}\` → Antrag
-* \`{APP_BASE_URL}/feedback/status/{token}\` → Feedback
+* \`{PUBLIC_BASE_URL}/status/{token}\` → Antrag
+* \`{PUBLIC_BASE_URL}/feedback/status/{token}\` → Feedback
+
+Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben gültig. Die Antwort verwendet immer die kanonische \`PUBLIC_BASE_URL\`.
 
 **Nicht unterstützt:** Ausleih-/Inventarstatus (\`/inventar/status/…\`), PDF-Links, Attachment- und Stream-URLs sowie interne Kartenlinks. Solche Eingaben ergeben \`400\`.
 
@@ -755,7 +757,7 @@ Der Endpunkt **verändert nichts**: keine Karte, kein Zeitstempel, keine Aktivit
             type: "string",
             format: "uri",
             description:
-              "Kanonischer Status-Link, aus `APP_BASE_URL` erzeugt (nicht aus der Eingabe übernommen).",
+              "Kanonischer Status-Link, aus `PUBLIC_BASE_URL` erzeugt (nicht aus der Eingabe übernommen; ohne eigene öffentliche Basis gilt `APP_BASE_URL`).",
           },
           receiptPdfUrl: { type: "string", format: "uri" },
           number: {

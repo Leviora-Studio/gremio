@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { appBaseUrl } from "@/lib/public-api";
+import { publicBaseUrl } from "@/lib/public-api";
 import { buildFeedbackConfirmationPdf } from "@/lib/pdf";
 import { getFeedbackByToken } from "@/lib/public-feedback-submission";
 import { allowFormRequest } from "@/lib/rate-limit";
@@ -35,7 +35,7 @@ export async function GET(
     submitterName: fb.submitterName,
     feedbackText: fb.feedbackText,
     eingang: fb.createdAt,
-    statusLink: `${appBaseUrl()}/feedback/status/${token}`,
+    statusLink: `${publicBaseUrl()}/feedback/status/${token}`,
     number: fb.number,
   });
 

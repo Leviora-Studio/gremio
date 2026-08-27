@@ -217,13 +217,19 @@ export function withPublicApi500<A extends unknown[]>(
   };
 }
 
-/**
- * Kanonische öffentliche Basis-URL. Ausschließlich aus `APP_BASE_URL` — niemals
- * aus `Host`/`X-Forwarded-Host`, die der Client frei setzen kann (sonst ließe
- * sich der Status-Link auf eine fremde Domain umbiegen).
- */
+/** Kanonische Basis der internen App, unter anderem für bestehende Links. */
 export function appBaseUrl(): string {
   return env.APP_BASE_URL.replace(/\/+$/, "");
+}
+
+/**
+ * Kanonische öffentliche Basis-URL. Ausschließlich aus `PUBLIC_BASE_URL` mit
+ * rückwärtskompatiblem Fallback auf `APP_BASE_URL` — niemals aus
+ * `Host`/`X-Forwarded-Host`, die der Client frei setzen kann (sonst ließe sich
+ * der Status-Link auf eine fremde Domain umbiegen).
+ */
+export function publicBaseUrl(): string {
+  return (env.PUBLIC_BASE_URL ?? env.APP_BASE_URL).replace(/\/+$/, "");
 }
 
 /** Öffentliche Links eines Antrags — identisch zu Formular und PDF-Bestätigung. */
@@ -231,7 +237,7 @@ export function publicApplicationLinks(token: string): {
   statusUrl: string;
   receiptPdfUrl: string;
 } {
-  const base = appBaseUrl();
+  const base = publicBaseUrl();
   return {
     statusUrl: `${base}/status/${token}`,
     receiptPdfUrl: `${base}/status/${token}/pdf`,
@@ -243,7 +249,7 @@ export function publicFeedbackLinks(token: string): {
   statusUrl: string;
   receiptPdfUrl: string;
 } {
-  const base = appBaseUrl();
+  const base = publicBaseUrl();
   return {
     statusUrl: `${base}/feedback/status/${token}`,
     receiptPdfUrl: `${base}/feedback/status/${token}/pdf`,

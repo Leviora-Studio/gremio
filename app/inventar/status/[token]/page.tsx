@@ -14,7 +14,7 @@ import { PublicContractSection } from "@/components/inventory/PublicContractSect
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { StatusLinkBox } from "@/components/StatusLinkBox";
-import { env } from "@/lib/env";
+import { publicBaseUrl } from "@/lib/public-api";
 import { withdrawRequestAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -140,7 +140,7 @@ export default async function InventoryRequestStatusPage({
           ist größer gesetzt als der Hinweis und direkt kopierbar. Eine
           Eingangsbestätigung als PDF gibt es für Ausleihen nicht. */}
       <StatusLinkBox
-        link={`${env.APP_BASE_URL}/inventar/status/${token}`}
+        link={`${publicBaseUrl()}/inventar/status/${token}`}
         subject="deine Anfrage"
       />
 

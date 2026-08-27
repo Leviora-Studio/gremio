@@ -5,6 +5,9 @@ import { z } from "zod";
 
 const schema = z.object({
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
+  // Kanonische Basis für alle öffentlichen Status-, PDF- und Download-Links.
+  // Ohne eigenen Wert bleibt das bisherige Verhalten über APP_BASE_URL erhalten.
+  PUBLIC_BASE_URL: z.string().url().optional(),
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET muss mindestens 32 Zeichen lang sein"),
   ENCRYPTION_KEY: z
     .string()

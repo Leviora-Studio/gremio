@@ -4,7 +4,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
-import { appBaseUrl } from "@/lib/public-api";
+import { publicBaseUrl } from "@/lib/public-api";
 import { buildConfirmationPdf } from "@/lib/pdf";
 import { resolveApplicationCardId } from "@/lib/public-status";
 import { dbErrorWithoutParams } from "@/lib/db-errors";
@@ -49,7 +49,7 @@ export async function GET(
     title: antrag.title,
     applicant: antrag.applicant,
     eingang: antrag.createdAt,
-    statusLink: `${appBaseUrl()}/status/${token}`,
+    statusLink: `${publicBaseUrl()}/status/${token}`,
     number: antrag.number,
   });
 

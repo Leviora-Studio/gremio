@@ -485,9 +485,13 @@ paths:
 
         **Unterstützte Links** (beide nur auf dieser Instanz):
 
-        * `{APP_BASE_URL}/status/{token}` → Antrag
+        * `{PUBLIC_BASE_URL}/status/{token}` → Antrag
 
-        * `{APP_BASE_URL}/feedback/status/{token}` → Feedback
+        * `{PUBLIC_BASE_URL}/feedback/status/{token}` → Feedback
+
+
+        Bereits ausgegebene Links unter dem bisherigen `APP_BASE_URL`-Origin bleiben gültig. Die
+        Antwort verwendet immer die kanonische `PUBLIC_BASE_URL`.
 
 
         **Nicht unterstützt:** Ausleih-/Inventarstatus (`/inventar/status/…`), PDF-Links,
@@ -728,7 +732,8 @@ components:
         statusUrl:
           type: string
           format: uri
-          description: Kanonischer Status-Link, aus `APP_BASE_URL` erzeugt (nicht aus der Eingabe übernommen).
+          description: Kanonischer Status-Link, aus `PUBLIC_BASE_URL` erzeugt (nicht aus der Eingabe
+            übernommen; ohne eigene öffentliche Basis gilt `APP_BASE_URL`).
         receiptPdfUrl:
           type: string
           format: uri

@@ -12,6 +12,7 @@ import {
 } from "@/lib/antispam";
 import { allowFormRequest, FEEDBACK_FORM_RATE_LIMIT } from "@/lib/rate-limit";
 import { submitPublicFeedback } from "@/lib/public-feedback-submission";
+import { publicBaseUrl } from "@/lib/public-api";
 
 export type FeedbackValues = {
   areaId: string;
@@ -87,5 +88,5 @@ export async function submitFeedbackAction(
     };
   }
 
-  redirect(`/feedback/status/${result.token}`);
+  redirect(`${publicBaseUrl()}/feedback/status/${result.token}`);
 }

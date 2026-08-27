@@ -111,8 +111,9 @@ curl -X POST "https://gremio.example/api/public/v1/applications" \
 
 Die Antwort enthält **bewusst nicht**: interne Karten-ID, `/intern/card/{id}`,
 Ziel-Board, Zielspalte, Dateipfade oder Nextcloud-Informationen. `statusUrl` und
-`receiptPdfUrl` werden ausschließlich aus der kanonischen `APP_BASE_URL`
-gebildet — nie aus `Host` oder `X-Forwarded-Host`.
+`receiptPdfUrl` werden ausschließlich aus der kanonischen `PUBLIC_BASE_URL`
+gebildet — nie aus `Host` oder `X-Forwarded-Host`. Ist keine eigene öffentliche
+Basis konfiguriert, gilt rückwärtskompatibel `APP_BASE_URL`.
 
 ### Statuscodes
 
@@ -258,8 +259,12 @@ keine Datei. Er ist beliebig oft wiederholbar.
 
 | Form | Typ |
 |------|-----|
-| `{APP_BASE_URL}/status/{token}` | Antrag |
-| `{APP_BASE_URL}/feedback/status/{token}` | Feedback |
+| `{PUBLIC_BASE_URL}/status/{token}` | Antrag |
+| `{PUBLIC_BASE_URL}/feedback/status/{token}` | Feedback |
+
+Bereits ausgegebene Links unter `APP_BASE_URL` bleiben als Legacy-Origin
+zulässig. Erfolgreiche Antworten geben den Link immer kanonisch unter
+`PUBLIC_BASE_URL` zurück.
 
 **Nicht unterstützt** (ergibt `400`): Ausleih-/Inventarstatus
 (`/inventar/status/…`), PDF-Links, Attachment- und Stream-URLs, interne
@@ -267,8 +272,8 @@ Kartenlinks, fremde Hosts, Links mit Query-Parametern, Fragment oder
 Zugangsdaten.
 
 Der Server ruft den übergebenen Link **niemals** ab. Er wird nur lokal geparst,
-strukturell gegen `APP_BASE_URL` geprüft und dann als Token gegen die eigene
-Datenbank verwendet.
+strukturell gegen `PUBLIC_BASE_URL` oder den bisherigen `APP_BASE_URL`-Origin
+geprüft und dann als Token gegen die eigene Datenbank verwendet.
 
 ### Anfrage
 
