@@ -75,16 +75,22 @@ export function PublicAntragForm({
         </label>
       </div>
 
-      <div>
-        <label className="label">Standort *</label>
-        <Select
-          name="locationId"
-          placeholder="Bitte wählen…"
-          options={locations.map((l) => ({
-            value: String(l.id),
-            label: l.name,
-          }))}
-        />
+      <div className="grid gap-2 sm:grid-cols-2 sm:items-end sm:gap-4">
+        <div>
+          <label className="label">Standort *</label>
+          <Select
+            name="locationId"
+            placeholder="Bitte wählen…"
+            options={locations.map((l) => ({
+              value: String(l.id),
+              label: l.name,
+            }))}
+          />
+        </div>
+        <p className="text-sm text-slate-500">
+          Anträge ab 500 Euro müssen an den Großen StuRa gestellt werden,
+          Anträge unter 500 Euro an den entsprechenden Standort.
+        </p>
       </div>
 
       <div>
