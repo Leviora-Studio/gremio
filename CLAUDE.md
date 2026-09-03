@@ -9,11 +9,12 @@ Zwei Bereiche:
 
 Die Boards sind **allgemeine Kanban-Boards** und auch **unabhängig vom öffentlichen Formular** nutzbar. Das öffentliche Formular ist nur *eine* Quelle: Eingaben werden je nach gewähltem **Standort** automatisch in ein vom Admin festgelegtes Board + Spalte eingespeist (siehe „Standorte & Formular-Routing").
 
-**Vier Module** teilen sich Nutzer, Gruppen und das Freigabemodell:
+**Fünf Module** teilen sich Nutzer, Gruppen und das Freigabemodell:
 1. **Kanban/Anträge** — Boards, Karten, Anhänge (Kern)
 2. **Finanzen** (`/finanzen`) — Haushaltsplan + Ausgabenauswertung über Quell-Boards
 3. **Inventar & Ausleihe** (`/intern/inventar`) — Gegenstände, Leihvorgänge, Anlagenverzeichnis
-4. **Vorlagen** (`/vorlagen`) — Board- und Finanz-Templates
+4. **Protokolle** (`/intern/protokolle`) — Sitzungen und Markdown-Protokolle mit Nextcloud als alleiniger Dateiablage
+5. **Vorlagen** (`/vorlagen`) — Board-, Finanz- und Protokollvorlagen
 
 ---
 
@@ -121,6 +122,7 @@ cards          (id, board_id FK→boards, status_id FK→board_statuses, locatio
                 deadline NULL,
                 meeting  NULL,                     -- frei wählbares Datum "Sitzung"
                 decision_ref NULL,                 -- Freitext "Beschlussreferenz"
+                requested_amount NULL,             -- beantragter Betrag in Cent
                 priority TEXT NULL CHECK(priority IN ('low','middle','high')),
                 notes NULL,                        -- Freitext "Notizen"
                 position INTEGER DEFAULT 0)        -- Reihenfolge in der Spalte (Drag&Drop sortierbar)
@@ -159,7 +161,7 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 
 ## Nextcloud-Integration
 
-> **WICHTIG — Abgrenzung:** Die App ist eigenständig. Anträge/Karten, Kanban-Board und alle Daten leben **ausschließlich in unserer eigenen App** (PostgreSQL), **nicht** in Nextcloud Deck. Nextcloud hat **nur eine einzige Aufgabe**: Am Ende des Workflows werden die Dateien eines Antrags als **Archiv** nach Nextcloud hochgeladen. Mehr macht die Nextcloud nicht (kein Deck, keine Karten, keine Tickets in Nextcloud).
+> **WICHTIG — Abgrenzung:** Die App ist eigenständig. Anträge/Karten und Kanban-Boards leben **ausschließlich in PostgreSQL**, nicht in Nextcloud Deck. Nextcloud erfüllt zwei klar getrennte Aufgaben: die bestehende, abschließende Antragsarchivierung und den eigenständigen Bereich **Protokolle**, in dem Nextcloud die alleinige Quelle der Markdown-Dateien und Sitzungsordner ist. Gremio speichert dort nur technische Metadaten und Relationen.
 
 - **Archivierung ist eine reine Board-Einstellung** (an/aus pro Board, Default: **aus**). **Keine globale Verbindung** — jedes Board bringt seine **eigene Nextcloud** mit: URL + Zugangsdaten + Zielordner.
 - **Trigger-Status pro Board** (Status-Spalte mit `is_archive_trigger`). Erreicht ein Antrag diese Spalte **und** ist die Archivierung für das Board aktiv, werden die aktuell am Antrag hängenden Dateien automatisch in einen Unterordner des board-eigenen Zielordners hochgeladen.
@@ -289,11 +291,17 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /intern/inventar/{id}/einstellungen → Felder, Inventarnummern, Optionen, Freigaben, Leihboard, Eigentum/Löschen (Eigentümer/Admin)
 /intern/inventar/item/{itemId} → Detailansicht eines Gegenstands (Vorgänge, Mängel, Belege)
 /intern/inventar/loan/{loanId} → Detailansicht eines Leihvorgangs
-/vorlagen                → Vorlagen-Bereich (Admin ODER Template-Verwalter): Einstieg zu Board- + Finanz-Templates
+/intern/protokolle       → Zugängliche Protokollbereiche
+/intern/protokolle/neu   → Protokollbereich erstellen (jeder eingeloggte Nutzer)
+/intern/protokolle/{id}  → Nextcloud-Sitzungsordner synchronisieren und öffnen
+/intern/protokolle/{id}/sitzung/{sessionId} → Dateien eines Sitzungsordners + Markdown-Editor
+/intern/protokolle/{id}/einstellungen → Verbindung, Muster, Finanzboard, Eigentum und Freigaben (Eigentümer/Admin)
+/vorlagen                → Vorlagen-Bereich (Admin ODER Template-Verwalter): Einstieg zu Board-, Finanz- und Protokollvorlagen
 /vorlagen/boards         → Board-Templates: Liste + anlegen/umbenennen/löschen/duplizieren
 /vorlagen/boards/{id}    → Board-Template bearbeiten: Spalten anlegen/umbenennen/per Drag&Drop sortieren/löschen
 /vorlagen/finanzen       → Finanz-Templates: Liste + anlegen/umbenennen/löschen/duplizieren
 /vorlagen/finanzen/{id}  → Finanz-Template bearbeiten: Haushaltsplan-Positionen (Auto-Speichern)
+/vorlagen/protokolle     → Protokollvorlagen mit zentral aufgelösten Markdown-Variablen
 /admin                   → Admin Panel (nur für Admins sichtbar)
 /admin/users             → Nutzerverwaltung (nur Rollen inkl. Admin/Template-Verwalter ernennen; Konten/Aktivierung/Löschen laufen über das SSO)
 /admin/groups            → Gruppenverwaltung (anlegen, Mitglieder) — nur Admin
@@ -312,7 +320,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 
 ### Navigation (nach Login)
 Nach dem Login landet jeder Nutzer auf der **Startseite** (`/intern`): Dashboard plus Buttons zu den Bereichen, eingeblendet nach Rolle/Rechten:
-- **Boards** (`/intern/boards`), **Finanzen** (`/finanzen`), **Inventar** (`/intern/inventar`), **Meine Aufgaben** (`/intern/aufgaben`) — jeder Nutzer
+- **Boards** (`/intern/boards`), **Finanzen** (`/finanzen`), **Inventar** (`/intern/inventar`), **Protokolle** (`/intern/protokolle`), **Meine Aufgaben** (`/intern/aufgaben`) — jeder Nutzer
 - **Neues Board erstellen** — jeder Nutzer
 - **Mein Konto** (`/intern/konto`) — jeder Nutzer; Benutzername/Anzeigename kommen aus dem SSO und sind hier nicht änderbar
 - **Vorlagen** (`/vorlagen`) — nur für Admin **und** Template-Verwalter sichtbar
@@ -354,6 +362,7 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 | Priority | Auswahl | drei feste Stufen low / middle / high; **Bezeichnung + Farbe je Stufe im Admin-Panel anpassbar** (`/admin/priorities`, Tabelle `priorities`) |
 | Antragsnummer | Text (auto) | board-spezifische, automatisch vergebene Nummer (Spalte `number`); Konfiguration in den Board-Einstellungen (`board_numbering`). Anzeige-Toggle ist „nur optisch"; für alle Nutzer mit Board-Zugriff editierbar |
 | Haushaltstitel | Text | optionales Freitextfeld (Spalte `budget_title`), pro Board ab-/anschaltbar; Verknüpfungs-Schlüssel zur Finanzübersicht |
+| Beantragter Betrag | Euro | `requested_amount` (Cent); wird in Protokollvorschlägen verwendet |
 | Genehmigter Betrag | Euro | `approved_amount` (Cent); Eingabe in Euro, Anzeige „… €" |
 | Tatsächliche Ausgaben | Euro | `actual_amount` (Cent); überschreibt in den Ausgaben-Views den genehmigten Betrag, sobald gesetzt |
 | Anweisungsdatum | Datum | `instruction_date`; auto-gesetzt beim Erreichen der pro Board wählbaren Trigger-Spalte (analog Archiv-Trigger), zusätzlich für alle Nutzer mit Board-Zugriff editierbar |
@@ -380,7 +389,7 @@ attachments       (id, card_id FK→cards ON DELETE CASCADE,
 
 board_card_fields (board_id FK→boards ON DELETE CASCADE, field_key TEXT,
                    visible INTEGER DEFAULT 1, PRIMARY KEY(board_id, field_key))
--- field_key: number|applicant|budget_title|approved_amount|actual_amount|creator|assignee|
+-- field_key: number|applicant|budget_title|requested_amount|approved_amount|actual_amount|creator|assignee|
 --            deadline|meeting|decision_ref|instruction_date|transfer_date|priority|account|
 --            finance_request|annex_a|annex_b|student_card|other_pdfs|notes
 -- "title" (Spalte title) ist IMMER sichtbar und NICHT abschaltbar.
@@ -397,6 +406,8 @@ Beim Erstellen eines Boards wählt man ein **Template** (Spalten-Vorlage). Die S
 - Board löschen/Template löschen sind unabhängig (Boards kopieren die Spalten, kein FK auf Templates).
 
 > **Finanz-Templates** (`/vorlagen/finanzen`) funktionieren analog: Haushaltsplan-Vorlagen mit Ober-/Unterpunkten, **anlegen/umbenennen/löschen/duplizieren**; der Haushaltsplan-Editor **speichert automatisch** (kein Speichern-Button), Summen-Warnungen bleiben serverseitig live.
+
+> **Protokollvorlagen** (`/vorlagen/protokolle`) enthalten Markdown. Erlaubte Variablen werden zentral geprüft und beim Anlegen der Nextcloud-Datei aufgelöst; unbekannte Variablen führen zu einer sichtbaren Validierungsmeldung.
 
 ```sql
 board_templates        (id, name UNIQUE, description, created_at)
@@ -525,6 +536,102 @@ inventory_attachments  (id, item_id FK→inventory_items ON DELETE CASCADE,
 
 inventory_overview_config  (id PK DEFAULT 1, min_price)   -- Singleton, Cent
 user_inventory_board_order (user_id, board_id, position, PRIMARY KEY(user_id, board_id))
+```
+
+---
+
+## Protokolle
+
+`/intern/protokolle` ist ein eigenständiger Bereich wie Finanzen oder Inventar,
+kein Kanban-Board. Ein **Protokollbereich** gehört einem Nutzer und kann binär an
+Nutzer oder Gruppen freigegeben werden. Sehen und Bearbeiten gilt für alle
+Mitglieder; Name, Freigaben, WebDAV-Verbindung, Namensmuster und
+Finanzverknüpfung verwalten ausschließlich Eigentümer oder Administratoren. Alle
+Server Actions und Seiten verwenden dafür `requireProtocolAreaAccess` bzw.
+`requireProtocolAreaManage`; UI-Ausblendung ist nicht die Sicherheitsgrenze.
+
+### Speicher- und Synchronisationsmodell
+
+- Sitzungsordner und Markdown-Protokolle liegen **ausschließlich in Nextcloud**.
+  `protocol_sessions` speichert nur Ordnername, optional erkanntes Datum,
+  WebDAV-Pfad, `oc:fileid`, ETag/Änderungszeit und letzten Abgleich. Der
+  Markdown-Inhalt wird weder in PostgreSQL noch im lokalen Upload-Verzeichnis
+  persistiert.
+- Beim Öffnen eines Bereichs sowie über „Jetzt synchronisieren“ wird der
+  WebDAV-Wurzelpfad gelesen. Direkte Unterordner werden als Sitzungen registriert.
+  Fremde Dateien werden lediglich aufgelistet und über einen Nextcloud-Link
+  geöffnet; Gremio verschiebt, überschreibt oder löscht sie nicht. Auch die
+  Konfigurationsprüfung liest den Wurzelpfad nur und legt ihn nicht selbst an.
+- Neue Ordner und Dateien werden mit exklusivem Anlegen (`If-None-Match: *`)
+  erzeugt. Ein vorhandener Sitzungsordner wird geöffnet; eine vorhandene Datei
+  wird nie ersetzt. Schreiben verwendet `If-Match` gegen den gelesenen ETag,
+  ersatzweise `If-Unmodified-Since`. Bei 409/412 bleibt der Editor ungespeichert
+  und fordert zum Neuladen/Vergleichen auf.
+- Nextcloud-`oc:fileid` wird über einen expliziten `PROPFIND` abgefragt und, wenn
+  verfügbar, zur Wiedererkennung umbenannter Ordner/Dateien benutzt. Fehlt die
+  serverabhängige Eigenschaft, bleiben Pfad und ETag der nachvollziehbare
+  Fallback. Zugangsdaten bleiben serverseitig, sind AES-256-GCM-verschlüsselt und
+  durch die bestehende HTTPS-/DNS-Pinning-/Redirect-SSRF-Härtung geschützt.
+
+### Vorlagen, Markdown und Finanzkarten
+
+Protokollvorlagen liegen als verwaltete Vorlagen in PostgreSQL; erlaubt sind
+`{{session.date}}`, `{{session.date_de}}`, `{{session.folder_name}}`,
+`{{protocol_area.name}}` und `{{created_at}}`. Unbekannte Variablen werden beim
+Speichern und Erzeugen abgewiesen. Ordner-/Dateimuster erlauben eine begrenzte
+Platzhaltermenge und verbieten leere, versteckte oder pfadübergreifende Namen.
+Der Editor lädt und speichert direkt per WebDAV, warnt vor ungespeicherten
+Änderungen und verwaltet ein markiertes Inhaltsverzeichnis mit deduplizierten
+Markdown-Ankern. Markdown-Dateien sind für die In-App-Bearbeitung auf 2 MB
+begrenzt; größere Dateien bleiben über Nextcloud zugänglich.
+
+Ein Protokollbereich kann optional genau ein normales Board und eine zugehörige
+Quellspalte referenzieren. Der konfigurierende Nutzer muss auf dieses Board
+zugreifen dürfen; Leih-System-Boards sind ausgeschlossen. Vorschläge verändern
+weder Status noch Position der Karten. Beim Einfügen entsteht ein zentral
+formatierter Markdown-Block. Seine stabile Karten-ID steht nicht nur in
+HTML-Kommentaren, sondern zusätzlich im normalen HTTPS-Link zur Kartenseite;
+dadurch kann Gremio die Relation auch dann erkennen, wenn ein Editor Kommentare
+entfernt. Die Markerhaltung muss bei einem konkret eingesetzten
+Nextcloud-Text-Release vor Produktivfreigabe nochmals interoperabilitätsgeprüft
+werden.
+
+`protocol_card_links` bildet Sitzung↔Karte als n:m-Beziehung ab und speichert TOP,
+den zuletzt automatisch erzeugten Referenzwert und einen Konfliktstatus. Eine
+Beschlussreferenz wird nur gesetzt, wenn sie leer ist oder noch dem vorherigen
+automatischen Wert entspricht; manuelle Änderungen werden nie überschrieben.
+Da die Karte derzeit nur ein einzelnes Feld `decision_ref` besitzt, gilt bei
+mehreren Sitzungsverknüpfungen: Der zuletzt erfolgreich gespeicherte verwaltete
+TOP-Block liefert den aktiven automatischen Wert; beim Entfernen fällt Gremio
+auf die zuletzt aktualisierte verbleibende Verknüpfung zurück.
+Entfernt ein gespeichertes Protokoll den verwalteten Kartenblock, verschwindet
+die Relation und damit die Anzeige „Behandelt in Sitzung“ auf der Karte.
+
+WebDAV und PostgreSQL bieten keine gemeinsame Transaktion. Gremio schreibt daher
+zuerst ETag-gesichert nach Nextcloud und gleicht danach die idempotent aus den
+Markdown-Markern rekonstruierbaren Relationen ab. Scheitert die Nachbearbeitung,
+meldet die Oberfläche ausdrücklich „Datei gespeichert, Relation inkonsistent“;
+erneutes Speichern wiederholt den Abgleich. Automatische Statuswechsel,
+PDF-Erzeugung, Upload zusätzlicher Unterlagen, Webhooks, öffentliche Protokolle,
+Volltextindexierung und Lösch-/Aufräumautomationen gehören nicht zu dieser
+Ausbaustufe.
+
+```sql
+protocol_templates   (id, name UNIQUE, description, markdown, created_at)
+protocol_areas       (id, name, description, owner_id, nc_url, nc_username,
+                      nc_password_enc, root_path, folder_pattern, file_pattern,
+                      template_id, board_id NULL, source_status_id NULL,
+                      decision_ref_pattern, created_at)
+protocol_area_access (id, area_id, user_id NULL, group_id NULL,
+                      CHECK genau ein Freigabesubjekt, UNIQUE je Subjekt)
+protocol_sessions    (id, area_id, folder_name, session_date NULL,
+                      folder_file_id NULL, folder_etag NULL, protocol_path NULL,
+                      protocol_file_id NULL, protocol_etag NULL,
+                      protocol_last_modified NULL, last_synced_at, created_at,
+                      UNIQUE(area_id, folder_name))
+protocol_card_links  (id, session_id, card_id, top, last_auto_decision_ref NULL,
+                      decision_ref_conflict, created_at, updated_at,
+                      UNIQUE(session_id, card_id))
 ```
 
 ---

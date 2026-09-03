@@ -130,6 +130,7 @@ export function NewCardButton({
                 decisionRef: null,
                 instructionDate: null,
                 transferDate: null,
+                requestedAmount: null,
                 approvedAmount: null,
                 actualAmount: null,
                 priorityId: null,

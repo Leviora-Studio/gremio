@@ -85,7 +85,7 @@ Authorization: Bearer grm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ## Konventionen
 
 - Alle Bodies und Antworten sind `application/json`.
-- Geldbeträge sind **Integer in Cent** (`approvedAmountCents`, `actualAmountCents`).
+- Geldbeträge sind **Integer in Cent** (`requestedAmountCents`, `approvedAmountCents`, `actualAmountCents`).
 - Datumsfelder sind Strings im Format `YYYY-MM-DD` (oder `null`).
 - Zeitstempel (`createdAt`, `updatedAt`) sind ISO-8601.
 - Unbekannte Body-Felder werden mit `400` abgelehnt (Tippfehler-Schutz).
@@ -175,7 +175,7 @@ Schreibbare Felder: `title`, `applicant`, `budgetTitle` (max. 60 Zeichen),
 `number`, `statusId`, `position`, `priorityId`, `accountId`, `assigneeUserIds`
 (Array, ersetzt die Zuweisungen vollständig), `creatorUserId`, `deadline`,
 `meeting`, `decisionRef`, `instructionDate`, `transferDate`,
-`approvedAmountCents`, `actualAmountCents`, `notes`, `applicantNote`,
+`requestedAmountCents`, `approvedAmountCents`, `actualAmountCents`, `notes`, `applicantNote`,
 `archived` (nur `false` = wiederherstellen; `true`/manuelles Archivieren wird
 mit 400 abgelehnt, da es im Web ebenfalls keine manuelle Archivierung gibt).
 `number`, `instructionDate` und `transferDate` dürfen — wie im Web — von jedem

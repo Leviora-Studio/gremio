@@ -94,6 +94,7 @@ export const cardWriteSchema = z
     decisionRef: z.preprocess(singleLineInput, z.string().max(200)).nullish(),
     instructionDate: date,
     transferDate: date,
+    requestedAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     approvedAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     actualAmountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullish(),
     // Mehrzeilig: innere Umbrüche sind Inhalt und bleiben erhalten.
@@ -161,6 +162,8 @@ async function buildCardValues(
     v.decisionRef = input.decisionRef ? String(input.decisionRef).slice(0, 200) : null;
   if ("instructionDate" in input) v.instructionDate = input.instructionDate ?? null;
   if ("transferDate" in input) v.transferDate = input.transferDate ?? null;
+  if ("requestedAmountCents" in input)
+    v.requestedAmount = input.requestedAmountCents ?? null;
   if ("approvedAmountCents" in input)
     v.approvedAmount = input.approvedAmountCents ?? null;
   if ("actualAmountCents" in input) v.actualAmount = input.actualAmountCents ?? null;

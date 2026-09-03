@@ -707,6 +707,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           decisionRef: { type: ["string", "null"] },
           instructionDate: { type: ["string", "null"], format: "date" },
           transferDate: { type: ["string", "null"], format: "date" },
+          requestedAmountCents: { type: ["integer", "null"] },
           approvedAmountCents: { type: ["integer", "null"] },
           actualAmountCents: { type: ["integer", "null"] },
           notes: { type: ["string", "null"] },
@@ -785,6 +786,11 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
             type: ["string", "null"],
             format: "date",
             description: "Nur für Board-Verwalter.",
+          },
+          requestedAmountCents: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: MAX_AMOUNT_CENTS,
           },
           approvedAmountCents: {
             type: ["integer", "null"],

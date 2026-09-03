@@ -714,6 +714,7 @@ components:
               - number
               - applicant
               - budget_title
+              - requested_amount
               - approved_amount
               - actual_amount
               - creator
@@ -843,6 +844,10 @@ components:
             - string
             - "null"
           format: date
+        requestedAmountCents:
+          type:
+            - integer
+            - "null"
         approvedAmountCents:
           type:
             - integer
@@ -969,6 +974,12 @@ components:
             - "null"
           format: date
           description: Nur für Board-Verwalter.
+        requestedAmountCents:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
         approvedAmountCents:
           type:
             - integer

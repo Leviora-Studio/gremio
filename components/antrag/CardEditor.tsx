@@ -51,6 +51,7 @@ export function CardEditor({
     decisionRef: string | null;
     instructionDate: string | null;
     transferDate: string | null;
+    requestedAmount: string | null;
     approvedAmount: string | null;
     actualAmount: string | null;
     priorityId: number | null;
@@ -76,6 +77,7 @@ export function CardEditor({
     decisionRef: initial.decisionRef,
     instructionDate: initial.instructionDate,
     transferDate: initial.transferDate,
+    requestedAmount: initial.requestedAmount,
     approvedAmount: initial.approvedAmount,
     actualAmount: initial.actualAmount,
     priorityId: initial.priorityId ?? null,
@@ -176,6 +178,19 @@ export function CardEditor({
           defaultValue={valuesRef.current.budgetTitle ?? ""}
           className="input"
           onChange={(e) => update({ budgetTitle: e.target.value })}
+          onBlur={flushNow}
+        />
+      </div>
+    ),
+    requested_amount: (
+      <div>
+        <label className="label">Beantragter Betrag (€)</label>
+        <input
+          defaultValue={valuesRef.current.requestedAmount ?? ""}
+          className="input"
+          inputMode="decimal"
+          placeholder="0,00"
+          onChange={(e) => update({ requestedAmount: e.target.value })}
           onBlur={flushNow}
         />
       </div>

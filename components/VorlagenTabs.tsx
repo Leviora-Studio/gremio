@@ -8,8 +8,9 @@ import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 
 const tabs = [
-  { href: "/vorlagen/boards", label: "Board-Templates" },
-  { href: "/vorlagen/finanzen", label: "Finanz-Templates" },
+  { href: "/vorlagen/boards", label: "Boardvorlagen" },
+  { href: "/vorlagen/finanzen", label: "Finanzvorlagen" },
+  { href: "/vorlagen/protokolle", label: "Protokollvorlagen" },
 ];
 
 export function VorlagenTabs() {

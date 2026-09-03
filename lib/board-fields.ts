@@ -33,6 +33,7 @@ export async function getVisibleFieldKeys(
 export const API_FIELD_TO_KEY: Record<string, string> = {
   applicant: "applicant",
   budgetTitle: "budget_title",
+  requestedAmountCents: "requested_amount",
   number: "number",
   creatorUserId: "creator",
   assigneeUserIds: "assignee",

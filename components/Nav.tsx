@@ -71,6 +71,12 @@ export function Nav({ user }: { user: User }) {
           >
             Inventar
           </Link>
+          <Link
+            href="/intern/protokolle"
+            className="font-medium text-slate-600 hover:text-brand-600"
+          >
+            Protokolle
+          </Link>
           {(user.role === "admin" || user.role === "template_manager") && (
             <Link
               href="/vorlagen"

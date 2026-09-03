@@ -33,7 +33,7 @@ export const users = pgTable(
     email: text("email"), // E-Mail aus dem SSO (email-Scope), optional
     // Wird seit der SSO-Umstellung nicht mehr verwendet (Login läuft über OIDC).
     passwordHash: text("password_hash"),
-    // template_manager: wie user, darf zusätzlich Board-/Finanz-Templates verwalten.
+    // template_manager: wie user, darf zusätzlich Board-/Finanz-/Protokollvorlagen verwalten.
     role: text("role", { enum: ["admin", "template_manager", "user"] })
       .notNull()
       .default("user"),
@@ -258,6 +258,7 @@ export const cards = pgTable(
     title: text("title").notNull(),
     applicant: text("applicant").notNull(),
     budgetTitle: text("budget_title"), // optionaler "Haushaltstitel"
+    requestedAmount: integer("requested_amount"), // Beantragter Betrag in Cent
     number: text("number"), // Antragsnummer (board-spezifisch, optional)
     token: text("token").notNull().unique(),
     createdAt: createdAt(),
@@ -608,6 +609,135 @@ export const financeTemplateItems = pgTable("finance_template_items", {
   plannedAmount: integer("planned_amount"),
   position: integer("position").notNull().default(0),
 });
+
+// ---------------------------------------------------------------------------
+// Protokolle — Nextcloud ist die einzige Quelle für Protokolldateien. In der
+// DB liegen nur Konfiguration, technische Metadaten und Relationen.
+// ---------------------------------------------------------------------------
+export const protocolTemplates = pgTable("protocol_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  markdown: text("markdown").notNull(),
+  createdAt: createdAt(),
+});
+
+export const protocolAreas = pgTable("protocol_areas", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ownerId: integer("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  ncUrl: text("nc_url").notNull(),
+  ncUsername: text("nc_username").notNull(),
+  ncPasswordEnc: text("nc_password_enc").notNull(),
+  rootPath: text("root_path").notNull(),
+  folderPattern: text("folder_pattern").notNull().default("{YYYY}-{MM}-{DD}"),
+  filePattern: text("file_pattern").notNull().default("Protokoll.md"),
+  templateId: integer("template_id")
+    .notNull()
+    .references(() => protocolTemplates.id, { onDelete: "restrict" }),
+  boardId: integer("board_id").references(() => boards.id, {
+    onDelete: "set null",
+  }),
+  sourceStatusId: integer("source_status_id").references(
+    () => boardStatuses.id,
+    { onDelete: "set null" },
+  ),
+  decisionRefPattern: text("decision_ref_pattern")
+    .notNull()
+    .default("{session}-TOP-{top}"),
+  createdAt: createdAt(),
+});
+
+export const protocolAreaAccess = pgTable(
+  "protocol_area_access",
+  {
+    id: serial("id").primaryKey(),
+    areaId: integer("area_id")
+      .notNull()
+      .references(() => protocolAreas.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    groupId: integer("group_id").references(() => groups.id, {
+      onDelete: "cascade",
+    }),
+  },
+  (t) => ({
+    oneSubject: check(
+      "protocol_area_access_one_subject",
+      sql`(${t.userId} is null) <> (${t.groupId} is null)`,
+    ),
+    uqUser: uniqueIndex("protocol_area_access_area_user_uq").on(
+      t.areaId,
+      t.userId,
+    ),
+    uqGroup: uniqueIndex("protocol_area_access_area_group_uq").on(
+      t.areaId,
+      t.groupId,
+    ),
+  }),
+);
+
+export const protocolSessions = pgTable(
+  "protocol_sessions",
+  {
+    id: serial("id").primaryKey(),
+    areaId: integer("area_id")
+      .notNull()
+      .references(() => protocolAreas.id, { onDelete: "cascade" }),
+    folderName: text("folder_name").notNull(),
+    sessionDate: text("session_date"),
+    folderFileId: text("folder_file_id"),
+    folderEtag: text("folder_etag"),
+    protocolPath: text("protocol_path"),
+    protocolFileId: text("protocol_file_id"),
+    protocolEtag: text("protocol_etag"),
+    protocolLastModified: timestamp("protocol_last_modified", {
+      withTimezone: true,
+    }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    uqFolder: uniqueIndex("protocol_sessions_area_folder_uq").on(
+      t.areaId,
+      t.folderName,
+    ),
+  }),
+);
+
+export const protocolCardLinks = pgTable(
+  "protocol_card_links",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => protocolSessions.id, { onDelete: "cascade" }),
+    cardId: integer("card_id")
+      .notNull()
+      .references(() => cards.id, { onDelete: "cascade" }),
+    top: text("top").notNull(),
+    lastAutoDecisionRef: text("last_auto_decision_ref"),
+    decisionRefConflict: boolean("decision_ref_conflict")
+      .notNull()
+      .default(false),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    uqSessionCard: uniqueIndex("protocol_card_links_session_card_uq").on(
+      t.sessionId,
+      t.cardId,
+    ),
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Persönliche Board-Reihenfolge (je Nutzer frei anordnenbar)
@@ -1157,6 +1287,11 @@ export type FinanceBoard = typeof financeBoards.$inferSelect;
 export type FinancePlanItem = typeof financePlanItems.$inferSelect;
 export type FinanceTemplate = typeof financeTemplates.$inferSelect;
 export type FinanceTemplateItem = typeof financeTemplateItems.$inferSelect;
+export type ProtocolTemplate = typeof protocolTemplates.$inferSelect;
+export type ProtocolArea = typeof protocolAreas.$inferSelect;
+export type ProtocolAreaAccess = typeof protocolAreaAccess.$inferSelect;
+export type ProtocolSession = typeof protocolSessions.$inferSelect;
+export type ProtocolCardLink = typeof protocolCardLinks.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;

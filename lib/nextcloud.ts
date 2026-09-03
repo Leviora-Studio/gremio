@@ -5,7 +5,12 @@ import { readFile } from "node:fs/promises";
 import { lookup as dnsLookup } from "node:dns";
 import { Agent as HttpAgent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
-import { createClient, getPatcher, type WebDAVClient } from "webdav";
+import {
+  createClient,
+  getPatcher,
+  type FileStat,
+  type WebDAVClient,
+} from "webdav";
 import { fetch as nodeFetch } from "@buttercup/fetch";
 import { absPath } from "@/lib/attachments";
 import { isSafeExternalUrl, isPublicHost } from "@/lib/url-guard";
@@ -15,6 +20,8 @@ export interface NcCredentials {
   username: string;
   password: string;
 }
+
+const MAX_MARKDOWN_BYTES = 2_000_000;
 
 /** Schnelle Vorab-Prüfung der konfigurierten URL (Schema + Literal-Host + TLS). */
 function assertSafeNcUrl(rawUrl: string): void {
@@ -109,6 +116,270 @@ function normalizeBase(folder: string): string {
   if (!f.startsWith("/")) f = "/" + f;
   if (f.endsWith("/")) f = f.slice(0, -1);
   return f;
+}
+
+export type WebDavEntry = {
+  path: string;
+  name: string;
+  type: "file" | "directory";
+  etag: string | null;
+  fileId: string | null;
+  mime: string | null;
+  size: number;
+  lastModified: string | null;
+};
+
+export class WebDavConflictError extends Error {
+  constructor(message = "Die Datei wurde zwischenzeitlich in Nextcloud geändert.") {
+    super(message);
+    this.name = "WebDavConflictError";
+  }
+}
+
+export function webDavWriteConditionHeaders(version: string): Record<string, string> {
+  if (!version) throw new Error("Der WebDAV-Versionsstand fehlt.");
+  if (version.startsWith("lastmod:")) {
+    const value = version.slice("lastmod:".length);
+    if (!value) throw new Error("Der WebDAV-Änderungszeitpunkt fehlt.");
+    return { "If-Unmodified-Since": value };
+  }
+  return { "If-Match": version };
+}
+
+function fileId(stat: FileStat): string | null {
+  const props = (stat.props ?? {}) as Record<string, unknown>;
+  for (const key of ["oc:fileid", "fileid", "{http://owncloud.org/ns}fileid"]) {
+    const value = props[key];
+    if (typeof value === "string" || typeof value === "number") return String(value);
+  }
+  return null;
+}
+
+function entry(stat: FileStat): WebDavEntry {
+  return {
+    path: stat.filename,
+    name: stat.basename,
+    type: stat.type,
+    etag: stat.etag,
+    fileId: fileId(stat),
+    mime: stat.mime ?? null,
+    size: stat.size,
+    lastModified: stat.lastmod || null,
+  };
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+async function nextcloudFileIds(
+  c: WebDAVClient,
+  folder: string,
+): Promise<Map<string, string>> {
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+    <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+      <d:prop><d:displayname/><oc:fileid/></d:prop>
+    </d:propfind>`;
+  try {
+    const response = await c.customRequest(normalizeBase(folder), {
+      method: "PROPFIND",
+      headers: {
+        Depth: "1",
+        "Content-Type": "application/xml; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(body)),
+      },
+      data: body,
+    });
+    const xml = await response.text();
+    const ids = new Map<string, string>();
+    for (const block of xml.matchAll(/<(?:d:)?response\b[\s\S]*?<\/(?:d:)?response>/gi)) {
+      const href = /<(?:d:)?href\b[^>]*>([\s\S]*?)<\/(?:d:)?href>/i.exec(block[0])?.[1];
+      const id = /<(?:oc:)?fileid\b[^>]*>([^<]+)<\/(?:oc:)?fileid>/i.exec(block[0])?.[1];
+      if (!href || !id) continue;
+      const pathname = decodeURIComponent(decodeXml(href)).replace(/\/$/, "");
+      const name = pathname.split("/").pop();
+      if (name) ids.set(name, decodeXml(id).trim());
+    }
+    return ids;
+  } catch {
+    // Nicht-Nextcloud-WebDAV-Server unterstützen oc:fileid ggf. nicht. ETag +
+    // Pfad bleiben dann der dokumentierte Fallback.
+    return new Map();
+  }
+}
+
+export function joinWebDavPath(...segments: string[]): string {
+  const clean = segments
+    .filter(Boolean)
+    .map((part, index) =>
+      index === 0 ? normalizeBase(part) : part.replace(/^\/+|\/+$/g, ""),
+    );
+  return clean.join("/").replace(/\/{2,}/g, "/");
+}
+
+/** Verzeichnisinhalt lesen; Zugangsdaten bleiben vollständig serverseitig. */
+export async function listWebDavDirectory(
+  creds: NcCredentials,
+  folder: string,
+): Promise<WebDavEntry[]> {
+  assertSafeNcUrl(creds.url);
+  const c = client(creds);
+  const normalized = normalizeBase(folder);
+  const [rows, ids] = await Promise.all([
+    c.getDirectoryContents(normalized),
+    nextcloudFileIds(c, normalized),
+  ]);
+  return rows.map((row) => ({ ...entry(row), fileId: fileId(row) ?? ids.get(row.basename) ?? null }));
+}
+
+export async function statWebDavEntry(
+  creds: NcCredentials,
+  path: string,
+): Promise<WebDavEntry> {
+  assertSafeNcUrl(creds.url);
+  return entry((await client(creds).stat(normalizeBase(path))) as FileStat);
+}
+
+export async function readWebDavText(
+  creds: NcCredentials,
+  path: string,
+): Promise<{ content: string; stat: WebDavEntry }> {
+  assertSafeNcUrl(creds.url);
+  const c = client(creds);
+  const normalized = normalizeBase(path);
+  const fileStat = (await c.stat(normalized)) as FileStat;
+  if (fileStat.size > MAX_MARKDOWN_BYTES) {
+    throw new Error("Die Markdown-Datei ist größer als 2 MB und kann nicht in Gremio bearbeitet werden.");
+  }
+  const content = (await c.getFileContents(normalized, { format: "text" })) as string;
+  return { content, stat: entry(fileStat) };
+}
+
+/** Legt einen Ordner nur dann an, wenn er noch nicht existiert. */
+export async function createWebDavDirectoryExclusive(
+  creds: NcCredentials,
+  path: string,
+): Promise<boolean> {
+  assertSafeNcUrl(creds.url);
+  const c = client(creds);
+  const normalized = normalizeBase(path);
+  return createWebDavDirectoryExclusiveWithClient(c, normalized);
+}
+
+/** Separater Kern für deterministische Tests ohne echte Nextcloud-Verbindung. */
+export async function createWebDavDirectoryExclusiveWithClient(
+  c: Pick<WebDAVClient, "exists" | "createDirectory">,
+  normalizedPath: string,
+): Promise<boolean> {
+  const normalized = normalizeBase(normalizedPath);
+  if (await c.exists(normalized)) return false;
+  try {
+    await c.createDirectory(normalized, { recursive: false });
+    return true;
+  } catch (error) {
+    if (await c.exists(normalized)) return false;
+    throw error;
+  }
+}
+
+/** PUT mit If-None-Match: *, damit bestehende Dateien nie überschrieben werden. */
+export async function createWebDavTextExclusive(
+  creds: NcCredentials,
+  path: string,
+  content: string,
+): Promise<{ created: boolean; stat?: WebDavEntry }> {
+  assertSafeNcUrl(creds.url);
+  const c = client(creds);
+  const normalized = normalizeBase(path);
+  return createWebDavTextExclusiveWithClient(c, normalized, content);
+}
+
+/** Separater Kern für den Schutz vor Überschreiben und dessen Regressionstests. */
+export async function createWebDavTextExclusiveWithClient(
+  c: Pick<WebDAVClient, "putFileContents" | "stat">,
+  normalizedPath: string,
+  content: string,
+): Promise<{ created: boolean; stat?: WebDavEntry }> {
+  const normalized = normalizeBase(normalizedPath);
+  if (Buffer.byteLength(content) > MAX_MARKDOWN_BYTES) {
+    throw new Error("Die Markdown-Datei darf höchstens 2 MB groß sein.");
+  }
+  const created = await c.putFileContents(normalized, content, {
+    overwrite: false,
+  });
+  if (!created) return { created: false };
+  return { created: true, stat: entry((await c.stat(normalized)) as FileStat) };
+}
+
+/** ETag-gesichertes Schreiben. 412 wird als verständlicher Konflikt gemeldet. */
+export async function writeWebDavTextIfMatch(
+  creds: NcCredentials,
+  path: string,
+  content: string,
+  version: string,
+): Promise<WebDavEntry> {
+  assertSafeNcUrl(creds.url);
+  const c = client(creds);
+  const normalized = normalizeBase(path);
+  return writeWebDavTextIfMatchWithClient(c, normalized, content, version);
+}
+
+/** Separater Kern für ETag-/Last-Modified-Konflikttests ohne Netzwerk. */
+export async function writeWebDavTextIfMatchWithClient(
+  c: Pick<WebDAVClient, "customRequest" | "stat">,
+  normalizedPath: string,
+  content: string,
+  version: string,
+): Promise<WebDavEntry> {
+  const normalized = normalizeBase(normalizedPath);
+  if (Buffer.byteLength(content) > MAX_MARKDOWN_BYTES) {
+    throw new Error("Die Markdown-Datei darf höchstens 2 MB groß sein.");
+  }
+  try {
+    const conditionalHeaders = webDavWriteConditionHeaders(version);
+    await c.customRequest(normalized, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(content)),
+        ...conditionalHeaders,
+      },
+      data: content,
+    });
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    if (status === 412 || status === 409) throw new WebDavConflictError();
+    throw error;
+  }
+  return entry((await c.stat(normalized)) as FileStat);
+}
+
+/** Browser-Link ohne Zugangsdaten. Mit fileId nutzt Nextcloud den stabilen /f/-Link. */
+export function nextcloudBrowserUrl(
+  webDavUrl: string,
+  path: string,
+  stableFileId?: string | null,
+  isDirectory = false,
+): string {
+  const webDav = new URL(webDavUrl);
+  const marker = webDav.pathname.indexOf("/remote.php/");
+  const basePath = marker >= 0 ? webDav.pathname.slice(0, marker) : "";
+  const base = `${webDav.origin}${basePath}`;
+  if (stableFileId && /^\d+$/.test(stableFileId)) {
+    return `${base}/f/${encodeURIComponent(stableFileId)}`;
+  }
+  const url = new URL(`${base}/index.php/apps/files/`);
+  const normalized = normalizeBase(path);
+  const directory = isDirectory
+    ? normalized
+    : normalized.slice(0, normalized.lastIndexOf("/")) || "/";
+  url.searchParams.set("dir", directory);
+  return url.toString();
 }
 
 async function ensureDir(c: WebDAVClient, path: string): Promise<void> {

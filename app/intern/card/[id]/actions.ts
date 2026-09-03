@@ -87,6 +87,7 @@ export type CardValues = {
   decisionRef: string | null;
   instructionDate: string | null;
   transferDate: string | null;
+  requestedAmount: string | null; // Euro-Eingabe (Rohstring)
   approvedAmount: string | null; // Euro-Eingabe (Rohstring)
   actualAmount: string | null; // Euro-Eingabe (Rohstring)
   priorityId: number | null;
@@ -188,6 +189,17 @@ export async function saveCardAction(
         error: "Überweisungsdatum ist kein gültiges Datum (JJJJ-MM-TT).",
       };
     update.transferDate = values.transferDate || null;
+  }
+  if (visible.has("requested_amount") && "requestedAmount" in values) {
+    const cents = values.requestedAmount
+      ? parseEuroToCents(values.requestedAmount)
+      : null;
+    if (values.requestedAmount && cents === null)
+      return {
+        ok: false,
+        error: "Beantragter Betrag ist ungültig oder zu groß (max. 20.000.000,00 €).",
+      };
+    update.requestedAmount = cents;
   }
   if (visible.has("approved_amount") && "approvedAmount" in values) {
     const cents = values.approvedAmount

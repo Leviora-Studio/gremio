@@ -34,7 +34,7 @@ export default async function TemplatesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="mb-1 text-lg font-semibold">Board-Templates</h2>
+        <h2 className="mb-1 text-lg font-semibold">Boardvorlagen</h2>
         <p className="text-sm text-slate-500">
           Vorlagen mit Spalten, aus denen beim Erstellen eines Boards gewählt
           wird. Nach dem Anlegen Spalten im Template hinzufügen.
@@ -47,9 +47,9 @@ export default async function TemplatesPage() {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Templates ({rows.length})</h3>
+        <h3 className="text-sm font-semibold">Boardvorlagen ({rows.length})</h3>
         {rows.length === 0 && (
-          <p className="text-sm text-slate-500">Noch keine Templates.</p>
+          <p className="text-sm text-slate-500">Noch keine Boardvorlagen.</p>
         )}
         {rows.map((t) => (
           <div key={t.id} className="card flex items-center justify-between p-4">

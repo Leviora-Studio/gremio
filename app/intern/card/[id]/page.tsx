@@ -14,6 +14,9 @@ import {
   cardActivity,
   inventoryLoans,
   locations,
+  protocolAreas,
+  protocolCardLinks,
+  protocolSessions,
   users,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -33,6 +36,7 @@ import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { BackButton } from "@/components/BackButton";
 import type { AttachmentKind } from "@/lib/constants";
 import { getFeedbackByCardId } from "@/lib/public-feedback-submission";
+import { getAccessibleProtocolAreas } from "@/lib/protocols";
 import { deleteCardAction, deleteCommentAction } from "./actions";
 
 function fmt(d: Date) {
@@ -154,6 +158,30 @@ export default async function AntragDetailPage({
         : `${publicBaseUrl()}/status/${card.token}`;
   const manage = canManageBoard(user, board);
 
+  const accessibleProtocolAreas = await getAccessibleProtocolAreas(user);
+  const protocolLinks = accessibleProtocolAreas.length
+    ? await db
+        .select({
+          id: protocolCardLinks.id,
+          areaId: protocolAreas.id,
+          areaName: protocolAreas.name,
+          sessionId: protocolSessions.id,
+          folderName: protocolSessions.folderName,
+          top: protocolCardLinks.top,
+          decisionRefConflict: protocolCardLinks.decisionRefConflict,
+        })
+        .from(protocolCardLinks)
+        .innerJoin(protocolSessions, eq(protocolSessions.id, protocolCardLinks.sessionId))
+        .innerJoin(protocolAreas, eq(protocolAreas.id, protocolSessions.areaId))
+        .where(
+          and(
+            eq(protocolCardLinks.cardId, card.id),
+            inArray(protocolAreas.id, accessibleProtocolAreas.map((area) => area.id)),
+          ),
+        )
+        .orderBy(desc(protocolSessions.createdAt))
+    : [];
+
   const comments = await db
     .select({
       id: cardComments.id,
@@ -260,6 +288,7 @@ export default async function AntragDetailPage({
             decisionRef: card.decisionRef,
             instructionDate: card.instructionDate,
             transferDate: card.transferDate,
+            requestedAmount: centsToInput(card.requestedAmount),
             approvedAmount: centsToInput(card.approvedAmount),
             actualAmount: centsToInput(card.actualAmount),
             priorityId: card.priorityId,
@@ -274,6 +303,22 @@ export default async function AntragDetailPage({
           applicantLabel={feedback ? "Einreicher" : "Antragsteller"}
         />
       </section>
+
+      {protocolLinks.length > 0 && (
+        <section className="card space-y-3 p-5">
+          <h2 className="text-lg font-semibold">Behandelt in Sitzung</h2>
+          {protocolLinks.map((link) => (
+            <div key={link.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 p-3 text-sm">
+              <div>
+                <div className="font-medium">{link.folderName} · TOP {link.top}</div>
+                <div className="text-slate-500">Protokollbereich: {link.areaName}</div>
+                {link.decisionRefConflict && <div className="mt-1 text-amber-700">Die manuell geänderte Beschlussreferenz wurde nicht überschrieben.</div>}
+              </div>
+              <Link href={`/intern/protokolle/${link.areaId}/sitzung/${link.sessionId}`} className="text-brand-600 hover:underline">Sitzung öffnen</Link>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Anhänge */}
       <section className="card space-y-4 p-5">

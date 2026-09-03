@@ -6,14 +6,15 @@ Studierendenvertretungen, Vereinen, Verbänden oder Ausschüssen. Ein
 Kanban-Boards** ein, auf denen das Gremium sie bearbeitet — mit Rollen & Gruppen,
 optionaler Nextcloud-Archivierung und einer schmalen REST-API.
 
-Vier Module teilen sich Nutzer, Gruppen und dasselbe Freigabemodell:
+Fünf Module teilen sich Nutzer, Gruppen und dasselbe Freigabemodell:
 
 | Modul | Bereich | Kurz |
 |-------|---------|------|
 | **Kanban / Anträge** | `/intern/board/{id}` | Anträge und beliebige andere Vorgänge auf Boards |
 | **Finanzen** | `/finanzen` | Haushaltsplan und Ausgabenauswertung über Quell-Boards |
 | **Inventar & Ausleihe** | `/intern/inventar`, `/inventar` | Gegenstände, Leihvorgänge, Anlagenverzeichnis |
-| **Vorlagen** | `/vorlagen` | Board- und Finanz-Templates |
+| **Protokolle** | `/intern/protokolle` | Sitzungsprotokolle, deren Markdown-Dateien ausschließlich in Nextcloud liegen |
+| **Vorlagen** | `/vorlagen` | Board-, Finanz- und Protokollvorlagen |
 
 Dazu kommt öffentliches **Feedback** (`/feedback`) als zweiter Eingangskanal
 neben dem Antragsformular.
@@ -57,7 +58,7 @@ Apps, interaktiv unter `/api/public/docs`).
   Drag-&-Drop-Sortierung, Live-Aktualisierung (SSE), Filtern, Kommentaren und
   Aktivitäts-/Statushistorie je Karte.
 - **Karten** mit pro Board ein-/ausschaltbaren Feldern (Antragsteller, Priorität,
-  Deadline, Sitzung, Beträge, Konto, Anweisungsdatum, automatische **Antragsnummer**,
+  Deadline, Sitzung, beantragte/genehmigte/tatsächliche Beträge, Konto, Anweisungsdatum, automatische **Antragsnummer**,
   Haushaltstitel, Anhänge u. v. m.) — Erstellen/Bearbeiten speichert automatisch.
 - **Standort-Routing**: pro Standort legt der Admin Ziel-Board + Ziel-Spalte fest;
   nur Standorte mit Ziel sind aktivierbar.
@@ -80,7 +81,12 @@ Apps, interaktiv unter `/api/public/docs`).
   und zugewiesenen Karten, pro Board konfigurierbar.
 - **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für
   erledigte Karten (der „Done"-Sweep räumt sie täglich weg, löscht aber nichts).
-- **Vorlagen** für Boards und Finanzpläne (Admin oder Template-Verwalter).
+- **Protokolle** (`/intern/protokolle`): eigene Protokollbereiche mit
+  Nutzer-/Gruppenfreigaben, synchronisierten Nextcloud-Sitzungsordnern,
+  ETag-gesichertem Markdown-Editor, Inhaltsverzeichnis und optionaler
+  Finanzantrags-Verknüpfung. Der vollständige Protokollinhalt liegt nie in
+  PostgreSQL.
+- **Vorlagen** für Boards, Finanzpläne und Protokolle (Admin oder Template-Verwalter).
 - **Nextcloud-Archivierung** (optional, pro Board): erreicht ein Antrag die
   Trigger-Spalte, werden seine Dateien automatisch hochgeladen. Schlägt das fehl,
   wird **automatisch wiederholt**; nach > 24 h erscheint eine Warnung auf dem
@@ -202,7 +208,9 @@ lokalen Quellstand bauen will, ergänzt einen `build:`-Abschnitt in einer
 - Beim Start laufen automatisch **nur die Migrationen** (Instrumentation-Hook) —
   **kein** Auto-Seed. Startbestand bei Bedarf einmalig mit `npm run db:seed`.
 - Daten liegen in `./pgdata` (PostgreSQL) und `./uploads` (Dateien) — **beides
-  sichern**.
+  sichern**. Protokolldateien liegen dagegen ausschließlich im jeweils
+  konfigurierten Nextcloud-Sitzungsordner und müssen über dessen Backup- und
+  Versionierungsstrategie abgesichert werden.
 - nginx-Beispiel: [`deploy/nginx.conf.example`](deploy/nginx.conf.example) — weist
   fremde Host-Header ab (`default_server` → 444), reicht
   `X-Forwarded-Proto`/`-For` + `Host` weiter und setzt `client_max_body_size 105m`
