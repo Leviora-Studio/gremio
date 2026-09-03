@@ -33,7 +33,6 @@ export function CardEditor({
   assignees,
   priorities,
   accounts,
-  canManage,
   // Feedback-Karten nennen das Feld „Einreicher"; alle anderen bleiben bei
   // „Antragsteller". Nur die Beschriftung — Spalte und API-Feld heißen
   // weiterhin `applicant`.
@@ -63,7 +62,6 @@ export function CardEditor({
   assignees: U[];
   priorities: PriorityOption[];
   accounts: AccountOption[];
-  canManage: boolean;
   applicantLabel?: string;
 }) {
   const valuesRef = useRef<CardValues>({
@@ -151,19 +149,13 @@ export function CardEditor({
     number: (
       <div>
         <label className="label">Antragsnummer</label>
-        {canManage ? (
-          <input
-            defaultValue={valuesRef.current.number ?? ""}
-            className="input"
-            placeholder="automatisch"
-            onChange={(e) => update({ number: e.target.value })}
-            onBlur={flushNow}
-          />
-        ) : (
-          <div className="input flex h-10 items-center bg-slate-50 text-slate-600">
-            {valuesRef.current.number || "—"}
-          </div>
-        )}
+        <input
+          defaultValue={valuesRef.current.number ?? ""}
+          className="input"
+          placeholder="automatisch"
+          onChange={(e) => update({ number: e.target.value })}
+          onBlur={flushNow}
+        />
       </div>
     ),
     applicant: (
@@ -217,31 +209,19 @@ export function CardEditor({
     instruction_date: (
       <div>
         <label className="label">Anweisungsdatum</label>
-        {canManage ? (
-          <DatePicker
-            defaultValue={valuesRef.current.instructionDate ?? ""}
-            onChange={(v) => update({ instructionDate: v || null }, true)}
-          />
-        ) : (
-          <div className="input flex h-10 items-center bg-slate-50 text-slate-600">
-            {valuesRef.current.instructionDate || "—"}
-          </div>
-        )}
+        <DatePicker
+          defaultValue={valuesRef.current.instructionDate ?? ""}
+          onChange={(v) => update({ instructionDate: v || null }, true)}
+        />
       </div>
     ),
     transfer_date: (
       <div>
         <label className="label">Überweisungsdatum</label>
-        {canManage ? (
-          <DatePicker
-            defaultValue={valuesRef.current.transferDate ?? ""}
-            onChange={(v) => update({ transferDate: v || null }, true)}
-          />
-        ) : (
-          <div className="input flex h-10 items-center bg-slate-50 text-slate-600">
-            {valuesRef.current.transferDate || "—"}
-          </div>
-        )}
+        <DatePicker
+          defaultValue={valuesRef.current.transferDate ?? ""}
+          onChange={(v) => update({ transferDate: v || null }, true)}
+        />
       </div>
     ),
     creator: (

@@ -231,9 +231,9 @@ paths:
         automatisch eine Antragsnummer vergeben.
 
 
-        **Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Die Felder `number`,
-        `instructionDate` und `transferDate` setzen nur Board-Verwalter. Am Board deaktivierte
-        Felder werden abgelehnt.
+        **Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Alle aktivierten
+        Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen
+        geschrieben werden. Am Board deaktivierte Felder werden abgelehnt.
       requestBody:
         required: true
         content:
@@ -301,9 +301,7 @@ paths:
                     error: Feld 'budgetTitle' ist auf diesem Board nicht aktiviert.
         "401": *a1
         "403": &a7
-          description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`), **oder** es
-            wurde ein verwalter-exklusives Feld gesetzt (`number`, `instructionDate`,
-            `transferDate`) ohne Board-Verwaltungsrecht."
+          description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`)."
           content:
             application/json:
               schema:
@@ -313,10 +311,6 @@ paths:
                   summary: Token nur lesend
                   value:
                     error: Dieser Token hat nur Lese-Rechte (scope=read).
-                managerOnly:
-                  summary: Verwalter-exklusives Feld
-                  value:
-                    error: Feld 'number' darf nur ein Board-Verwalter setzen.
         "404": *a2
         "409": &a9
           description: "Leihvorgang-Board: Dessen Karten werden ausschließlich über das Inventar verwaltet,
@@ -445,8 +439,8 @@ paths:
         wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.
 
 
-        **Berechtigung:** Board-Zugriff **und** `scope=write`; `number`, `instructionDate` und
-        `transferDate` nur für Board-Verwalter.
+        **Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder
+        einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.
       parameters:
         - name: id
           in: path

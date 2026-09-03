@@ -17,7 +17,6 @@ import {
 } from "@/lib/db/schema";
 import {
   canAccessBoard,
-  canManageBoard,
   getBoardById,
   getBoardMemberUsers,
 } from "@/lib/authz";
@@ -130,18 +129,7 @@ async function buildCardValues(
   board: Board,
   input: CardWriteInput,
   memberIds: Set<number>,
-  canManage: boolean,
 ): Promise<ApiResult<{ value: CardColumns; assigneeUserIds?: number[] }>> {
-  // Verwalter-exklusive Felder (wie in der UI): nur Board-Verwalter dürfen
-  // Antragsnummer und Anweisungsdatum setzen.
-  if (!canManage) {
-    for (const k of ["number", "instructionDate", "transferDate"] as const) {
-      if (k in input) {
-        return fail(403, `Feld '${k}' darf nur ein Board-Verwalter setzen.`);
-      }
-    }
-  }
-
   // Nur am Board AKTIVIERTE optionale Felder dürfen geschrieben werden — sonst
   // erlaubte die API mehr als die Web-UI (die deaktivierte Felder ausblendet
   // und serverseitig ignoriert). Titel/Status/Position sind Kern-Operationen.
@@ -331,7 +319,6 @@ export async function createCardViaApi(
     board,
     input,
     new Set(members.map((m) => m.id)),
-    canManageBoard(user, board),
   );
   if (!built.ok) return built;
   const { value: v, assigneeUserIds } = built.value;
@@ -420,7 +407,6 @@ export async function updateCardViaApi(
     board,
     input,
     new Set(members.map((m) => m.id)),
-    canManageBoard(user, board),
   );
   if (!built.ok) return built;
   const { value: builtCols, assigneeUserIds } = built.value;

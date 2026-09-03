@@ -271,7 +271,6 @@ export default async function AntragDetailPage({
           assignees={assignees}
           priorities={priorities}
           accounts={accounts}
-          canManage={manage}
           applicantLabel={feedback ? "Einreicher" : "Antragsteller"}
         />
       </section>

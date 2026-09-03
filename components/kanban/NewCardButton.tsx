@@ -26,7 +26,6 @@ export function NewCardButton({
   accounts,
   defaultAccountId,
   currentUser,
-  canManage,
 }: {
   boardId: number;
   visible: string[];
@@ -39,7 +38,6 @@ export function NewCardButton({
     name: string | null;
     avatarPath: string | null;
   };
-  canManage: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -143,7 +141,6 @@ export function NewCardButton({
               assignees={[]}
               priorities={priorities}
               accounts={accounts}
-              canManage={canManage}
             />
 
             {(has("finance_request") ||

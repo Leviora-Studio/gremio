@@ -151,7 +151,6 @@ export default async function BoardPage({
               name: user.name,
               avatarPath: user.avatarPath,
             }}
-            canManage={manage}
           />
           {board.doneStatusId != null && (
             <Link

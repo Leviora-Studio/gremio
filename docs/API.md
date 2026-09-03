@@ -178,8 +178,9 @@ Schreibbare Felder: `title`, `applicant`, `budgetTitle` (max. 60 Zeichen),
 `approvedAmountCents`, `actualAmountCents`, `notes`, `applicantNote`,
 `archived` (nur `false` = wiederherstellen; `true`/manuelles Archivieren wird
 mit 400 abgelehnt, da es im Web ebenfalls keine manuelle Archivierung gibt).
-`number`, `instructionDate` und `transferDate` sind verwalter-exklusiv;
-Wiederherstellen (`archived: false`) darf — wie im Web — jedes Board-Mitglied.
+`number`, `instructionDate` und `transferDate` dürfen — wie im Web — von jedem
+Nutzer mit Board-Zugriff geändert werden. Wiederherstellen (`archived: false`)
+darf ebenfalls jedes Board-Mitglied.
 Deaktivierte Board-Felder werden mit 400 abgelehnt.
 
 Referenzen werden geprüft: `statusId` muss zum Board gehören; `priorityId`/
@@ -197,7 +198,7 @@ Karte und ihre Anhänge löschen. → `200 { "ok": true }`
 | 201  | Karte erstellt |
 | 400  | Ungültige Eingabe |
 | 401  | Token fehlt/ungültig |
-| 403  | Token hat nur Lese-Rechte (`scope=read`) bei Schreibzugriff **oder** verwalter-exklusives Feld ohne Verwalterrecht |
+| 403  | Token hat nur Lese-Rechte (`scope=read`) bei Schreibzugriff |
 | 404  | Board/Karte nicht gefunden **oder** kein Zugriff (auch Board-Scope) |
 | 409  | Leihvorgang-Board: Karten dort sind über die API nur lesbar (Anlegen/Ändern/Löschen läuft übers Inventar) |
 

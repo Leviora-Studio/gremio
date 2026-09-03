@@ -122,13 +122,9 @@ export async function saveCardAction(
     // Haushaltstitel > 60 Zeichen nie auf eine Planzeile matchen.
     update.budgetTitle = v ? v.slice(0, 60) : null;
   }
-  // Antragsnummer ist nur durch Board-Verwalter editierbar; der Zähler bleibt
-  // davon unberührt (er erhöht sich nur bei der automatischen Vergabe).
-  if (
-    visible.has("number") &&
-    "number" in values &&
-    canManageBoard(user, board)
-  ) {
+  // Die manuelle Antragsnummer verändert den automatischen Zähler nicht; der
+  // erhöht sich nur bei der automatischen Vergabe.
+  if (visible.has("number") && "number" in values) {
     const v = sanitizeSingleLine(values.number);
     update.number = v ? v.slice(0, 100) : null;
   }
@@ -171,12 +167,9 @@ export async function saveCardAction(
     const v = sanitizeSingleLine(values.decisionRef);
     update.decisionRef = v ? v.slice(0, 200) : null;
   }
-  // Anweisungsdatum ist — wie die Antragsnummer — verwalter-exklusiv
-  // (Konsistenz mit REST-API und CLAUDE.md).
   if (
     visible.has("instruction_date") &&
-    "instructionDate" in values &&
-    canManageBoard(user, board)
+    "instructionDate" in values
   ) {
     if (values.instructionDate && !isValidDate(values.instructionDate))
       return {
@@ -185,11 +178,9 @@ export async function saveCardAction(
       };
     update.instructionDate = values.instructionDate || null;
   }
-  // Überweisungsdatum ist — wie das Anweisungsdatum — verwalter-exklusiv.
   if (
     visible.has("transfer_date") &&
-    "transferDate" in values &&
-    canManageBoard(user, board)
+    "transferDate" in values
   ) {
     if (values.transferDate && !isValidDate(values.transferDate))
       return {

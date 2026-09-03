@@ -76,10 +76,10 @@ const notFoundCard = {
   },
 } as const;
 
-/** 403 — Token nur lesend, oder verwalter-exklusives Feld. */
+/** 403 — Token nur lesend. */
 const forbiddenWrite = {
   description:
-    "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`), **oder** es wurde ein verwalter-exklusives Feld gesetzt (`number`, `instructionDate`, `transferDate`) ohne Board-Verwaltungsrecht.",
+    "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`).",
   content: {
     "application/json": {
       schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -87,10 +87,6 @@ const forbiddenWrite = {
         readOnly: {
           summary: "Token nur lesend",
           value: { error: "Dieser Token hat nur Lese-Rechte (scope=read)." },
-        },
-        managerOnly: {
-          summary: "Verwalter-exklusives Feld",
-          value: { error: "Feld 'number' darf nur ein Board-Verwalter setzen." },
         },
       },
     },
@@ -319,7 +315,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "createCard",
         summary: "Karte auf einem Board anlegen",
         description:
-          "Legt eine Karte an. Pflichtfeld ist `title`. Ohne `statusId` landet sie in der **ersten** Spalte, ohne `position` am Ende der Spalte. Ist die Board-Nummerierung aktiv, wird automatisch eine Antragsnummer vergeben.\n\n**Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Die Felder `number`, `instructionDate` und `transferDate` setzen nur Board-Verwalter. Am Board deaktivierte Felder werden abgelehnt.",
+          "Legt eine Karte an. Pflichtfeld ist `title`. Ohne `statusId` landet sie in der **ersten** Spalte, ohne `position` am Ende der Spalte. Ist die Board-Nummerierung aktiv, wird automatisch eine Antragsnummer vergeben.\n\n**Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geschrieben werden. Am Board deaktivierte Felder werden abgelehnt.",
         requestBody: {
           required: true,
           content: {
@@ -421,7 +417,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "updateCard",
         summary: "Karte ändern oder verschieben",
         description:
-          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`; `number`, `instructionDate` und `transferDate` nur für Board-Verwalter.",
+          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.",
         parameters: [
           {
             name: "id",
