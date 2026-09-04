@@ -25,6 +25,8 @@ import { signPdf, type SignPlacement } from "@/lib/sign";
 export type SavePdfInput = {
   attachmentId: number;
   mode: "new" | "replace";
+  /** Optionaler Versionsanker für Quellen, die kein normaler Anhang sind. */
+  sourceVersion?: string;
   edits: { texts?: TextEdit[]; fields?: FieldEdit[] };
   signature?: { placement: SignPlacement; reason?: string; location?: string };
 };

@@ -8,6 +8,7 @@ import {
   attachments,
   boardArchive,
   boardCardFields,
+  boardInstructionForms,
   boardNumbering,
   boards,
   boardStatuses,
@@ -208,6 +209,11 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
     .from(attachments)
     .innerJoin(cards, eq(cards.id, attachments.cardId))
     .where(eq(cards.boardId, boardId));
+  const [instructionForm] = await db
+    .select({ path: boardInstructionForms.path })
+    .from(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, boardId))
+    .limit(1);
 
   try {
     await db.transaction(async (tx) => {
@@ -229,4 +235,5 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
 
   // Nach erfolgreichem Commit: Dateien von der Platte entfernen (best effort).
   for (const a of atts) await deleteStoredFile(a.path);
+  if (instructionForm) await deleteStoredFile(instructionForm.path);
 }

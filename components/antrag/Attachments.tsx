@@ -164,10 +164,12 @@ export function WeitereAttachments({
   cardId,
   items,
   hasCert = false,
+  allowUpload = true,
 }: {
   cardId: number;
   items: Att[];
   hasCert?: boolean;
+  allowUpload?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -175,7 +177,9 @@ export function WeitereAttachments({
       {items.map((a) => (
         <FileLine key={a.id} cardId={cardId} att={a} hasCert={hasCert} />
       ))}
-      <UploadQueue upload={(file) => { const data = new FormData(); data.set("file", file); return uploadAttachmentAction(cardId, "other", {}, data); }} />
+      {allowUpload && (
+        <UploadQueue upload={(file) => { const data = new FormData(); data.set("file", file); return uploadAttachmentAction(cardId, "other", {}, data); }} />
+      )}
     </div>
   );
 }

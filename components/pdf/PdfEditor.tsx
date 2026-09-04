@@ -81,6 +81,9 @@ export type PdfEditorProps = {
   // Optional: abweichende Endpunkte (z. B. Inventar statt Karten-Anhang).
   fieldsUrl?: string;
   saveAction?: (input: SavePdfInput) => Promise<SavePdfResult>;
+  sourceVersion?: string;
+  saveButtonLabel?: string;
+  saveButtonTitle?: string;
 };
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -107,6 +110,9 @@ export default function PdfEditor({
   onClose,
   fieldsUrl,
   saveAction,
+  sourceVersion,
+  saveButtonLabel = "Speichern",
+  saveButtonTitle = "Speichert die Änderungen ins Original",
 }: PdfEditorProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -250,6 +256,7 @@ export default function PdfEditor({
     const payload: SavePdfInput = {
       attachmentId,
       mode: "replace", // immer das Original überschreiben
+      sourceVersion,
       edits: {
         texts: texts.map((t) => ({
           name: t.fieldName,
@@ -438,9 +445,9 @@ export default function PdfEditor({
               className="btn-primary btn-sm"
               disabled={saving || !dirty}
               onClick={handleSave}
-              title="Speichert die Änderungen ins Original"
+              title={saveButtonTitle}
             >
-              {saving ? "Speichert…" : "Speichern"}
+              {saving ? "Speichert…" : saveButtonLabel}
             </button>
           )}
           <button

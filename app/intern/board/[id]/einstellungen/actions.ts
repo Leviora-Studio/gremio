@@ -8,12 +8,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, max, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { PDFDocument } from "pdf-lib";
 import { db } from "@/lib/db";
 import {
   accounts,
   boardAccess,
   boardArchive,
   boardCardFields,
+  boardInstructionForms,
   boardNumbering,
   boards,
   boardStatuses,
@@ -28,10 +30,17 @@ import {
   ARCHIVE_FOLDER_FIELD_KEYS,
   CARD_FIELD_KEYS,
   DEFAULT_ARCHIVE_FOLDER_SEPARATOR,
+  PDF_MIME,
 } from "@/lib/constants";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { testConnection } from "@/lib/nextcloud";
 import { isSafeExternalUrl } from "@/lib/url-guard";
+import {
+  deleteStoredFile,
+  displayFileName,
+  saveNamedBuffer,
+  validateUpload,
+} from "@/lib/attachments";
 
 export type State = { error?: string; success?: string };
 
@@ -535,6 +544,129 @@ export async function setBoardNumberingAction(
     });
   rev(boardId);
   return { success: "Antragsnummer-Einstellungen gespeichert." };
+}
+
+// --- Anweisungsformular -------------------------------------------------
+export async function setInstructionFormAction(
+  boardId: number,
+  _prev: State,
+  formData: FormData,
+): Promise<State> {
+  const { user } = await requireBoardManage(boardId);
+  const enabled = formData.get("enabled") === "on";
+  const candidate = formData.get("template");
+  const file = candidate instanceof File && candidate.size > 0 ? candidate : null;
+
+  const [existing] = await db
+    .select()
+    .from(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, boardId))
+    .limit(1);
+
+  if (!file) {
+    if (enabled && !existing) {
+      return { error: "Bitte zuerst eine PDF-Vorlage hochladen." };
+    }
+    if (existing) {
+      await db
+        .update(boardInstructionForms)
+        .set({ enabled })
+        .where(eq(boardInstructionForms.boardId, boardId));
+    }
+    rev(boardId);
+    return {
+      success: enabled
+        ? "Anweisungsformular aktiviert."
+        : "Anweisungsformular deaktiviert.",
+    };
+  }
+
+  const validationError = validateUpload(file, PDF_MIME);
+  if (validationError) return { error: validationError };
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  try {
+    await PDFDocument.load(bytes, { ignoreEncryption: true });
+  } catch {
+    return { error: "Die ausgewählte Datei ist kein lesbares PDF-Dokument." };
+  }
+
+  const saved = await saveNamedBuffer(
+    `board-instruction-forms/${boardId}`,
+    displayFileName(file.name),
+    bytes,
+    "application/pdf",
+  );
+  let oldPath: string | null = null;
+  try {
+    oldPath = await db.transaction(async (tx) => {
+      await tx
+        .select({ id: boards.id })
+        .from(boards)
+        .where(eq(boards.id, boardId))
+        .for("update");
+      const [current] = await tx
+        .select({ path: boardInstructionForms.path })
+        .from(boardInstructionForms)
+        .where(eq(boardInstructionForms.boardId, boardId))
+        .limit(1);
+      await tx
+        .insert(boardInstructionForms)
+        .values({
+          boardId,
+          enabled,
+          filename: saved.filename,
+          path: saved.relPath,
+          size: saved.size,
+          uploadedAt: new Date(),
+          uploadedBy: user.id,
+        })
+        .onConflictDoUpdate({
+          target: boardInstructionForms.boardId,
+          set: {
+            enabled,
+            filename: saved.filename,
+            path: saved.relPath,
+            size: saved.size,
+            uploadedAt: new Date(),
+            uploadedBy: user.id,
+          },
+        });
+      return current?.path ?? null;
+    });
+  } catch {
+    await deleteStoredFile(saved.relPath);
+    return { error: "Die Vorlage konnte nicht gespeichert werden." };
+  }
+
+  if (oldPath && oldPath !== saved.relPath) {
+    await deleteStoredFile(oldPath);
+  }
+  rev(boardId);
+  return {
+    success: enabled
+      ? "PDF-Vorlage gespeichert und Anweisungsformular aktiviert."
+      : "PDF-Vorlage gespeichert.",
+  };
+}
+
+export async function deleteInstructionFormAction(
+  boardId: number,
+): Promise<State> {
+  await requireBoardManage(boardId);
+  const [existing] = await db
+    .select()
+    .from(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, boardId))
+    .limit(1);
+  if (!existing) return {};
+
+  await db
+    .delete(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, boardId));
+  await deleteStoredFile(existing.path);
+  rev(boardId);
+  return { success: "PDF-Vorlage entfernt; die Funktion ist deaktiviert." };
 }
 
 // --- Eigentum & Löschen -------------------------------------------------

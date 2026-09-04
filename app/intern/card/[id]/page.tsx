@@ -9,6 +9,7 @@ import {
   cards,
   attachments,
   boardCardFields,
+  boardInstructionForms,
   boardStatuses,
   cardComments,
   cardActivity,
@@ -33,6 +34,7 @@ import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
 import { AttachmentSlot, WeitereAttachments } from "@/components/antrag/Attachments";
+import { CreateInstructionButton } from "@/components/antrag/CreateInstructionButton";
 import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { BackButton } from "@/components/BackButton";
@@ -71,6 +73,12 @@ export default async function AntragDetailPage({
   const budget = await loadBudgetSnapshot(card.id);
   card = budget.card;
 
+  const [instructionForm] = await db
+    .select()
+    .from(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, board.id))
+    .limit(1);
+
   const statuses = await db
     .select()
     .from(boardStatuses)
@@ -96,7 +104,15 @@ export default async function AntragDetailPage({
   };
   const other = atts
     .filter((a) => a.kind === "other")
-    .map((a) => ({ id: a.id, filename: a.filename, mime: a.mime }));
+    .map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mime: a.mime,
+      uploadPurpose: a.uploadPurpose,
+    }));
+  const otherVisible = visible.includes("other_pdfs")
+    ? other
+    : other.filter((a) => a.uploadPurpose === "instruction");
   // Hat der eingeloggte Nutzer ein Signatur-Zertifikat? (für den Signieren-Button)
   const hasCert = !!user.certP12Enc;
 
@@ -388,8 +404,25 @@ export default async function AntragDetailPage({
             hasCert={hasCert}
           />
         )}
-        {visible.includes("other_pdfs") && (
-          <WeitereAttachments cardId={card.id} items={other} hasCert={hasCert} />
+        {(visible.includes("other_pdfs") ||
+          instructionForm?.enabled ||
+          otherVisible.length > 0) && (
+          <WeitereAttachments
+            cardId={card.id}
+            items={otherVisible}
+            hasCert={hasCert}
+            allowUpload={visible.includes("other_pdfs")}
+          />
+        )}
+        {instructionForm?.enabled && (
+          <div className="flex justify-end border-t border-slate-100 pt-4">
+            <CreateInstructionButton
+              cardId={card.id}
+              boardId={board.id}
+              templateVersion={instructionForm.uploadedAt.toISOString()}
+              hasCert={hasCert}
+            />
+          </div>
         )}
       </section>
 

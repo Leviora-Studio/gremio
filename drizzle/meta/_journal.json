@@ -442,6 +442,13 @@
       "when": 1788528306368,
       "tag": "0062_card_budget_and_public_workflows",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788546676588,
+      "tag": "0063_hot_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

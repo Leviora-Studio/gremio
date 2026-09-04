@@ -25,6 +25,9 @@ export type PdfViewerModalProps = {
   hasCert: boolean;
   fieldsUrl?: string;
   saveAction?: PdfEditorProps["saveAction"];
+  sourceVersion?: string;
+  saveButtonLabel?: string;
+  saveButtonTitle?: string;
 };
 
 export function PdfViewerModal({
@@ -38,6 +41,9 @@ export function PdfViewerModal({
   hasCert,
   fieldsUrl,
   saveAction,
+  sourceVersion,
+  saveButtonLabel,
+  saveButtonTitle,
 }: PdfViewerModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -76,6 +82,9 @@ export function PdfViewerModal({
             onClose={onClose}
             fieldsUrl={fieldsUrl}
             saveAction={saveAction}
+            sourceVersion={sourceVersion}
+            saveButtonLabel={saveButtonLabel}
+            saveButtonTitle={saveButtonTitle}
           />
         ) : (
           <>

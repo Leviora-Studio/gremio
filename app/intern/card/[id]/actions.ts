@@ -433,6 +433,14 @@ export async function uploadAttachmentAction(
   const oldPaths: string[] = [];
   try {
     await db.transaction(async (tx) => {
+      // Alle Datei-Erstellungen derselben Karte serialisieren. Das stellt auch
+      // sicher, dass ein manueller Upload `Anweisung 2.pdf` bei der nächsten
+      // automatischen Nummerierung unmittelbar berücksichtigt wird.
+      await tx
+        .select({ id: cards.id })
+        .from(cards)
+        .where(eq(cards.id, card.id))
+        .for("update");
       if (kind !== "other") {
         const existing = await tx
           .select()

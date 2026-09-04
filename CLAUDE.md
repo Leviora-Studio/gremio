@@ -112,6 +112,14 @@ board_numbering (board_id PK FK→boards ON DELETE CASCADE,
 --   Bei aktiviertem Feld durch jedes Board-Mitglied editierbar; Zähler bleibt davon unberührt.
 --   Keine Eindeutigkeitsgarantie (Dubletten durch Reset/leere Blöcke bewusst erlaubt).
 
+board_instruction_forms (board_id PK FK→boards ON DELETE CASCADE,
+                         enabled DEFAULT false,
+                         filename, path, size, uploaded_at, uploaded_by NULL)
+-- Board-Eigentümer/Admin hinterlegen genau eine PDF-Vorlage. Aktivierung ist
+-- nur mit Vorlage möglich. Board-Mitglieder erstellen daraus im Karten-PDF-
+-- Editor neue Anhänge: Anweisung 1.pdf, Anweisung 2.pdf, ... . Die nächste
+-- Nummer folgt auch auf passend benannte, manuell hochgeladene PDFs.
+
 -- Karte gehört zu genau einem Board und steht in einer Status-Spalte dieses Boards:
 -- location_id = Herkunft aus dem öffentlichen Formular (NULL bei manuell angelegten Karten)
 cards          (id, board_id FK→boards, status_id FK→board_statuses, location_id FK→locations NULL,
@@ -206,7 +214,9 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 - Quittung wird als Anhang hochgeladen
 
 ### 6. Anweisung erfolgt ← **Archivierungs-Trigger (einziger Nextcloud-Kontakt)**
-- Das Gremium lädt die Anweisung **manuell** als Anhang hoch
+- Das Gremium lädt die Anweisung manuell als Anhang hoch oder erstellt sie aus
+  der optionalen Board-Vorlage über **Neue Anweisung erstellen**. Das ausgefüllte
+  PDF wird als fortlaufend nummerierter normaler Kartenanhang gespeichert.
 - Diese Spalte ist (in der Default-Vorlage) der **Archiv-Trigger**: Ist die Nextcloud-Archivierung des Boards aktiv, legt die App **automatisch** einen Nextcloud-Ordner an (Verbindung/Zielordner aus den **Board-Einstellungen**), lädt alle aktuellen Anhänge des Antrags hoch und vermerkt den internen Nextcloud-Link am Antrag
 - Ein weiterer Nutzer prüft abschließend anhand des Nextcloud-Ordners
 

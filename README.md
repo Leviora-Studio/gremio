@@ -1,5 +1,13 @@
 # Gremio
 
+### Migration: Anweisungsformular pro Board
+
+`0063_hot_wolf_cub.sql` ergänzt die pro Board gespeicherte PDF-Vorlage für
+Anweisungen. Vor dem Update wie üblich ein Datenbankbackup anlegen und
+`npm run db:migrate` ausführen; der Containerstart verwendet weiterhin den
+bestehenden Migrationsablauf. Keine neuen Abhängigkeiten oder
+Umgebungsvariablen.
+
 ### Migration: Haushaltspositionen und öffentliche Uploads
 
 `0062_card_budget_and_public_workflows.sql` ergänzt strukturierte Haushaltspositionen
@@ -98,6 +106,11 @@ Apps, interaktiv unter `/api/public/docs`).
   dem persönlichen `.p12` **kryptografisch signieren** (PAdES, serverseitig —
   der Privatschlüssel verlässt den Server nie). Speichern wahlweise als neue
   Datei oder als Ersatz des Originals.
+- **Anweisungsformular pro Board**: Eigentümer/Admin hinterlegen in den
+  Board-Einstellungen eine PDF-Vorlage und aktivieren die Funktion. Mitglieder
+  öffnen sie auf einer Karte direkt im PDF-Editor; beim Speichern entsteht ein
+  normaler Kartenanhang `Anweisung 1.pdf`, `Anweisung 2.pdf` usw. Auch manuell
+  hochgeladene Dateien dieses Namens werden für die nächste Nummer berücksichtigt.
 - **Meine Aufgaben** (`/intern/aufgaben`): board-übergreifende Liste der eigenen
   und zugewiesenen Karten, pro Board konfigurierbar.
 - **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für

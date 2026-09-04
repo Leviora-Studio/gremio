@@ -9,6 +9,7 @@ import {
   boardAccess,
   boardArchive,
   boardCardFields,
+  boardInstructionForms,
   boardNumbering,
   boardStatuses,
   groups,
@@ -26,6 +27,7 @@ import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { StatusList } from "@/components/board/StatusList";
 import { CardFieldsForm } from "@/components/board/CardFieldsForm";
 import { BoardNumberingForm } from "@/components/board/BoardNumberingForm";
+import { InstructionFormSettings } from "@/components/board/InstructionFormSettings";
 import { SelectSaveForm } from "@/components/SelectSaveForm";
 import { ArchiveSettings } from "@/components/board/ArchiveSettings";
 import { ArchiveTriggerForm } from "@/components/board/ArchiveTriggerForm";
@@ -137,6 +139,12 @@ export default async function BoardSettingsPage({
     .select()
     .from(boardArchive)
     .where(eq(boardArchive.boardId, boardId))
+    .limit(1);
+
+  const [instructionForm] = await db
+    .select()
+    .from(boardInstructionForms)
+    .where(eq(boardInstructionForms.boardId, boardId))
     .limit(1);
 
   return (
@@ -284,7 +292,19 @@ export default async function BoardSettingsPage({
         <BoardNumberingForm boardId={boardId} config={numbering} />
       </CollapsibleSection>
 
-      {/* 6. Trigger-Spalten (Anweisungsdatum, Nachreichung, Quittung, Done) */}
+      {/* 6. Anweisungsformular */}
+      <CollapsibleSection title="Anweisung Formular">
+        <InstructionFormSettings
+          boardId={boardId}
+          config={{
+            enabled: instructionForm?.enabled ?? false,
+            filename: instructionForm?.filename ?? null,
+            size: instructionForm?.size ?? null,
+          }}
+        />
+      </CollapsibleSection>
+
+      {/* 7. Trigger-Spalten (Anweisungsdatum, Nachreichung, Quittung, Done) */}
       <CollapsibleSection title="Trigger-Spalten">
         <p className="mb-4 text-sm text-slate-500">
           Diese Spalten lösen beim Erreichen automatische Aktionen aus oder
@@ -405,7 +425,7 @@ export default async function BoardSettingsPage({
         </div>
       </CollapsibleSection>
 
-      {/* 7. Standardkonto */}
+      {/* 8. Standardkonto */}
       <CollapsibleSection title="Standardkonto">
         <p className="mb-3 text-sm text-slate-500">
           Wird bei neuen Karten dieses Boards automatisch als „Konto"
@@ -424,7 +444,7 @@ export default async function BoardSettingsPage({
         />
       </CollapsibleSection>
 
-      {/* 8. Nextcloud-Archiv (inkl. Trigger-Spalte) */}
+      {/* 9. Nextcloud-Archiv (inkl. Trigger-Spalte) */}
       <CollapsibleSection title="Nextcloud-Archiv">
         <div className="mb-4 space-y-1 border-b border-slate-100 pb-4">
           <h3 className="text-sm font-semibold text-slate-700">
@@ -458,7 +478,7 @@ export default async function BoardSettingsPage({
         />
       </CollapsibleSection>
 
-      {/* 9. Eigentum & Löschen */}
+      {/* 10. Eigentum & Löschen */}
       <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
         <div className="mb-4">
           <label className="label">Eigentum übertragen an</label>

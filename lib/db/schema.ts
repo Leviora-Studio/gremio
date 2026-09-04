@@ -223,6 +223,25 @@ export const boardNumbering = pgTable("board_numbering", {
   next: integer("next").notNull().default(1), // nächste zu vergebende Nummer
 });
 
+// PDF-Vorlage für neue Anweisungen pro Board (1:1). Eine fehlende Zeile
+// bedeutet: keine Vorlage hinterlegt, Funktion aus. Die Datei liegt wie andere
+// lokale Uploads unter UPLOAD_DIR; die DB enthält nur Metadaten und Pfad.
+export const boardInstructionForms = pgTable("board_instruction_forms", {
+  boardId: integer("board_id")
+    .primaryKey()
+    .references(() => boards.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  filename: text("filename").notNull(),
+  path: text("path").notNull(),
+  size: integer("size").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  uploadedBy: integer("uploaded_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // locations — Standorte & Formular-Routing (target_* NICHT cascade)
 // ---------------------------------------------------------------------------
@@ -1338,6 +1357,7 @@ export type Board = typeof boards.$inferSelect;
 export type BoardStatus = typeof boardStatuses.$inferSelect;
 export type BoardArchive = typeof boardArchive.$inferSelect;
 export type BoardNumbering = typeof boardNumbering.$inferSelect;
+export type BoardInstructionForm = typeof boardInstructionForms.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
