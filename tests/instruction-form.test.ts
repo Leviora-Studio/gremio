@@ -4,9 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  instructionTemplateVersion,
   instructionNumber,
+  isUsableInstructionTemplatePdf,
   nextInstructionFilename,
 } from "../lib/instruction-form";
+import { PDFDocument } from "pdf-lib";
 
 test("Anweisungen beginnen bei 1 und laufen ab der höchsten Nummer weiter", () => {
   assert.equal(nextInstructionFilename([]), "Anweisung 1.pdf");
@@ -21,6 +24,38 @@ test("Anweisungen beginnen bei 1 und laufen ab der höchsten Nummer weiter", () 
     nextInstructionFilename(["Anweisung 1.pdf", "Anweisung 3.pdf"]),
     "Anweisung 4.pdf",
     "gelöschte Lücken werden nicht wiederverwendet",
+  );
+});
+
+test("template versions distinguish replacements even within the same millisecond", () => {
+  const uploadedAt = new Date("2026-09-04T12:00:00.000Z");
+  const first = instructionTemplateVersion({ path: "forms/first.pdf", uploadedAt });
+  const second = instructionTemplateVersion({ path: "forms/second.pdf", uploadedAt });
+  assert.notEqual(first, second);
+  assert.equal(
+    first,
+    instructionTemplateVersion({ path: "forms/first.pdf", uploadedAt }),
+  );
+  assert.doesNotMatch(first, /forms|first/);
+});
+
+test("instruction templates need a readable, unencrypted PDF page", async () => {
+  const valid = await PDFDocument.create();
+  valid.addPage();
+  const empty = await PDFDocument.create();
+  assert.equal(
+    await isUsableInstructionTemplatePdf(await valid.save()),
+    true,
+  );
+  assert.equal(
+    await isUsableInstructionTemplatePdf(
+      await empty.save({ addDefaultPage: false }),
+    ),
+    false,
+  );
+  assert.equal(
+    await isUsableInstructionTemplatePdf(Buffer.from("not a pdf")),
+    false,
   );
 });
 

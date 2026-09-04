@@ -182,7 +182,21 @@ function sanitize(name: string): string {
  * Anzeigenamen.
  */
 export function displayFileName(raw: string): string {
-  return sanitizeSingleLine(raw) || "datei";
+  const cleaned = sanitizeSingleLine(raw) || "datei";
+  if (Buffer.byteLength(cleaned) <= 255) return cleaned;
+
+  // Keep a short, whitelisted extension while bounding database values and
+  // Content-Disposition headers. Iterate by Unicode code point so surrogate
+  // pairs are never split in the middle.
+  const extension = extensionOf(cleaned);
+  const base = extension ? cleaned.slice(0, -extension.length) : cleaned;
+  const byteBudget = 255 - Buffer.byteLength(extension);
+  let truncated = "";
+  for (const char of base) {
+    if (Buffer.byteLength(truncated + char) > byteBudget) break;
+    truncated += char;
+  }
+  return `${truncated.trim() || "datei"}${extension}`;
 }
 
 export function absPath(relPath: string): string {

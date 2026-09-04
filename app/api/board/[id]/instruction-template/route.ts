@@ -8,6 +8,7 @@ import { boardInstructionForms } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { absPath, contentDisposition } from "@/lib/attachments";
+import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,8 +21,8 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const boardId = Number(id);
-  if (!Number.isInteger(boardId)) return new Response("Not found", { status: 404 });
+  const boardId = parseApiId(id);
+  if (boardId == null) return new Response("Not found", { status: 404 });
   const board = await getBoardById(boardId);
   if (!board || !(await canAccessBoard(user, board))) {
     return new Response("Forbidden", { status: 403 });

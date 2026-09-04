@@ -159,7 +159,13 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
 }
 
 export async function getBoardById(boardId: number): Promise<Board | undefined> {
-  if (!Number.isInteger(boardId)) return undefined; // NaN/ungültige ID → 404
+  if (
+    !Number.isSafeInteger(boardId) ||
+    boardId < 1 ||
+    boardId > 2_147_483_647
+  ) {
+    return undefined;
+  }
   const rows = await db
     .select()
     .from(boards)

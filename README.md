@@ -233,8 +233,8 @@ bewusst nicht.**
 
 | Variable | Beschreibung |
 |----------|--------------|
-| `APP_BASE_URL` | Kanonische Basis der internen App und Quelle der OIDC-`redirect_uri`. Nur Origin, kein Pfad wie `/intern`; muss exakt zur SSO-Registrierung passen. |
-| `PUBLIC_BASE_URL` | Optionale getrennte öffentliche Basis für Status-, PDF- und Download-Links. Fehlt sie, wird rückwärtskompatibel `APP_BASE_URL` verwendet. |
+| `APP_BASE_URL` | Kanonische Basis der internen App und Quelle der OIDC-`redirect_uri`. Reine HTTP(S)-Origin ohne Zugangsdaten, Pfad, Query oder Fragment; muss exakt zur SSO-Registrierung passen. |
+| `PUBLIC_BASE_URL` | Optionale getrennte HTTP(S)-Origin für Status-, PDF- und Download-Links, ebenfalls ohne Zugangsdaten, Pfad, Query oder Fragment. Fehlt sie, wird rückwärtskompatibel `APP_BASE_URL` verwendet. |
 | `AUTH_SECRET` | Session-/HMAC-Basisgeheimnis, **min. 32 Zeichen** (`openssl rand -base64 48`). |
 | `ENCRYPTION_KEY` | AES-256-Schlüssel für Nextcloud-Zugangsdaten, **64 Hex-Zeichen** (`openssl rand -hex 32`). |
 | `OIDC_ISSUER` | Öffentlicher SSO-Issuer (Browser: authorize/logout, `iss`-Prüfung). In Produktion **https**. |

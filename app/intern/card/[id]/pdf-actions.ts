@@ -5,9 +5,9 @@
 
 import { readFile } from "node:fs/promises";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { attachments, cards } from "@/lib/db/schema";
+import { attachments, cardActivity, cards } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import {
@@ -15,12 +15,14 @@ import {
   deleteStoredFile,
   saveAntragBuffer,
 } from "@/lib/attachments";
-import { logActivity } from "@/lib/activity";
 import { allowRequest } from "@/lib/rate-limit";
 import { applyPdfEdits, type FieldEdit, type TextEdit } from "@/lib/pdf-edit";
 import { decryptUserCert, inspectP12 } from "@/lib/cert";
 import { readSignature } from "@/lib/signature";
 import { signPdf, type SignPlacement } from "@/lib/sign";
+import { MAX_UPLOAD_BYTES } from "@/lib/constants";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
 
 export type SavePdfInput = {
   attachmentId: number;
@@ -104,13 +106,19 @@ export async function savePdfEditsAction(
   input: SavePdfInput,
 ): Promise<SavePdfResult> {
   const user = await requireUser();
-  if (!input || !Number.isInteger(input.attachmentId)) {
+  if (
+    !input ||
+    !Number.isSafeInteger(input.attachmentId) ||
+    input.attachmentId < 1 ||
+    input.attachmentId > 2_147_483_647 ||
+    (input.mode !== "new" && input.mode !== "replace")
+  ) {
     return { ok: false, error: "Ungültige Eingabe." };
   }
   if (!(await allowRequest(`pdf-save:${user.id}`, 30, 60_000))) {
     return { ok: false, error: "Zu viele Anfragen. Bitte kurz warten." };
   }
-  const mode = input.mode === "replace" ? "replace" : "new";
+  const mode = input.mode;
 
   const [att] = await db
     .select()
@@ -131,6 +139,16 @@ export async function savePdfEditsAction(
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) {
     return { ok: false, error: "Kein Zugriff auf dieses Board." };
+  }
+  const visible = await getVisibleFieldKeys(board.id);
+  if (!isCardAttachmentVisible(att, visible)) {
+    return { ok: false, error: "Dieses Dateifeld ist auf dem Board nicht aktiviert." };
+  }
+  if (mode === "new" && !visible.has("other_pdfs")) {
+    return {
+      ok: false,
+      error: "Das Feld für weitere PDF-Dateien ist auf dem Board nicht aktiviert.",
+    };
   }
 
   let pdf: Buffer;
@@ -237,6 +255,12 @@ export async function savePdfEditsAction(
   if (!hasEdits && !signed) {
     return { ok: false, error: "Keine Änderungen zum Speichern." };
   }
+  if (pdf.length > MAX_UPLOAD_BYTES) {
+    return {
+      ok: false,
+      error: "Die bearbeitete PDF-Datei ist größer als 25 MB und wurde nicht gespeichert.",
+    };
+  }
 
   const noun = signed ? "signiert" : "bearbeitet";
   // Teil-Erfolg sichtbar machen: gespeichert, aber einzelne Felder gingen nicht.
@@ -250,51 +274,118 @@ export async function savePdfEditsAction(
   if (mode === "replace") {
     const saved = await saveAntragBuffer(card.id, att.filename, pdf, "application/pdf");
     const oldPath = att.path;
-    await db.transaction(async (tx) => {
-      await tx
-        .update(attachments)
-        .set({
-          path: saved.relPath,
-          size: saved.size,
-          mime: "application/pdf",
-          uploadedAt: new Date(),
-          uploadedBy: user.id,
-        })
-        .where(eq(attachments.id, att.id));
-      await tx.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
-    });
+    try {
+      await db.transaction(async (tx) => {
+        const [lockedCard] = await tx
+          .select({ id: cards.id })
+          .from(cards)
+          .where(eq(cards.id, card.id))
+          .for("update");
+        const [current] = await tx
+          .select({ path: attachments.path })
+          .from(attachments)
+          .where(
+            and(
+              eq(attachments.id, att.id),
+              eq(attachments.cardId, card.id),
+            ),
+          )
+          .for("update");
+        if (!lockedCard || !current || current.path !== oldPath) {
+          throw new Error("attachment-changed");
+        }
+        await tx
+          .update(attachments)
+          .set({
+            path: saved.relPath,
+            size: saved.size,
+            mime: "application/pdf",
+            uploadedAt: new Date(),
+            uploadedBy: user.id,
+          })
+          .where(eq(attachments.id, att.id));
+        await tx
+          .update(cards)
+          .set({ updatedAt: new Date() })
+          .where(eq(cards.id, card.id));
+        await tx.insert(cardActivity).values({
+          cardId: card.id,
+          userId: user.id,
+          type: "attachment_added",
+          detail: `PDF ${noun} (ersetzt): ${att.filename}`,
+        });
+      });
+    } catch (error) {
+      await deleteStoredFile(saved.relPath);
+      if ((error as Error)?.message === "attachment-changed") {
+        return {
+          ok: false,
+          error: "Die PDF-Datei wurde inzwischen geändert oder gelöscht. Bitte neu öffnen.",
+        };
+      }
+      console.error("[pdf-edit] replace failed:", error);
+      return { ok: false, error: "Die PDF-Datei konnte nicht gespeichert werden." };
+    }
     await deleteStoredFile(oldPath);
-    await logActivity(
-      card.id,
-      user.id,
-      "attachment_added",
-      `PDF ${noun} (ersetzt): ${att.filename}`,
-    );
     revalidatePath(`/intern/card/${card.id}`);
     return { ok: true, attachmentId: att.id, signed, warning };
   }
 
   const newName = withSuffix(att.filename, noun);
   const saved = await saveAntragBuffer(card.id, newName, pdf, "application/pdf");
-  const [ins] = await db
-    .insert(attachments)
-    .values({
-      cardId: card.id,
-      kind: "other",
-      filename: newName,
-      path: saved.relPath,
-      mime: "application/pdf",
-      size: saved.size,
-      uploadedBy: user.id,
-    })
-    .returning({ id: attachments.id });
-  await db.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
-  await logActivity(
-    card.id,
-    user.id,
-    "attachment_added",
-    `PDF ${noun} (neue Datei): ${newName}`,
-  );
+  let attachmentId: number;
+  try {
+    attachmentId = await db.transaction(async (tx) => {
+      const [lockedCard] = await tx
+        .select({ id: cards.id })
+        .from(cards)
+        .where(eq(cards.id, card.id))
+        .for("update");
+      const [current] = await tx
+        .select({ path: attachments.path })
+        .from(attachments)
+        .where(
+          and(eq(attachments.id, att.id), eq(attachments.cardId, card.id)),
+        )
+        .for("update");
+      if (!lockedCard || !current || current.path !== att.path) {
+        throw new Error("attachment-changed");
+      }
+      const [inserted] = await tx
+        .insert(attachments)
+        .values({
+          cardId: card.id,
+          kind: "other",
+          filename: newName,
+          path: saved.relPath,
+          mime: "application/pdf",
+          size: saved.size,
+          uploadedBy: user.id,
+        })
+        .returning({ id: attachments.id });
+      await tx
+        .update(cards)
+        .set({ updatedAt: new Date() })
+        .where(eq(cards.id, card.id));
+      await tx.insert(cardActivity).values({
+        cardId: card.id,
+        userId: user.id,
+        type: "attachment_added",
+        detail: `PDF ${noun} (neue Datei): ${newName}`,
+      });
+      return inserted.id;
+    });
+  } catch (error) {
+    await deleteStoredFile(saved.relPath);
+    if ((error as Error)?.message === "attachment-changed") {
+      return {
+        ok: false,
+        error: "Die PDF-Datei wurde inzwischen geändert oder gelöscht. Bitte neu öffnen.",
+      };
+    }
+    console.error("[pdf-edit] create copy failed:", error);
+    return { ok: false, error: "Die PDF-Kopie konnte nicht gespeichert werden." };
+  }
   revalidatePath(`/intern/card/${card.id}`);
-  return { ok: true, attachmentId: ins.id, signed, warning };
+  return { ok: true, attachmentId, signed, warning };
 }

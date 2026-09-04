@@ -202,23 +202,43 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
       "Dies ist ein Leihvorgang-Board eines Inventars. Deaktiviere das Aufgabentracking in den Inventar-Einstellungen, um es zu entfernen.",
     );
   }
-  // Anhang-Pfade VOR dem Löschen sammeln, um die physischen Dateien danach
-  // zu entfernen (FK-Cascade löscht nur die DB-Zeilen, nicht die Dateien).
-  const atts = await db
-    .select({ path: attachments.path })
-    .from(attachments)
-    .innerJoin(cards, eq(cards.id, attachments.cardId))
-    .where(eq(cards.boardId, boardId));
-  const [instructionForm] = await db
-    .select({ path: boardInstructionForms.path })
-    .from(boardInstructionForms)
-    .where(eq(boardInstructionForms.boardId, boardId))
-    .limit(1);
-
+  let cleanup: { attachmentPaths: string[]; instructionPath: string | null };
   try {
-    await db.transaction(async (tx) => {
+    cleanup = await db.transaction(async (tx) => {
+      // Board und Karten vor dem Pfad-Snapshot sperren. Upload/PDF-Ersetzung
+      // sperren dieselben Karten; Vorlagenänderungen sperren dasselbe Board.
+      // Dadurch kann nach dem Snapshot keine später kaskadierte Datei mehr
+      // unbemerkt auf der Platte zurückbleiben.
+      const [lockedBoard] = await tx
+        .select({ id: boards.id })
+        .from(boards)
+        .where(eq(boards.id, boardId))
+        .for("update");
+      if (!lockedBoard) {
+        return { attachmentPaths: [], instructionPath: null };
+      }
+      await tx
+        .select({ id: cards.id })
+        .from(cards)
+        .where(eq(cards.boardId, boardId))
+        .orderBy(asc(cards.id))
+        .for("update");
+      const atts = await tx
+        .select({ path: attachments.path })
+        .from(attachments)
+        .innerJoin(cards, eq(cards.id, attachments.cardId))
+        .where(eq(cards.boardId, boardId));
+      const [instructionForm] = await tx
+        .select({ path: boardInstructionForms.path })
+        .from(boardInstructionForms)
+        .where(eq(boardInstructionForms.boardId, boardId))
+        .limit(1);
       await tx.delete(cards).where(eq(cards.boardId, boardId));
       await tx.delete(boards).where(eq(boards.id, boardId));
+      return {
+        attachmentPaths: atts.map((attachment) => attachment.path),
+        instructionPath: instructionForm?.path ?? null,
+      };
     });
   } catch (e) {
     // Die Vorab-Prüfungen oben laufen VOR der Transaktion: Routet ein Admin im
@@ -234,6 +254,6 @@ export async function deleteBoardCascade(boardId: number): Promise<void> {
   }
 
   // Nach erfolgreichem Commit: Dateien von der Platte entfernen (best effort).
-  for (const a of atts) await deleteStoredFile(a.path);
-  if (instructionForm) await deleteStoredFile(instructionForm.path);
+  for (const path of cleanup.attachmentPaths) await deleteStoredFile(path);
+  if (cleanup.instructionPath) await deleteStoredFile(cleanup.instructionPath);
 }

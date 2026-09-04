@@ -121,4 +121,8 @@ test("displayFileName entfernt Steuer- und Zero-Width-Zeichen aus Anzeigenamen",
   assert.equal(displayFileName(`${NUL}${NUL}`), "datei");
   // Umlaute und normale Namen bleiben unangetastet.
   assert.equal(displayFileName("Übungsplan 2026.pdf"), "Übungsplan 2026.pdf");
+  const long = displayFileName(`${"界".repeat(200)}.pdf`);
+  assert.ok(Buffer.byteLength(long) <= 255);
+  assert.match(long, /\.pdf$/);
+  assert.ok(!long.includes("\uFFFD"), "UTF-8 truncation never splits a character");
 });

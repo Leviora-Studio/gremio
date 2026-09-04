@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Pool } from "pg";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
-test("upgrade preserves single-card values, tokens, files and receipt/archive triggers", async (t) => {
+test("upgrade preserves data through budget/public workflow and instruction-form migrations", async (t) => {
   const url = process.env.TEST_MIGRATION_DATABASE_URL;
   if (!url) return t.skip("Set TEST_MIGRATION_DATABASE_URL to a dedicated empty test database.");
   if (!/^gremio_workflows_upgrade_test_/.test(new URL(url).pathname.slice(1))) throw new Error("Migration test requires an explicitly named isolated database.");
@@ -12,7 +12,20 @@ test("upgrade preserves single-card values, tokens, files and receipt/archive tr
     const tables = await pool.query("select tablename from pg_tables where schemaname = 'public'");
     assert.equal(tables.rowCount, 0, "never modify a nonempty database");
     const migrations = readMigrationFiles({ migrationsFolder: "drizzle" });
-    for (const migration of migrations.slice(0, -1)) for (const sql of migration.sql) await pool.query(sql);
+    const budgetMigration = migrations.findIndex((migration) =>
+      migration.sql.some((sql) => sql.includes('CREATE TABLE "card_budget_positions"')),
+    );
+    const instructionMigration = migrations.findIndex((migration) =>
+      migration.sql.some((sql) => sql.includes('CREATE TABLE "board_instruction_forms"')),
+    );
+    assert.ok(budgetMigration > 0, "budget migration must be present");
+    assert.ok(
+      instructionMigration > budgetMigration,
+      "instruction-form migration must follow the budget migration",
+    );
+    for (const migration of migrations.slice(0, budgetMigration)) {
+      for (const sql of migration.sql) await pool.query(sql);
+    }
     const owner = (await pool.query("insert into users(username) values ('migration-test') returning id")).rows[0].id;
     const board = (await pool.query("insert into boards(name,owner_id) values ('Migration', $1) returning id", [owner])).rows[0].id;
     const statuses = (await pool.query("insert into board_statuses(board_id,name,is_archive_trigger) values ($1,'Source',false),($1,'Target',true),($1,'Archive 2',true) returning id", [board])).rows;
@@ -20,7 +33,7 @@ test("upgrade preserves single-card values, tokens, files and receipt/archive tr
     const account = (await pool.query("insert into accounts(name) values ('Account') returning id")).rows[0].id;
     const card = (await pool.query("insert into cards(board_id,status_id,title,applicant,token,budget_title,account_id,requested_amount,approved_amount,actual_amount) values ($1,$2,'Existing','Test','migration-only-token','12345',$3,20000,0,null) returning *", [board, statuses[0].id, account])).rows[0];
     const file = (await pool.query("insert into attachments(card_id,kind,filename,path,mime,size) values ($1,'other','Existing.pdf','test-only','application/pdf',1) returning *", [card.id])).rows[0];
-    for (const sql of migrations.at(-1)!.sql) await pool.query(sql);
+    for (const sql of migrations[budgetMigration].sql) await pool.query(sql);
     const updated = (await pool.query("select * from cards where id=$1", [card.id])).rows[0];
     assert.equal(updated.budget_mode, "single"); assert.equal(updated.budget_revision, 0);
     delete updated.budget_mode; delete updated.budget_revision;
@@ -34,5 +47,13 @@ test("upgrade preserves single-card values, tokens, files and receipt/archive tr
     const template = (await pool.query("insert into board_templates(name) values ('Template') returning id")).rows[0].id;
     await pool.query("insert into board_template_statuses(template_id,name,is_archive_trigger) values ($1,'A',true),($1,'B',true),($1,'C',true)", [template]);
     assert.equal((await pool.query("select * from card_budget_positions")).rowCount, 0);
+    for (const migration of migrations.slice(budgetMigration + 1)) {
+      for (const sql of migration.sql) await pool.query(sql);
+    }
+    await pool.query("insert into board_instruction_forms(board_id,enabled,filename,path,size,uploaded_by) values ($1,true,'Template.pdf','test-only-template',1,$2)", [board, owner]);
+    const instruction = (await pool.query("select * from board_instruction_forms where board_id=$1", [board])).rows[0];
+    assert.equal(instruction.filename, "Template.pdf");
+    assert.equal(instruction.enabled, true);
+    assert.equal((await pool.query("select token from cards where id=$1", [card.id])).rows[0].token, "migration-only-token");
   } finally { await pool.end(); }
 });

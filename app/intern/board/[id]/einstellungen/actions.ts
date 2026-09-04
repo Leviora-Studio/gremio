@@ -8,7 +8,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, max, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { PDFDocument } from "pdf-lib";
 import { db } from "@/lib/db";
 import {
   accounts,
@@ -41,6 +40,7 @@ import {
   saveNamedBuffer,
   validateUpload,
 } from "@/lib/attachments";
+import { isUsableInstructionTemplatePdf } from "@/lib/instruction-form";
 
 export type State = { error?: string; success?: string };
 
@@ -557,21 +557,33 @@ export async function setInstructionFormAction(
   const candidate = formData.get("template");
   const file = candidate instanceof File && candidate.size > 0 ? candidate : null;
 
-  const [existing] = await db
-    .select()
-    .from(boardInstructionForms)
-    .where(eq(boardInstructionForms.boardId, boardId))
-    .limit(1);
-
   if (!file) {
-    if (enabled && !existing) {
-      return { error: "Bitte zuerst eine PDF-Vorlage hochladen." };
+    const result = await db.transaction(async (tx) => {
+      const [lockedBoard] = await tx
+        .select({ id: boards.id })
+        .from(boards)
+        .where(eq(boards.id, boardId))
+        .for("update");
+      if (!lockedBoard) return "board-missing" as const;
+      const [current] = await tx
+        .select({ boardId: boardInstructionForms.boardId })
+        .from(boardInstructionForms)
+        .where(eq(boardInstructionForms.boardId, boardId))
+        .limit(1);
+      if (enabled && !current) return "template-missing" as const;
+      if (current) {
+        await tx
+          .update(boardInstructionForms)
+          .set({ enabled })
+          .where(eq(boardInstructionForms.boardId, boardId));
+      }
+      return "ok" as const;
+    });
+    if (result === "board-missing") {
+      return { error: "Das Board existiert nicht mehr." };
     }
-    if (existing) {
-      await db
-        .update(boardInstructionForms)
-        .set({ enabled })
-        .where(eq(boardInstructionForms.boardId, boardId));
+    if (result === "template-missing") {
+      return { error: "Bitte zuerst eine PDF-Vorlage hochladen." };
     }
     rev(boardId);
     return {
@@ -585,10 +597,11 @@ export async function setInstructionFormAction(
   if (validationError) return { error: validationError };
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  try {
-    await PDFDocument.load(bytes, { ignoreEncryption: true });
-  } catch {
-    return { error: "Die ausgewählte Datei ist kein lesbares PDF-Dokument." };
+  if (!(await isUsableInstructionTemplatePdf(bytes))) {
+    return {
+      error:
+        "Die ausgewählte Datei ist kein unverschlüsseltes, lesbares PDF-Dokument mit mindestens einer Seite.",
+    };
   }
 
   const saved = await saveNamedBuffer(
@@ -600,11 +613,12 @@ export async function setInstructionFormAction(
   let oldPath: string | null = null;
   try {
     oldPath = await db.transaction(async (tx) => {
-      await tx
+      const [lockedBoard] = await tx
         .select({ id: boards.id })
         .from(boards)
         .where(eq(boards.id, boardId))
         .for("update");
+      if (!lockedBoard) throw new Error("board-missing");
       const [current] = await tx
         .select({ path: boardInstructionForms.path })
         .from(boardInstructionForms)
@@ -654,17 +668,26 @@ export async function deleteInstructionFormAction(
   boardId: number,
 ): Promise<State> {
   await requireBoardManage(boardId);
-  const [existing] = await db
-    .select()
-    .from(boardInstructionForms)
-    .where(eq(boardInstructionForms.boardId, boardId))
-    .limit(1);
-  if (!existing) return {};
-
-  await db
-    .delete(boardInstructionForms)
-    .where(eq(boardInstructionForms.boardId, boardId));
-  await deleteStoredFile(existing.path);
+  const oldPath = await db.transaction(async (tx) => {
+    const [lockedBoard] = await tx
+      .select({ id: boards.id })
+      .from(boards)
+      .where(eq(boards.id, boardId))
+      .for("update");
+    if (!lockedBoard) return null;
+    const [current] = await tx
+      .select({ path: boardInstructionForms.path })
+      .from(boardInstructionForms)
+      .where(eq(boardInstructionForms.boardId, boardId))
+      .limit(1);
+    if (!current) return null;
+    await tx
+      .delete(boardInstructionForms)
+      .where(eq(boardInstructionForms.boardId, boardId));
+    return current.path;
+  });
+  if (!oldPath) return {};
+  await deleteStoredFile(oldPath);
   rev(boardId);
   return { success: "PDF-Vorlage entfernt; die Funktion ist deaktiviert." };
 }

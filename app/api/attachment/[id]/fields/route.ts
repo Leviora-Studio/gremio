@@ -10,6 +10,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { absPath } from "@/lib/attachments";
 import { readPdfFields } from "@/lib/pdf-edit";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
+import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,8 +26,8 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const attId = Number(id);
-  if (!Number.isInteger(attId)) return new Response("Not found", { status: 404 });
+  const attId = parseApiId(id);
+  if (attId == null) return new Response("Not found", { status: 404 });
 
   const [att] = await db
     .select()
@@ -44,6 +47,10 @@ export async function GET(
   if (!board || !(await canAccessBoard(user, board))) {
     return new Response("Forbidden", { status: 403 });
   }
+  const visible = await getVisibleFieldKeys(board.id);
+  if (!isCardAttachmentVisible(att, visible)) {
+    return new Response("Not found", { status: 404 });
+  }
 
   if (att.mime !== "application/pdf") {
     return NextResponse.json({ fields: [] });
@@ -56,7 +63,15 @@ export async function GET(
     return new Response("Datei fehlt", { status: 404 });
   }
 
-  const fields = await readPdfFields(buf);
+  let fields;
+  try {
+    fields = await readPdfFields(buf);
+  } catch {
+    return new Response("PDF-Formularfelder konnten nicht gelesen werden", {
+      status: 422,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  }
   return NextResponse.json(
     { fields },
     { headers: { "Cache-Control": "private, no-store" } },

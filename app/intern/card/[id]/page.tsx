@@ -42,6 +42,8 @@ import type { AttachmentKind } from "@/lib/constants";
 import { getFeedbackByCardId } from "@/lib/public-feedback-submission";
 import { getAccessibleProtocolAreas } from "@/lib/protocols";
 import { deleteCardAction, deleteCommentAction } from "./actions";
+import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
+import { instructionTemplateVersion } from "@/lib/instruction-form";
 
 function fmt(d: Date) {
   return formatDateTime(d, "medium");
@@ -91,6 +93,7 @@ export default async function AntragDetailPage({
     .where(and(eq(boardCardFields.boardId, board.id), eq(boardCardFields.visible, true)))
     .orderBy(asc(boardCardFields.position));
   const visible = visibleRows.map((r) => r.fieldKey);
+  const visibleSet = new Set(visible);
   const priorities = await getPriorities();
   const accounts = await getAccounts();
 
@@ -98,11 +101,14 @@ export default async function AntragDetailPage({
     .select()
     .from(attachments)
     .where(eq(attachments.cardId, card.id));
+  const visibleAtts = atts.filter((attachment) =>
+    isCardAttachmentVisible(attachment, visibleSet),
+  );
   const slot = (k: AttachmentKind) => {
-    const a = atts.find((x) => x.kind === k);
+    const a = visibleAtts.find((x) => x.kind === k);
     return a ? { id: a.id, filename: a.filename, mime: a.mime } : null;
   };
-  const other = atts
+  const otherVisible = visibleAtts
     .filter((a) => a.kind === "other")
     .map((a) => ({
       id: a.id,
@@ -110,9 +116,6 @@ export default async function AntragDetailPage({
       mime: a.mime,
       uploadPurpose: a.uploadPurpose,
     }));
-  const otherVisible = visible.includes("other_pdfs")
-    ? other
-    : other.filter((a) => a.uploadPurpose === "instruction");
   // Hat der eingeloggte Nutzer ein Signatur-Zertifikat? (für den Signieren-Button)
   const hasCert = !!user.certP12Enc;
 
@@ -354,7 +357,7 @@ export default async function AntragDetailPage({
       <section className="card space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Anhänge</h2>
-          {atts.length > 0 && (
+          {visibleAtts.length > 0 && (
             <a
               href={`/api/card/${card.id}/zip`}
               className="btn-secondary btn-sm"
@@ -419,7 +422,7 @@ export default async function AntragDetailPage({
             <CreateInstructionButton
               cardId={card.id}
               boardId={board.id}
-              templateVersion={instructionForm.uploadedAt.toISOString()}
+              templateVersion={instructionTemplateVersion(instructionForm)}
               hasCert={hasCert}
             />
           </div>

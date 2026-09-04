@@ -14,6 +14,7 @@ import {
   boardCardFields,
   boardStatuses,
   cardComments,
+  cardActivity,
   accounts,
   priorities,
 } from "@/lib/db/schema";
@@ -41,6 +42,10 @@ import {
 import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import {
+  CARD_ATTACHMENT_FIELD,
+  isCardAttachmentVisible,
+} from "@/lib/card-attachment-visibility";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions, loadBudgetSnapshot } from "@/lib/card-budget-db";
@@ -52,7 +57,13 @@ async function loadCard(cardId: number) {
   const user = await requireUser();
   // Manipulierte RPC-Argumente (z. B. String statt Int) dürfen keinen
   // pg-Fehler/500 auslösen — wie ein nicht gefundener Datensatz behandeln.
-  if (!Number.isInteger(cardId)) notFound();
+  if (
+    !Number.isSafeInteger(cardId) ||
+    cardId < 1 ||
+    cardId > 2_147_483_647
+  ) {
+    notFound();
+  }
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) notFound();
   const board = await getBoardById(card.boardId);
@@ -399,14 +410,6 @@ export async function setCardStatusAction(
   revalidatePath(`/intern/board/${board.id}`);
 }
 
-const SLOT_FIELD: Record<AttachmentKind, string> = {
-  finance_request: "finance_request",
-  annex_a: "annex_a",
-  annex_b: "annex_b",
-  student_card: "student_card",
-  other: "other_pdfs",
-};
-
 export async function uploadAttachmentAction(
   cardId: number,
   kind: AttachmentKind,
@@ -415,7 +418,7 @@ export async function uploadAttachmentAction(
 ): Promise<State> {
   const { user, board, card } = await loadCard(cardId);
   const visible = await visibleFields(board.id);
-  if (!visible.has(SLOT_FIELD[kind])) {
+  if (!visible.has(CARD_ATTACHMENT_FIELD[kind])) {
     return { error: "Dieses Feld ist auf dem Board nicht aktiviert." };
   }
 
@@ -426,6 +429,10 @@ export async function uploadAttachmentAction(
   if (err) return { error: err };
 
   const saved = await saveAntragFile(card.id, file);
+  const label =
+    CARD_FIELD_LABELS[
+      CARD_ATTACHMENT_FIELD[kind] as keyof typeof CARD_FIELD_LABELS
+    ];
 
   // Alte Slot-Dateien erst NACH erfolgreichem Commit von der Platte löschen:
   // Bei Rollback (z. B. paralleler Upload in denselben Slot → Unique-Verletzung)
@@ -461,6 +468,12 @@ export async function uploadAttachmentAction(
         uploadedBy: user.id,
       });
       await tx.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
+      await tx.insert(cardActivity).values({
+        cardId: card.id,
+        userId: user.id,
+        type: "attachment_added",
+        detail: `Datei hinzugefügt: ${saved.filename} (${label})`,
+      });
     });
   } catch (e) {
     // Transaktion gescheitert → frisch geschriebene Datei wieder entfernen.
@@ -475,15 +488,6 @@ export async function uploadAttachmentAction(
   // Erst jetzt (nach Commit) die ersetzten Dateien von der Platte löschen.
   for (const p of oldPaths) await deleteStoredFile(p);
 
-  const label =
-    CARD_FIELD_LABELS[SLOT_FIELD[kind] as keyof typeof CARD_FIELD_LABELS];
-  await logActivity(
-    card.id,
-    user.id,
-    "attachment_added",
-    `Datei hinzugefügt: ${saved.filename} (${label})`,
-  );
-
   revalidatePath(`/intern/card/${card.id}`);
   return { success: "Datei hochgeladen." };
 }
@@ -492,38 +496,83 @@ export async function deleteAttachmentAction(
   cardId: number,
   attachmentId: number,
 ): Promise<void> {
-  if (!Number.isInteger(attachmentId)) return;
-  const { user, card } = await loadCard(cardId);
+  if (
+    !Number.isSafeInteger(attachmentId) ||
+    attachmentId < 1 ||
+    attachmentId > 2_147_483_647
+  ) {
+    return;
+  }
+  const { user, board, card } = await loadCard(cardId);
   const [att] = await db
     .select()
     .from(attachments)
     .where(and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id)))
     .limit(1);
   if (!att) return;
-  // Reihenfolge: erst DB-Zeile entfernen, DANN die Datei — schlägt das DB-Delete
-  // fehl, bliebe sonst eine Zeile ohne Datei zurück („Datei fehlt"). Andersrum
-  // bleibt im Fehlerfall höchstens eine verwaiste Datei (harmlos).
-  await db.delete(attachments).where(eq(attachments.id, att.id));
-  await db.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
-  await deleteStoredFile(att.path);
-  const label =
-    CARD_FIELD_LABELS[SLOT_FIELD[att.kind] as keyof typeof CARD_FIELD_LABELS];
-  await logActivity(
-    card.id,
-    user.id,
-    "attachment_removed",
-    `Datei entfernt: ${att.filename} (${label})`,
-  );
+  const visible = await visibleFields(board.id);
+  if (!isCardAttachmentVisible(att, visible)) return;
+  // Karte + Anhang sperren, damit paralleles PDF-Ersetzen weder eine neue Datei
+  // verwaist noch nach dem Löschen wieder eine DB-Zeile aktualisiert.
+  const deleted = await db.transaction(async (tx) => {
+    const [lockedCard] = await tx
+      .select({ id: cards.id })
+      .from(cards)
+      .where(eq(cards.id, card.id))
+      .for("update");
+    if (!lockedCard) return null;
+    const [current] = await tx
+      .select()
+      .from(attachments)
+      .where(
+        and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id)),
+      )
+      .for("update");
+    if (!current) return null;
+    await tx.delete(attachments).where(eq(attachments.id, current.id));
+    await tx
+      .update(cards)
+      .set({ updatedAt: new Date() })
+      .where(eq(cards.id, card.id));
+    const label =
+      CARD_FIELD_LABELS[
+        CARD_ATTACHMENT_FIELD[
+          current.kind
+        ] as keyof typeof CARD_FIELD_LABELS
+      ];
+    await tx.insert(cardActivity).values({
+      cardId: card.id,
+      userId: user.id,
+      type: "attachment_removed",
+      detail: `Datei entfernt: ${current.filename} (${label})`,
+    });
+    return current;
+  });
+  if (!deleted) return;
+  await deleteStoredFile(deleted.path);
   revalidatePath(`/intern/card/${card.id}`);
 }
 
 async function removeCard(cardId: number): Promise<number> {
   const { board, card } = await loadCard(cardId);
-  const atts = await db.select().from(attachments).where(eq(attachments.cardId, card.id));
-  // Erst die Karte löschen (CASCADE entfernt die attachments-Zeilen), DANN die
-  // Dateien — so bleibt im Fehlerfall keine DB-Referenz auf eine fehlende Datei.
-  await db.delete(cards).where(eq(cards.id, card.id));
-  for (const a of atts) await deleteStoredFile(a.path);
+  const paths = await db.transaction(async (tx) => {
+    const [lockedCard] = await tx
+      .select({ id: cards.id })
+      .from(cards)
+      .where(eq(cards.id, card.id))
+      .for("update");
+    if (!lockedCard) return [];
+    const rows = await tx
+      .select({ path: attachments.path })
+      .from(attachments)
+      .where(eq(attachments.cardId, card.id));
+    // Erst die Karte löschen (CASCADE entfernt die attachments-Zeilen), DANN
+    // außerhalb der Sperre die Dateien. Alle Datei-Schreiber sperren dieselbe
+    // Karte und können deshalb nicht zwischen Snapshot und DELETE einfügen.
+    await tx.delete(cards).where(eq(cards.id, card.id));
+    return rows.map((row) => row.path);
+  });
+  for (const path of paths) await deleteStoredFile(path);
   return board.id;
 }
 

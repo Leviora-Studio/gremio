@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { absPath } from "@/lib/attachments";
 import { readPdfFields } from "@/lib/pdf-edit";
+import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,8 +23,8 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const boardId = Number(id);
-  if (!Number.isInteger(boardId)) return new Response("Not found", { status: 404 });
+  const boardId = parseApiId(id);
+  if (boardId == null) return new Response("Not found", { status: 404 });
   const board = await getBoardById(boardId);
   if (!board || !(await canAccessBoard(user, board))) {
     return new Response("Forbidden", { status: 403 });
@@ -45,8 +46,15 @@ export async function GET(
     return new Response("Datei fehlt", { status: 404 });
   }
 
-  return NextResponse.json(
-    { fields: await readPdfFields(pdf) },
-    { headers: { "Cache-Control": "private, no-store" } },
-  );
+  try {
+    return NextResponse.json(
+      { fields: await readPdfFields(pdf) },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  } catch {
+    return new Response("PDF-Formularfelder konnten nicht gelesen werden", {
+      status: 422,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  }
 }

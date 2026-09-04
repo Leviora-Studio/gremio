@@ -8,6 +8,9 @@ import { cards, attachments } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { absPath, contentDisposition } from "@/lib/attachments";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
+import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +22,8 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const attId = Number(id);
-  if (!Number.isInteger(attId)) return new Response("Not found", { status: 404 });
+  const attId = parseApiId(id);
+  if (attId == null) return new Response("Not found", { status: 404 });
   const [att] = await db
     .select()
     .from(attachments)
@@ -38,6 +41,10 @@ export async function GET(
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) {
     return new Response("Forbidden", { status: 403 });
+  }
+  const visible = await getVisibleFieldKeys(board.id);
+  if (!isCardAttachmentVisible(att, visible)) {
+    return new Response("Not found", { status: 404 });
   }
 
   let buf: Buffer;

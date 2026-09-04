@@ -116,9 +116,11 @@ board_instruction_forms (board_id PK FK→boards ON DELETE CASCADE,
                          enabled DEFAULT false,
                          filename, path, size, uploaded_at, uploaded_by NULL)
 -- Board-Eigentümer/Admin hinterlegen genau eine PDF-Vorlage. Aktivierung ist
--- nur mit Vorlage möglich. Board-Mitglieder erstellen daraus im Karten-PDF-
--- Editor neue Anhänge: Anweisung 1.pdf, Anweisung 2.pdf, ... . Die nächste
--- Nummer folgt auch auf passend benannte, manuell hochgeladene PDFs.
+-- nur mit einer unverschlüsselten, lesbaren Vorlage mit mindestens einer Seite
+-- möglich. Board-Mitglieder erstellen daraus im Karten-PDF-Editor neue Anhänge:
+-- Anweisung 1.pdf, Anweisung 2.pdf, ... . Die nächste Nummer folgt auch auf
+-- passend benannte, manuell hochgeladene PDFs. Ersetzen/Deaktivieren/Löschen
+-- wird gegen parallele Erstellung versioniert und unter Board-Sperre gespeichert.
 
 -- Karte gehört zu genau einem Board und steht in einer Status-Spalte dieses Boards:
 -- location_id = Herkunft aus dem öffentlichen Formular (NULL bei manuell angelegten Karten)
@@ -387,6 +389,16 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 
 - **Nutzer-Auswahl (Ersteller / Zugewiesen zu):** Tippen liefert Vorschläge aus den Nutzern, die Zugriff auf das jeweilige Board haben (Eigentümer + direkte Freigaben + Gruppen + Admins). Dafür ein gefilterter Such-Endpoint.
 - **Anhänge — einheitliches Modell:** Die benannten Slots sind Anhänge mit festem `kind` (je max. 1, ersetzbar), „Weitere PDFs" sind `kind='other'` und **unbegrenzt**.
+- **Ausgeblendete Anhangfelder sind eine serverseitige Grenze:** Die interne
+  Download-/Formularfeld-Route, das Karten-ZIP sowie Bearbeiten und Löschen
+  liefern bzw. verändern nur aktuell sichtbare Anhänge. Automatisch erstellte
+  Anweisungen bleiben als ausdrücklich eigenständiger Workflow sichtbar, auch
+  wenn „Weitere PDFs" ausgeblendet ist. Das bestehende öffentliche Statusmodell
+  bleibt davon getrennt: Der Studierendenausweis ist dort immer ausgeschlossen.
+- **PDF-Dateiänderungen sind konfliktgeschützt:** Ersetzen und Kopieren prüfen
+  unter Kartensperre, ob der Quellanhang noch unverändert existiert; parallele
+  Änderungen werden abgewiesen und neu geschriebene Dateien aufgeräumt. Auch
+  bearbeitete/signierte Ergebnisse unterliegen der Grenze von 25 MB.
 - **Titel**, **Erstellungszeitpunkt** und **Letzte Änderung** sind immer sichtbar (nicht abschaltbar).
 - **Aktivierte Felder sind optional:** Aktiviert ein Board ein Feld, erscheint es auf allen Karten des Boards, **darf aber leer bleiben** (keine Pflichteingabe). Ausnahme bleiben die automatisch gesetzten Werte (Titel, Erstellungszeitpunkt, Letzte Änderung).
 

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import {
   attachments,
   boardInstructionForms,
+  cardActivity,
   cards,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -20,10 +21,12 @@ import {
   saveAntragBuffer,
 } from "@/lib/attachments";
 import { MAX_UPLOAD_BYTES } from "@/lib/constants";
-import { nextInstructionFilename } from "@/lib/instruction-form";
+import {
+  instructionTemplateVersion,
+  nextInstructionFilename,
+} from "@/lib/instruction-form";
 import { applyEditsAndSign } from "@/lib/pdf-apply";
 import { allowRequest } from "@/lib/rate-limit";
-import { logActivity } from "@/lib/activity";
 import type { SavePdfInput, SavePdfResult } from "./pdf-actions";
 
 /**
@@ -35,7 +38,13 @@ export async function createInstructionPdfAction(
   input: SavePdfInput,
 ): Promise<SavePdfResult> {
   const user = await requireUser();
-  if (!Number.isInteger(cardId) || !input || input.attachmentId !== cardId) {
+  if (
+    !Number.isSafeInteger(cardId) ||
+    cardId < 1 ||
+    cardId > 2_147_483_647 ||
+    !input ||
+    input.attachmentId !== cardId
+  ) {
     return { ok: false, error: "Ungültige Eingabe." };
   }
   if (!(await allowRequest(`pdf-save:${user.id}`, 30, 60_000))) {
@@ -57,7 +66,7 @@ export async function createInstructionPdfAction(
   if (!config?.enabled) {
     return { ok: false, error: "Das Anweisungsformular ist nicht mehr aktiviert." };
   }
-  if (config.uploadedAt.toISOString() !== input.sourceVersion) {
+  if (instructionTemplateVersion(config) !== input.sourceVersion) {
     return {
       ok: false,
       error: "Die PDF-Vorlage wurde inzwischen ersetzt. Bitte den Editor neu öffnen.",
@@ -90,9 +99,8 @@ export async function createInstructionPdfAction(
   );
 
   let attachmentId: number;
-  let filename: string;
   try {
-    const inserted = await db.transaction(async (tx) => {
+    attachmentId = await db.transaction(async (tx) => {
       // Serialisiert Erstellungen und normale Uploads auf derselben Karte,
       // damit die sichtbare Nummer auch bei parallelen Klicks eindeutig bleibt.
       const [locked] = await tx
@@ -105,6 +113,7 @@ export async function createInstructionPdfAction(
       const [currentTemplate] = await tx
         .select({
           enabled: boardInstructionForms.enabled,
+          path: boardInstructionForms.path,
           uploadedAt: boardInstructionForms.uploadedAt,
         })
         .from(boardInstructionForms)
@@ -112,7 +121,7 @@ export async function createInstructionPdfAction(
         .for("update");
       if (
         !currentTemplate?.enabled ||
-        currentTemplate.uploadedAt.toISOString() !== input.sourceVersion
+        instructionTemplateVersion(currentTemplate) !== input.sourceVersion
       ) {
         throw new Error("instruction-template-changed");
       }
@@ -139,10 +148,14 @@ export async function createInstructionPdfAction(
         .update(cards)
         .set({ updatedAt: new Date() })
         .where(eq(cards.id, card.id));
-      return { id: row.id, filename: nextName };
+      await tx.insert(cardActivity).values({
+        cardId: card.id,
+        userId: user.id,
+        type: "attachment_added",
+        detail: `Anweisung erstellt: ${nextName}`,
+      });
+      return row.id;
     });
-    attachmentId = inserted.id;
-    filename = inserted.filename;
   } catch (error) {
     await deleteStoredFile(saved.relPath);
     if ((error as Error)?.message === "instruction-template-changed") {
@@ -155,12 +168,6 @@ export async function createInstructionPdfAction(
     return { ok: false, error: "Die Anweisung konnte nicht gespeichert werden." };
   }
 
-  await logActivity(
-    card.id,
-    user.id,
-    "attachment_added",
-    `Anweisung erstellt: ${filename}`,
-  );
   revalidatePath(`/intern/card/${card.id}`);
   revalidatePath(`/intern/board/${board.id}`);
   return {

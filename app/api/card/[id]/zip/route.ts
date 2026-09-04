@@ -10,6 +10,9 @@ import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { absPath, contentDisposition } from "@/lib/attachments";
 import { ZIP_MAX_TOTAL_BYTES } from "@/lib/constants";
 import { zip } from "@/lib/zip";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
+import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,8 +50,8 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { id } = await params;
-  const cardId = Number(id);
-  if (!Number.isInteger(cardId)) return new Response("Not found", { status: 404 });
+  const cardId = parseApiId(id);
+  if (cardId == null) return new Response("Not found", { status: 404 });
 
   const [card] = await db
     .select()
@@ -62,11 +65,14 @@ export async function GET(
     return new Response("Forbidden", { status: 403 });
   }
 
-  const atts = await db
+  const visible = await getVisibleFieldKeys(board.id);
+  const atts = (
+    await db
     .select()
     .from(attachments)
     .where(eq(attachments.cardId, cardId))
-    .orderBy(asc(attachments.uploadedAt));
+    .orderBy(asc(attachments.uploadedAt))
+  ).filter((attachment) => isCardAttachmentVisible(attachment, visible));
 
   const used = new Set<string>();
   const files: { name: string; data: Buffer }[] = [];
@@ -92,7 +98,9 @@ export async function GET(
   }
 
   const base =
-    (card.number?.trim() || card.title?.trim() || "Dokumente")
+    ((visible.has("number") ? card.number?.trim() : null) ||
+      card.title?.trim() ||
+      "Dokumente")
       .replace(/[\\/:*?"<>|\r\n]+/g, "_")
       .slice(0, 120) || "Dokumente";
 

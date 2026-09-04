@@ -3,28 +3,48 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { Pool } = require('pg');
 const { sealData } = require('iron-session');
 const { randomUUID } = require('node:crypto');
-const { mkdtempSync } = require('node:fs');
+const { mkdirSync, mkdtempSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
+const { inflateRawSync } = require('node:zlib');
 const assert = require('node:assert/strict');
+
+function readZipEntries(buffer) {
+  const entries = new Map();
+  let offset = 0;
+  while (offset + 30 <= buffer.length && buffer.readUInt32LE(offset) === 0x04034b50) {
+    const method = buffer.readUInt16LE(offset + 8);
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const nameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLength + extraLength;
+    const name = buffer.subarray(nameStart, nameStart + nameLength).toString('utf8');
+    const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+    entries.set(name, method === 8 ? inflateRawSync(compressed) : compressed);
+    offset = dataStart + compressedSize;
+  }
+  return entries;
+}
 (async () => {
   const url = new URL(process.env.DATABASE_URL);
   assert.match(url.pathname, /^\/gremio_workflows_test_/, 'use isolated workflow test DB only');
   const pool = new Pool({ connectionString: url.toString() });
   const output = mkdtempSync(join(tmpdir(), 'gremio-workflows-production-'));
+  const uploadDir = join(output, 'uploads');
   const reservation = createServer(); await new Promise(resolve => reservation.listen(0,'127.0.0.1',resolve));
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'),'start','-p',String(port),'-H','127.0.0.1'], { env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, UPLOAD_DIR: join(output,'uploads'), NODE_ENV:'production' }, stdio:['ignore','pipe','pipe'] });
+  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'),'start','-p',String(port),'-H','127.0.0.1'], { env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, UPLOAD_DIR: uploadDir, NODE_ENV:'production' }, stdio:['ignore','pipe','pipe'] });
   let log=''; child.stdout.on('data',data=>{log+=data.toString();}); child.stderr.on('data',data=>{log+=data.toString();});
   let browser, ownerId, boardId; const accountIds=[];
   const query = (sql,args=[])=>pool.query(sql,args);
   try {
     let ready=false;
     for(let i=0;i<100;i++) { try { if((await fetch(base+'/api/health')).ok) {ready=true;break;} } catch {} await new Promise(resolve=>setTimeout(resolve,200)); }
-    assert.ok(ready,'production server should start');
+    assert.ok(ready,`production server should start\n${log}`);
     const suffix=`browser-${randomUUID()}`;
     ownerId=(await query("insert into users(username,role) values ($1,'admin') returning id",[suffix])).rows[0].id;
     const accs=(await query("insert into accounts(name) values ($1),($2) returning id",[suffix+'-A',suffix+'-B'])).rows; accountIds.push(...accs.map(a=>a.id));
@@ -38,6 +58,15 @@ const assert = require('node:assert/strict');
     const hiddenApplicant = `hidden-applicant-${randomUUID()}`;
     await query('update cards set notes=$1,applicant=$2 where id=$3',[hiddenNote,hiddenApplicant,card.id]);
     await query('insert into card_assignees(card_id,user_id) values ($1,$2)',[card.id,ownerId]);
+    const hiddenPath = join('cards', String(card.id), 'hidden-student-card.pdf');
+    const instructionPath = join('cards', String(card.id), 'generated-instruction.pdf');
+    const hiddenBytes = Buffer.from(`hidden-student-card-${randomUUID()}`);
+    const instructionBytes = Buffer.from(`generated-instruction-${randomUUID()}`);
+    mkdirSync(join(uploadDir, 'cards', String(card.id)), { recursive: true });
+    writeFileSync(join(uploadDir, hiddenPath), hiddenBytes);
+    writeFileSync(join(uploadDir, instructionPath), instructionBytes);
+    const hiddenAttachment=(await query("insert into attachments(card_id,kind,filename,path,mime,size,uploaded_by) values ($1,'student_card','Hidden-student-card.pdf',$2,'application/pdf',$3,$4) returning id",[card.id,hiddenPath,hiddenBytes.length,ownerId])).rows[0];
+    const instructionAttachment=(await query("insert into attachments(card_id,kind,upload_purpose,filename,path,mime,size,uploaded_by) values ($1,'other','instruction','Anweisung 1.pdf',$2,'application/pdf',$3,$4) returning id",[card.id,instructionPath,instructionBytes.length,ownerId])).rows[0];
     browser=await chromium.launch({ executablePath:process.env.CHROME_PATH || undefined,headless:true });
     const page=await browser.newPage({viewport:{width:1400,height:1000}});
     await page.context().addCookies([{name:'gremio_session',value:await sealData({userId:ownerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
@@ -48,6 +77,21 @@ const assert = require('node:assert/strict');
       assert.equal(html.includes(hiddenNote),false,`${route}: hidden notes leaked in HTML/client props`);
       assert.equal(html.includes(hiddenApplicant),false,`${route}: hidden applicant leaked in HTML/client props`);
     }
+    assert.equal((await page.request.get(`${base}/api/attachment/${hiddenAttachment.id}`)).status(),404,'hidden attachment bytes must not be reachable directly');
+    assert.equal((await page.request.get(`${base}/api/attachment/${hiddenAttachment.id}/fields`)).status(),404,'hidden attachment fields must not be reachable directly');
+    assert.equal((await page.request.get(`${base}/api/attachment/${instructionAttachment.id}`)).status(),200,'generated instructions remain a deliberate visibility exception');
+    const malformedFields=await page.request.get(`${base}/api/attachment/${instructionAttachment.id}/fields`);
+    assert.equal(malformedFields.status(),200,'malformed historical PDFs remain a controlled empty-form response');
+    assert.deepEqual(await malformedFields.json(),{fields:[]});
+    for(const route of ['/api/attachment/2147483648','/api/attachment/2147483648/fields','/api/card/2147483648/zip',`/api/board/2147483648/instruction-template`,`/api/board/2147483648/instruction-template/fields`]) {
+      assert.equal((await page.request.get(base+route)).status(),404,`${route}: oversized PostgreSQL IDs are rejected before querying`);
+    }
+    const zipResponse = await page.request.get(`${base}/api/card/${card.id}/zip`);
+    assert.equal(zipResponse.status(),200);
+    assert.equal(zipResponse.headers()['content-disposition'].includes('TEST_1'),false,'hidden card number must not leak through the ZIP filename');
+    const zipEntries = readZipEntries(Buffer.from(await zipResponse.body()));
+    assert.equal(zipEntries.has('Hidden-student-card.pdf'),false,'hidden attachment must not be bundled');
+    assert.deepEqual(zipEntries.get('Anweisung 1.pdf'),instructionBytes,'generated instruction must remain bundled');
     await page.goto(`${base}/intern/card/${card.id}`);
     await page.getByRole('button',{name:'Weiteren Haushaltstitel hinzufügen',exact:true}).click();
     const first=page.getByRole('group',{name:'Position 1',exact:true}), second=page.getByRole('group',{name:'Position 2',exact:true});
@@ -88,7 +132,7 @@ const assert = require('node:assert/strict');
     await inputs.nth(2).setInputFiles([pdf('one.pdf'),pdf('two.pdf'),pdf('three.pdf')]);
     assert.equal(await publicPage.getByRole('button',{name:'Quittung einreichen',exact:true}).isDisabled(),true);
     await publicPage.getByText('Hinzugefügt: TEST_1_Q3.pdf',{exact:true}).waitFor();
-    const files=(await query('select filename,upload_purpose from attachments where card_id=$1 order by id',[card.id])).rows;
+    const files=(await query('select filename,upload_purpose from attachments where card_id=$1 and uploaded_by is null order by id',[card.id])).rows;
     assert.deepEqual(files.map(f=>f.filename),['Original.pdf','Nachtrag.pdf','TEST_1_Q1.pdf','TEST_1_Q2.pdf','TEST_1_Q3.pdf']);
     assert.equal((await query('select status_id from cards where id=$1',[card.id])).rows[0].status_id,statuses[0].id);
     await publicPage.screenshot({path:join(output,'public-mobile.png'),fullPage:true});
@@ -100,8 +144,10 @@ const assert = require('node:assert/strict');
     assert.equal(response.status,200,'public status API should accept the generated test status link');
     const json=await response.json(); assert.equal(json.application.approvedAmountCents,35000); assert.equal(JSON.stringify(json).includes('accountId'),false); assert.equal(JSON.stringify(json).includes('budgetPositions'),false);
     assert.deepEqual(json.availableActions,{canResubmit:false,canReceipt:false,canUploadDocuments:true,submitMode:null});
-    assert.equal(json.documents.length,5,'all public workflow attachments appear in the existing status contract');
+    assert.equal(json.documents.length,6,'public workflow files and the generated instruction appear in the existing status contract');
     assert.equal(json.documents.filter(d=>d.filename.startsWith('TEST_1_Q')).length,3);
+    assert.equal(json.documents.some(d=>d.filename==='Anweisung 1.pdf'),true);
+    assert.equal(json.documents.some(d=>d.filename==='Hidden-student-card.pdf'),false);
     await query('update board_statuses set is_archive_trigger=true,is_receipt_trigger=true where id=$1',[statuses[1].id]);
     const archived=await (await statusApi()).json();
     assert.equal(archived.status.archived,true);
