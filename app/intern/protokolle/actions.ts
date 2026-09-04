@@ -25,11 +25,11 @@ import { isSafeExternalUrl } from "@/lib/url-guard";
 import {
   createWebDavDirectoryExclusive,
   createWebDavTextExclusive,
+  deleteWebDavEntry,
   joinWebDavPath,
   listWebDavDirectory,
   readWebDavText,
-  WebDavConflictError,
-  writeWebDavTextIfMatch,
+  overwriteWebDavText,
 } from "@/lib/nextcloud";
 import {
   extractFinanceLinks,
@@ -39,21 +39,43 @@ import {
   validateFilePattern,
 } from "@/lib/protocol-markdown";
 import {
+  assertProtocolDeletionBoardAccess,
+  cleanupDeletedProtocolResource,
   getProtocolSession,
+  listProtocolSessionFiles,
   protocolCredentials,
   reconcileProtocolCardLinks,
   requireProtocolAreaAccess,
   requireProtocolAreaManage,
   syncProtocolSessions,
+  syncProtocolSessionFile,
 } from "@/lib/protocols";
+import { protocolDeletionPath, resolveProtocolDeletionTarget } from "@/lib/protocol-deletion";
+import { changeProtocolMembers, getProtocolMembers, type ProtocolMember, type ProtocolMemberCommand, type ProtocolMemberResult } from "@/lib/protocol-members";
+import { syncProtocolAttendance } from "@/lib/protocol-markdown";
+import { changeProtocolGuests, getProtocolGuests, type ProtocolGuest, type ProtocolGuestCommand, type ProtocolGuestResult } from "@/lib/protocol-guests";
 
 export type ProtocolState = {
   error?: string;
   success?: string;
-  conflict?: boolean;
   etag?: string;
   savedToNextcloud?: boolean;
+  content?: string;
 };
+
+export async function changeProtocolMembersAction(areaId: number, sessionId: number, command: ProtocolMemberCommand): Promise<ProtocolMemberResult> {
+  const user = await requireUser();
+  try {
+    const members = await changeProtocolMembers(user, areaId, sessionId, command);
+    return { members };
+  } catch (error) { return { error: errorMessage(error) }; }
+}
+
+export async function changeProtocolGuestsAction(areaId: number, sessionId: number, command: ProtocolGuestCommand): Promise<ProtocolGuestResult> {
+  const user = await requireUser();
+  try { return { guests: await changeProtocolGuests(user, areaId, sessionId, command) }; }
+  catch (error) { return { error: errorMessage(error) }; }
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unbekannter Fehler.";
@@ -250,7 +272,15 @@ export async function createProtocolForSessionAction(areaId: number, sessionId: 
       created_at: new Date().toISOString(),
     });
     const result = await createWebDavTextExclusive(protocolCredentials(area), path, content);
-    if (!result.created) return { error: "Die Protokolldatei existiert bereits und wurde nicht überschrieben." };
+    if (!result.created) {
+      const files = await listProtocolSessionFiles(area, session);
+      const updated = await syncProtocolSessionFile(area, { ...session, sessionDate: date }, files);
+      revalidatePath(`/intern/protokolle/${areaId}`);
+      revalidatePath(`/intern/protokolle/${areaId}/sitzung/${sessionId}`);
+      return updated.protocolPath
+        ? { success: "Die vorhandene Protokolldatei wurde erkannt und nicht überschrieben." }
+        : { error: "Die Protokolldatei konnte nicht angelegt oder als Datei erkannt werden. Bitte die Nextcloud-Dateiliste prüfen." };
+    }
     await db.update(protocolSessions).set({
       sessionDate: date,
       protocolPath: path,
@@ -266,12 +296,95 @@ export async function createProtocolForSessionAction(areaId: number, sessionId: 
   }
 }
 
-export async function saveProtocolAction(areaId: number, sessionId: number, content: string, etag: string): Promise<ProtocolState> {
+export async function deleteProtocolFileAction(
+  areaId: number,
+  sessionId: number,
+  expectedFolderName: string,
+  fileName: string,
+  expectedFileId: string | null,
+): Promise<ProtocolState> {
+  const { user, area } = await requireProtocolAreaAccess(areaId);
+  const session = await getProtocolSession(areaId, sessionId);
+  if (!session) return { error: "Sitzung nicht gefunden." };
+  if (session.folderName !== expectedFolderName) return { error: "Der Sitzungsordner wurde umbenannt. Bitte neu laden." };
+  let cloudDeleted = false;
+  try {
+    const folderPath = protocolDeletionPath(area.rootPath, session.folderName);
+    const path = protocolDeletionPath(area.rootPath, session.folderName, fileName);
+    let isProtocol = session.protocolPath === path;
+    const creds = protocolCredentials(area);
+    const folder = resolveProtocolDeletionTarget(
+      await listWebDavDirectory(creds, area.rootPath),
+      session.folderName,
+      "directory",
+      session.folderFileId,
+    );
+    const file = folder ? resolveProtocolDeletionTarget(
+      await listWebDavDirectory(creds, folderPath),
+      fileName,
+      "file",
+      (isProtocol ? session.protocolFileId : null) || expectedFileId,
+    ) : null;
+    if (file?.fileId && file.fileId === session.protocolFileId) isProtocol = true;
+    if (isProtocol) await assertProtocolDeletionBoardAccess(user, session);
+    if (file) await deleteWebDavEntry(creds, path, file.etag);
+    cloudDeleted = true;
+    const cardIds = isProtocol ? await cleanupDeletedProtocolResource(user, session, "protocol") : [];
+    for (const cardId of cardIds) revalidatePath(`/intern/card/${cardId}`);
+    revalidatePath(`/intern/protokolle/${areaId}`);
+    revalidatePath(`/intern/protokolle/${areaId}/sitzung/${sessionId}`);
+    return { success: "Datei in Nextcloud gelöscht." };
+  } catch (error) {
+    return { error: cloudDeleted
+      ? `Die Datei ist in Nextcloud nicht mehr vorhanden, aber die lokale Bereinigung ist fehlgeschlagen: ${errorMessage(error)} Bitte diese Löschaktion erneut ausführen.`
+      : `Datei konnte nicht gelöscht werden: ${errorMessage(error)}` };
+  }
+}
+
+export async function deleteProtocolSessionAction(
+  areaId: number,
+  sessionId: number,
+  expectedFolderName: string,
+): Promise<ProtocolState> {
+  const { user, area } = await requireProtocolAreaAccess(areaId);
+  const session = await getProtocolSession(areaId, sessionId);
+  if (!session) return { error: "Sitzung nicht gefunden. Bitte die Übersicht neu laden." };
+  if (session.folderName !== expectedFolderName) return { error: "Der Sitzungsordner wurde umbenannt. Bitte neu laden." };
+  let cloudDeleted = false;
+  try {
+    const path = protocolDeletionPath(area.rootPath, session.folderName);
+    await assertProtocolDeletionBoardAccess(user, session);
+    const creds = protocolCredentials(area);
+    const folder = resolveProtocolDeletionTarget(
+      await listWebDavDirectory(creds, area.rootPath),
+      session.folderName,
+      "directory",
+      session.folderFileId,
+    );
+    if (folder) await deleteWebDavEntry(creds, path, folder.etag);
+    cloudDeleted = true;
+    const cardIds = await cleanupDeletedProtocolResource(user, session, "session");
+    for (const cardId of cardIds) revalidatePath(`/intern/card/${cardId}`);
+    revalidatePath(`/intern/protokolle/${areaId}`);
+    revalidatePath(`/intern/protokolle/${areaId}/sitzung/${sessionId}`);
+  } catch (error) {
+    return { error: cloudDeleted
+      ? `Der Sitzungsordner ist in Nextcloud nicht mehr vorhanden, aber die lokale Bereinigung ist fehlgeschlagen: ${errorMessage(error)} Bitte diese Löschaktion erneut ausführen.`
+      : `Sitzungsordner konnte nicht gelöscht werden: ${errorMessage(error)}` };
+  }
+  redirect(`/intern/protokolle/${areaId}`);
+}
+
+export async function saveProtocolAction(areaId: number, sessionId: number, content: string, replannedCardIds: number[] = []): Promise<ProtocolState> {
   const { user, area } = await requireProtocolAreaAccess(areaId);
   const session = await getProtocolSession(areaId, sessionId);
   if (!session?.protocolPath) return { error: "Keine Protokolldatei registriert." };
-  if (!etag) return { error: "Der Versionsstand fehlt. Bitte neu laden." };
+  const [members, guests] = await Promise.all([getProtocolMembers(areaId, sessionId), getProtocolGuests(areaId, sessionId)]);
+  content = syncProtocolAttendance(content, members, guests);
   const links = extractFinanceLinks(content);
+  if (!Array.isArray(replannedCardIds) || replannedCardIds.length > links.length || replannedCardIds.some(id => !Number.isSafeInteger(id) || !links.some(link => link.cardId === id))) {
+    return { error: "Ungültige neu eingeplante Finanzanträge." };
+  }
   let mayReconcile = true;
 
   if (!area.boardId && links.length) {
@@ -288,6 +401,7 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
       return { error: "Mindestens eine Markdown-Verknüpfung gehört nicht zum konfigurierten Board." };
     }
     if (!mayLink) {
+      if (replannedCardIds.length) return { error: "Zum erneuten Einplanen ist Zugriff auf das verknüpfte Board erforderlich." };
       const existing = await db.select({ cardId: protocolCardLinks.cardId, top: protocolCardLinks.top }).from(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
       const normalized = (items: typeof existing) => JSON.stringify([...items].sort((a, b) => a.cardId - b.cardId));
       if (normalized(existing) !== normalized(links)) return { error: "Finanzverknüpfungen dürfen nur mit Zugriff auf das verknüpfte Board geändert werden." };
@@ -297,11 +411,8 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
 
   let stat;
   try {
-    stat = await writeWebDavTextIfMatch(protocolCredentials(area), session.protocolPath, content, etag);
+    stat = await overwriteWebDavText(protocolCredentials(area), session.protocolPath, content);
   } catch (error) {
-    if (error instanceof WebDavConflictError) {
-      return { error: "Konflikt: Das Protokoll wurde in Nextcloud geändert. Bitte dortigen Stand neu laden und vergleichen.", conflict: true };
-    }
     return { error: `Speichern in Nextcloud fehlgeschlagen: ${errorMessage(error)}` };
   }
   try {
@@ -316,9 +427,10 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
         success: "In Nextcloud gespeichert. Bestehende Finanzverknüpfungen wurden mangels Board-Zugriff nicht verändert.",
         etag: stat.etag ?? (stat.lastModified ? `lastmod:${stat.lastModified}` : undefined),
         savedToNextcloud: true,
+        content,
       };
     }
-    const result = await reconcileProtocolCardLinks(area, session, links);
+    const result = await reconcileProtocolCardLinks(area, session, links, replannedCardIds);
     revalidatePath(`/intern/protokolle/${areaId}/sitzung/${sessionId}`);
     return {
       success: result.conflicts
@@ -326,17 +438,19 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
         : "In Nextcloud gespeichert.",
       etag: stat.etag ?? (stat.lastModified ? `lastmod:${stat.lastModified}` : undefined),
       savedToNextcloud: true,
+      content,
     };
   } catch (error) {
     return {
       error: `Die Datei wurde in Nextcloud gespeichert, aber die Kartenverknüpfung ist noch nicht konsistent: ${errorMessage(error)} Erneutes Speichern wiederholt die Nachbearbeitung idempotent.`,
       etag: stat.etag ?? (stat.lastModified ? `lastmod:${stat.lastModified}` : undefined),
       savedToNextcloud: true,
+      content,
     };
   }
 }
 
-export async function loadProtocolDocumentAction(areaId: number, sessionId: number): Promise<{ content?: string; etag?: string; error?: string }> {
+export async function loadProtocolDocumentAction(areaId: number, sessionId: number): Promise<{ content?: string; etag?: string; error?: string; members?: ProtocolMember[]; guests?: ProtocolGuest[] }> {
   const { area } = await requireProtocolAreaAccess(areaId);
   const session = await getProtocolSession(areaId, sessionId);
   if (!session?.protocolPath) return { error: "Keine Protokolldatei registriert." };
@@ -344,6 +458,8 @@ export async function loadProtocolDocumentAction(areaId: number, sessionId: numb
     const result = await readWebDavText(protocolCredentials(area), session.protocolPath);
     return {
       content: result.content,
+      members: await getProtocolMembers(areaId, sessionId),
+      guests: await getProtocolGuests(areaId, sessionId),
       etag: result.stat.etag ?? (result.stat.lastModified ? `lastmod:${result.stat.lastModified}` : ""),
     };
   } catch (error) {

@@ -14,6 +14,8 @@ import {
 import { fetch as nodeFetch } from "@buttercup/fetch";
 import { absPath } from "@/lib/attachments";
 import { isSafeExternalUrl, isPublicHost } from "@/lib/url-guard";
+import { MAX_UPLOAD_BYTES } from "@/lib/constants";
+import { detectProtocolImageMime, protocolImageMime } from "@/lib/protocol-image";
 
 export interface NcCredentials {
   url: string;
@@ -129,23 +131,6 @@ export type WebDavEntry = {
   lastModified: string | null;
 };
 
-export class WebDavConflictError extends Error {
-  constructor(message = "Die Datei wurde zwischenzeitlich in Nextcloud geändert.") {
-    super(message);
-    this.name = "WebDavConflictError";
-  }
-}
-
-export function webDavWriteConditionHeaders(version: string): Record<string, string> {
-  if (!version) throw new Error("Der WebDAV-Versionsstand fehlt.");
-  if (version.startsWith("lastmod:")) {
-    const value = version.slice("lastmod:".length);
-    if (!value) throw new Error("Der WebDAV-Änderungszeitpunkt fehlt.");
-    return { "If-Unmodified-Since": value };
-  }
-  return { "If-Match": version };
-}
-
 function fileId(stat: FileStat): string | null {
   const props = (stat.props ?? {}) as Record<string, unknown>;
   for (const key of ["oc:fileid", "fileid", "{http://owncloud.org/ns}fileid"]) {
@@ -178,8 +163,9 @@ function decodeXml(value: string): string {
 }
 
 async function nextcloudFileIds(
-  c: WebDAVClient,
+  c: Pick<WebDAVClient, "customRequest">,
   folder: string,
+  depth: "0" | "1" = "1",
 ): Promise<Map<string, string>> {
   const body = `<?xml version="1.0" encoding="UTF-8"?>
     <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -189,7 +175,7 @@ async function nextcloudFileIds(
     const response = await c.customRequest(normalizeBase(folder), {
       method: "PROPFIND",
       headers: {
-        Depth: "1",
+        Depth: depth,
         "Content-Type": "application/xml; charset=utf-8",
         "Content-Length": String(Buffer.byteLength(body)),
       },
@@ -242,7 +228,15 @@ export async function statWebDavEntry(
   path: string,
 ): Promise<WebDavEntry> {
   assertSafeNcUrl(creds.url);
-  return entry((await client(creds).stat(normalizeBase(path))) as FileStat);
+  return statWebDavEntryWithClient(client(creds), path);
+}
+
+export async function statWebDavEntryWithClient(c: Pick<WebDAVClient, "stat" | "customRequest">, path: string): Promise<WebDavEntry> {
+  const normalized = normalizeBase(path);
+  const result = entry((await c.stat(normalized)) as FileStat);
+  // Nextcloud does not always include oc:fileid in the standard stat response.
+  if (!result.fileId) result.fileId = (await nextcloudFileIds(c, normalized, "0")).get(result.name) ?? null;
+  return result;
 }
 
 export async function readWebDavText(
@@ -258,6 +252,101 @@ export async function readWebDavText(
   }
   const content = (await c.getFileContents(normalized, { format: "text" })) as string;
   return { content, stat: entry(fileStat) };
+}
+
+export class WebDavPdfError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+/** Binary uploads are exclusive; PDF edits explicitly replace their original. */
+export async function writeWebDavBinary(creds: NcCredentials, path: string, bytes: Buffer, mime: string, replace: boolean): Promise<boolean> {
+  assertSafeNcUrl(creds.url);
+  return writeWebDavBinaryWithClient(client(creds), path, bytes, mime, replace);
+}
+
+export async function writeWebDavBinaryWithClient(
+  c: Pick<WebDAVClient, "customRequest">, path: string, bytes: Buffer, mime: string, replace: boolean,
+): Promise<boolean> {
+  if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) throw new Error("Dateien müssen zwischen 1 Byte und 25 MB groß sein.");
+  if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) throw new Error("Ungültiger Dateityp.");
+  try {
+    await c.customRequest(normalizeBase(path), {
+      method: "PUT",
+      signal: AbortSignal.timeout(60_000),
+      headers: {
+        "Content-Type": mime,
+        "Content-Length": String(bytes.length),
+        ...(!replace ? { "If-None-Match": "*" } : {}),
+      },
+      data: bytes,
+    });
+    return true;
+  } catch (error) {
+    if (!replace && (error as { status?: number })?.status === 412) return false;
+    throw error;
+  }
+}
+
+/** Read-only PDF proxy; the existing guarded client keeps credentials server-side. */
+export async function readWebDavPdf(creds: NcCredentials, path: string): Promise<Buffer> {
+  assertSafeNcUrl(creds.url);
+  return readWebDavPdfWithClient(client(creds), path);
+}
+
+export async function readWebDavPdfWithClient(
+  c: Pick<WebDAVClient, "stat" | "customRequest">,
+  path: string,
+): Promise<Buffer> {
+  return (await readWebDavMediaWithClient(c, path, "pdf")).bytes;
+}
+
+export async function readWebDavImage(creds: NcCredentials, path: string): Promise<{ bytes: Buffer; mime: string }> {
+  assertSafeNcUrl(creds.url);
+  return readWebDavImageWithClient(client(creds), path);
+}
+
+export async function readWebDavImageWithClient(c: Pick<WebDAVClient, "stat" | "customRequest">, path: string): Promise<{ bytes: Buffer; mime: string }> {
+  return readWebDavMediaWithClient(c, path, "image");
+}
+
+async function readWebDavMediaWithClient(c: Pick<WebDAVClient, "stat" | "customRequest">, path: string, kind: "pdf" | "image"): Promise<{ bytes: Buffer; mime: string }> {
+  const normalized = normalizeBase(path);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const stat = await c.stat(normalized, { signal: controller.signal }) as FileStat;
+    if (stat.type !== "file") throw new WebDavPdfError("Datei nicht gefunden.", 404);
+    if (kind === "pdf" && stat.mime?.split(";")[0].trim().toLowerCase() !== "application/pdf" && !/\.pdf$/i.test(stat.basename)) {
+      throw new WebDavPdfError("Diese Datei ist keine PDF-Datei.", 415);
+    }
+    if (kind === "image" && !protocolImageMime(stat.basename, stat.mime ?? null)) throw new WebDavPdfError("Dieses Bildformat wird nicht unterstützt.", 415);
+    const tooLarge = () => new WebDavPdfError("Dateien können bis zu 25 MB in Gremio angezeigt werden.", 413);
+    if (stat.size > MAX_UPLOAD_BYTES) throw tooLarge();
+    const response = await c.customRequest(normalized, { method: "GET", signal: controller.signal });
+    if (Number(response.headers.get("content-length")) > MAX_UPLOAD_BYTES) throw tooLarge();
+    if (!response.body) throw new WebDavPdfError("Die Datei ist leer.", 415);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    // node-fetch supplies a Node readable; count actual bytes even if metadata lies.
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      size += chunk.byteLength;
+      if (size > MAX_UPLOAD_BYTES) throw tooLarge();
+      chunks.push(Buffer.from(chunk));
+    }
+    const bytes = Buffer.concat(chunks, size);
+    if (kind === "image") {
+      const mime = detectProtocolImageMime(bytes);
+      if (!mime) throw new WebDavPdfError("Diese Datei enthält kein unterstütztes Bild.", 415);
+      return { bytes, mime };
+    }
+    if (!bytes.subarray(0, 1024).includes(Buffer.from("%PDF-"))) {
+      throw new WebDavPdfError("Diese Datei enthält kein gültiges PDF-Dokument.", 415);
+    }
+    return { bytes, mime: "application/pdf" };
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
 }
 
 /** Legt einen Ordner nur dann an, wenn er noch nicht existiert. */
@@ -316,47 +405,75 @@ export async function createWebDavTextExclusiveWithClient(
   return { created: true, stat: entry((await c.stat(normalized)) as FileStat) };
 }
 
-/** ETag-gesichertes Schreiben. 412 wird als verständlicher Konflikt gemeldet. */
-export async function writeWebDavTextIfMatch(
+/** Überschreibt die Protokolldatei bewusst ohne ETag-/Versionsbedingung. */
+export async function overwriteWebDavText(
   creds: NcCredentials,
   path: string,
   content: string,
-  version: string,
 ): Promise<WebDavEntry> {
   assertSafeNcUrl(creds.url);
   const c = client(creds);
   const normalized = normalizeBase(path);
-  return writeWebDavTextIfMatchWithClient(c, normalized, content, version);
+  return overwriteWebDavTextWithClient(c, normalized, content);
 }
 
-/** Separater Kern für ETag-/Last-Modified-Konflikttests ohne Netzwerk. */
-export async function writeWebDavTextIfMatchWithClient(
+/** Separater Kern für Überschreib- und Fehlerfalltests ohne Netzwerk. */
+export async function overwriteWebDavTextWithClient(
   c: Pick<WebDAVClient, "customRequest" | "stat">,
   normalizedPath: string,
   content: string,
-  version: string,
 ): Promise<WebDavEntry> {
   const normalized = normalizeBase(normalizedPath);
   if (Buffer.byteLength(content) > MAX_MARKDOWN_BYTES) {
     throw new Error("Die Markdown-Datei darf höchstens 2 MB groß sein.");
   }
+  await c.customRequest(normalized, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "text/markdown; charset=utf-8",
+      "Content-Length": String(Buffer.byteLength(content)),
+    },
+    data: content,
+  });
+  return entry((await c.stat(normalized)) as FileStat);
+}
+
+/** Explizites Löschen eines zuvor aufgelösten Ziels; Collections löscht WebDAV rekursiv. */
+export async function deleteWebDavEntry(
+  creds: NcCredentials,
+  path: string,
+  etag: string | null,
+): Promise<void> {
+  assertSafeNcUrl(creds.url);
+  await deleteWebDavEntryWithClient(client(creds), path, etag);
+}
+
+export async function deleteWebDavEntryWithClient(
+  c: Pick<WebDAVClient, "deleteFile">,
+  path: string,
+  etag: string | null,
+): Promise<void> {
+  const normalized = normalizeBase(path);
+  if (!normalized || normalized === "/") throw new Error("Der WebDAV-Wurzelordner darf nicht gelöscht werden.");
+  if (normalized.split("/").some((part) => part === "." || part === "..") || /[\\\x00-\x1f\x7f]|__PATH_SEPARATOR_(?:POSIX|WINDOWS)__/.test(normalized)) {
+    throw new Error("Unsicheres WebDAV-Löschziel.");
+  }
+  // Die Bibliothek liefert ETags teilweise ohne Anführungszeichen. Für DELETE
+  // schützen korrekt formatierte starke ETags vor Änderungen seit der Zielprüfung.
+  const tag = etag?.trim();
+  const headers: Record<string, string> = {};
+  if (tag && !tag.startsWith("W/")) {
+    if (/[\r\n]/.test(tag)) throw new Error("Ungültiger WebDAV-ETag.");
+    headers["If-Match"] = tag.startsWith('"') ? tag : `"${tag}"`;
+  }
   try {
-    const conditionalHeaders = webDavWriteConditionHeaders(version);
-    await c.customRequest(normalized, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "text/markdown; charset=utf-8",
-        "Content-Length": String(Buffer.byteLength(content)),
-        ...conditionalHeaders,
-      },
-      data: content,
-    });
+    await c.deleteFile(normalized, { headers });
   } catch (error) {
     const status = (error as { status?: number }).status;
-    if (status === 412 || status === 409) throw new WebDavConflictError();
+    if (status === 404) return; // Wiederholbare Nachbearbeitung nach erfolgreichem DELETE.
+    if (status === 412) throw new Error("Das Löschziel wurde zwischenzeitlich geändert. Bitte neu laden und erneut prüfen.");
     throw error;
   }
-  return entry((await c.stat(normalized)) as FileStat);
 }
 
 /** Browser-Link ohne Zugangsdaten. Mit fileId nutzt Nextcloud den stabilen /f/-Link. */

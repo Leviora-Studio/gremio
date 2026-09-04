@@ -8,17 +8,45 @@ import {
   createWebDavTextExclusiveWithClient,
   joinWebDavPath,
   nextcloudBrowserUrl,
-  WebDavConflictError,
-  webDavWriteConditionHeaders,
-  writeWebDavTextIfMatchWithClient,
+  overwriteWebDavTextWithClient,
 } from "../lib/nextcloud";
 
-test("WebDAV-Speichern verwendet ETag oder Änderungszeit als Schreibbedingung", () => {
-  assert.deepEqual(webDavWriteConditionHeaders('"etag-42"'), { "If-Match": '"etag-42"' });
-  assert.deepEqual(webDavWriteConditionHeaders("lastmod:Fri, 14 Aug 2026 12:00:00 GMT"), {
-    "If-Unmodified-Since": "Fri, 14 Aug 2026 12:00:00 GMT",
-  });
-  assert.throws(() => webDavWriteConditionHeaders(""), /Versionsstand/);
+test("Speichern überschreibt den Cloud-Inhalt ohne Versionsbedingung", async () => {
+  const path = "/Protokolle/2026-08-14/Protokoll.md";
+  const content = "# Änderungen aus Gremio";
+  let cloudContent = "# Zwischenzeitlich in Nextcloud geändert";
+  const calls: string[] = [];
+  const client = {
+    customRequest: async (target: string, options: { method: string; headers: Record<string, string>; data: string }) => {
+      calls.push("PUT");
+      assert.equal(target, path);
+      assert.equal(options.method, "PUT");
+      assert.deepEqual(options.headers, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(content)),
+      }, "Kein If-Match, If-Unmodified-Since oder If-None-Match beim Speichern");
+      cloudContent = options.data;
+      return {};
+    },
+    stat: async (target: string) => {
+      calls.push("stat");
+      assert.equal(target, path);
+      return {
+        filename: path,
+        basename: "Protokoll.md",
+        type: "file",
+        etag: '"etag-nach-speichern"',
+        size: Buffer.byteLength(cloudContent),
+        lastmod: "Fri, 14 Aug 2026 12:00:00 GMT",
+      };
+    },
+  } as unknown as Parameters<typeof overwriteWebDavTextWithClient>[0];
+
+  // Weder ein alter noch überhaupt ein bekannter Versionsstand wird benötigt.
+  const result = await overwriteWebDavTextWithClient(client, path, content);
+  assert.equal(cloudContent, content);
+  assert.equal(result.etag, '"etag-nach-speichern"');
+  assert.deepEqual(calls, ["PUT", "stat"]);
 });
 
 test("Nextcloud-Links enthalten weder Zugangsdaten noch verlieren sie einen Installations-Unterpfad", () => {
@@ -82,24 +110,35 @@ test("Protokolldateien werden ausschließlich ohne Überschreiben angelegt", asy
   assert.equal(statCalls, 0);
 });
 
-test("WebDAV 409/412 wird als bearbeitbarer Versionskonflikt gemeldet", async () => {
-  for (const status of [409, 412]) {
+test("WebDAV-Fehler bleiben beim Überschreiben sichtbar und werden nicht als Erfolg behandelt", async () => {
+  for (const status of [403, 409, 412, 423, 500]) {
+    const failure = Object.assign(new Error(`WebDAV ${status}`), { status });
     const client = {
       customRequest: async () => {
-        throw Object.assign(new Error("conflict"), { status });
+        throw failure;
       },
       stat: async () => {
-        throw new Error("stat darf nach Konflikt nicht laufen");
+        assert.fail("stat darf nach fehlgeschlagenem PUT nicht laufen");
       },
-    } as Parameters<typeof writeWebDavTextIfMatchWithClient>[0];
+    } as Parameters<typeof overwriteWebDavTextWithClient>[0];
     await assert.rejects(
-      writeWebDavTextIfMatchWithClient(
+      overwriteWebDavTextWithClient(
         client,
         "/Protokolle/2026-08-14/Protokoll.md",
         "# Neu",
-        '"etag-alt"',
       ),
-      WebDavConflictError,
+      (error) => error === failure,
     );
   }
+});
+
+test("auch überschreibendes Speichern hält das Größenlimit ein", async () => {
+  const client = {
+    customRequest: async () => assert.fail("Übergroße Dateien dürfen nicht gesendet werden"),
+    stat: async () => assert.fail("Kein Metadatenzugriff bei ungültiger Eingabe"),
+  } as Parameters<typeof overwriteWebDavTextWithClient>[0];
+  await assert.rejects(
+    overwriteWebDavTextWithClient(client, "/Protokoll.md", "x".repeat(2_000_001)),
+    /höchstens 2 MB/,
+  );
 });

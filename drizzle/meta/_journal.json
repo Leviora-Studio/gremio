@@ -407,6 +407,27 @@
       "when": 1788459313317,
       "tag": "0057_keen_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788464019355,
+      "tag": "0058_lazy_hedge_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1788465764893,
+      "tag": "0059_sleepy_ender_wiggin",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788471021869,
+      "tag": "0060_petite_jocasta",
+      "breakpoints": true
     }
   ]
 }

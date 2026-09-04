@@ -9,7 +9,8 @@ import { canManageProtocolArea, requireProtocolAreaAccess, syncProtocolSessions 
 import { todayInBerlin } from "@/lib/dates";
 import { CreateSessionForm } from "@/components/protocols/CreateSessionForm";
 import { SyncProtocolButton } from "@/components/protocols/SyncProtocolButton";
-import { createSessionAction, syncProtocolAreaAction } from "../actions";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
+import { createSessionAction, deleteProtocolSessionAction, syncProtocolAreaAction } from "../actions";
 
 export default async function ProtocolAreaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,10 +46,22 @@ export default async function ProtocolAreaPage({ params }: { params: Promise<{ i
           <tbody>
             {sessions.map((session) => (
               <tr key={session.id} className="border-b border-slate-100 last:border-0">
-                <td className="p-3 font-medium">{session.folderName}</td>
+                <td className="p-3 font-medium"><Link href={`/intern/protokolle/${area.id}/sitzung/${session.id}`} className="text-brand-600 hover:underline">{session.folderName}</Link></td>
                 <td className="p-3">{session.protocolPath ? "Vorhanden" : "Fehlt"}</td>
                 <td className="p-3 text-slate-500">{session.lastSyncedAt.toLocaleString("de-DE")}</td>
-                <td className="p-3 text-right"><Link href={`/intern/protokolle/${area.id}/sitzung/${session.id}`} className="text-brand-600 hover:underline">Öffnen</Link></td>
+                <td className="p-3">
+                  <div className="flex items-center justify-end gap-3">
+                    <Link href={`/intern/protokolle/${area.id}/sitzung/${session.id}`} className="text-brand-600 hover:underline">Öffnen</Link>
+                    <DeleteConfirm
+                      action={deleteProtocolSessionAction.bind(null, area.id, session.id, session.folderName)}
+                      buttonLabel="Löschen"
+                      buttonClassName="text-red-600 hover:underline"
+                      wordInModal
+                      title={`Sitzung „${session.folderName}“ vollständig löschen?`}
+                      message={`Der Nextcloud-Ordner „${session.folderName}“ wird mit sämtlichen Dateien und Unterordnern gelöscht. Sitzungsverknüpfungen werden entfernt. Ungespeicherte Editoränderungen gehen verloren. Eine Wiederherstellung wird von Gremio nicht angeboten.`}
+                    />
+                  </div>
+                </td>
               </tr>
             ))}
             {sessions.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-500">Keine Sitzungsordner in Nextcloud gefunden.</td></tr>}

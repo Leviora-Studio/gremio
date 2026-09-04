@@ -83,9 +83,22 @@ Apps, interaktiv unter `/api/public/docs`).
   erledigte Karten (der „Done"-Sweep räumt sie täglich weg, löscht aber nichts).
 - **Protokolle** (`/intern/protokolle`): eigene Protokollbereiche mit
   Nutzer-/Gruppenfreigaben, synchronisierten Nextcloud-Sitzungsordnern,
-  ETag-gesichertem Markdown-Editor, Inhaltsverzeichnis und optionaler
-  Finanzantrags-Verknüpfung. Der vollständige Protokollinhalt liegt nie in
-  PostgreSQL.
+  Markdown-Editor mit direktem Überschreiben beim Speichern, TOP-Tagesordnung und optionaler
+  Finanzantrags-Verknüpfung. Die einklappbare Seitenleiste bietet außerdem
+  bereichseigene Mitgliederlisten mit Sortierung sowie Anwesenheit und
+  Stimmübertragungen je Sitzung als automatische Markdown-Tabelle. Sitzungsgäste
+  mit Name, Zugehörigkeit und Anliegen werden als eigene Tabelle ergänzt.
+  Dateien lassen sich direkt in den Sitzungsordner hochladen; PDFs können im
+  integrierten Editor angesehen und bearbeitet werden (jeweils bis 25 MB).
+  PNG-, JPEG-, GIF- und WebP-Bilder öffnen sich direkt im vorhandenen Bildviewer.
+  Sitzungsinformationen werden per Formular direkt im YAML-Kopf gepflegt.
+  PDF-Export mit bereichseigenen Logos und Standardlogo legt das PDF im selben
+  Nextcloud-Sitzungsordner ab (IBM Plex, Kopfzeilen und Unterschriften nach dem
+  bereitgestellten Konverter). Docker enthält die PDF-Laufzeit; lokale Einrichtung:
+  [PDF-Renderer](scripts/protocol-pdf/README.md).
+  Der vollständige Protokollinhalt liegt nie in
+  PostgreSQL. Einzelne Dateien und ganze Sitzungsordner können nach Bestätigung
+  direkt in Nextcloud gelöscht werden.
 - **Vorlagen** für Boards, Finanzpläne und Protokolle (Admin oder Template-Verwalter).
 - **Nextcloud-Archivierung** (optional, pro Board): erreicht ein Antrag die
   Trigger-Spalte, werden seine Dateien automatisch hochgeladen. Schlägt das fehl,

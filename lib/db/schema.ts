@@ -6,6 +6,7 @@ import {
   boolean,
   check,
   integer,
+  index,
   jsonb,
   pgTable,
   primaryKey,
@@ -681,6 +682,18 @@ export const protocolAreaAccess = pgTable(
   }),
 );
 
+export const protocolLogos = pgTable("protocol_logos", {
+  id: serial("id").primaryKey(),
+  areaId: integer("area_id").notNull().references(() => protocolAreas.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  pngBase64: text("png_base64").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: createdAt(),
+}, (t) => ({
+  areaIndex: index("protocol_logos_area_idx").on(t.areaId, t.id),
+  oneDefault: uniqueIndex("protocol_logos_default_uq").on(t.areaId).where(sql`${t.isDefault} = true`),
+}));
+
 export const protocolSessions = pgTable(
   "protocol_sessions",
   {
@@ -738,6 +751,41 @@ export const protocolCardLinks = pgTable(
     ),
   }),
 );
+
+export const protocolMembers = pgTable("protocol_members", {
+  id: serial("id").primaryKey(),
+  areaId: integer("area_id").notNull().references(() => protocolAreas.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  position: integer("position").notNull().default(0),
+}, (t) => ({
+  areaOrder: index("protocol_members_area_order_idx").on(t.areaId, t.position, t.id),
+  uniqueName: uniqueIndex("protocol_members_area_name_uq").on(t.areaId, sql`lower(${t.name})`),
+  validName: check("protocol_members_name_check", sql`length(trim(${t.name})) between 1 and 200`),
+}));
+
+export const protocolAttendance = pgTable("protocol_attendance", {
+  sessionId: integer("session_id").notNull().references(() => protocolSessions.id, { onDelete: "cascade" }),
+  memberId: integer("member_id").notNull().references(() => protocolMembers.id, { onDelete: "cascade" }),
+  present: boolean("present").notNull().default(false),
+  proxyMemberId: integer("proxy_member_id").references(() => protocolMembers.id, { onDelete: "set null" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.sessionId, t.memberId] }),
+  memberIndex: index("protocol_attendance_member_idx").on(t.memberId),
+  proxyIndex: index("protocol_attendance_proxy_idx").on(t.proxyMemberId),
+  noSelfProxy: check("protocol_attendance_no_self_proxy", sql`${t.proxyMemberId} is null or ${t.proxyMemberId} <> ${t.memberId}`),
+}));
+
+export const protocolGuests = pgTable("protocol_guests", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => protocolSessions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  affiliation: text("affiliation").notNull().default(""),
+  concern: text("concern").notNull().default(""),
+}, (t) => ({
+  sessionOrder: index("protocol_guests_session_order_idx").on(t.sessionId, t.id),
+  validName: check("protocol_guests_name_check", sql`length(trim(${t.name})) between 1 and 200`),
+  validFields: check("protocol_guests_fields_check", sql`length(${t.affiliation}) <= 300 and length(${t.concern}) <= 1000`),
+}));
 
 // ---------------------------------------------------------------------------
 // Persönliche Board-Reihenfolge (je Nutzer frei anordnenbar)

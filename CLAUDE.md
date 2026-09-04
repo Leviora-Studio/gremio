@@ -559,19 +559,151 @@ Server Actions und Seiten verwenden dafür `requireProtocolAreaAccess` bzw.
   persistiert.
 - Beim Öffnen eines Bereichs sowie über „Jetzt synchronisieren“ wird der
   WebDAV-Wurzelpfad gelesen. Direkte Unterordner werden als Sitzungen registriert.
-  Fremde Dateien werden lediglich aufgelistet und über einen Nextcloud-Link
-  geöffnet; Gremio verschiebt, überschreibt oder löscht sie nicht. Auch die
+  Weitere Dateien werden aufgelistet und über einen Nextcloud-Link geöffnet.
+  Gremio verschiebt oder überschreibt sie nicht; Löschungen erfolgen nur nach
+  expliziter Bestätigung über die unten beschriebenen Löschaktionen. Auch die
   Konfigurationsprüfung liest den Wurzelpfad nur und legt ihn nicht selbst an.
+- Auch beim direkten Öffnen oder Neuladen einer Sitzung wird deren Dateiliste
+  anhand derselben Erkennungsregeln abgeglichen: konfigurierter Dateiname,
+  bekannte Datei-ID, gespeicherter Pfad. Extern angelegte Protokolle werden
+  sofort registriert und im Editor geöffnet, ohne Umweg über die Übersicht.
+  Ein erfolgreiches Listing aktualisiert die Metadaten; bei Cloud-Fehlern
+  bleiben sie erhalten. Existiert die Datei beim exklusiven Anlegen bereits,
+  wird sie ebenfalls erkannt und die Sitzungsseite aktualisiert, nicht ersetzt.
 - Neue Ordner und Dateien werden mit exklusivem Anlegen (`If-None-Match: *`)
   erzeugt. Ein vorhandener Sitzungsordner wird geöffnet; eine vorhandene Datei
-  wird nie ersetzt. Schreiben verwendet `If-Match` gegen den gelesenen ETag,
-  ersatzweise `If-Unmodified-Since`. Bei 409/412 bleibt der Editor ungespeichert
-  und fordert zum Neuladen/Vergleichen auf.
+  wird beim Anlegen nie ersetzt. Das Speichern im Editor überschreibt dagegen
+  bewusst die registrierte Protokolldatei ohne `If-Match` oder
+  `If-Unmodified-Since`, auch wenn ETag/Änderungszeit fehlen oder veraltet sind.
+  Zwischenzeitliche externe Änderungen können dabei verloren gehen; die
+  Oberfläche weist darauf hin. ETags bleiben technische Synchronisationsmetadaten.
+  Berechtigungs-, Netzwerk- und Dateisperrfehler werden weiterhin als Fehler
+  gemeldet, nicht als erfolgreiche Speicherung.
 - Nextcloud-`oc:fileid` wird über einen expliziten `PROPFIND` abgefragt und, wenn
   verfügbar, zur Wiedererkennung umbenannter Ordner/Dateien benutzt. Fehlt die
   serverabhängige Eigenschaft, bleiben Pfad und ETag der nachvollziehbare
   Fallback. Zugangsdaten bleiben serverseitig, sind AES-256-GCM-verschlüsselt und
   durch die bestehende HTTPS-/DNS-Pinning-/Redirect-SSRF-Härtung geschützt.
+
+### Mitglieder und Anwesenheit
+
+Die einklappbare Protokoll-Seitenleiste enthält die Reiter „Finanzanträge“,
+„Mitglieder“ und „Gäste“. `protocol_members` speichert je Bereich Namen und Reihenfolge;
+`protocol_attendance` speichert je Sitzung/Mitglied Anwesenheit und optional
+das andere Bereichsmitglied, auf das die Stimme übertragen wurde. Namen sind
+keine Benutzerkonten. Bereichsmitglieder dürfen diese Daten bearbeiten. Die
+Reihenfolge ist per Drag-and-drop-Griff sowie Tastatur veränderbar und gilt im
+gesamten Bereich. Ohne Auswahl gilt „Nein“ bzw. keine Übertragung. Selbst- und
+bereichsfremde Übertragungen sind serverseitig ausgeschlossen; darüber hinaus
+werden keine fachlichen Stimmrechtsregeln angenommen.
+
+Mitgliederdaten werden direkt in Gremio gespeichert, auch ohne Protokolldatei.
+Im geöffneten Editor wird unter `## Anwesenheit` / `### Mitglieder` automatisch
+eine Tabelle mit „Mitglied“, „Anwesend“ und „übertragen auf“ aktualisiert.
+Sie enthält alle Mitglieder in Listenreihenfolge, Ja/Nein und einen Namen oder
+eine leere Übertragungszelle. Bestehende Abschnitte werden wiederverwendet;
+Notizen und Gäste bleiben erhalten. Die Vorschau rendert Markdown-Tabellen.
+Beim Speichern werden die aktuellen Daten nochmals serverseitig eingearbeitet.
+Die Cloud-Datei wird erst mit „In Nextcloud speichern“ geschrieben; andere
+bereits gespeicherte Protokolle werden nicht im Hintergrund verändert.
+
+Das Entfernen eines Mitglieds erfordert eine Bestätigung, löscht seine
+Anwesenheitsdaten in allen Sitzungen des Bereichs und leert Verweise auf dieses
+Mitglied als Stimmempfänger. Sitzungslöschung entfernt nur ihre Anwesenheitsdaten,
+nicht die Mitgliederliste. Fremdschlüssel und Indizes sichern die Beziehungen;
+kurze bereichsweise Transaktionen serialisieren Listenänderungen. Migration:
+`0058_lazy_hedge_knight.sql`.
+
+### Gäste je Sitzung
+
+`protocol_guests` speichert Name (Pflichtfeld, max. 200 Zeichen), Zugehörigkeit
+(optional, max. 300) und Anliegen (optional, max. 1000) ausschließlich je
+Sitzung. Die einfache Liste folgt der Anlegereihenfolge; sie ist kein
+bereichsweites Verzeichnis und vergibt keine Anwesenheits- oder Stimmrechte.
+Bereichsmitglieder können Gäste in der Seitenleiste hinzufügen, bearbeiten und
+nach Bestätigung entfernen. Fremde Sitzungs-/Bereichs-IDs werden abgewiesen.
+Ein indizierter Sitzungs-Fremdschlüssel entfernt Gästedaten bei Sitzungslöschung.
+Migration: `0059_sleepy_ender_wiggin.sql`.
+
+Über „Gast hinzufügen“ bzw. „Änderungen übernehmen“ werden die Formulardaten in
+Gremio gespeichert. Nicht übernommene Entwürfe bleiben bei Fehlern erhalten und
+blockieren das Speichern/Neuladen der Cloud-Datei, statt unbemerkt ausgelassen
+zu werden. Das aktualisierte Protokoll wird weiterhin ausdrücklich gespeichert.
+Beide Tabellen stehen standardmäßig gemeinsam unter `## Anwesenheit`, auch bei leeren Listen.
+In den beiden Seitenleistenreitern kann der jeweilige Abschnitt über „Aus Protokoll
+entfernen“ ausgeblendet und über „Zum Protokoll hinzufügen“ wieder erzeugt werden.
+Personendaten bleiben erhalten; eigene Notizen innerhalb des entfernten Abschnitts
+werden nach Bestätigung mit entfernt. Die Auswahl wird durch unsichtbare
+`gremio:attendance:members:hidden` bzw. `gremio:attendance:guests:hidden`-HTML-Kommentare
+in der Protokolldatei gespeichert und beim Laden, Aktualisieren und serverseitigen
+Speichern respektiert. Eine leere Anwesenheitsüberschrift wird entfernt; andere
+Anwesenheitsnotizen und Unterabschnitte bleiben erhalten. Keine Datenbankmigration.
+Unter der Mitgliedertabelle wird `### Gäste` mit „Name“, „Zugehörigkeit“ und
+„Anliegen“ gepflegt. Bestehende Gästeabschnitte werden wiederverwendet und bei
+Bedarf hinter die Mitglieder verschoben; passende unmarkierte Tabellen werden
+übernommen, eigene Notizen und Codebeispiele bleiben erhalten. Beide Tabellen
+werden beim Laden im Editor und serverseitig beim Speichern konsistent erzeugt.
+
+### Datei-Upload und PDF-Editor
+
+Unter der Sitzungsdateiliste lädt `ProtocolFileUpload` eine Datei sofort nach der
+Auswahl in den geöffneten Nextcloud-Ordner (1 Byte bis 25 MB, beliebige Dateitypen).
+Ein zusätzlicher Upload-Klick entfällt; bei Fehlern ist „Erneut versuchen“ möglich.
+Dateinamen bleiben erhalten; Pfade, versteckte und überlange Namen werden abgewiesen.
+Der Upload ist atomar mit `If-None-Match: *`: gleichnamige Dateien bleiben erhalten.
+Nach Erfolg wird die Liste aktualisiert; nach Fehler bleibt die Dateiauswahl bestehen.
+
+PDF-Dateien in der Sitzungsdateiliste öffnen über „PDF öffnen“ den vorhandenen
+`AttachmentLink`/`PdfViewerModal` mit Freitext-/Formularbearbeitung und der vorhandenen
+optionalen Signaturfunktion. `pdf/fields?name=...` liefert Formularfelder über denselben
+berechtigten Lesepfad. `saveProtocolPdfEditsAction` verwendet `applyEditsAndSign` und
+ersetzt beim Speichern das Original in Nextcloud. Bereichsrechte, Sitzungszuordnung,
+Ordner- und Dateiidentität werden serverseitig erneut geprüft; auch das Ergebnis darf
+höchstens 25 MB groß sein. Fehlende Nextcloud-Datei-IDs im Standard-stat werden per
+explizitem Depth-0-PROPFIND ergänzt. Upload und PDF-Speichern sind ratenbegrenzt;
+beide halten Nextcloud-Zugangsdaten und Dateiinhalte aus PostgreSQL heraus.
+`GET /api/protokolle/{areaId}/sitzung/{sessionId}/pdf?name=...` prüft Anmeldung,
+Bereichszugriff und Sitzungszuordnung. Der Dateipfad wird ausschließlich aus
+konfiguriertem Wurzelpfad, gespeichertem Sitzungsordner und validiertem direkten
+Dateinamen gebildet; Nextcloud-Zugangsdaten bleiben serverseitig. Der geschützte
+WebDAV-Client lädt maximal 25 MB mit 30 Sekunden Zeitlimit, prüft Dateityp und
+PDF-Kennung und zählt die tatsächlichen Bytes. Antworten sind `private, no-store`
+und `nosniff`; WebDAV-Fehlerdetails werden nicht an den Browser weitergegeben.
+
+PNG-, JPEG-, GIF- und WebP-Dateien öffnen über ihren Dateinamen oder „Bild ansehen“
+denselben Viewer im Bildmodus. `GET .../sitzung/{sessionId}/image?name=...` verwendet
+dieselben Bereichs-/Sitzungsprüfungen und den begrenzten WebDAV-Lesepfad wie PDFs.
+Der Antwort-MIME-Typ wird anhand der Dateikennung ermittelt; SVG/HTML werden
+nicht als Bilder ausgeliefert. Andere Formate bleiben über Nextcloud erreichbar.
+
+### Explizites Löschen
+
+Auf der Sitzungsseite können Bereichsmitglieder einzelne Dateien über „Datei
+löschen“ entfernen. In der Sitzungsübersicht steht neben „Öffnen“ ein rotes
+„Löschen“. Dieses öffnet den Bestätigungsdialog mit der erforderlichen Eingabe
+`LÖSCHEN` und entfernt die gesamte Nextcloud-Collection einschließlich aller
+Dateien und Unterordner. Beide Aktionen verwenden den vorhandenen
+In-App-Bestätigungsdialog; Gremio bietet keine Wiederherstellung an. Andere
+Sitzungen und der konfigurierte Wurzelordner sind keine zulässigen Löschziele.
+
+Serverseitig werden Bereichszugriff, Sitzungszugehörigkeit, direkte Dateinamen
+ohne Traversal und der aktuelle Typ/die bekannte Datei-ID geprüft. Umbenannte
+oder ersetzte Ziele werden abgewiesen. Für DELETE wird ein frisch gelesener
+starker ETag korrekt zitiert als `If-Match` verwendet, wenn vorhanden (dieser
+Löschschutz ist unabhängig vom bewusst überschreibenden Editor-Speichern).
+404 ist für Wiederholungen zulässig; andere WebDAV-Fehler brechen ab.
+
+Beim Löschen des registrierten Protokolls oder der ganzen Sitzung werden zuerst
+auch die Zugriffe auf alle tatsächlich verknüpften Antragsboards geprüft. Erst
+nach erfolgreichem Cloud-DELETE werden die Relationen und Metadaten in einer
+Datenbanktransaktion bereinigt. Automatische Beschlussreferenzen fallen auf eine
+verbleibende automatische Sitzungsreferenz zurück oder werden geleert; manuelle
+Werte, Kartenstatus und -position bleiben erhalten. Beim Löschen einer anderen
+Datei bleiben Protokoll und Relationen unverändert. Die Protokolldatei kann nach
+ihrem Löschen in derselben Sitzung neu angelegt werden. Scheitert die lokale
+Bereinigung nach dem Cloud-DELETE, bleibt eine explizite Fehlermeldung im Dialog;
+dieselbe Löschaktion kann die Bereinigung wiederholen. Es gibt weiterhin keine
+automatischen Lösch- oder Aufräumjobs.
 
 ### Vorlagen, Markdown und Finanzkarten
 
@@ -580,15 +712,37 @@ Protokollvorlagen liegen als verwaltete Vorlagen in PostgreSQL; erlaubt sind
 `{{protocol_area.name}}` und `{{created_at}}`. Unbekannte Variablen werden beim
 Speichern und Erzeugen abgewiesen. Ordner-/Dateimuster erlauben eine begrenzte
 Platzhaltermenge und verbieten leere, versteckte oder pfadübergreifende Namen.
+Der Editor startet in „Live Vorschau“: dieselbe Markdown-Darstellung wie in
+„Vorschau“, aber die aktive Quellzeile ist direkt editierbar. Auch Tabellen
+behalten ihre Darstellung außerhalb der aktiven Zeile. Klick, Pfeiltasten,
+Zeilenumbrüche, mehrzeiliges Einfügen und Undo/Redo werden unterstützt.
+„Bearbeiten“ bietet weiterhin das vollständige Markdown-Textfeld, „Vorschau“
+bleibt schreibgeschützt. Im Live-Modus werden verwaltete Anwesenheit und
+Tagesordnung beim Verlassen des Editors abgeglichen, damit während des Tippens
+keine automatisch eingefügten Zeilen die Cursorposition verschieben.
+Finanzanträge lassen sich auch dort per Button oder sichtbarer Drag-and-drop-
+Einfügemarke platzieren. Es werden keine zusätzlichen Editor-Abhängigkeiten verwendet.
+
 Der Editor lädt und speichert direkt per WebDAV, warnt vor ungespeicherten
-Änderungen und verwaltet ein markiertes Inhaltsverzeichnis mit deduplizierten
-Markdown-Ankern. Markdown-Dateien sind für die In-App-Bearbeitung auf 2 MB
+Änderungen und verwaltet unter `## Tagesordnung` eine markierte Liste ausschließlich
+der Überschriften, die mit `TOP` beginnen. „Tagesordnung aktualisieren“ nutzt einen
+vorhandenen Abschnitt oder legt ihn einmalig an. Bestehende Tagesordnungslisten
+werden übernommen, eigene Notizen bleiben erhalten; alte verwaltete
+Inhaltsverzeichnisse werden umgestellt. Nach dem ersten Einfügen wird die Liste
+bei Textänderungen automatisch aktualisiert. Tagesordnung und Vorschau verwenden
+dieselbe Erkennung und deduplizierte Markdown-Anker; Codeblöcke sind ausgeschlossen.
+Markdown-Dateien sind für die In-App-Bearbeitung auf 2 MB
 begrenzt; größere Dateien bleiben über Nextcloud zugänglich.
 
 Ein Protokollbereich kann optional genau ein normales Board und eine zugehörige
 Quellspalte referenzieren. Der konfigurierende Nutzer muss auf dieses Board
 zugreifen dürfen; Leih-System-Boards sind ausgeschlossen. Vorschläge verändern
-weder Status noch Position der Karten. Beim Einfügen entsteht ein zentral
+weder Status noch Position der Karten. Nach Eingabe der TOP-Nummer können sie
+per Button oder Drag-and-drop in den Markdown-Editor eingefügt werden. Beim
+Ziehen zeigt eine sichtbare Einfügemarke die tatsächliche Textposition unter
+der Maus (einschließlich Umbrüchen und Scrollposition); Ablegen ersetzt keine
+vorherige Textauswahl. In der Vorschau bleibt das Einfügen per Button möglich.
+Beim Einfügen entsteht ein zentral
 formatierter Markdown-Block. Seine stabile Karten-ID steht nicht nur in
 HTML-Kommentaren, sondern zusätzlich im normalen HTTPS-Link zur Kartenseite;
 dadurch kann Gremio die Relation auch dann erkennen, wenn ein Editor Kommentare
@@ -598,8 +752,11 @@ werden.
 
 `protocol_card_links` bildet Sitzung↔Karte als n:m-Beziehung ab und speichert TOP,
 den zuletzt automatisch erzeugten Referenzwert und einen Konfliktstatus. Eine
-Beschlussreferenz wird nur gesetzt, wenn sie leer ist oder noch dem vorherigen
-automatischen Wert entspricht; manuelle Änderungen werden nie überschrieben.
+Beschlussreferenz wird beim neuen oder erneuten Einplanen sowie bei geänderter
+TOP-Nummer oder geändertem Referenzmuster immer automatisch gesetzt, auch über
+einen manuellen Wert hinweg. Spätere manuelle Änderungen bleiben bei unverändertem
+TOP erhalten. Der Editor merkt erneutes Einplanen bis zum erfolgreichen Speichern,
+auch bei Entfernen und Wiedereinfügen desselben TOPs ohne Zwischenspeichern.
 Da die Karte derzeit nur ein einzelnes Feld `decision_ref` besitzt, gilt bei
 mehreren Sitzungsverknüpfungen: Der zuletzt erfolgreich gespeicherte verwaltete
 TOP-Block liefert den aktiven automatischen Wert; beim Entfernen fällt Gremio
@@ -608,13 +765,58 @@ Entfernt ein gespeichertes Protokoll den verwalteten Kartenblock, verschwindet
 die Relation und damit die Anzeige „Behandelt in Sitzung“ auf der Karte.
 
 WebDAV und PostgreSQL bieten keine gemeinsame Transaktion. Gremio schreibt daher
-zuerst ETag-gesichert nach Nextcloud und gleicht danach die idempotent aus den
+zuerst überschreibend nach Nextcloud und gleicht danach die idempotent aus den
 Markdown-Markern rekonstruierbaren Relationen ab. Scheitert die Nachbearbeitung,
 meldet die Oberfläche ausdrücklich „Datei gespeichert, Relation inkonsistent“;
 erneutes Speichern wiederholt den Abgleich. Automatische Statuswechsel,
-PDF-Erzeugung, Upload zusätzlicher Unterlagen, Webhooks, öffentliche Protokolle,
+Webhooks, öffentliche Protokolle,
 Volltextindexierung und Lösch-/Aufräumautomationen gehören nicht zu dieser
 Ausbaustufe.
+
+### Sitzungsinformationen, Logos und PDF-Export
+
+Der Reiter „Sitzungsinformationen“ bearbeitet ausschließlich den YAML-Kopf der
+Markdown-Datei, keine separaten Sitzungsfelder in der Datenbank. Unterstützt
+werden `title`, `author`, `sitzungsdatum`, `beginn`, `ende`, `sitzungsort`,
+`sitzungsleitung`, `protokollfuehrung`, `logo` und `unterschriften`, einschließlich
+der Alias-Schreibweisen aus dem ursprünglichen Konverter. „Übernehmen“ schreibt
+in den Editor; erst „In Nextcloud speichern“ persistiert die Datei. Unbestätigte
+Formulareingaben blockieren Speichern/Export, unbekannte YAML-Felder und
+Kommentare bleiben erhalten. Fehlerhaftes YAML wird nicht still ersetzt.
+Tagesordnung/Anwesenheit ändern den YAML-Kopf nicht; die Vorschau blendet ihn aus.
+
+`protocol_logos` (Migration 0060) enthält bereichsbezogene Logos als normalisierte
+PNG-Bytes (Base64 in PostgreSQL), Namen und Standardmarkierung. Verwaltung nur
+durch Bereichseigentümer/Admin, Abruf und Export nur mit Bereichszugriff.
+Bereichssperre und partieller Unique-Index garantieren höchstens ein Standardlogo.
+Das erste hochgeladene Logo wird Standard; beim Löschen des Standards rückt das
+erste verbliebene nach. Kein Anzahl-Limit, je Upload maximal 5 MB / 16 Megapixel.
+Es werden keine Logos aus anderen Bereichen oder private Serverpfade akzeptiert.
+
+„Protokoll exportieren“ öffnet Dateiname und Logoauswahl mit vorausgewähltem
+Standardlogo. Der Vorschlag ersetzt `.md` durch `.pdf`. Der Server liest die
+gespeicherte Markdown-Datei erneut aus Nextcloud und übergibt sie unverändert an
+den Renderer. Die YAML-Metadaten werden im Renderer aus dieser Datei gelesen.
+Ein ausgewähltes Bereichslogo überschreibt wie `--logo` den YAML-Wert; ohne
+Bereichslogo gilt ein YAML-Dateiname direkt im Sitzungsordner, sonst optional
+`logo.png`. Ohne vorhandenes Standardbild ist ein Export ohne Logo möglich.
+Das PDF wird ausschließlich in denselben Sitzungsordner geschrieben, mit
+atomarem `If-None-Match: *`: vorhandene Dateien werden nicht überschrieben.
+Die Dateiliste wird nach Erfolg aktualisiert und verwendet den bestehenden
+PDF-Viewer/-Editor. Ein Export speichert keine unbestätigten Editoränderungen.
+
+`scripts/protocol-pdf/original.py` bewahrt den gelieferten Python-Konverter
+unverändert. Der gehärtete Adapter verwendet dessen CSS, Kopfzeile,
+Unterschriften und WeasyPrint mit gebündelten IBM-Plex-Schriften. Externe
+Ressourcen und beliebige Serverdateien sind gesperrt, Body-HTML/CSS ist
+eingeschränkt. Normale lokale Rasterbilder sind erlaubt (maximal 30 / 20 MB).
+Node- und Worker-Limits schützen Laufzeit und Speicher. Rendering/Cloud-Zugriffe
+finden außerhalb von Datenbanktransaktionen statt.
+
+Docker installiert Python/Pango und die gepinnten WeasyPrint-Abhängigkeiten;
+lokale Einrichtung und Sicherheitsgrenzen stehen in
+`scripts/protocol-pdf/README.md`. `PROTOCOL_PDF_PYTHON` wählt den Interpreter.
+Die Logo-Daten gehören zum PostgreSQL-Backup, die PDFs weiterhin zu Nextcloud.
 
 ```sql
 protocol_templates   (id, name UNIQUE, description, markdown, created_at)

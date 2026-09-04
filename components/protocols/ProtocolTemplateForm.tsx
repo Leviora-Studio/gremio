@@ -32,7 +32,7 @@ export function ProtocolTemplateForm({
           name="markdown"
           className="input min-h-64 font-mono text-sm"
           required
-          defaultValue={initial?.markdown ?? "# Sitzung {{session.date_de}}\n\n## Anwesenheit\n\n## Tagesordnung"}
+          defaultValue={initial?.markdown ?? "# Sitzung {{session.date_de}}\n\n## Anwesenheit\n\n### Mitglieder\n\n### Gäste\n\n## Tagesordnung"}
         />
         <p className="mt-1 text-xs text-slate-500">
           Variablen: {"{{session.date}}"}, {"{{session.date_de}}"}, {"{{session.folder_name}}"}, {"{{protocol_area.name}}"}, {"{{created_at}}"}

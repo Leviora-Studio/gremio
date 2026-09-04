@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
  * Zweistufige In-App-Löschbestätigung (kein Browser-Dialog):
  * 1) das Wort (Standard "LÖSCHEN") eintippen → Button wird aktiv
  * 2) nach Klick ein Modal, das mit „OK, löschen" final bestätigt werden muss.
+ * Mit `wordInModal` erfolgt auch die Worteingabe erst im Modal.
  * `action` ist eine bereits gebundene Server-Action (gibt optional {error} zurück).
  */
 export function DeleteConfirm({
@@ -20,6 +21,8 @@ export function DeleteConfirm({
   message,
   compact = false,
   requireWord = true,
+  wordInModal = false,
+  disabled = false,
   buttonClassName = "btn-danger",
 }: {
   action: () => Promise<{ error?: string } | void>;
@@ -31,6 +34,10 @@ export function DeleteConfirm({
   compact?: boolean;
   /** false = ohne Worteingabe, nur Modal-Bestätigung. */
   requireWord?: boolean;
+  /** Worteingabe im Bestätigungsdialog statt neben dem auslösenden Button. */
+  wordInModal?: boolean;
+  /** Keep the confirmation mounted while another operation temporarily blocks it. */
+  disabled?: boolean;
   buttonClassName?: string;
 }) {
   const [text, setText] = useState("");
@@ -41,7 +48,7 @@ export function DeleteConfirm({
 
   return (
     <div className="flex flex-wrap items-end gap-2">
-      {requireWord &&
+      {requireWord && !wordInModal &&
         (compact ? (
           <input
             className="input w-44"
@@ -62,9 +69,10 @@ export function DeleteConfirm({
         ))}
       <button
         type="button"
-        disabled={!armed}
+        disabled={disabled || pending || (!wordInModal && !armed)}
         onClick={() => {
           setError(null);
+          if (wordInModal) setText("");
           setOpen(true);
         }}
         className={buttonClassName}
@@ -76,6 +84,19 @@ export function DeleteConfirm({
         <p className="text-sm text-slate-600">
           {message ?? "Diese Aktion kann nicht rückgängig gemacht werden."}
         </p>
+        {requireWord && wordInModal && (
+          <label className="mt-4 block">
+            <span className="label">Zum Löschen „{word}" eingeben</span>
+            <input
+              className="input w-full"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={word}
+              autoComplete="off"
+              disabled={pending}
+            />
+          </label>
+        )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -87,7 +108,7 @@ export function DeleteConfirm({
           </button>
           <button
             type="button"
-            disabled={pending}
+            disabled={disabled || pending || !armed}
             onClick={() =>
               startTransition(async () => {
                 const r = await action();

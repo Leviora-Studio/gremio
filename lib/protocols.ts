@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { and, asc, desc, eq, inArray, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
@@ -121,7 +121,41 @@ type SessionDiscoveryArea = Pick<ProtocolArea, "id" | "name" | "filePattern">;
 type ExistingSessionIdentity = Pick<
   ProtocolSession,
   "id" | "folderName" | "folderFileId" | "protocolFileId"
->;
+> & Partial<Pick<ProtocolSession, "sessionDate" | "protocolPath">>;
+
+/** Gemeinsame Dateierkennung für Übersicht und direkt geladene Sitzungen. */
+export function deriveProtocolFileMetadata(
+  area: Pick<ProtocolArea, "name" | "filePattern">,
+  session: Pick<ProtocolSession, "folderName" | "sessionDate" | "protocolFileId"> & Partial<Pick<ProtocolSession, "protocolPath">>,
+  files: WebDavEntry[],
+) {
+  const expected = safeProtocolFilename(area, session.folderName, session.sessionDate ?? inferSessionDate(session.folderName));
+  const protocolFile =
+    (expected ? files.find((file) => file.type === "file" && file.name === expected) : undefined) ??
+    (session.protocolFileId ? files.find((file) => file.type === "file" && file.fileId === session.protocolFileId) : undefined) ??
+    (session.protocolPath ? files.find((file) => file.type === "file" && file.path === session.protocolPath) : undefined);
+  return {
+    protocolPath: protocolFile?.path ?? null,
+    protocolFileId: protocolFile?.fileId ?? null,
+    protocolEtag: protocolFile?.etag ?? null,
+    protocolLastModified: protocolFile?.lastModified ? new Date(protocolFile.lastModified) : null,
+  };
+}
+
+/** Erst nach erfolgreichem Listing aktualisieren; Cloud-Fehler löschen keine Metadaten. */
+export async function syncProtocolSessionFile(
+  area: ProtocolArea,
+  session: ProtocolSession,
+  files: WebDavEntry[],
+): Promise<ProtocolSession> {
+  const [updated] = await db.update(protocolSessions).set({
+    ...deriveProtocolFileMetadata(area, session, files),
+    sessionDate: session.sessionDate ?? inferSessionDate(session.folderName),
+    lastSyncedAt: new Date(),
+  }).where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, area.id))).returning();
+  if (!updated) throw new Error("Sitzung nicht mehr vorhanden. Bitte die Übersicht neu laden.");
+  return updated;
+}
 
 /**
  * Leitet ausschließlich technische Metadaten aus einem Nextcloud-Ordner ab.
@@ -143,15 +177,7 @@ export function deriveProtocolSessionDiscovery(
       ? existingSessions.find((session) => session.folderFileId === folder.fileId)
       : undefined) ??
     existingSessions.find((session) => session.folderName === folder.name);
-  const sessionDate = inferSessionDate(folder.name);
-  const expected = safeProtocolFilename(area, folder.name, sessionDate);
-  const protocolFile =
-    (expected
-      ? children.find((item) => item.type === "file" && item.name === expected)
-      : undefined) ??
-    (existing?.protocolFileId
-      ? children.find((item) => item.type === "file" && item.fileId === existing.protocolFileId)
-      : undefined);
+  const sessionDate = inferSessionDate(folder.name) ?? existing?.sessionDate ?? null;
   return {
     existingId: existing?.id ?? null,
     values: {
@@ -160,12 +186,12 @@ export function deriveProtocolSessionDiscovery(
       sessionDate,
       folderFileId: folder.fileId,
       folderEtag: folder.etag,
-      protocolPath: protocolFile?.path ?? null,
-      protocolFileId: protocolFile?.fileId ?? null,
-      protocolEtag: protocolFile?.etag ?? null,
-      protocolLastModified: protocolFile?.lastModified
-        ? new Date(protocolFile.lastModified)
-        : null,
+      ...deriveProtocolFileMetadata(area, {
+        folderName: folder.name,
+        sessionDate,
+        protocolFileId: existing?.protocolFileId ?? null,
+        protocolPath: existing?.protocolPath,
+      }, children),
       lastSyncedAt: syncedAt,
     },
   };
@@ -307,6 +333,7 @@ export async function reconcileProtocolCardLinks(
   area: ProtocolArea,
   session: ProtocolSession,
   links: { cardId: number; top: string }[],
+  replannedCardIds: number[] = [],
 ): Promise<{ conflicts: number }> {
   if (!area.boardId) {
     if (links.length) throw new Error("Für diesen Protokollbereich ist kein Finanzboard konfiguriert.");
@@ -314,6 +341,8 @@ export async function reconcileProtocolCardLinks(
     return { conflicts: 0 };
   }
   const ids = [...new Set(links.map((link) => link.cardId))];
+  if (!Array.isArray(replannedCardIds) || replannedCardIds.some(id => !Number.isSafeInteger(id) || !ids.includes(id))) throw new Error("Ungültige neu eingeplante Finanzanträge.");
+  const replanned = new Set(replannedCardIds);
   const validCards = ids.length
     ? await db.select({ id: cards.id }).from(cards).where(and(eq(cards.boardId, area.boardId), inArray(cards.id, ids)))
     : [];
@@ -355,7 +384,10 @@ export async function reconcileProtocolCardLinks(
         .select({ value: protocolCardLinks.lastAutoDecisionRef })
         .from(protocolCardLinks)
         .where(eq(protocolCardLinks.cardId, link.cardId));
-      const mayUpdate = mayReplaceDecisionRef(card.decisionRef, [
+      // A new/changed TOP is an explicit assignment, even after manual edits.
+      // Unchanged TOPs still allow subsequent manual reference adjustments.
+      const newlyScheduled = !previous || previous.top !== link.top || previous.lastAutoDecisionRef !== autoRef || replanned.has(link.cardId);
+      const mayUpdate = newlyScheduled || mayReplaceDecisionRef(card.decisionRef, [
         previous?.lastAutoDecisionRef,
         ...autoRefs.map((item) => item.value),
       ]);
@@ -386,4 +418,65 @@ export async function reconcileProtocolCardLinks(
     }
   });
   return { conflicts };
+}
+
+/** Vor einem destruktiven Cloud-Zugriff auch die tatsächlich betroffenen Boards prüfen. */
+export async function assertProtocolDeletionBoardAccess(user: User, session: ProtocolSession): Promise<void> {
+  const linkedBoards = await db
+    .selectDistinct({ boardId: cards.boardId })
+    .from(protocolCardLinks)
+    .innerJoin(cards, eq(cards.id, protocolCardLinks.cardId))
+    .where(eq(protocolCardLinks.sessionId, session.id));
+  for (const { boardId } of linkedBoards) {
+    const board = await getBoardById(boardId);
+    if (!board || !(await canAccessBoard(user, board))) {
+      throw new Error("Zum Löschen dieses Protokolls oder dieser Sitzung ist auch Zugriff auf alle verknüpften Antragsboards erforderlich.");
+    }
+  }
+}
+
+/** Erst nach bestätigtem Cloud-DELETE: Relationen, automatische Referenzen und Metadaten atomar bereinigen. */
+export async function cleanupDeletedProtocolResource(
+  user: User,
+  session: ProtocolSession,
+  mode: "session" | "protocol",
+): Promise<number[]> {
+  await assertProtocolDeletionBoardAccess(user, session);
+  return db.transaction(async (tx) => {
+    await tx.select({ id: protocolSessions.id }).from(protocolSessions)
+      .where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, session.areaId)))
+      .for("update");
+    const links = await tx.select().from(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
+    await tx.delete(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
+    for (const link of links) {
+      if (!link.lastAutoDecisionRef) continue;
+      const [fallback] = await tx
+        .select({ value: protocolCardLinks.lastAutoDecisionRef })
+        .from(protocolCardLinks)
+        .where(and(
+          eq(protocolCardLinks.cardId, link.cardId),
+          isNotNull(protocolCardLinks.lastAutoDecisionRef),
+          eq(protocolCardLinks.decisionRefConflict, false),
+        ))
+        .orderBy(desc(protocolCardLinks.updatedAt), desc(protocolCardLinks.id))
+        .limit(1);
+      // Vergleich im UPDATE selbst: auch eine gleichzeitig manuell geänderte
+      // Beschlussreferenz darf durch die Löschbereinigung nicht verloren gehen.
+      await tx.update(cards).set({ decisionRef: fallback?.value ?? null, updatedAt: new Date() })
+        .where(and(eq(cards.id, link.cardId), eq(cards.decisionRef, link.lastAutoDecisionRef)));
+    }
+    if (mode === "session") {
+      await tx.delete(protocolSessions)
+        .where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, session.areaId)));
+    } else {
+      await tx.update(protocolSessions).set({
+        protocolPath: null,
+        protocolFileId: null,
+        protocolEtag: null,
+        protocolLastModified: null,
+        lastSyncedAt: new Date(),
+      }).where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, session.areaId)));
+    }
+    return links.map((link) => link.cardId);
+  });
 }

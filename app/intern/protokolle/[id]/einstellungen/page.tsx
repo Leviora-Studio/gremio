@@ -15,6 +15,9 @@ import { getAccessibleBoards } from "@/lib/authz";
 import { requireProtocolAreaManage } from "@/lib/protocols";
 import { ProtocolAreaConfigForm } from "@/components/protocols/ProtocolAreaConfigForm";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ProtocolLogoSettings } from "@/components/protocols/ProtocolLogoSettings";
+import { getProtocolLogos } from "@/lib/protocol-logos";
+import { changeProtocolLogoAction } from "../../export-actions";
 import {
   addProtocolAreaGroupAccessAction,
   addProtocolAreaUserAccessAction,
@@ -67,6 +70,8 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
           decisionRefPattern: area.decisionRefPattern,
         }}
       />
+
+      <ProtocolLogoSettings areaId={areaId} initialLogos={await getProtocolLogos(areaId)} action={changeProtocolLogoAction.bind(null, areaId)} />
 
       <section className="card space-y-4 p-5">
         <h2 className="text-lg font-semibold">Zugriffsfreigaben</h2>

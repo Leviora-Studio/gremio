@@ -117,7 +117,7 @@ export function DatePicker({
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={clsx(
-          "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 text-left text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500",
+          "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 text-left text-sm shadow-sm focus-visible:border-brand-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-500",
           disabled && "cursor-not-allowed bg-slate-50 opacity-60",
         )}
       >

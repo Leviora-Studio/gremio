@@ -1,4 +1,6 @@
 node_modules
+.venv-protocol-pdf
+__pycache__
 .next
 .git
 .idea
