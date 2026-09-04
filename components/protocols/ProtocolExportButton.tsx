@@ -30,7 +30,7 @@ export function ProtocolExportButton({ areaId, sourceName, logos, disabled, acti
         catch { setResult({ error: "Der Export konnte nicht bestätigt werden. Bitte die Dateiliste prüfen, bevor du es erneut versuchst." }); }
         finally { setBusy(false); }
       }}>
-        <p className="text-sm text-slate-600">Exportiert wird die gespeicherte Markdown-Datei aus Nextcloud einschließlich ihrer YAML-Sitzungsinformationen.</p>
+        <p className="text-sm text-slate-600">Exportiert wird die gespeicherte Markdown-Datei aus Nextcloud einschließlich ihres YAML-Kopfs.</p>
         <label className="block"><span className="label">PDF-Dateiname</span><input autoFocus aria-label="PDF-Dateiname" required maxLength={200} value={filename} disabled={busy} className="input" onChange={event => setFilename(event.target.value)} /></label>
         {!!logos.length && <fieldset disabled={busy}><legend className="label">Logo</legend><div className="grid gap-3 sm:grid-cols-3">
           {logos.map(logo => <label key={logo.id} className={`cursor-pointer rounded-md p-3 ${logoId === logo.id ? "bg-brand-50 text-brand-700" : "bg-slate-50"}`}>

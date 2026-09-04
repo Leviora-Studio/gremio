@@ -2,8 +2,46 @@
 // Copyright (C) 2026 Leviora Studio
 
 export type MarkdownSelection = { start: number; end: number };
-export type MarkdownCommand = "h1" | "h2" | "h3" | "bullet" | "ordered" | "bold" | "italic" | "underline" | "code" | "quote" | { table: { rows: number; columns: number } };
+export type MarkdownCommand = "h1" | "h2" | "h3" | "h4" | "h5" | "bullet" | "ordered" | "bold" | "italic" | "underline" | "code" | "quote" | { table: { rows: number; columns: number } };
 export type MarkdownEdit = { markdown: string; selection: MarkdownSelection };
+
+const orderedLinePattern = /^([ \t]*)(\d+)[.)]([ \t]+)(.*)$/;
+
+function normalizeOrderedBlocks(lines: string[], selected: Set<number>) {
+  const visited = new Set<number>();
+  for (const selectedIndex of selected) {
+    if (visited.has(selectedIndex) || !orderedLinePattern.test(lines[selectedIndex] ?? "")) continue;
+    let first = selectedIndex; let last = selectedIndex;
+    while (first > 0 && orderedLinePattern.test(lines[first - 1])) first--;
+    while (last + 1 < lines.length && orderedLinePattern.test(lines[last + 1])) last++;
+    const firstMatch = orderedLinePattern.exec(lines[first])!;
+    if (Math.floor(firstMatch[1].replace(/\t/g, "    ").length / 4) > 0) {
+      for (let index = first; index <= last; index++) visited.add(index);
+      continue;
+    }
+    const counters: number[] = [];
+    for (let index = first; index <= last; index++) {
+      visited.add(index);
+      const match = orderedLinePattern.exec(lines[index])!;
+      const depth = Math.floor(match[1].replace(/\t/g, "    ").length / 4);
+      if (depth === 0) counters.splice(0, counters.length, counters.length ? counters[0] + 1 : Number(match[2]));
+      else {
+        if (!counters.length) counters.push(1);
+        if (counters.length > depth + 1) counters.length = depth + 1;
+        while (counters.length < depth) counters.push(1);
+        if (counters.length === depth) counters.push(1);
+        else counters[depth] += 1;
+      }
+      lines[index] = `${match[1]}${counters[depth]}. ${match[4]}`;
+    }
+  }
+}
+
+function commonSuffixLength(left: string, right: string) {
+  let length = 0;
+  while (length < left.length && length < right.length && left[left.length - length - 1] === right[right.length - length - 1]) length++;
+  return length;
+}
 
 /** Indent complete selected lines; four spaces also nest lists in the PDF renderer. */
 export function indentMarkdown(source: string, selection: MarkdownSelection, outdent = false): MarkdownEdit {
@@ -11,20 +49,41 @@ export function indentMarkdown(source: string, selection: MarkdownSelection, out
   const end = Math.max(start, Math.min(selection.end, source.length));
   const first = start === 0 ? 0 : source.lastIndexOf("\n", start - 1) + 1;
   const last = end > start && source[end - 1] === "\n" ? end - 1 : end;
-  const mapped = { start, end };
+  const originalLines = source.split("\n");
+  const lines = [...originalLines];
+  const selected = new Set<number>();
   let offset = 0;
-  const markdown = source.split("\n").map(line => {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
     const lineStart = offset;
     offset += line.length + 1;
-    if (lineStart < first || lineStart > last) return line;
+    if (lineStart < first || lineStart > last) continue;
+    selected.add(index);
     const removed = outdent ? (line.match(/^(?:\t| {1,4})/)?.[0].length ?? 0) : 0;
-    for (const boundary of ["start", "end"] as const) {
-      const position = boundary === "start" ? start : end;
-      if (position >= lineStart) mapped[boundary] += outdent ? -Math.min(removed, position - lineStart) : 4;
+    lines[index] = outdent ? line.slice(removed) : "    " + line;
+  }
+  normalizeOrderedBlocks(lines, selected);
+  const starts = (values: string[]) => {
+    const result: number[] = []; let position = 0;
+    for (const line of values) { result.push(position); position += line.length + 1; }
+    return result;
+  };
+  const oldStarts = starts(originalLines); const newStarts = starts(lines);
+  const mapPosition = (position: number) => {
+    let index = 0;
+    for (let cursor = oldStarts.length - 1; cursor >= 0; cursor--) {
+      if (oldStarts[cursor] <= position) { index = cursor; break; }
     }
-    return outdent ? line.slice(removed) : "    " + line;
-  }).join("\n");
-  return { markdown, selection: mapped };
+    const column = Math.min(position - oldStarts[index], originalLines[index].length);
+    const suffix = commonSuffixLength(originalLines[index], lines[index]);
+    const oldPrefix = originalLines[index].length - suffix;
+    const newPrefix = lines[index].length - suffix;
+    const nextColumn = column >= oldPrefix
+      ? newPrefix + column - oldPrefix
+      : Math.max(0, Math.min(newPrefix, newPrefix - (oldPrefix - column)));
+    return newStarts[index] + nextColumn;
+  };
+  return { markdown: lines.join("\n"), selection: { start: mapPosition(start), end: mapPosition(end) } };
 }
 
 /** Pure source transformations shared by the raw editor and live preview. */
@@ -60,7 +119,7 @@ export function formatMarkdown(source: string, selection: MarkdownSelection, com
   const to = lineEnd < 0 ? source.length : lineEnd;
   const lines = source.slice(lineStart, to).split("\n");
   const transformed = lines.map((line, index) => {
-    const bare = line.replace(/^(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/, "");
+    const bare = line.replace(/^(?:#{1,6}\s+|[-*+]\s+|(?:\d+\.)*\d+[.)]\s+|>\s?)/, "");
     const prefix = command === "bullet" ? "- " : command === "ordered" ? `${index + 1}. ` : command === "quote" ? "> " : "#".repeat(Number(command.slice(1))) + " ";
     return prefix + bare;
   });

@@ -24,6 +24,16 @@ test("indentation handles selected lines, boundary exclusions and existing white
   assert.deepEqual(indentMarkdown("Text", { start: 2, end: 2 }, true), { markdown: "Text", selection: { start: 2, end: 2 } });
 });
 
+test("indenting ordered items creates and renumbers semantic sublists", () => {
+  const source = "1. Eins\n2. Zwei\n3. Drei\n4. Vier";
+  const third = source.indexOf("Drei") + 2;
+  const nested = indentMarkdown(source, { start: third, end: third });
+  assert.equal(nested.markdown, "1. Eins\n2. Zwei\n    1. Drei\n3. Vier");
+  assert.equal(nested.markdown.slice(nested.selection.start - 2, nested.selection.start + 2), "Drei");
+  const restored = indentMarkdown(nested.markdown, nested.selection, true);
+  assert.equal(restored.markdown, source);
+});
+
 test("inline commands preserve surrounding source and select their content", () => {
   for (const [command, expected] of [["bold", "**Text**"], ["italic", "*Text*"], ["underline", "<u>Text</u>"], ["code", "`Text`"]] as const) {
     const edit = formatMarkdown("Vor Text danach", { start: 4, end: 8 }, command);
@@ -36,6 +46,8 @@ test("inline commands preserve surrounding source and select their content", () 
 test("headings and lists replace existing block markers without rewriting other lines", () => {
   const source = "# Titel\nAbsatz\n- Alt\nEnde";
   assert.equal(formatMarkdown(source, { start: 9, end: 9 }, "h2").markdown, "# Titel\n## Absatz\n- Alt\nEnde");
+  assert.equal(formatMarkdown(source, { start: 9, end: 9 }, "h4").markdown, "# Titel\n#### Absatz\n- Alt\nEnde");
+  assert.equal(formatMarkdown(source, { start: 9, end: 9 }, "h5").markdown, "# Titel\n##### Absatz\n- Alt\nEnde");
   assert.equal(formatMarkdown(source, { start: 8, end: 21 }, "ordered").markdown, "# Titel\n1. Absatz\n2. Alt\nEnde");
   assert.equal(formatMarkdown("## Titel", { start: 8, end: 8 }, "h1").markdown, "# Titel");
   assert.equal(formatMarkdown("A\nB", { start: 0, end: 2 }, "bullet").markdown, "- A\nB");

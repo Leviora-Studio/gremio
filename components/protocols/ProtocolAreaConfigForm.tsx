@@ -6,6 +6,7 @@
 import { useActionState, useMemo, useState } from "react";
 import type { ProtocolState } from "@/app/intern/protokolle/actions";
 import { renderDecisionRef, renderSessionName, validateFilePattern } from "@/lib/protocol-markdown";
+import { renderResultProtocolFilename } from "@/lib/result-protocol-filename";
 import { orderedProtocolFinanceFields, type ProtocolFinanceField } from "@/lib/protocol-area-config";
 import { MarkdownSettingsEditor } from "@/components/documents/MarkdownSettingsEditor";
 import { ProtocolFinanceFields } from "./ProtocolFinanceFields";
@@ -20,6 +21,7 @@ type Initial = {
   rootPath: string;
   folderPattern: string;
   filePattern: string;
+  resultFilePattern: string;
   templateId: number | null;
   customTemplateMarkdown: string;
   financeFields: ProtocolFinanceField[];
@@ -45,6 +47,7 @@ export function ProtocolAreaConfigForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [folderPattern, setFolderPattern] = useState(initial?.folderPattern ?? "{YYYY}-{MM}-{DD}");
   const [filePattern, setFilePattern] = useState(initial?.filePattern ?? "Protokoll.md");
+  const [resultFilePattern, setResultFilePattern] = useState(initial?.resultFilePattern ?? "Ergebnisprotokoll.md");
   const [decisionPattern, setDecisionPattern] = useState(initial?.decisionRefPattern ?? "{session}-TOP-{top}");
   const [boardId, setBoardId] = useState(initial?.boardId ? String(initial.boardId) : "");
   const currentBoard = boards.find((board) => String(board.id) === boardId);
@@ -59,12 +62,13 @@ export function ProtocolAreaConfigForm({
     try {
       const folder = renderSessionName(folderPattern, "2026-08-14", name || "Beispielgremium");
       const file = validateFilePattern(filePattern, "2026-08-14", name || "Beispielgremium", folder);
+      const resultFile = renderResultProtocolFilename(resultFilePattern, name || "Beispielgremium", folder, "2026-08-14", file);
       const decision = renderDecisionRef(decisionPattern, folder, "2026-08-14", "5.1");
-      return { folder, file, decision };
+      return { folder, file, resultFile, decision };
     } catch (error) {
       return { error: (error as Error).message };
     }
-  }, [decisionPattern, filePattern, folderPattern, name]);
+  }, [decisionPattern, filePattern, folderPattern, name, resultFilePattern]);
 
   return (
     <form action={formAction} className="space-y-8" onInvalidCapture={event => { let parent = (event.target as HTMLElement).parentElement; while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; } }}>
@@ -126,6 +130,11 @@ export function ProtocolAreaConfigForm({
           <input name="filePattern" className="input font-mono" value={filePattern} onChange={(e) => setFilePattern(e.target.value)} />
           <p className="mt-1 text-xs text-slate-500">Muss auf .md enden; dieselben Platzhalter.</p>
         </div>
+        <div>
+          <label className="label">Schema für Ergebnisprotokolldatei</label>
+          <input name="resultFilePattern" className="input font-mono" value={resultFilePattern} onChange={(e) => setResultFilePattern(e.target.value)} />
+          <p className="mt-1 text-xs text-slate-500">Muss auf .md enden; dieselben Platzhalter.</p>
+        </div>
         <div className="sm:col-span-2">
           <label className="label">Schema für Beschlussreferenz</label>
           <input name="decisionRefPattern" className="input font-mono" value={decisionPattern} onChange={(e) => setDecisionPattern(e.target.value)} />
@@ -133,7 +142,7 @@ export function ProtocolAreaConfigForm({
         </div>
         <div className="rounded-md bg-slate-50 p-3 text-sm sm:col-span-2">
           {"error" in preview ? <span className="text-red-600">{preview.error}</span> : (
-            <span>Vorschau: <code>{preview.folder}/{preview.file}</code> · Beschlussreferenz <code>{preview.decision}</code></span>
+            <span>Vorschau: <code>{preview.folder}/{preview.file}</code> · Ergebnis <code>{preview.folder}/{preview.resultFile}</code> · Beschlussreferenz <code>{preview.decision}</code></span>
           )}
         </div>
       </CollapsibleSection>

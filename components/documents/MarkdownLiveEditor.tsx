@@ -3,9 +3,9 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
-import { getMarkdownHeadings } from "@/lib/protocol-markdown";
+import { AGENDA_END, AGENDA_START, getMarkdownHeadings } from "@/lib/protocol-markdown";
 import { markdownLineAt, markdownLineStart, remapMarkdownOffset, replaceMarkdownRange } from "@/lib/protocol-live-editor";
-import { escapeTableInput, inlineTokenMarkdown, parseRichLine, richInlineHtml, tableCellRanges, type InlineToken } from "@/lib/markdown-rich-editor";
+import { escapeTableInput, inlineTokenMarkdown, orderedListDisplayMarkers, parseRichLine, richInlineHtml, tableCellRanges, type InlineToken } from "@/lib/markdown-rich-editor";
 import { protocolFrontmatterRange } from "@/lib/protocol-frontmatter";
 import { indentMarkdown } from "@/lib/markdown-formatting";
 import { resizedMarkdownImage } from "@/lib/markdown-images";
@@ -103,7 +103,7 @@ function pointForOffset(root: HTMLElement, requested: number): { node: Node; off
 }
 
 // Read-only preview uses this same block tree, so switching modes cannot alter layout.
-export const MarkdownLiveEditor = forwardRef<MarkdownLiveEditorHandle, { markdown: string; readOnly?: boolean; imageUrl?: (reference: string) => string | null; onChange: (markdown: string) => void; onCommit: () => void; onCardDrop?: (offset: number) => void }>(function MarkdownLiveEditor({ markdown, readOnly = false, imageUrl, onChange, onCommit, onCardDrop }, ref) {
+export const MarkdownLiveEditor = forwardRef<MarkdownLiveEditorHandle, { markdown: string; readOnly?: boolean; compact?: boolean; imageUrl?: (reference: string) => string | null; onChange: (markdown: string) => void; onCommit?: () => void; onCardDrop?: (offset: number) => void }>(function MarkdownLiveEditor({ markdown, readOnly = false, compact = false, imageUrl, onChange, onCommit, onCardDrop }, ref) {
   const root = useRef<HTMLDivElement>(null);
   const selection = useRef<Selection>({ start: markdown.length, end: markdown.length });
   const pending = useRef<Selection | null>(null);
@@ -283,8 +283,10 @@ export const MarkdownLiveEditor = forwardRef<MarkdownLiveEditorHandle, { markdow
 
   const output: ReactNode[] = []; const consumed = new Set<number>();
   const headings = new Map(getMarkdownHeadings(markdown).map(item => [item.line, item]));
+  const orderedMarkers = orderedListDisplayMarkers(markdown);
   let fence: { char: string; length: number } | null = null;
   let comment = false;
+  let agenda = false;
   for (let index = headerLines; index < lines.length; index++) {
     if (consumed.has(index)) continue;
     const line = lines[index]; const lineStart = markdownLineStart(markdown, index); const lineEnd = lineStart + line.length;
@@ -293,6 +295,8 @@ export const MarkdownLiveEditor = forwardRef<MarkdownLiveEditorHandle, { markdow
       fence = fence ? null : { char: fenceMatch[1][0], length: fenceMatch[1].length };
       output.push(<div key={index} data-markdown-line={index} className="text-xs text-slate-400">{editable(line, lineStart, lineEnd, lineStart, "font-mono", `line-${index}`, false, true)}</div>); continue;
     }
+    if (!fence && line.trim() === AGENDA_START) { agenda = true; continue; }
+    if (!fence && line.trim() === AGENDA_END) { agenda = false; continue; }
     if (!fence && line.trim().startsWith("<!--")) comment = true;
     if (comment) { if (line.includes("-->")) comment = false; continue; }
     if (!fence && line.trim().startsWith("|") && /^\|[\s:|-]+\|\s*$/.test(lines[index + 1]?.trim() ?? "")) {
@@ -309,12 +313,13 @@ export const MarkdownLiveEditor = forwardRef<MarkdownLiveEditorHandle, { markdow
     const style = fence ? "bg-slate-50 font-mono text-sm" : rich.kind === "heading" ? rich.level === 1 ? "text-2xl font-bold" : rich.level === 2 ? "text-xl font-semibold" : "text-lg font-semibold" : rich.kind === "quote" ? "border-l-2 border-slate-300 pl-3 text-slate-600" : "text-sm leading-6";
     const heading = headings.get(index);
     const listIndent = rich.kind === "bullet" || rich.kind === "ordered" ? (rich.prefix.match(/^[ \t]*/)?.[0] ?? "").replace(/\t/g, "    ").length : 0;
-    output.push(<div key={index} data-markdown-line={index} id={heading?.slug} style={listIndent ? { paddingLeft: `${listIndent * 0.375}rem` } : undefined} className={`flex min-h-6 items-start ${rich.kind === "bullet" ? "gap-1.5" : "gap-2"}`}>
-      {rich.kind === "bullet" ? <span aria-hidden="true" className="flex h-6 w-[5px] shrink-0 items-center"><span data-markdown-bullet className="h-[5px] w-[5px] rounded-full bg-slate-600" /></span> : rich.marker && <span aria-hidden="true" className="select-none pt-0.5 text-sm text-slate-500">{rich.marker}</span>}
+    const agendaEntry = agenda && rich.kind === "bullet";
+    output.push(<div key={index} data-markdown-line={index} data-markdown-agenda-entry={agendaEntry ? "true" : undefined} id={heading?.slug} style={listIndent ? { paddingLeft: `${listIndent * 0.375}rem` } : undefined} className={`flex min-h-6 items-start ${rich.kind === "bullet" && !agendaEntry ? "gap-1.5" : "gap-2"}`}>
+      {rich.kind === "bullet" && !agendaEntry ? <span aria-hidden="true" className="flex h-6 w-[5px] shrink-0 items-center"><span data-markdown-bullet className="h-[5px] w-[5px] rounded-full bg-slate-600" /></span> : rich.kind === "ordered" && rich.marker && <span aria-hidden="true" data-markdown-ordered-marker="true" className="select-none pt-0.5 text-sm text-slate-500">{orderedMarkers.get(index) ?? rich.marker}</span>}
       {editable(rich.content, lineStart + rich.prefix.length, lineEnd, lineStart, `min-w-0 flex-1 ${style}`, `line-${index}`, false, !!fence)}
     </div>);
   }
-  return <div ref={root} data-markdown-renderer role="group" aria-label={readOnly ? "Dokumentvorschau" : "Live-Editor"} className={`${protocolPreviewClassName} relative`} onBlur={event => { if (!readOnly && !event.currentTarget.contains(event.relatedTarget as Node | null)) { currentSelection(); onCommit(); } }} onDragOver={event => {
+  return <div ref={root} data-markdown-renderer role="group" aria-label={readOnly ? "Dokumentvorschau" : "Live-Editor"} className={`${compact ? "space-y-2 break-words text-sm" : protocolPreviewClassName} relative`} onBlur={event => { if (!readOnly && !event.currentTarget.contains(event.relatedTarget as Node | null)) { currentSelection(); onCommit?.(); } }} onDragOver={event => {
     if (readOnly || !onCardDrop || !event.dataTransfer.types.includes("application/x-gremio-card")) return;
     event.preventDefault(); event.dataTransfer.dropEffect = "copy";
     const position = document.caretPositionFromPoint?.(event.clientX, event.clientY);

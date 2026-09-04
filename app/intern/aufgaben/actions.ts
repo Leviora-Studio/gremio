@@ -7,14 +7,13 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { userTaskPrefs } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
+import { normalizeHomePref, type HomePref } from "@/lib/home-dashboard";
 
 export type TaskBoardPref = {
   enabled?: boolean;
   excludedStatusIds?: number[];
   fields?: string[];
 };
-/** Welche Abschnitte auf der Startseite gezeigt werden. */
-export type HomePref = { tasks: boolean; boards: boolean; finances: boolean };
 export type TaskPrefs = {
   boards?: Record<string, TaskBoardPref>;
   /** Vom Nutzer per Drag&Drop bestimmte Board-Reihenfolge (für „nach Board"). */
@@ -57,12 +56,7 @@ export async function saveTaskPrefsAction(partial: TaskPrefs): Promise<void> {
       : [];
   }
   if (partial.home !== undefined) {
-    const h = partial.home;
-    patch.home = {
-      tasks: h?.tasks !== false,
-      boards: h?.boards !== false,
-      finances: h?.finances !== false,
-    };
+    patch.home = normalizeHomePref(partial.home);
   }
   const json = JSON.stringify(patch);
 

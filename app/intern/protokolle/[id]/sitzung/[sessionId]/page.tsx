@@ -24,6 +24,7 @@ import { ProtocolFileUpload } from "@/components/protocols/ProtocolFileUpload";
 import { createProtocolMarkdownFileAction, uploadProtocolFileAction, saveProtocolPdfEditsAction } from "../../../file-actions";
 import { CreateMarkdownFileButton } from "@/components/protocols/CreateMarkdownFileButton";
 import { isMarkdownFilename } from "@/lib/markdown-documents";
+import { renderResultProtocolFilename } from "@/lib/result-protocol-filename";
 import { protocolDirectoryPath, protocolFolderHref, protocolSubfolderSegments } from "@/lib/protocol-paths";
 import {
   createProtocolForSessionAction,
@@ -62,6 +63,11 @@ export default async function ProtocolSessionPage({ params, searchParams }: { pa
   const protocolFile = session.protocolPath
     ? files.find((file) => file.path === session.protocolPath || (!!session.protocolFileId && file.fileId === session.protocolFileId))
     : undefined;
+  let resultProtocolFilename: string | null = null;
+  if (!subfolder && protocolFile) {
+    try { resultProtocolFilename = renderResultProtocolFilename(area.resultFilePattern, area.name, session.folderName, session.sessionDate, protocolFile.name); }
+    catch { /* The result workspace presents the precise configuration error. */ }
+  }
   const templates = !subfolder && !session.protocolPath ? await db.select({ id: protocolTemplates.id, name: protocolTemplates.name }).from(protocolTemplates).orderBy(asc(protocolTemplates.name)) : [];
 
   return (
@@ -117,7 +123,8 @@ export default async function ProtocolSessionPage({ params, searchParams }: { pa
               <tr key={file.path} className="border-t border-slate-100">
                 <td className="p-3 font-medium">
                   {file.type === "directory" ? <Link href={protocolFolderHref(areaId, sessionId, [...segments, file.name].join("/"))} className="text-brand-600 hover:underline">{file.name}</Link> : isMarkdownFilename(file.name) ? <Link href={`/dokumente/${areaId}/${sessionId}?name=${encodeURIComponent(file.name)}${folderQuery}`} className="text-brand-600 hover:underline">{file.name}</Link> : isPdf ? <AttachmentLink {...pdfProps} /> : imageMime ? <AttachmentLink {...imageProps} /> : <a href={nextcloudBrowserUrl(area.ncUrl, file.path, file.fileId, false)} target="_blank" rel="noopener" className="text-brand-600 hover:underline">{file.name}</a>}
-                  {file.path === protocolFile?.path && <span className="ml-2 rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">Protokoll</span>}
+                  {file.path === protocolFile?.path && <span className="ml-2 rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700">Verlaufsprotokoll</span>}
+                  {file.type === "file" && file.name === resultProtocolFilename && <span className="ml-2 rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">Ergebnisprotokoll</span>}
                 </td>
                 <td className="p-3 text-slate-600">{fileType(file.name, file.mime, file.type)}</td>
                 <td className="p-3 text-slate-600">{file.lastModified ? new Date(file.lastModified).toLocaleString("de-DE") : "—"}</td>
@@ -132,7 +139,7 @@ export default async function ProtocolSessionPage({ params, searchParams }: { pa
                         buttonLabel="Datei löschen"
                         buttonClassName="text-red-600 hover:underline"
                         title={`Datei „${file.name}“ löschen?`}
-                        message={`Die Datei „${file.name}“ wird aus dem Nextcloud-Sitzungsordner „${session.folderName}${subfolder ? ` / ${subfolder}` : ""}“ gelöscht. ${file.path === protocolFile?.path ? "Die Finanzantrags-Verknüpfungen dieses Protokolls werden entfernt; ungespeicherte Editoränderungen gehen verloren. " : ""}Eine Wiederherstellung wird von Gremio nicht angeboten.`}
+                        message={`Die Datei „${file.name}“ wird aus dem Nextcloud-Sitzungsordner „${session.folderName}${subfolder ? ` / ${subfolder}` : ""}“ gelöscht. ${file.path === protocolFile?.path ? "Die Finanzantrags-Verknüpfungen dieses Verlaufsprotokolls werden entfernt; ungespeicherte Editoränderungen gehen verloren. " : ""}Eine Wiederherstellung wird von Gremio nicht angeboten.`}
                       />
                     )}
                   </div>

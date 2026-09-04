@@ -67,6 +67,11 @@ Header checks cover compact action heights and button order, collapsing everythi
 above the formatting strip, a permanently reachable toggle on small screens,
 keyboard expansion, save/search while collapsed, and read-only preview behavior.
 
+`home-dashboard.cjs` mounts the personal start page with local persistence doubles.
+It verifies at desktop and mobile widths that tasks, boards, protocol areas,
+finances and inventories are visible by default, can be hidden independently and
+can be reordered with the drag handles.
+
 Use a separately available Playwright installation and Chrome (no production
 dependency is added):
 
@@ -101,3 +106,10 @@ It also tests Markdown creation in both root/subfolders, duplicate-name errors,
 cancellation, and navigation to the new document with its folder preserved.
 Run it with the same `PLAYWRIGHT_MODULE` and `CHROME_PATH` environment variables. No live Nextcloud
 files are read or changed.
+
+`result-protocol.cjs` mounts the result-protocol workspace with local
+save/reload doubles. It verifies detected and manual block selection, protected
+removal of edited blocks, preservation of unrelated manual text, first save,
+existing-file opening without regeneration, YAML-frontmatter transfer, export
+availability only after a confirmed save, keyboard selection, and the mobile
+Quelle/Ergebnis switch. It never reads or writes a real Nextcloud file.

@@ -25,10 +25,10 @@ export async function changeProtocolLogoAction(areaId: number, form: FormData): 
   } catch { return { error: "Logo konnte nicht geändert werden. Bitte Dateiformat (PNG/JPEG/WebP/GIF), Größe (maximal 5 MB / 16 Megapixel) und Bereichsrechte prüfen." }; }
 }
 
-export async function exportProtocolPdfAction(areaId: number, sessionId: number, folderName: string, input: ProtocolExportInput) {
+export async function exportProtocolPdfAction(areaId: number, sessionId: number, folderName: string, sourceName: string, input: ProtocolExportInput) {
   const user = await requireUser();
   if (!(await allowRequest(`protocol-export:${user.id}`, 5, 60_000))) return { error: "Zu viele PDF-Exporte. Bitte kurz warten." };
-  const result = await exportProtocolPdf(user, areaId, sessionId, folderName, input);
+  const result = await exportProtocolPdf(user, areaId, sessionId, folderName, sourceName, input);
   if (result.success) revalidatePath(`/intern/protokolle/${areaId}/sitzung/${sessionId}`);
   return result;
 }

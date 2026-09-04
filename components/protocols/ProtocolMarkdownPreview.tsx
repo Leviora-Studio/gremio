@@ -2,14 +2,17 @@
 // Copyright (C) 2026 Leviora Studio
 
 import type { ReactNode } from "react";
-import { getMarkdownHeadings, markdownTableCells } from "@/lib/protocol-markdown";
+import { AGENDA_END, AGENDA_START, getMarkdownHeadings, markdownTableCells } from "@/lib/protocol-markdown";
 import { protocolFrontmatterRange } from "@/lib/protocol-frontmatter";
+import { orderedListDisplayMarkers } from "@/lib/markdown-rich-editor";
 
 /** Both preview modes share the same renderer; live editing replaces only one source line. */
 export function ProtocolMarkdownPreview({ markdown, activeLine, editor }: { markdown: string; activeLine?: number; editor?: ReactNode }) {
   const lines = markdown.split("\n");
   const headings = new Map(getMarkdownHeadings(markdown).map(heading => [heading.line, heading]));
+  const orderedMarkers = orderedListDisplayMarkers(markdown);
   const tableRows = new Set<number>();
+  let agenda = false;
   const header = protocolFrontmatterRange(markdown);
   const headerLines = header?.closed ? markdown.slice(0, header.bodyStart).split("\n").length - (markdown[header.bodyStart - 1] === "\n" ? 1 : 0) : 0;
   return <>
@@ -38,16 +41,18 @@ export function ProtocolMarkdownPreview({ markdown, activeLine, editor }: { mark
         </div>;
       }
       if (index === activeLine) return <div key={index} data-markdown-line={index}>{editor}</div>;
+      if (line.trim() === AGENDA_START) { agenda = true; return null; }
+      if (line.trim() === AGENDA_END) { agenda = false; return null; }
       if (/^<!--/.test(line)) return null;
       const heading = headings.get(index);
       if (heading) {
         const className = heading.level === 1 ? "text-2xl font-bold" : heading.level === 2 ? "text-xl font-semibold" : "text-lg font-semibold";
         return <div key={index} data-markdown-line={index} id={heading.slug} className={className}>{inlineMarkdown(heading.title)}</div>;
       }
-      const bullet = /^[-*]\s+(.+)/.exec(line);
-      if (bullet) return <div key={index} data-markdown-line={index} className="pl-4">• {inlineMarkdown(bullet[1])}</div>;
-      const ordered = /^(\d+)[.)]\s+(.+)/.exec(line);
-      if (ordered) return <div key={index} data-markdown-line={index} className="pl-4">{ordered[1]}. {inlineMarkdown(ordered[2])}</div>;
+      const bullet = /^(\s*)[-*+]\s+(.+)/.exec(line);
+      if (bullet) return <div key={index} data-markdown-line={index} data-markdown-agenda-entry={agenda ? "true" : undefined} style={{ paddingLeft: `${(agenda ? 0 : 1) + bullet[1].replace(/\t/g, "    ").length * 0.375}rem` }}>{agenda ? null : "• "}{inlineMarkdown(bullet[2])}</div>;
+      const ordered = /^(\s*)(\d+)[.)]\s+(.+)/.exec(line);
+      if (ordered) return <div key={index} data-markdown-line={index} style={{ paddingLeft: `${1 + ordered[1].replace(/\t/g, "    ").length * 0.375}rem` }}>{orderedMarkers.get(index) ?? `${ordered[2]}.`} {inlineMarkdown(ordered[3])}</div>;
       const quote = /^>\s?(.*)/.exec(line);
       if (quote) return <blockquote key={index} data-markdown-line={index} className="border-l-2 border-slate-300 pl-4 text-slate-600">{inlineMarkdown(quote[1])}</blockquote>;
       if (!line.trim()) return <div key={index} data-markdown-line={index} className="h-2" />;

@@ -70,6 +70,7 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
           rootPath: area.rootPath,
           folderPattern: area.folderPattern,
           filePattern: area.filePattern,
+          resultFilePattern: area.resultFilePattern,
           templateId: area.templateId,
           customTemplateMarkdown: area.customTemplateMarkdown,
           financeFields: area.financeFields,

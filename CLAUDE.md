@@ -332,12 +332,20 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 
 ### Navigation (nach Login)
 Nach dem Login landet jeder Nutzer auf der **Startseite** (`/intern`): Dashboard plus Buttons zu den Bereichen, eingeblendet nach Rolle/Rechten:
-- **Boards** (`/intern/boards`), **Finanzen** (`/finanzen`), **Inventar** (`/intern/inventar`), **Protokolle** (`/intern/protokolle`), **Meine Aufgaben** (`/intern/aufgaben`) — jeder Nutzer
+- **Boards** (`/intern/boards`), **Protokolle** (`/intern/protokolle`), **Finanzen** (`/finanzen`), **Inventar** (`/intern/inventar`), **Meine Aufgaben** (`/intern/aufgaben`) — jeder Nutzer
 - **Neues Board erstellen** — jeder Nutzer
 - **Mein Konto** (`/intern/konto`) — jeder Nutzer; Benutzername/Anzeigename kommen aus dem SSO und sind hier nicht änderbar
 - **Vorlagen** (`/vorlagen`) — nur für Admin **und** Template-Verwalter sichtbar
 - **Admin Panel** (`/admin`) — nur für Admins sichtbar
 - **Logout**
+
+Die Startseite zeigt standardmäßig **Meine Aufgaben**, **Boards**,
+**Protokollbereiche**, **Finanzübersichten** und **Inventare**. Über „Startseite
+anpassen“ kann jeder Nutzer diese fünf Abschnitte unabhängig ein- oder ausblenden
+und ihre Reihenfolge per Drag-and-drop am Ziehgriff festlegen. Die Einstellung
+liegt im vorhandenen `user_task_prefs.config`-JSONB; bei älteren Einstellungen
+werden Protokollbereiche und Inventare sichtbar ergänzt, ohne zuvor ausgeblendete
+Abschnitte wieder einzuschalten.
 
 **Board-Einstellungen** erreicht man **am jeweiligen Board** (Button in der Board-Ansicht, nur für Eigentümer/Admin sichtbar) → `/intern/board/{id}/einstellungen`, **nicht** über die Startseite.
 
@@ -677,6 +685,27 @@ vor der Erstellung gegen die WebDAV-Pfadregeln und die 255-Byte-Grenze geprüft.
 Während „Neu laden“ bleibt das Dokument schreibgeschützt, damit neu eingetippter
 Text nicht durch die eintreffende Antwort verloren geht.
 
+Aus der registrierten, gespeicherten Verlaufsprotokolldatei kann im Dokumentkopf
+ein **Ergebnisprotokoll** erstellt oder wieder geöffnet werden. Der Dateiname wird
+pro Bereich mit denselben Platzhaltern wie die Verlaufsprotokolldatei konfiguriert
+und lautet standardmäßig `Ergebnisprotokoll.md`. Die Ergebnisdatei liegt
+ausschließlich im selben Nextcloud-Sitzungsordner;
+der Inhalt wird weder in PostgreSQL noch im lokalen Upload-Verzeichnis gespiegelt.
+Bei der initialen Erzeugung wird der vollständige technische YAML-Kopf des
+Verlaufsprotokolls vor den Ergebnisinhalt kopiert. Der sichtbare H1-Titel folgt
+direkt auf die schließende Frontmatter-Zeile, ohne zusätzliche Leerzeile. Dadurch ist auch das
+Ergebnisprotokoll direkt als PDF exportierbar. Der Export akzeptiert serverseitig
+ausschließlich die registrierte Verlaufsprotokolldatei oder die aus dem aktuellen
+Bereichsschema berechnete Ergebnisprotokolldatei. In Dateiübersicht und Editor
+werden beide Typen als „Verlaufsprotokoll“ beziehungsweise „Ergebnisprotokoll“
+gekennzeichnet; Sitzungsdaten-, Mitglieder-, Gäste-, Tagesordnungs- und
+Finanzwerkzeuge bleiben auf das Verlaufsprotokoll beschränkt.
+Die erstmalige Anlage ist exklusiv. Existiert die Datei bereits, wird sie geöffnet
+und niemals durch einen neu erkannten Entwurf ersetzt. Spätere Speicherungen laufen
+über dieselben Bereichs-, Sitzungs-, Pfad-, Größen- und Dateiidentitätsprüfungen wie
+andere Markdown-Dokumente. Das Verlaufsprotokoll wird dabei nie verändert. Der
+Einstieg ist gesperrt, solange es dort ungespeicherte Änderungen gibt.
+
 ### Mitglieder und Anwesenheit
 
 Im eigenständigen Dokumenteditor öffnet „Sitzungsdaten“ einen modalen Vorbereitungsbereich
@@ -741,8 +770,8 @@ werden beim Laden im Editor und serverseitig beim Speichern konsistent erzeugt.
 
 ### Datei-Upload und PDF-Editor
 
-Im Dokumenteditor lädt „Bild einfügen“ ein Bild in `attachments` neben der
-geöffneten Markdown-Datei. Der Server prüft die Dokumentberechtigung und
+Im Dokumenteditor lädt „Bild“ ein Bild in `attachments` neben der geöffneten
+Markdown-Datei. Der Server prüft die Dokumentberechtigung und
 Dateiidentität, dekodiert PNG/JPEG/WebP/GIF (maximal 5 MB und 16 Megapixel) und
 legt eine metadatenbereinigte PNG-Datei mit eindeutigem Namen exklusiv ab.
 GIFs werden dabei als Standbild übernommen. Der relative Markdown-Verweis
@@ -872,25 +901,53 @@ optionale Protokollerweiterung des `DocumentEditor`; andere Markdown-Dateien
 werden unverändert ohne Anwesenheits- oder Finanzsynchronisierung gespeichert.
 Eine inzwischen geänderte Protokollzuordnung erfordert erneutes Öffnen.
 
+Die Ergebnisprotokoll-Arbeitsansicht zeigt links die schreibgeschützte Quelle und
+rechts den frei bearbeitbaren Entwurf. Eine deterministische Markdown-Analyse
+ordnet Blöcke anhand von `Beschluss`, `Beschlossen`, `Abstimmung`,
+`Abstimmungsergebnis`, `Ergebnis`, `Feststellung`, `Aufgabe`, `Zuständig`,
+`Zuständigkeit` und `Frist` den vorhandenen TOP-Überschriften zu. Frontmatter,
+Codeblöcke, bloße Wortvorkommen und leere Platzhalter werden nicht automatisch
+übernommen. Die Erkennung bleibt bewusst konservativ und formuliert nichts um.
+Der technische YAML-Kopf wird unabhängig von dieser Inhaltsauswahl vollständig
+übernommen und ist kein auswählbarer Ergebnisblock.
+Vorschläge können abgewählt und andere semantische Blöcke manuell ergänzt werden.
+Unsichtbare Markdown-Kommentare begrenzen übernommene Blöcke, damit unabhängige
+manuelle Ergänzungen erhalten bleiben; fehlt ein Marker, wird Inhalt vorsichtshalber
+nicht automatisch gelöscht. Bearbeitete übernommene Blöcke erfordern vor der
+Abwahl eine Bestätigung. Vorhandene Ergebnisdateien werden weder automatisch neu
+generiert noch später mit der Quelle synchronisiert. Quell- und Ergebnisspalte
+scrollen auf dem Desktop bidirektional gekoppelt. Die Auswahl liegt an der inneren
+Kante der Quellspalte und kennzeichnet enthaltene Blöcke deutlich. Beim Ergänzen
+bleiben Quellreihenfolge und benötigte Zwischenüberschriften erhalten; insbesondere
+stehen Anwesenheitsabschnitte weiterhin vor den TOPs. Verwaltungsmarker fügen keine
+zusätzlichen sichtbaren Leerzeilen ein.
+
 Der Editor füllt den Viewport ohne äußeren Seitenscroll. Kopfzeile und separate
 Formatierungsleiste bleiben sichtbar; Dokument und rechte Werkzeugliste scrollen
-unabhängig. Mobil wird die Werkzeugliste über dem Dokument eingeblendet. Die
+unabhängig. Unter dem sichtbaren Dokument bleibt ein rein visueller, nicht
+gespeicherter Scrollraum, damit sich die letzte Schreibzeile ungefähr bis zur
+Viewportmitte hochschieben lässt. Mobil wird die Werkzeugliste über dem Dokument eingeblendet. Die
 Gliederung navigiert zu Überschriften, markiert den aktuellen Abschnitt und schreibt
 kein Inhaltsverzeichnis in den Quelltext. Protokolle mit Board erhalten zusätzlich
-kompakte Finanzanträge mit Suche, Filtern, TOP-Eingabe, Drag-and-drop und Sprung zum TOP.
+kompakte Finanzanträge ohne ausklappbaren Detailbereich, mit Suche, Filtern,
+TOP-Eingabe, Drag-and-drop und Sprung zum TOP.
 „Sitzungsdaten“ enthält die seltener benötigten Protokolleingaben.
 Der Kopfbereich ist kompakt; der Chevron rechts in der grauen Werkzeugleiste
 blendet nur den Dateikopf mit Speichern, Neu laden, Exportieren und Sitzungsdaten aus
 bzw. wieder ein. Ansichtsauswahl, Suchen und die abgetrennten Formatierungswerkzeuge
 (einschließlich „Tabellen“ ohne Zusatzsymbol) bleiben in dieser Reihenfolge in der
-grauen Leiste. „Tagesordnung aktualisieren“ folgt für Protokolle nach den Werkzeugen.
+grauen Leiste. Wenn Bild-Uploads verfügbar sind, steht „Bild“ direkt hinter
+„Tabellen“ in derselben Formatierungsgruppe. „Tagesordnung aktualisieren“ folgt
+für Protokolle abgesetzt nach den Werkzeugen.
 Seitenleisten-Schalter und Chevron liegen außerhalb des horizontal scrollenden
 Bereichs und bleiben auch mobil erreichbar. Suchfeld und Fehlerhinweise bleiben
 bei Bedarf unter der Leiste sichtbar; Strg/Cmd+S und Strg/Cmd+F funktionieren auch eingeklappt.
 
 Die Formatierungsleiste nutzt reine Texttransformationen in `markdown-formatting.ts`:
-H1/H2/H3, Aufzählungen, nummerierte Listen, Fett, Kursiv, Unterstreichen (`<u>`),
-Zitat, Inline-Code und Tabellenraster. Tabellen bleiben im gewählten Modus mit
+H1/H2/H3/H4/H5, Aufzählungen, nummerierte Listen, Fett, Kursiv, Unterstreichen (`<u>`),
+Zitat und Tabellenraster. Bereits vorhandener Inline-Code bleibt in allen Ansichten
+erhalten und editierbar. Zitate werden mit Einrückung und Seitenlinie, aber ohne
+sichtbaren `>`-Marker dargestellt. Tabellen bleiben im gewählten Modus mit
 markierter erster Kopfzelle. Live- und Quelltextmodus unterstützen Rückgängig/
 Wiederholen; Strg/Cmd+B/I/U formatiert, Strg/Cmd+S speichert. Vorschau bleibt
 schreibgeschützt. Die Bedienung benötigt keine neue Produktionsabhängigkeit.
@@ -937,7 +994,10 @@ selbst erzeugtes, escaptes Inline-HTML. Browser-veränderte DOM-Kinder werden ni
 durch React reconciliert; die Auswahl wird über Quelltextpositionen wiederhergestellt.
 Eingefügter Text wird ausschließlich als Klartext übernommen, Pipes in Zellen werden
 escaped. Klick, Pfeiltasten, Zeilenumbrüche, mehrzeiliges Einfügen und Undo/Redo
-werden unterstützt. Codeblöcke bleiben im Live-Modus als Quelltext editierbar.
+werden unterstützt. Nummerierte Listen werden beim Ein- und Ausrücken pro Ebene
+neu nummeriert und als hierarchische Nummern wie `2.1.` und `2.2.` dargestellt;
+dieselbe Zählung gilt in Vorschau und PDF. Codeblöcke bleiben im Live-Modus als
+Quelltext editierbar.
 „Bearbeiten“ bietet weiterhin das vollständige Markdown-Textfeld, „Vorschau“
 bleibt schreibgeschützt. Im Live-Modus werden verwaltete Anwesenheit und
 Tagesordnung beim Verlassen des Editors abgeglichen, damit während des Tippens
@@ -953,6 +1013,9 @@ werden übernommen, eigene Notizen bleiben erhalten; alte verwaltete
 Inhaltsverzeichnisse werden umgestellt. Nach dem ersten Einfügen wird die Liste
 bei Textänderungen automatisch aktualisiert. Tagesordnung und Vorschau verwenden
 dieselbe Erkennung und deduplizierte Markdown-Anker; Codeblöcke sind ausgeschlossen.
+TOP-Überschriften unterhalb von Ebene 2 werden in der Tagesordnung entsprechend
+ihrer Überschriftenebene als eingerückte Unterpunkte dargestellt. Die Einträge
+werden im Editor, in der Vorschau und im PDF ohne Aufzählungszeichen gerendert.
 Markdown-Dateien sind für die In-App-Bearbeitung auf 2 MB
 begrenzt; größere Dateien bleiben über Nextcloud zugänglich.
 
@@ -965,7 +1028,8 @@ Ziehen zeigt eine sichtbare Einfügemarke die tatsächliche Textposition unter
 der Maus (einschließlich Umbrüchen und Scrollposition); Ablegen ersetzt keine
 vorherige Textauswahl. In der Vorschau ist auch das Einfügen deaktiviert.
 Beim Einfügen entsteht ein zentral
-formatierter Markdown-Block. Seine stabile Karten-ID steht nicht nur in
+formatierter Markdown-Block mit einer `### TOP …`-Überschrift. Bereits vorhandene
+Blöcke mit `## TOP …` bleiben für die Kartenrelation erkennbar. Seine stabile Karten-ID steht nicht nur in
 HTML-Kommentaren, sondern zusätzlich im normalen HTTPS-Link zur Kartenseite;
 dadurch kann Gremio die Relation auch dann erkennen, wenn ein Editor Kommentare
 entfernt. Die Markerhaltung muss bei einem konkret eingesetzten

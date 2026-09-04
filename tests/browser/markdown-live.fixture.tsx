@@ -26,7 +26,8 @@ createRoot(document.getElementById("root")!).render(
       return { reference: "attachments/Testbild.png", alt: "Testbild" };
     } } : undefined}
     protocol={protocolMode ? {
-      areaId: 1, members: [], guests: [], suggestions: [], hasLinkedBoard: false, cardBaseUrl: "https://example.invalid/intern/card", logos: [],
+      areaId: 1, members: [], guests: [], suggestions: [{ id: 7, number: "FA 7", title: "Testantrag", applicant: "Antragsteller Test", amount: 12500, priority: null, assignedSession: "Sitzung September" }], hasLinkedBoard: true, cardBaseUrl: "https://example.invalid/intern/card", logos: [],
+      resultProtocol: { href: "#result", exists: false },
       memberAction: async () => ({ members: [] }), guestAction: async () => ({ guests: [] }), exportAction: async () => ({ success: "PDF gespeichert" }),
     } : undefined} />
 );

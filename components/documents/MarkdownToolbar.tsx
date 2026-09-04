@@ -5,7 +5,7 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { MarkdownCommand } from "@/lib/markdown-formatting";
 
-export function MarkdownToolbar({ disabled, onCommand, onCapture, leading, after, trailing }: { disabled: boolean; onCommand: (command: MarkdownCommand) => void; onCapture: () => void; leading?: ReactNode; after?: ReactNode; trailing?: ReactNode }) {
+export function MarkdownToolbar({ disabled, onCommand, onCapture, leading, formattingAfter, after, trailing }: { disabled: boolean; onCommand: (command: MarkdownCommand) => void; onCapture: () => void; leading?: ReactNode; formattingAfter?: ReactNode; after?: ReactNode; trailing?: ReactNode }) {
   const [tableOpen, setTableOpen] = useState(false);
   const tablePickerId = useId();
   const [size, setSize] = useState({ rows: 2, columns: 3 });
@@ -44,13 +44,14 @@ export function MarkdownToolbar({ disabled, onCommand, onCapture, leading, after
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [tableOpen, disabled]);
-  const buttons: [MarkdownCommand, string, string][] = [["h1", "H1", "Überschrift 1"], ["h2", "H2", "Überschrift 2"], ["h3", "H3", "Überschrift 3"], ["bold", "F", "Fettdruck"], ["italic", "K", "Kursiv"], ["underline", "U", "Unterstrichen"], ["bullet", "• Liste", "Aufzählung"], ["ordered", "1. Liste", "Nummerierte Liste"], ["quote", "Zitat", "Zitat"], ["code", "Code", "Code"]];
+  const buttons: [MarkdownCommand, string, string][] = [["h1", "H1", "Überschrift 1"], ["h2", "H2", "Überschrift 2"], ["h3", "H3", "Überschrift 3"], ["h4", "H4", "Überschrift 4"], ["h5", "H5", "Überschrift 5"], ["bold", "F", "Fettdruck"], ["italic", "K", "Kursiv"], ["underline", "U", "Unterstrichen"], ["bullet", "• Liste", "Aufzählung"], ["ordered", "1. Liste", "Nummerierte Liste"], ["quote", "Zitat", "Zitat"]];
   return <div ref={toolbar} data-document-toolbar className="relative flex min-w-0 items-center gap-2 border-t border-slate-100 bg-slate-50/80 px-3 py-1.5 sm:px-4" onKeyDown={e => { if (e.key === "Escape") setTableOpen(false); }}>
     <div data-document-toolbar-scroll className="flex min-w-0 flex-1 items-center overflow-x-auto">
     {leading && <div className="mr-3 flex shrink-0 items-center gap-2 border-r border-slate-200 pr-3">{leading}</div>}
     <div role="group" aria-label="Markdown formatieren" className="flex shrink-0 items-center gap-1">
       {buttons.map(([command, text, title]) => <button key={String(command)} type="button" disabled={disabled} title={title} aria-label={title} onMouseDown={e => { e.preventDefault(); onCapture(); }} onClick={() => onCommand(command)} className={`min-h-8 min-w-8 shrink-0 rounded px-2.5 py-1.5 text-[13px] text-slate-600 hover:bg-slate-200 focus-visible:bg-slate-200 focus-visible:outline-none disabled:opacity-40 ${command === "bold" ? "font-bold" : command === "italic" ? "italic" : command === "underline" ? "underline" : "font-medium"}`}>{text}</button>)}
       <button ref={tableButton} type="button" disabled={disabled} aria-expanded={tableOpen} aria-controls={tablePickerId} className="min-h-8 min-w-8 shrink-0 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-40" onMouseDown={e => { e.preventDefault(); onCapture(); }} onClick={() => setTableOpen(!tableOpen)}>Tabellen</button>
+      {formattingAfter}
     </div>
     {after && <div className="ml-3 flex shrink-0 items-center border-l border-slate-200 pl-3">{after}</div>}
     </div>

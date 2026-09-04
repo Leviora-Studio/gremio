@@ -671,6 +671,7 @@ export const protocolAreas = pgTable("protocol_areas", {
   rootPath: text("root_path").notNull(),
   folderPattern: text("folder_pattern").notNull().default("{YYYY}-{MM}-{DD}"),
   filePattern: text("file_pattern").notNull().default("Protokoll.md"),
+  resultFilePattern: text("result_file_pattern").notNull().default("Ergebnisprotokoll.md"),
   templateId: integer("template_id")
     .references(() => protocolTemplates.id, { onDelete: "restrict" }),
   customTemplateMarkdown: text("custom_template_markdown").notNull().default(""),

@@ -27,20 +27,26 @@ import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { DocumentSearch } from "./DocumentSearch";
 
 type SaveResult = { content?: string; error?: string; success?: string; savedToNextcloud?: boolean };
-export type DocumentProtocolTools = {
+export type DocumentExportTools = {
+  areaId: number;
+  logos: ProtocolLogo[];
+  exportAction: (input: ProtocolExportInput) => Promise<ProtocolExportResult>;
+};
+export type DocumentProtocolTools = DocumentExportTools & {
   decisionTemplate?: string;
-  areaId: number; members: ProtocolMember[]; guests: ProtocolGuest[]; suggestions: ProtocolSuggestion[]; hasLinkedBoard: boolean; cardBaseUrl: string; logos: ProtocolLogo[];
+  members: ProtocolMember[]; guests: ProtocolGuest[]; suggestions: ProtocolSuggestion[]; hasLinkedBoard: boolean; cardBaseUrl: string;
   memberAction: (command: ProtocolMemberCommand) => Promise<ProtocolMemberResult>;
   guestAction: (command: ProtocolGuestCommand) => Promise<ProtocolGuestResult>;
-  exportAction: (input: ProtocolExportInput) => Promise<ProtocolExportResult>;
+  resultProtocol?: { href: string; exists: boolean };
 };
 type Snapshot = { markdown: string; selection: MarkdownSelection };
 
-export function DocumentEditor({ initialContent, filename, backHref, contextLabel, saveAction, reloadAction, protocol, images }: {
+export function DocumentEditor({ initialContent, filename, backHref, contextLabel, saveAction, reloadAction, protocol, exportTools, images }: {
   initialContent: string; filename: string; backHref: string; contextLabel: string;
   saveAction: (content: string, replanned?: number[]) => Promise<SaveResult>;
   reloadAction: () => Promise<{ content?: string; error?: string; members?: ProtocolMember[]; guests?: ProtocolGuest[] }>;
   protocol?: DocumentProtocolTools;
+  exportTools?: DocumentExportTools;
   images?: { areaId: number; sessionId: number; subfolder: string; uploadAction: (data: FormData) => Promise<MarkdownImageUploadResult> };
 }) {
   const [members, setMembers] = useState(protocol?.members ?? []);
@@ -261,7 +267,8 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
         <span role="status" className={`text-xs ${state.error ? "text-red-700" : dirty ? "text-amber-700" : "text-slate-500"}`}>{saving ? "Speichert …" : loading ? "Lädt …" : state.error ? "Bitte prüfen" : dirty ? "Ungespeichert" : "Gespeichert"}</span>
         <button type="button" className="btn-primary btn-sm !h-8 !px-3 !text-[13px]" disabled={busy || formDirty} onClick={save}>Speichern</button>
         <button type="button" className="btn-secondary btn-sm !h-8 !px-3 !text-[13px]" disabled={busy || formDirty} onClick={() => void reload()}>Neu laden</button>
-        {protocol && <ProtocolExportButton compact areaId={protocol.areaId} sourceName={filename} logos={protocol.logos} disabled={dirty || busy} action={protocol.exportAction} />}
+        {(exportTools ?? protocol) && <ProtocolExportButton compact areaId={(exportTools ?? protocol)!.areaId} sourceName={filename} logos={(exportTools ?? protocol)!.logos} disabled={dirty || busy} action={(exportTools ?? protocol)!.exportAction} />}
+        {protocol?.resultProtocol && <button type="button" className="btn-secondary btn-sm !h-8 !px-3 !text-[13px]" disabled={dirty || busy} title={dirty ? "Bitte das Verlaufsprotokoll zuerst speichern." : undefined} onClick={() => { if (dirty) return setState({ error: "Bitte das Verlaufsprotokoll zuerst speichern, damit der aktuelle Stand verwendet wird." }); window.location.assign(protocol.resultProtocol!.href); }}>{protocol.resultProtocol.exists ? "Ergebnisprotokoll öffnen" : "Ergebnisprotokoll erstellen"}</button>}
         {protocol && <button type="button" onClick={() => setSessionOpen(true)} className={`btn-secondary btn-sm !h-8 !px-3 !text-[13px] ${formDirty ? "text-amber-700" : ""}`}>Sitzungsdaten{formDirty ? " •" : ""}</button>}
       </div>
       </div>
@@ -270,10 +277,8 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
         <div className="flex shrink-0 rounded-md bg-slate-100 p-0.5" role="group" aria-label="Editoransicht">{[["live", "Live Vorschau"], ["edit", "Bearbeiten"], ["preview", "Vorschau"]].map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} disabled={loading} onMouseDown={() => capture()} onClick={() => { change(normalize(content)); setMode(value as typeof mode); clearDrop(); }} className={`min-h-8 rounded px-3 py-1.5 text-[13px] ${mode === value ? "bg-white font-medium text-brand-700 shadow-sm" : "text-slate-500"}`}>{label}</button>)}</div>
         <button ref={searchButton} type="button" aria-label="Dokument durchsuchen" aria-expanded={searchOpen} aria-controls="document-search" title="Im Dokument suchen (Strg/Cmd+F)" onClick={openSearch} className={`flex min-h-8 shrink-0 items-center gap-1.5 px-2 text-[13px] ${searchOpen ? "text-brand-700" : "text-slate-500 hover:text-brand-700"}`}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>Suchen</button>
         </>}
-        after={(images || protocol) && <>
-          {images && <><button type="button" disabled={busy || mode === "preview"} className="min-h-8 shrink-0 px-2 text-[13px] text-slate-600 hover:text-brand-700 disabled:opacity-40" title="Bild auswählen und unter attachments ablegen (maximal 5 MB)" onMouseDown={event => { event.preventDefault(); capture(); }} onClick={() => { imageAnchor.current = { source: content, selection: { ...capture() } }; imageInput.current?.click(); }}>{uploadingImage ? "Bild lädt …" : "Bild einfügen"}</button><input ref={imageInput} type="file" aria-label="Bild auswählen" className="sr-only" accept="image/png,image/jpeg,image/gif,image/webp" tabIndex={-1} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadImage(file); }} /></>}
-          {protocol && <button type="button" onClick={() => change(upsertAgenda(content))} disabled={busy} className="min-h-8 shrink-0 px-2 text-[13px] text-slate-600 hover:text-brand-700">Tagesordnung aktualisieren</button>}
-        </>}
+        formattingAfter={images && <><button type="button" disabled={busy || mode === "preview"} className="min-h-8 shrink-0 rounded px-2.5 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:bg-slate-200 focus-visible:outline-none disabled:opacity-40" title={uploadingImage ? "Bild wird hochgeladen …" : "Bild auswählen und unter attachments ablegen (maximal 5 MB)"} onMouseDown={event => { event.preventDefault(); capture(); }} onClick={() => { imageAnchor.current = { source: content, selection: { ...capture() } }; imageInput.current?.click(); }}>Bild</button><input ref={imageInput} type="file" aria-label="Bild auswählen" className="sr-only" accept="image/png,image/jpeg,image/gif,image/webp" tabIndex={-1} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadImage(file); }} /></>}
+        after={protocol && <button type="button" onClick={() => change(upsertAgenda(content))} disabled={busy} className="min-h-8 shrink-0 px-2 text-[13px] text-slate-600 hover:text-brand-700">Tagesordnung aktualisieren</button>}
         trailing={<>
         <button type="button" aria-label={sidebarOpen ? "Werkzeuge ausblenden" : "Werkzeuge einblenden"} title={sidebarOpen ? "Werkzeuge ausblenden" : "Werkzeuge einblenden"} aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)} className="hidden h-8 w-8 shrink-0 items-center justify-center rounded text-slate-600 hover:bg-slate-100 md:inline-flex"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg></button>
         <button type="button" aria-label={mobileSidebar ? "Schließen" : "Werkzeuge"} title={mobileSidebar ? "Werkzeuge schließen" : "Werkzeuge öffnen"} aria-expanded={mobileSidebar} onClick={() => setMobileSidebar(!mobileSidebar)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-brand-700 hover:bg-slate-100 md:hidden"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg></button>
@@ -308,6 +313,7 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
           </div>}
           <p className="mt-3 text-xs text-slate-400">Speichern überschreibt diese Datei in Nextcloud, auch externe Änderungen.</p>
         </div>
+        <div aria-hidden="true" data-document-end-space className="h-[45dvh] min-h-48 max-h-[32rem]" />
       </div>
       <aside aria-label="Dokumentwerkzeuge" className={`${mobileSidebar ? "absolute inset-y-0 right-0 z-10 flex w-[min(24rem,100%)] shadow-xl" : "hidden"} ${sidebarOpen ? "md:relative md:flex md:w-80 md:shadow-none lg:w-96" : "md:hidden"} min-h-0 shrink-0 flex-col border-l border-slate-200 bg-slate-50`}>
         <div className="flex shrink-0 gap-1 border-b border-slate-200 p-3" role="tablist" aria-label="Dokumentwerkzeuge" onKeyDown={e => { if (!protocol?.hasLinkedBoard || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return; e.preventDefault(); const next = e.key === "Home" ? "outline" : e.key === "End" ? "finance" : tab === "outline" ? "finance" : "outline"; setTab(next); e.currentTarget.querySelector<HTMLButtonElement>(`#document-${next}-tab`)?.focus(); }}>

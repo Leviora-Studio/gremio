@@ -151,6 +151,12 @@ def render(request):
         return dict(resources[url])
 
     body_html = markdown.markdown(body, extensions=["extra", "sane_lists", "nl2br", "tables"])
+    body_html = re.sub(
+        r"<!--\s*gremio:agenda:start\s*-->(.*?)<!--\s*gremio:agenda:end\s*-->",
+        r'<div class="gremio-agenda">\1</div>',
+        body_html,
+        flags=re.S,
+    )
     sanitizer = SafeBody()
     sanitizer.feed(body_html)
     body_html = original.add_heading_ids("".join(sanitizer.parts))
@@ -159,7 +165,7 @@ def render(request):
     title = " ".join("".join(heading.parts).split()) or request["sourceName"].rsplit(".", 1)[0]
     document = f'''<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
 <title>{html.escape(title)}</title><meta name="author" content="{html.escape(author)}">
-<style>{''.join(font_css)}{original.CSS} main img {{max-width: 100%; height: auto;}}</style></head><body>
+<style>{''.join(font_css)}{original.CSS} main img {{max-width: 100%; height: auto;}} .gremio-agenda > ul {{padding-left: 0;}} .gremio-agenda ul {{list-style: none;}} .gremio-agenda li::marker {{content: "";}} ol {{list-style: none; counter-reset: item;}} ol > li {{counter-increment: item;}} ol > li::before {{content: counters(item, ".") ". "; color: #6a6a6a;}}</style></head><body>
 {original.build_header_html(meta, logo_uri)}<main>{body_html}{build_signatures(meta)}</main></body></html>'''
     pdf = HTML(string=document, base_url="https://gremio.invalid/", url_fetcher=fetch).write_pdf(font_config=FontConfiguration())
     if denied:

@@ -12,9 +12,9 @@ import { WebDavPdfError } from "../lib/nextcloud";
 
 after(async () => { await pool.end(); });
 const user = { id: 1 } as User;
-const area = { id: 2, rootPath: "/Protokolle" } as ProtocolArea;
-const session = { id: 3, areaId: 2, folderName: "Sitzung", folderFileId: "folder-3", protocolPath: "/Protokolle/Sitzung/Protokoll.md", protocolFileId: "md-3" } as ProtocolSession;
-type Deps = NonNullable<Parameters<typeof exportProtocolPdf>[5]>;
+const area = { id: 2, name: "Bereich", rootPath: "/Protokolle", resultFilePattern: "Ergebnisprotokoll.md" } as ProtocolArea;
+const session = { id: 3, areaId: 2, folderName: "Sitzung", sessionDate: "2026-09-04", folderFileId: "folder-3", protocolPath: "/Protokolle/Sitzung/Protokoll.md", protocolFileId: "md-3" } as ProtocolSession;
+type Deps = NonNullable<Parameters<typeof exportProtocolPdf>[6]>;
 function setup() {
   const writes: { path: string; replace: boolean }[] = [];
   const renders: ProtocolPdfRenderInput[] = [];
@@ -38,34 +38,50 @@ function setup() {
 
 test("PDF export uses persisted Markdown/YAML, default or selected area logo and exclusive PDF write", async () => {
   const { deps, writes, renders, source } = setup();
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "Protokoll.pdf", logoId: null }, deps)).success);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "Protokoll.pdf", logoId: null }, deps)).success);
   assert.equal(renders[0].markdown, source);
   assert.equal(renders[0].sourceName, "Protokoll.md");
   assert.equal(renders[0].logo, Buffer.from("logo-5").toString("base64"));
   assert.deepEqual(writes, [{ path: "/Protokolle/Sitzung/Protokoll.pdf", replace: false }]);
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "Anderer Name.pdf", logoId: 4 }, deps)).success);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "Anderer Name.pdf", logoId: 4 }, deps)).success);
   assert.equal(renders[1].logo, Buffer.from("logo-4").toString("base64"));
+});
+
+test("PDF export accepts the configured result protocol and rejects other session Markdown files", async () => {
+  const { deps, renders } = setup();
+  const result = "---\ntitle: Ergebnis\n---\n# Ergebnisprotokoll\nBeschluss: Ja\n";
+  const resultDeps = {
+    ...deps,
+    readWebDavText: async (_credentials: unknown, sourcePath: string) => {
+      assert.equal(sourcePath, "/Protokolle/Sitzung/Ergebnisprotokoll.md");
+      return { content: result, stat: await deps.statWebDavEntry({} as never, sourcePath) };
+    },
+  };
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Ergebnisprotokoll.md", { filename: "Ergebnisprotokoll.pdf", logoId: null }, resultDeps)).success);
+  assert.equal(renders[0].markdown, result);
+  assert.equal(renders[0].sourceName, "Ergebnisprotokoll.md");
+  assert.match((await exportProtocolPdf(user, 2, 3, "Sitzung", "Notizen.md", { filename: "Notizen.pdf", logoId: null }, deps)).error!, /Nur das Verlaufs- oder Ergebnisprotokoll/);
 });
 
 test("PDF export includes sized images from the attachments subfolder", async () => {
   const { deps, renders } = setup();
   const source = '# Sitzung\n\n![Bild](attachments/Bild%20%C3%A4.png){width=240}\n';
   const imageDeps = { ...deps, readWebDavText: async () => ({content:source,stat:await deps.statWebDavEntry({} as never,session.protocolPath!)}), readWebDavImage: async (_c: unknown,path: string) => {assert.equal(path,'/Protokolle/Sitzung/attachments/Bild ä.png');return {bytes:Buffer.from('png'),mime:'image/png'};} };
-  assert.ok((await exportProtocolPdf(user,2,3,'Sitzung',{filename:'Export.pdf',logoId:null},imageDeps)).success);
+  assert.ok((await exportProtocolPdf(user,2,3,'Sitzung','Protokoll.md',{filename:'Export.pdf',logoId:null},imageDeps)).success);
   assert.ok(renders[0].images['attachments/Bild ä.png']);assert.equal(renders[0].markdown,source);
   const invalid = {...imageDeps,readWebDavText:async()=>({content:'![Bild](../secret.png)',stat:await deps.statWebDavEntry({} as never,session.protocolPath!)})};
-  assert.ok((await exportProtocolPdf(user,2,3,'Sitzung',{filename:'Export.pdf',logoId:null},invalid)).error);
+  assert.ok((await exportProtocolPdf(user,2,3,'Sitzung','Protokoll.md',{filename:'Export.pdf',logoId:null},invalid)).error);
 });
 
 test("export denies foreign logos/areas/sessions, invalid filenames, malformed YAML and collisions", async () => {
   const { deps, writes, renders } = setup();
-  for (const filename of ["../x.pdf", "/x.pdf", "x\\y.pdf", ".secret.pdf", "x.md", "x\0.pdf", "x.pdf "]) assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename, logoId: 4 }, deps)).error);
-  for (const [a, s, folder] of [[9, 3, "Sitzung"], [2, 9, "Sitzung"], [2, 3, "Anders"]] as const) assert.ok((await exportProtocolPdf(user, a, s, folder, { filename: "x.pdf", logoId: 4 }, deps)).error);
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 99 }, deps)).error);
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, { ...deps, canAccessProtocolArea: async () => false })).error);
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, { ...deps, readWebDavText: async () => ({ ...await deps.readWebDavText({} as never, ""), content: "---\ntitle: [\n---\n" }) })).error);
+  for (const filename of ["../x.pdf", "/x.pdf", "x\\y.pdf", ".secret.pdf", "x.md", "x\0.pdf", "x.pdf "]) assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename, logoId: 4 }, deps)).error);
+  for (const [a, s, folder] of [[9, 3, "Sitzung"], [2, 9, "Sitzung"], [2, 3, "Anders"]] as const) assert.ok((await exportProtocolPdf(user, a, s, folder, "Protokoll.md", { filename: "x.pdf", logoId: 4 }, deps)).error);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 99 }, deps)).error);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, { ...deps, canAccessProtocolArea: async () => false })).error);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, { ...deps, readWebDavText: async () => ({ ...await deps.readWebDavText({} as never, ""), content: "---\ntitle: [\n---\n" }) })).error);
   assert.equal(writes.length, 0); assert.equal(renders.length, 0);
-  assert.match((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, { ...deps, writeWebDavBinary: async () => false })).error!, /existiert bereits/);
+  assert.match((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, { ...deps, writeWebDavBinary: async () => false })).error!, /existiert bereits/);
 });
 
 test("export ignores YAML logos and never searches for a session logo.png", async () => {
@@ -78,9 +94,9 @@ test("export ignores YAML logos and never searches for a session logo.png", asyn
   for (const header of ["", "logo: custom.png\n", "logo: /private/logo.png\n"]) {
     const source = `---\n${header}sitzungsleitung: Anna\n---\n# Sitzung\n`;
     const overrides = { ...deps, readWebDavImage, readWebDavText: async () => ({ ...await deps.readWebDavText({} as never, ""), content: source }) };
-    assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: null }, { ...overrides, getProtocolLogos: async () => [] })).success);
+    assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: null }, { ...overrides, getProtocolLogos: async () => [] })).success);
     assert.equal(renders.at(-1)?.logo, null);
-    assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, overrides)).success);
+    assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, overrides)).success);
     assert.equal(renders.at(-1)?.logo, Buffer.from("logo-4").toString("base64"));
   }
   assert.equal(imageReads, 0);
@@ -94,10 +110,10 @@ test("export rechecks the session folder and hides external errors; no logo is s
     if (entry.type === "directory" && ++folderChecks === 2) entry.fileId = "replacement";
     return entry;
   } };
-  assert.match((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, changed)).error!, /verändert/);
+  assert.match((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, changed)).error!, /verändert/);
   assert.equal(writes.length, 0);
-  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: null }, { ...deps, getProtocolLogos: async () => [] })).success);
+  assert.ok((await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: null }, { ...deps, getProtocolLogos: async () => [] })).success);
   assert.equal(renders.at(-1)?.logo, null);
-  const failed = await exportProtocolPdf(user, 2, 3, "Sitzung", { filename: "x.pdf", logoId: 4 }, { ...deps, writeWebDavBinary: async () => { throw new Error("test-secret"); } });
+  const failed = await exportProtocolPdf(user, 2, 3, "Sitzung", "Protokoll.md", { filename: "x.pdf", logoId: 4 }, { ...deps, writeWebDavBinary: async () => { throw new Error("test-secret"); } });
   assert.ok(failed.error && !failed.error.includes("test-secret"));
 });

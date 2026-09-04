@@ -29,8 +29,8 @@ export const TEMPLATE_VARIABLES = [
   "created_at",
 ] as const;
 
-const AGENDA_START = "<!-- gremio:agenda:start -->";
-const AGENDA_END = "<!-- gremio:agenda:end -->";
+export const AGENDA_START = "<!-- gremio:agenda:start -->";
+export const AGENDA_END = "<!-- gremio:agenda:end -->";
 
 function dateParts(date: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -439,7 +439,7 @@ export function upsertAgenda(markdown: string): string {
   const body = source.slice(section.end, bodyEnd);
   const lines = headings
     .filter((heading) => /^TOP\b/i.test(heading.title))
-    .map((heading) => `- [${heading.title}](#${heading.slug})`);
+    .map((heading) => `${"    ".repeat(Math.max(0, heading.level - 2))}- [${heading.title}](#${heading.slug})`);
   const block = [AGENDA_START, ...(lines.length ? lines : ["_Noch keine TOP-Überschriften._"]), AGENDA_END].join("\n");
   const managed = /<!-- gremio:agenda:start -->[\s\S]*?<!-- gremio:agenda:end -->/g;
   let nextBody: string;
@@ -488,7 +488,7 @@ export function formatFinanceBlock(
   const literal = (value: string) => value.replace(/\\/g, "\\\\").replace(/([`*_{}\[\]<>#!|])/g, "\\$1").replace(/\r?\n/g, "\n  ");
   return [
     `<!-- gremio:finance:start card=${card.id} -->`,
-    `## TOP ${top.trim()} Finanzantrag ${literal(card.title).replace(/\n/g, " ")}`,
+    `### TOP ${top.trim()} Finanzantrag ${literal(card.title).replace(/\n/g, " ")}`,
     "",
     ...(card.fields ?? []).map(field => `- ${field.label}: ${literal(field.value)}`),
     `- [Finanzantrag in Gremio öffnen](${cardUrl})`,
@@ -500,7 +500,7 @@ export function formatFinanceBlock(
 export function extractFinanceLinks(markdown: string): { cardId: number; top: string }[] {
   const links: { cardId: number; top: string }[] = [];
   const seen = new Set<number>();
-  const headings = [...markdown.matchAll(/^##\s+TOP\s+([^\s]+).*$/gim)];
+  const headings = [...markdown.matchAll(/^#{2,3}\s+TOP\s+([^\s]+).*$/gim)];
   for (const match of markdown.matchAll(/(?:\(gremio-card:(\d+)\)|\[Finanzantrag in Gremio öffnen\]\(https?:\/\/[^)\s]+\/intern\/card\/(\d+)(?:[?#][^)]*)?\))/g)) {
     const cardId = Number(match[1] ?? match[2]);
     if (!Number.isInteger(cardId) || seen.has(cardId)) continue;

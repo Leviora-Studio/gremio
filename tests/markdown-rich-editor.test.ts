@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { escapeTableInput, inlineTokenMarkdown, parseInlineMarkdown, parseRichLine, richInlineHtml, tableCellRanges, type InlineToken } from "../lib/markdown-rich-editor";
+import { escapeTableInput, inlineTokenMarkdown, orderedListDisplayMarkers, parseInlineMarkdown, parseRichLine, richInlineHtml, tableCellRanges, type InlineToken } from "../lib/markdown-rich-editor";
 
 test("rich line offsets preserve the exact structural whitespace", () => {
   for (const source of ["##  Heading", "  ###\tHeading", "-  Item", "  3)\tItem", "> Quoted", "plain"]) {
@@ -13,6 +13,10 @@ test("rich line offsets preserve the exact structural whitespace", () => {
   assert.equal(parseRichLine("- Item").marker, "•");
   assert.equal(parseRichLine("2. Item").kind, "ordered");
   assert.equal(parseRichLine("#not-a-heading").kind, "plain");
+});
+test("nested ordered Markdown lists receive hierarchical display markers", () => {
+  const markers = orderedListDisplayMarkers("1. Eins\n2. Zwei\n    1. Unterpunkt\n    2. Weiterer Unterpunkt\n        1. Detail\n3. Drei");
+  assert.deepEqual([...markers.values()], ["1.", "2.", "2.1.", "2.2.", "2.2.1.", "3."]);
 });
 test("supported inline tokens round-trip without rewriting source", () => {
   const serialize = (token: InlineToken): string => inlineTokenMarkdown(token.type, token.children ? token.children.map(serialize).join("") : token.source, token.href);

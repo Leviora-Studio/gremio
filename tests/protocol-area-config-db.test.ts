@@ -24,9 +24,10 @@ test("area-local templates and ordered visible finance fields persist, without a
     await db.insert(cardAssignees).values({ cardId: card.id, userId: owner.id });
     await db.insert(attachments).values({ cardId: card.id, kind: "finance_request", filename: "Antrag.pdf", path: "unused-test-path", size: 1, mime: "application/pdf" });
     const decision = "\n**Beschluss**  \n\n{{raw}}\n";
-    const areas = await db.insert(protocolAreas).values(["A", "B"].map(name => ({ name: `${suffix}-${name}`, ownerId: owner.id, ncUrl: "https://example.invalid", ncUsername: "unused", ncPasswordEnc: "unused", rootPath: "/P", templateId: null, customTemplateMarkdown: `# Area ${name}\n`, boardId: board.id, sourceStatusId: status.id, decisionTemplateEnabled: true, decisionTemplateMarkdown: decision }))).returning();
+    const areas = await db.insert(protocolAreas).values(["A", "B"].map(name => ({ name: `${suffix}-${name}`, ownerId: owner.id, ncUrl: "https://example.invalid", ncUsername: "unused", ncPasswordEnc: "unused", rootPath: "/P", resultFilePattern: `Ergebnis-${name}-{date}.md`, templateId: null, customTemplateMarkdown: `# Area ${name}\n`, boardId: board.id, sourceStatusId: status.id, decisionTemplateEnabled: true, decisionTemplateMarkdown: decision }))).returning();
     areaIds.push(...areas.map(area => area.id));
     assert.equal(areas[0].customTemplateMarkdown, "# Area A\n"); assert.equal(areas[1].customTemplateMarkdown, "# Area B\n");
+    assert.equal(areas[0].resultFilePattern, "Ergebnis-A-{date}.md"); assert.equal(areas[1].resultFilePattern, "Ergebnis-B-{date}.md");
     assert.equal(areas[0].decisionTemplateMarkdown, decision); assert.deepEqual(areas[0].financeFields, []);
     assert.deepEqual((await getProtocolSuggestions(owner, areas[0]))[0].fields, []);
     const fields = [{ key: "assignee", enabled: true }, { key: "budget_title", enabled: true }, { key: "notes", enabled: true }, { key: "finance_request", enabled: true }, { key: "created_at", enabled: false }];

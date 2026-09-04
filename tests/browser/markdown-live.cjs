@@ -84,7 +84,9 @@ async function assertPixelParity(left, right, message) {
   assert.equal(await page.getByRole('group',{name:'Editoransicht',exact:true}).isVisible(),true);
   const toolbarOrder = await page.locator('[data-document-toolbar] button').evaluateAll(nodes=>nodes.map(el=>el.getAttribute('aria-label')||el.textContent));
   assert.deepEqual(toolbarOrder.slice(0,5),['Live Vorschau','Bearbeiten','Vorschau','Dokument durchsuchen','Überschrift 1']);
+  assert.deepEqual(toolbarOrder.slice(4,9),['Überschrift 1','Überschrift 2','Überschrift 3','Überschrift 4','Überschrift 5']);
   assert.ok(toolbarOrder.includes('Tabellen'));
+  assert.ok(!toolbarOrder.includes('Code'));
   const collapsedHeight = await header.evaluate(el=>el.getBoundingClientRect().height);
   assert.ok(collapsedHeight<=54 && expandedHeight-collapsedHeight>=40,`header did not collapse: ${expandedHeight} -> ${collapsedHeight}`);
   await page.locator('[data-document-toolbar-scroll]').evaluate(el=>{el.scrollLeft=el.scrollWidth;});
@@ -158,6 +160,7 @@ async function assertPixelParity(left, right, message) {
     '<!-- versteckter', 'Kommentar -->', '', 'Schluss', ''
   ].join('\n');
   await set(layoutSource);
+  assert.equal(await page.locator('[data-markdown-line="16"]').innerText(),'Ein Zitat mit Formatierung');
   await page.locator('[data-document-content]').evaluate(el=>{el.scrollTop=0;});
   const rendered = page.locator('[data-markdown-renderer]');
   const geometry = () => rendered.evaluate(root => {
@@ -172,6 +175,7 @@ async function assertPixelParity(left, right, message) {
   const liveImage = await rendered.screenshot({path:join(output, `layout-live-${width}.png`)});
   await page.getByRole('button',{name:'Vorschau',exact:true}).click();
   assert.equal(await rendered.locator('[contenteditable="true"]').count(),0,'preview must be read-only');
+  assert.equal(await page.locator('[data-markdown-line="16"]').innerText(),'Ein Zitat mit Formatierung');
   assert.equal(await rendered.getByRole('link',{name:'Link',exact:true}).getAttribute('href'),'https://example.invalid');
   assert.deepEqual(await geometry(),liveGeometry,'preview changes text metrics or element geometry');
   const previewImage = await rendered.screenshot({path:join(output, `layout-preview-${width}.png`)});
@@ -179,7 +183,9 @@ async function assertPixelParity(left, right, message) {
   await page.getByRole('button',{name:'Live Vorschau',exact:true}).click();
   assert.deepEqual(await geometry(),liveGeometry,'returning to live changes layout');
   const scroller = page.locator('[data-document-content]');
+  assert.ok(await scroller.evaluate(root => root.querySelector('[data-document-end-space]').getBoundingClientRect().height >= root.clientHeight * 0.35),'document end needs enough empty scroll space for comfortable editing');
   await scroller.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  assert.ok(await rendered.locator('[data-markdown-line]').last().evaluate(line => { const root=line.closest('[data-document-content]');return line.getBoundingClientRect().bottom<=root.getBoundingClientRect().top+root.clientHeight*0.7; }),'last document line should scroll above the lower screen edge');
   const scrollTop = await scroller.evaluate(el => el.scrollTop);
   const liveBottom = await scroller.screenshot({path:join(output, `layout-live-bottom-${width}.png`)});
   await page.getByRole('button',{name:'Vorschau',exact:true}).click();
@@ -221,7 +227,14 @@ async function assertPixelParity(left, right, message) {
   await select(line(1),9);await page.keyboard.press('Shift+Tab');assert.equal(await source(),'- Eins\n- Zwei Kind');
   await select(line(1),9);await page.keyboard.press('ControlOrMeta+z');assert.equal(await source(),'- Eins\n    - Zwei Kind');
   await select(line(1),9);await page.keyboard.press('Enter');await page.keyboard.type('Drei');assert.equal(await source(),'- Eins\n    - Zwei Kind\n    - Drei');
-  await set('1. Eins\n2. Zwei');await select(line(1),4);await page.keyboard.press('Tab');assert.equal(await source(),'1. Eins\n    2. Zwei');
+  await set('1. Eins\n2. Zwei\n3. Drei\n4. Vier');await select(line(2),2);await page.keyboard.press('Tab');
+  assert.equal(await source(),'1. Eins\n2. Zwei\n    1. Drei\n3. Vier');
+  assert.equal(await page.locator('[data-markdown-line="2"] [data-markdown-ordered-marker]').innerText(),'2.1.');
+  await select(line(2),4);await page.keyboard.press('Enter');await page.keyboard.type('Unterpunkt');
+  assert.equal(await source(),'1. Eins\n2. Zwei\n    1. Drei\n    2. Unterpunkt\n3. Vier');
+  assert.equal(await page.locator('[data-markdown-line="3"] [data-markdown-ordered-marker]').innerText(),'2.2.');
+  await select(line(3),5);await page.keyboard.press('Shift+Tab');
+  assert.equal(await source(),'1. Eins\n2. Zwei\n    1. Drei\n3. Unterpunkt\n4. Vier');
   await page.getByRole('button',{name:'Bearbeiten',exact:true}).click();await raw.fill('A\nB\nC');
   await raw.evaluate(el=>{el.focus();el.setSelectionRange(0,4);});await raw.press('Tab');
   assert.equal(await raw.inputValue(),'    A\n    B\nC');
@@ -273,8 +286,10 @@ async function assertPixelParity(left, right, message) {
   await set('| Name | Wert |\n| --- | --- |');await select(cells.nth(1),4);await page.keyboard.press('Tab');await page.keyboard.type('Anna');assert.equal(await source(),'| Name | Wert |\n| --- | --- |\n| Anna |  |');
   assert.deepEqual(errors,[]);console.log(`PASS ${width}: live characters, heading, inline typing, cell editing, table navigation, source preservation, save`);
   await page.goto(baseUrl+'?images');
+  const imageToolbar = await page.getByRole('group',{name:'Markdown formatieren',exact:true}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>node.textContent));
+  assert.equal(imageToolbar[imageToolbar.indexOf('Tabellen')+1],'Bild');
   await set('VorNach');await select(line(0),3);
-  await page.getByRole('button',{name:'Bild einfügen',exact:true}).click();
+  await page.getByRole('button',{name:'Bild',exact:true}).click();
   await page.getByLabel('Bild auswählen',{exact:true}).setInputFiles({name:'Testbild.png',mimeType:'image/png',buffer:picture});
   await page.waitForFunction(()=>typeof window.releaseImageUpload==='function');
   await select(line(0),7);await page.keyboard.type('X');
@@ -300,7 +315,7 @@ async function assertPixelParity(left, right, message) {
   await line(4).click();await page.keyboard.press('ControlOrMeta+Shift+z');assert.equal(await source(),resized);
   await page.getByRole('button',{name:'Speichern',exact:true}).click();assert.equal(await page.evaluate(()=>window.saved.at(-1).text),resized);
   await page.screenshot({path:join(output,`image-resized-${width}.png`)});
-  await page.getByRole('button',{name:'Bild einfügen',exact:true}).click();await page.getByLabel('Bild auswählen',{exact:true}).setInputFiles({name:'bad.png',mimeType:'image/png',buffer:picture});
+  await page.getByRole('button',{name:'Bild',exact:true}).click();await page.getByLabel('Bild auswählen',{exact:true}).setInputFiles({name:'bad.png',mimeType:'image/png',buffer:picture});
   await page.getByRole('alert').filter({hasText:'Test-Upload fehlgeschlagen'}).waitFor();assert.equal(await source(),resized);
   console.log(`PASS ${width}: image upload without lost typing, relative folder URL, corner resizing, persisted width, preview parity, undo/redo and failure safety`);
   const pasteImage = async (locator, name='clipboard.png') => locator.evaluate((element,{base64,name})=>{
@@ -341,9 +356,28 @@ async function assertPixelParity(left, right, message) {
   console.log(`PASS ${width}: clipboard images in live/raw mode, fresh caret, no fallback text, busy/error safety, undo and ordinary text paste`);
   await page.goto(baseUrl+'?protocol');
   await page.getByRole('heading',{name:'Protokoll.md',exact:true}).waitFor();
+  assert.equal(await page.getByRole('tabpanel',{name:'Finanzanträge'}).locator('details').count(),0,'finance cards must not contain an expandable details section');
+  assert.equal(await page.getByText('Antragsteller Test',{exact:true}).count(),0);
+  if(width>=768){await page.getByRole('textbox',{name:'TOP für Testantrag',exact:true}).fill('5.1');await page.getByRole('button',{name:'Einfügen',exact:true}).click();}
+  await page.getByRole('button',{name:'Bearbeiten',exact:true}).click();
+  if(width>=768)assert.match(await page.getByRole('textbox',{name:'Markdown-Dokument',exact:true}).inputValue(),/^### TOP 5\.1 Finanzantrag Testantrag$/m);
+  await page.getByRole('textbox',{name:'Markdown-Dokument',exact:true}).fill('# Sitzung\n\n## Tagesordnung\n\n## TOP 1 Hauptpunkt\n\n### TOP 1.1 Unterpunkt\n\n#### TOP 1.1.1 Detail');
+  await page.getByRole('button',{name:'Live Vorschau',exact:true}).click();
+  await page.getByRole('button',{name:'Tagesordnung aktualisieren',exact:true}).click();
+  const agendaRows = page.locator('[data-markdown-agenda-entry="true"]');
+  const agendaParent = agendaRows.filter({hasText:'TOP 1 Hauptpunkt'});
+  const agendaChild = agendaRows.filter({hasText:'TOP 1.1 Unterpunkt'});
+  const agendaDetail = agendaRows.filter({hasText:'TOP 1.1.1 Detail'});
+  assert.equal(await agendaRows.locator('[data-markdown-bullet]').count(),0,'agenda entries must not show bullets');
+  const [agendaParentBox,agendaChildBox,agendaDetailBox]=await Promise.all([agendaParent.locator('[data-rich-start]').boundingBox(),agendaChild.locator('[data-rich-start]').boundingBox(),agendaDetail.locator('[data-rich-start]').boundingBox()]);
+  assert.ok(agendaChildBox.x>=agendaParentBox.x+10 && agendaDetailBox.x>=agendaChildBox.x+10,'nested TOPs must be visibly indented in the agenda');
   const actions = await page.locator('#document-header-controls button').evaluateAll(nodes=>nodes.map(el=>el.getAttribute('aria-label')||el.textContent));
-  assert.deepEqual(actions,['Speichern','Neu laden','Protokoll exportieren','Sitzungsdaten']);
-  for(const name of ['Speichern','Neu laden','Protokoll exportieren','Sitzungsdaten'])assert.equal(await page.getByRole('button',{name,exact:true}).evaluate(el=>el.getBoundingClientRect().height),32);
+  assert.deepEqual(actions,['Speichern','Neu laden','Protokoll exportieren','Ergebnisprotokoll erstellen','Sitzungsdaten']);
+  for(const name of ['Speichern','Neu laden','Protokoll exportieren','Ergebnisprotokoll erstellen','Sitzungsdaten'])assert.equal(await page.getByRole('button',{name,exact:true}).evaluate(el=>el.getBoundingClientRect().height),32);
+  const resultAction=page.getByRole('button',{name:'Ergebnisprotokoll erstellen',exact:true});assert.equal(await resultAction.isDisabled(),true);
+  await page.getByRole('button',{name:'Speichern',exact:true}).click();assert.equal(await resultAction.isDisabled(),false);
+  await page.getByRole('button',{name:'Bearbeiten',exact:true}).click();await page.getByRole('textbox',{name:'Markdown-Dokument',exact:true}).fill('# Ungespeichert');assert.equal(await resultAction.isDisabled(),true);
+  await page.getByRole('button',{name:'Speichern',exact:true}).click();assert.equal(await resultAction.isDisabled(),false);
   await page.screenshot({path:join(output,`protocol-header-expanded-${width}.png`)});
   await page.getByRole('button',{name:'Kopfbereich ausblenden',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Sitzungsdaten',exact:true}).count(),0);

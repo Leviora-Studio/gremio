@@ -1,5 +1,14 @@
 # Gremio
 
+### Migration: Ergebnisprotokoll-Dateinamen
+
+`0064_flawless_cyclops.sql` ergänzt das pro Protokollbereich konfigurierbare
+Namensschema für Ergebnisprotokolle. Bestehende Bereiche erhalten automatisch
+`Ergebnisprotokoll.md` als Standard. Vor dem Update wie üblich ein
+Datenbankbackup anlegen und `npm run db:migrate` ausführen; der Containerstart
+verwendet weiterhin den bestehenden Migrationsablauf. Keine neuen Abhängigkeiten
+oder Umgebungsvariablen.
+
 ### Migration: Anweisungsformular pro Board
 
 `0063_hot_wolf_cub.sql` ergänzt die pro Board gespeicherte PDF-Vorlage für
@@ -47,6 +56,10 @@ Fünf Module teilen sich Nutzer, Gruppen und dasselbe Freigabemodell:
 
 Dazu kommt öffentliches **Feedback** (`/feedback`) als zweiter Eingangskanal
 neben dem Antragsformular.
+
+Die persönliche Startseite zeigt Aufgaben, Boards, Protokollbereiche,
+Finanzübersichten und Inventare. Unter „Startseite anpassen“ lassen sich alle
+Abschnitte ein- und ausblenden sowie in eine eigene Reihenfolge bringen.
 
 Stack: **Next.js (App Router) + React + TypeScript**, **PostgreSQL** (`pg` +
 Drizzle ORM), Tailwind CSS, `dnd-kit`, `zod`, iron-session, Custom-OIDC-Client
@@ -120,11 +133,14 @@ Apps, interaktiv unter `/api/public/docs`).
   Eigenständiger Vollbild-Markdown-Editor für alle `.md`/`.markdown`-Dateien im
   Sitzungsordner, mit festen Werkzeugleisten, Formatierungsschaltflächen,
   Tabellenraster und Gliederung. Die Live-Ansicht bleibt auch während des Tippens
-  formatiert; Tabellen werden direkt in den einzelnen Zellen bearbeitet.
+  formatiert; Tabellen werden direkt in den einzelnen Zellen bearbeitet und
+  eingerückte nummerierte Listen als hierarchische Nummern wie `2.1.` fortgeführt.
   Die Dokumentensuche (Strg/Cmd+F) bietet Treffermarkierung und Vor-/Zurück-Navigation
-  in allen drei Ansichten.
+  in allen drei Ansichten. Zusätzlicher visueller Leerraum unter dem Dokument lässt
+  die letzte Schreibzeile bei Bedarf bis etwa in die Bildschirmmitte scrollen, ohne
+  den gespeicherten Inhalt zu verändern.
   Protokolle erhalten zusätzlich die
-  Sitzungsverwaltung und Finanzanträge. Direktes Überschreiben beim Speichern, TOP-Tagesordnung und optionale
+  Sitzungsverwaltung und Finanzanträge. Direktes Überschreiben beim Speichern, hierarchisch eingerückte TOP-Tagesordnung ohne Aufzählungszeichen und optionale
   Finanzantrags-Verknüpfung. Der separate Bereich „Sitzungsdaten“ bietet außerdem
   bereichseigene Mitgliederlisten mit Sortierung sowie Anwesenheit und
   Stimmübertragungen je Sitzung als automatische Markdown-Tabelle. Sitzungsgäste
@@ -133,6 +149,22 @@ Apps, interaktiv unter `/api/public/docs`).
   integrierten Editor angesehen und bearbeitet werden (jeweils bis 25 MB).
   PNG-, JPEG-, GIF- und WebP-Bilder öffnen sich direkt im vorhandenen Bildviewer.
   Sitzungsinformationen werden per Formular direkt im YAML-Kopf gepflegt.
+  Aus der gespeicherten registrierten Protokolldatei lässt sich in einer
+  zweispaltigen Arbeitsansicht ein Ergebnisentwurf erstellen: Gremio erkennt
+  regelbasiert eindeutig bezeichnete Beschlüsse, Abstimmungen, Ergebnisse,
+  Aufgaben, Zuständigkeiten und Fristen je TOP; Vorschläge bleiben auswählbar und
+  der Entwurf frei bearbeitbar. Gespeichert wird ausschließlich die über die
+  Bereichseinstellungen benannte Datei im selben Nextcloud-Sitzungsordner; das
+  Namensschema unterstützt dieselben Platzhalter wie das Verlaufsprotokoll und
+  verwendet standardmäßig `Ergebnisprotokoll.md`. Das Verlaufsprotokoll
+  bleibt unverändert. Bei der ersten Erstellung wird dessen technischer YAML-Kopf
+  unverändert in das Ergebnisprotokoll übernommen. Beide Dokumenttypen sind in
+  der Dateiübersicht gekennzeichnet und lassen sich als PDF exportieren; nur das
+  Verlaufsprotokoll zeigt die Werkzeuge für Sitzungsdaten, Mitglieder, Gäste und
+  Finanzverknüpfungen. Die Erkennung fasst nichts sprachlich zusammen, und eine
+  bereits vorhandene Ergebnisdatei wird beim Öffnen nicht neu generiert oder
+  automatisch mit der Quelle synchronisiert. Beide Spalten scrollen gekoppelt;
+  übernommene Blöcke behalten ihre Quellreihenfolge und Abschnittsstruktur.
   PDF-Export mit bereichseigenen Logos und Standardlogo legt das PDF im selben
   Nextcloud-Sitzungsordner ab (IBM Plex, Kopfzeilen und Unterschriften nach dem
   bereitgestellten Konverter). Docker enthält die PDF-Laufzeit; lokale Einrichtung:

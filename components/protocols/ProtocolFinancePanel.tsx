@@ -3,7 +3,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 
 export type { ProtocolSuggestion } from "@/lib/protocols";
 import type { ProtocolSuggestion } from "@/lib/protocols";
@@ -25,7 +24,6 @@ export function ProtocolFinancePanel({ suggestions, linkedIds, disabled, tops, o
         <div className="flex items-center justify-between gap-2 text-xs text-slate-500"><span>{card.number || `Karte ${card.id}`}</span><span>{card.amount == null ? "—" : (card.amount / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })}</span></div>
         <h3 className="text-sm font-medium">{card.title}</h3>
         {linked && <span className="inline-block rounded bg-green-50 px-2 py-0.5 text-xs text-green-700">im Protokoll</span>}
-        <details className="text-xs text-slate-500"><summary className="cursor-pointer">Details</summary><div className="mt-2 space-y-1"><p>{card.applicant}</p>{card.assignedSession && <p>Zugeordnet: {card.assignedSession}</p>}<Link href={`/intern/card/${card.id}`} target="_blank" rel="noopener" className="text-brand-600 hover:underline">Antrag öffnen ↗</Link></div></details>
         {linked ? <div className="flex flex-wrap gap-3"><button type="button" onClick={() => onJump(card.id)} className="text-xs text-brand-600 hover:underline">Zum TOP springen</button><button type="button" disabled={disabled} onClick={() => onRemove(card.id)} className="text-xs text-slate-500 hover:underline disabled:opacity-40">Entfernen</button></div> : <div className="flex gap-2"><input aria-label={`TOP für ${card.title}`} className="input min-w-0 flex-1 text-sm" placeholder="TOP, z. B. 5.1" value={tops[card.id] ?? ""} onChange={e => onTop(card.id, e.target.value)} /><button type="button" disabled={disabled || !tops[card.id]?.trim()} className="btn-secondary btn-sm" onMouseDown={e => e.preventDefault()} onClick={() => onInsert(card)}>Einfügen</button></div>}
       </article>;
     })}

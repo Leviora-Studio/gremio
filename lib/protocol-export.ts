@@ -11,13 +11,14 @@ import { markdownImageLocation } from "@/lib/markdown-images";
 import { parseProtocolFrontmatter } from "@/lib/protocol-frontmatter";
 import { getProtocolLogos, getProtocolLogoBytes, normalizeProtocolLogo } from "@/lib/protocol-logos";
 import { renderProtocolPdf, type ProtocolPdfRenderInput } from "@/lib/protocol-pdf-renderer";
+import { renderResultProtocolFilename } from "@/lib/result-protocol-filename";
 
 export type ProtocolExportInput = { filename: string; logoId: number | null };
 export type ProtocolExportResult = { success?: string; error?: string };
 class ExportError extends Error {}
 const dependencies = { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials, readWebDavImage, readWebDavText, statWebDavEntry, writeWebDavBinary, getProtocolLogos, getProtocolLogoBytes, normalizeProtocolLogo, renderProtocolPdf };
 
-export async function exportProtocolPdf(user: User, areaId: number, sessionId: number, folderName: string, input: ProtocolExportInput, deps = dependencies): Promise<ProtocolExportResult> {
+export async function exportProtocolPdf(user: User, areaId: number, sessionId: number, folderName: string, sourceName: string, input: ProtocolExportInput, deps = dependencies): Promise<ProtocolExportResult> {
   try {
     if (!Number.isSafeInteger(areaId) || areaId < 1 || !Number.isSafeInteger(sessionId) || sessionId < 1) throw new ExportError("Ungültige Sitzung.");
     const area = await deps.getProtocolAreaById(areaId);
@@ -29,17 +30,25 @@ export async function exportProtocolPdf(user: User, areaId: number, sessionId: n
     const folderPath = protocolDeletionPath(area.rootPath, folderName);
     try { outputPath = protocolDeletionPath(area.rootPath, folderName, input.filename); }
     catch { throw new ExportError("Der PDF-Dateiname darf keine Pfadtrenner enthalten."); }
-    const sourceName = path.posix.basename(session.protocolPath);
-    if (protocolDeletionPath(area.rootPath, folderName, sourceName) !== session.protocolPath) throw new ExportError("Die Protokolldatei liegt nicht im Sitzungsordner.");
+    const protocolName = path.posix.basename(session.protocolPath);
+    if (protocolDeletionPath(area.rootPath, folderName, protocolName) !== session.protocolPath) throw new ExportError("Die Verlaufsprotokolldatei liegt nicht im Sitzungsordner.");
+    const isSourceProtocol = sourceName === protocolName;
+    if (!isSourceProtocol) {
+      let resultName: string;
+      try { resultName = renderResultProtocolFilename(area.resultFilePattern, area.name, session.folderName, session.sessionDate, protocolName); }
+      catch { throw new ExportError("Das Ergebnisprotokoll ist nicht eindeutig konfiguriert. Bitte die Bereichseinstellungen prüfen."); }
+      if (sourceName !== resultName) throw new ExportError("Nur das Verlaufs- oder Ergebnisprotokoll kann exportiert werden.");
+    }
+    const sourcePath = protocolDeletionPath(area.rootPath, folderName, sourceName);
     const creds = deps.protocolCredentials(area);
     const assertFolder = async () => {
       const folder = await deps.statWebDavEntry(creds, folderPath);
       if (folder.type !== "directory" || (session.folderFileId && folder.fileId !== session.folderFileId)) throw new ExportError("Der Sitzungsordner wurde verändert. Bitte neu laden.");
     };
     await assertFolder();
-    const sourceStat = await deps.statWebDavEntry(creds, session.protocolPath);
-    if (sourceStat.type !== "file" || (session.protocolFileId && sourceStat.fileId !== session.protocolFileId)) throw new ExportError("Die Protokolldatei wurde ersetzt. Bitte neu laden.");
-    const source = await deps.readWebDavText(creds, session.protocolPath);
+    const sourceStat = await deps.statWebDavEntry(creds, sourcePath);
+    if (sourceStat.type !== "file" || (isSourceProtocol && session.protocolFileId && sourceStat.fileId !== session.protocolFileId)) throw new ExportError("Die Protokolldatei wurde ersetzt oder entfernt. Bitte neu laden.");
+    const source = await deps.readWebDavText(creds, sourcePath);
     if (sourceStat.etag && source.stat.etag && sourceStat.etag !== source.stat.etag) throw new ExportError("Die Protokolldatei wurde während des Ladens geändert. Bitte erneut exportieren.");
     let parsed: ReturnType<typeof parseProtocolFrontmatter>;
     try { parsed = parseProtocolFrontmatter(source.content); } catch (cause) { throw new ExportError((cause as Error).message); }

@@ -60,6 +60,12 @@ export function Nav({ user }: { user: User }) {
             Boards
           </Link>
           <Link
+            href="/intern/protokolle"
+            className="font-medium text-slate-600 hover:text-brand-600"
+          >
+            Protokolle
+          </Link>
+          <Link
             href="/finanzen"
             className="font-medium text-slate-600 hover:text-brand-600"
           >
@@ -70,12 +76,6 @@ export function Nav({ user }: { user: User }) {
             className="font-medium text-slate-600 hover:text-brand-600"
           >
             Inventar
-          </Link>
-          <Link
-            href="/intern/protokolle"
-            className="font-medium text-slate-600 hover:text-brand-600"
-          >
-            Protokolle
           </Link>
           {(user.role === "admin" || user.role === "template_manager") && (
             <Link

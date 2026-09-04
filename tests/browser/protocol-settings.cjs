@@ -79,6 +79,9 @@ writeFileSync(join(output, 'index.html'), '<!doctype html><html lang="de"><meta 
       await section('Nextcloud / WebDAV').click();
       assert.deepEqual(await page.locator('[name="ncUrl"], [name="rootPath"], [name="ncUsername"], [name="ncPassword"]').evaluateAll(nodes => nodes.map(node => node.name)), ['ncUrl', 'rootPath', 'ncUsername', 'ncPassword']);
       await page.locator('[name="name"]').fill('Testbereich'); await page.locator('[name="ncUrl"]').fill('https://example.invalid/dav'); await page.locator('[name="ncUsername"]').fill('test'); await page.locator('[name="ncPassword"]').fill('test-only');
+      await section('Ordner, Dateinamen & Beschlussreferenz').click();
+      await page.locator('[name="resultFilePattern"]').fill('Ergebnis-{date}-{area}.md');
+      assert.ok((await page.getByText(/Ergebnis .*Ergebnis-2026-08-14-Testbereich\.md/).innerText()).includes('Ergebnis-2026-08-14-Testbereich.md'));
       await choose('Quellspalte', 'Geplant');
       await page.getByRole('button', { name: 'Protokollbereich anlegen', exact: true }).click(); await page.getByText('Gespeichert', { exact: true }).waitFor();
       const saved = await page.evaluate(() => window.savedSettings);
@@ -86,6 +89,9 @@ writeFileSync(join(output, 'index.html'), '<!doctype html><html lang="de"><meta 
       assert.deepEqual(saved.financeFields.filter(field => field.enabled).map(field => field.key), ['budget_title', 'applicant']);
       await page.reload();
       assert.equal(await page.locator('details.collapsible[open]').count(), 0);
+      await section('Ordner, Dateinamen & Beschlussreferenz').click();
+      assert.equal(await page.locator('[name="resultFilePattern"]').inputValue(), 'Ergebnis-{date}-{area}.md');
+      await section('Ordner, Dateinamen & Beschlussreferenz').click();
       await page.screenshot({ path: join(output, `settings-collapsed-${width}.png`), fullPage: true });
       await section('Finanzanträge').click();
       assert.equal(await page.getByRole('group', { name: 'Eigene Protokollvorlage', exact: true }).isVisible(), false);

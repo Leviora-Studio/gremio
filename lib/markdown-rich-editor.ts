@@ -3,6 +3,36 @@
 
 export type RichLine = { prefix: string; content: string; kind: "heading" | "bullet" | "ordered" | "quote" | "plain"; level?: number; marker?: string };
 
+const orderedLinePattern = /^([ \t]*)(\d+)[.)][ \t]+/;
+
+/** Visible hierarchical markers for semantically nested Markdown ordered lists. */
+export function orderedListDisplayMarkers(markdown: string): Map<number, string> {
+  const markers = new Map<number, string>();
+  let counters: number[] = [];
+  markdown.split("\n").forEach((line, index) => {
+    const match = orderedLinePattern.exec(line);
+    if (!match) {
+      if (line.trim()) counters = [];
+      return;
+    }
+    const width = match[1].replace(/\t/g, "    ").length;
+    const depth = Math.floor(width / 4);
+    const value = Number(match[2]);
+    if (depth === 0) counters = [value];
+    else {
+      if (depth > counters.length) {
+        counters = [];
+        markers.set(index, `${value}.`);
+        return;
+      }
+      counters.length = Math.min(counters.length, depth + 1);
+      counters[depth] = value;
+    }
+    markers.set(index, `${counters.slice(0, depth + 1).join(".")}.`);
+  });
+  return markers;
+}
+
 /** Split structural Markdown from the text users edit in the rich live mode. */
 export function parseRichLine(line: string): RichLine {
   let match = /^( {0,3})(#{1,6})[ \t]+(.*)$/.exec(line);

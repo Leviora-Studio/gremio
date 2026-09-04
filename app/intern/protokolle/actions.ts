@@ -58,6 +58,7 @@ import {
 import { protocolDeletionPath, resolveProtocolDeletionTarget } from "@/lib/protocol-deletion";
 import { changeProtocolMembers, getProtocolMembers, type ProtocolMember, type ProtocolMemberCommand, type ProtocolMemberResult } from "@/lib/protocol-members";
 import { syncProtocolAttendance } from "@/lib/protocol-markdown";
+import { renderResultProtocolFilename } from "@/lib/result-protocol-filename";
 import { changeProtocolGuests, getProtocolGuests, type ProtocolGuest, type ProtocolGuestCommand, type ProtocolGuestResult } from "@/lib/protocol-guests";
 
 export type ProtocolState = {
@@ -115,6 +116,7 @@ function validateConfig(formData: FormData, currentPassword?: string) {
   const rootPath = String(formData.get("rootPath") ?? "").trim();
   const folderPattern = String(formData.get("folderPattern") ?? "").trim();
   const filePattern = String(formData.get("filePattern") ?? "").trim();
+  const resultFilePattern = String(formData.get("resultFilePattern") ?? "").trim();
   const decisionRefPattern = String(formData.get("decisionRefPattern") ?? "").trim();
   const password = String(formData.get("ncPassword") ?? "") || currentPassword || "";
   const contentConfig = parseProtocolAreaContent(formData);
@@ -130,10 +132,11 @@ function validateConfig(formData: FormData, currentPassword?: string) {
   protocolDeletionPath(rootPath, "validation");
   renderSessionName(folderPattern, "2026-08-14", name);
   const sampleFolder = renderSessionName(folderPattern, "2026-08-14", name);
-  validateFilePattern(filePattern, "2026-08-14", name, sampleFolder);
+  const sampleFile = validateFilePattern(filePattern, "2026-08-14", name, sampleFolder);
+  renderResultProtocolFilename(resultFilePattern, name, sampleFolder, "2026-08-14", sampleFile);
   if (!decisionRefPattern) throw new Error("Das Beschlussreferenz-Muster ist erforderlich.");
   renderDecisionRef(decisionRefPattern, sampleFolder, "2026-08-14", "5.1");
-  return { name: name.slice(0, 120), description, ncUrl, ncUsername, password, rootPath, folderPattern, filePattern, decisionRefPattern, ...contentConfig, boardId, sourceStatusId };
+  return { name: name.slice(0, 120), description, ncUrl, ncUsername, password, rootPath, folderPattern, filePattern, resultFilePattern, decisionRefPattern, ...contentConfig, boardId, sourceStatusId };
 }
 
 async function validateAreaContent(value: ReturnType<typeof validateConfig>) {
@@ -200,6 +203,7 @@ export async function updateProtocolAreaAction(areaId: number, _prev: ProtocolSt
         rootPath: value.rootPath,
         folderPattern: value.folderPattern,
         filePattern: value.filePattern,
+        resultFilePattern: value.resultFilePattern,
         templateId: value.templateId,
         customTemplateMarkdown: value.customTemplateMarkdown,
         financeFields: value.financeFields,

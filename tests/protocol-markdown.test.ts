@@ -102,14 +102,14 @@ function agendaList(markdown: string): string {
   return markdown.split("<!-- gremio:agenda:start -->")[1].split("<!-- gremio:agenda:end -->")[0];
 }
 
-test("Tagesordnung wird einmalig als H2 angelegt und enthält ausschließlich TOP-Überschriften", () => {
-  const markdown = "# Sitzung\n\n## Anwesenheit\n\n## TOP 1 Begrüßung\n\n### Details\n\n### TOP 2.1 Finanzantrag\n\n## Sonstiges\n";
+test("Tagesordnung wird einmalig als H2 angelegt und bildet TOP-Überschriften hierarchisch ab", () => {
+  const markdown = "# Sitzung\n\n## Anwesenheit\n\n## TOP 1 Begrüßung\n\n### Details\n\n### TOP 1.1 Finanzantrag\n\n#### TOP 1.1.1 Ergänzung\n\n## TOP 2 Sonstiges\n";
   const once = upsertAgenda(markdown);
   assert.equal(upsertAgenda(once), once);
   assert.equal((once.match(/^## Tagesordnung$/gm) ?? []).length, 1);
   assert.equal((once.match(/gremio:agenda:start/g) ?? []).length, 1);
   assert.equal(hasManagedAgenda(once), true);
-  assert.equal(agendaList(once), "\n- [TOP 1 Begrüßung](#top-1-begrüßung)\n- [TOP 2.1 Finanzantrag](#top-21-finanzantrag)\n");
+  assert.equal(agendaList(once), "\n- [TOP 1 Begrüßung](#top-1-begrüßung)\n    - [TOP 1.1 Finanzantrag](#top-11-finanzantrag)\n        - [TOP 1.1.1 Ergänzung](#top-111-ergänzung)\n- [TOP 2 Sonstiges](#top-2-sonstiges)\n");
   assert.ok(once.endsWith(markdown.slice(markdown.indexOf("## Anwesenheit"))));
 });
 
@@ -184,6 +184,7 @@ test("Finanzblöcke tragen eine stabile Karten-ID und eine TOP-Nummer", () => {
     "5.1",
     "https://gremio.example/intern/card/42",
   );
+  assert.match(block, /^### TOP 5\.1 Finanzantrag Sommerfest$/m);
   assert.deepEqual(extractFinanceLinks(block), [{ cardId: 42, top: "5.1" }]);
   assert.match(block, /850,00\s€/);
   assert.match(block, /\/intern\/card\/42/);
@@ -192,6 +193,7 @@ test("Finanzblöcke tragen eine stabile Karten-ID und eine TOP-Nummer", () => {
     [{ cardId: 42, top: "5.1" }],
     "der normale HTTPS-Kartenlink ist auch ohne HTML-Kommentare stabil",
   );
+  assert.deepEqual(extractFinanceLinks(block.replace("### TOP", "## TOP")), [{ cardId: 42, top: "5.1" }], "bestehende Finanzblöcke mit H2 bleiben erkennbar");
 });
 
 test("Beschlussreferenz wird aus Sitzung und TOP erzeugt", () => {

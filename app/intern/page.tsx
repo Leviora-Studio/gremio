@@ -4,21 +4,26 @@
 import Link from "next/link";
 import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { boards as boardsTable, cards, userTaskPrefs } from "@/lib/db/schema";
+import { boards as boardsTable, cards, users, userTaskPrefs } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleBoards } from "@/lib/authz";
 import { getAccessibleFinanceBoards } from "@/lib/finance";
 import {
   sortByUserBoardOrder,
   sortByUserFinanceBoardOrder,
+  sortByUserInventoryBoardOrder,
 } from "@/lib/board-order";
+import { getAccessibleInventoryBoards } from "@/lib/inventory";
+import { getAccessibleProtocolAreas } from "@/lib/protocols";
+import { normalizeHomePref } from "@/lib/home-dashboard";
 import { loadTaskOverviewData } from "@/lib/task-overview-data";
 import { SortableBoardGrid } from "@/components/SortableBoardGrid";
 import { TaskOverview } from "@/components/TaskOverview";
 import { HomeDashboard } from "@/components/HomeDashboard";
 import { reorderBoardsAction } from "./actions";
 import { reorderFinanceBoardsAction } from "../finanzen/actions";
-import type { HomePref, TaskPrefs } from "./aufgaben/actions";
+import { reorderInventoryBoardsAction } from "./inventar/actions";
+import type { TaskPrefs } from "./aufgaben/actions";
 
 export default async function InternHome() {
   const user = await requireUser();
@@ -29,11 +34,7 @@ export default async function InternHome() {
     .where(eq(userTaskPrefs.userId, user.id))
     .limit(1);
   const prefs = (prefRow?.config as TaskPrefs) ?? {};
-  const home: HomePref = {
-    tasks: prefs.home?.tasks !== false,
-    boards: prefs.home?.boards !== false,
-    finances: prefs.home?.finances !== false,
-  };
+  const home = normalizeHomePref(prefs.home);
 
   // --- Meine Aufgaben ---
   const taskData = await loadTaskOverviewData(user);
@@ -137,6 +138,56 @@ export default async function InternHome() {
     </div>
   );
 
+  // --- Inventare ---
+  const inventoryBoards = await sortByUserInventoryBoardOrder(
+    user.id,
+    await getAccessibleInventoryBoards(user),
+  );
+  const inventoriesNode = (
+    <div className="space-y-3">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-2xl font-bold">Deine Inventare</h2>
+        <Link href="/intern/inventar/neu" className="btn-primary">+ Neues Inventar</Link>
+      </div>
+      {inventoryBoards.length === 0 ? (
+        <div className="card p-8 text-center text-slate-500">Du hast noch kein Inventar.</div>
+      ) : (
+        <SortableBoardGrid
+          hrefBase="/intern/inventar/"
+          action={reorderInventoryBoardsAction}
+          boards={inventoryBoards.map(board => ({ id: board.id, name: board.name, description: board.description, isOwner: board.ownerId === user.id }))}
+        />
+      )}
+    </div>
+  );
+
+  // --- Protokollbereiche ---
+  const protocolAreas = await getAccessibleProtocolAreas(user);
+  const protocolOwnerIds = [...new Set(protocolAreas.map(area => area.ownerId))];
+  const protocolOwners = protocolOwnerIds.length
+    ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, protocolOwnerIds))
+    : [];
+  const protocolOwnerNames = new Map(protocolOwners.map(owner => [owner.id, owner.username]));
+  const protocolsNode = (
+    <div className="space-y-3">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-2xl font-bold">Protokollbereiche</h2>
+        <Link href="/intern/protokolle/neu" className="btn-primary">Neuer Protokollbereich</Link>
+      </div>
+      {protocolAreas.length === 0 ? (
+        <div className="card p-8 text-center text-slate-500">Noch keine zugänglichen Protokollbereiche.</div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {protocolAreas.map(area => <Link key={area.id} href={`/intern/protokolle/${area.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
+            <h3 className="font-semibold text-brand-700">{area.name}</h3>
+            {area.description && <p className="mt-1 text-sm text-slate-600">{area.description}</p>}
+            <p className="mt-3 text-xs text-slate-500">Eigentümer: {protocolOwnerNames.get(area.ownerId) ?? `#${area.ownerId}`}</p>
+          </Link>)}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {archiveFailures.length > 0 && (
@@ -173,6 +224,8 @@ export default async function InternHome() {
         tasks={tasksNode}
         boards={boardsNode}
         finances={financesNode}
+        inventories={inventoriesNode}
+        protocols={protocolsNode}
       />
     </div>
   );

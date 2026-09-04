@@ -1,0 +1,1 @@
+ALTER TABLE "protocol_areas" ADD COLUMN "result_file_pattern" text DEFAULT 'Ergebnisprotokoll.md' NOT NULL;

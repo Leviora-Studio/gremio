@@ -36,13 +36,13 @@ const mocks = {
       return {success:'Hochgeladen'};
     }`,
   "@/lib/protocols": `
-    const area = { id:2, name:'Testbereich', rootPath:'/Protokolle', ncUrl:'https://example.invalid' };
-    const session = { id:3, folderName:'Sitzung', protocolPath:'/Protokolle/Sitzung/Protokoll.md', folderFileId:'folder-3' };
+    const area = { id:2, name:'Testbereich', rootPath:'/Protokolle', ncUrl:'https://example.invalid', resultFilePattern:'Ergebnisprotokoll.md' };
+    const session = { id:3, folderName:'Sitzung', sessionDate:'2026-09-04', protocolPath:'/Protokolle/Sitzung/Protokoll.md', folderFileId:'folder-3' };
     export const requireProtocolAreaAccess = async () => ({user:{},area});
     export const getProtocolSession = async () => session;
     export const syncProtocolSessionFile = async (a,s) => {window.syncs.push(window.folder);return s;};
     export async function listProtocolSessionFiles(a,s,folder='') {
-      const folders = {'':[['Anlagen ä','directory'],['Protokoll.md','file']], 'Anlagen ä':[['Details','directory'],['Notizen.md','file'],['Anlage.pdf','file'],['Bild.png','file']], 'Anlagen ä/Details':[]};
+      const folders = {'':[['Anlagen ä','directory'],['Protokoll.md','file'],['Ergebnisprotokoll.md','file']], 'Anlagen ä':[['Details','directory'],['Notizen.md','file'],['Anlage.pdf','file'],['Bild.png','file']], 'Anlagen ä/Details':[]};
       if (!(folder in folders)) throw Error('Missing folder');
       return [...folders[folder], ...[...window.uploads,...window.created].filter(item=>item.subfolder===folder).map(item=>[item.filename,'file'])].map(([name,type])=>({name,type,path:'/Protokolle/Sitzung/'+(folder?folder+'/':'')+name,fileId:null,mime:null,lastModified:null}));
     }`,
@@ -101,6 +101,8 @@ const mocks = {
       assert.equal(await page.getByRole('link',{name:'Test.txt',exact:true}).count(),0);
       await page.getByRole('navigation',{name:'Ordnerpfad'}).getByRole('link',{name:'Sitzung',exact:true}).click();
       await page.getByRole('heading',{name:'Dateien im Sitzungsordner',exact:true}).waitFor();
+      assert.equal(await page.getByText('Verlaufsprotokoll',{exact:true}).isVisible(),true);
+      assert.equal(await page.getByText('Ergebnisprotokoll',{exact:true}).isVisible(),true);
       assert.deepEqual(await page.evaluate(()=>window.syncs),['','']);
       await createMarkdown('Notizen','');
       assert.equal(await page.evaluate(()=>window.created[1].subfolder),'');
