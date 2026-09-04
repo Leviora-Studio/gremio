@@ -7,6 +7,7 @@ import { boardStatuses, cardAssignees, cards, type User } from "@/lib/db/schema"
 import { getAccessibleBoards } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
 import { getPriorities } from "@/lib/priorities";
+import { budgetDisplayForCards } from "@/lib/card-budget-db";
 
 export type TaskCardRow = {
   id: number;
@@ -103,6 +104,7 @@ export async function loadTaskOverviewData(
     : [];
 
   const boardName = new Map(boards.map((b) => [b.id, b.name]));
+  const budgetDisplay = await budgetDisplayForCards(raw.map((c) => c.id));
   const cardRows: TaskCardRow[] = raw.map((c) => ({
     id: c.id,
     boardId: c.boardId,
@@ -115,8 +117,8 @@ export async function loadTaskOverviewData(
     priorityId: c.priorityId,
     deadline: c.deadline,
     meeting: c.meeting,
-    budgetTitle: c.budgetTitle,
-    accountName: c.accountId ? (accountName.get(c.accountId) ?? null) : null,
+    budgetTitle: budgetDisplay.get(c.id)?.budgetTitle ?? c.budgetTitle,
+    accountName: budgetDisplay.get(c.id)?.accountName ?? (c.accountId ? (accountName.get(c.accountId) ?? null) : null),
     approvedAmount: c.approvedAmount,
     actualAmount: c.actualAmount,
     notes: c.notes,

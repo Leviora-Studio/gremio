@@ -9,6 +9,7 @@ import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import {
   apiError,
   authApi,
+  parseApiId,
   serializeBoard,
   serializeStatus,
   tokenAllowsBoard,
@@ -25,7 +26,9 @@ export async function GET(
   if (ctx instanceof NextResponse) return ctx;
 
   const { id } = await params;
-  const board = await getBoardById(Number(id));
+  const boardId = parseApiId(id);
+  if (boardId == null) return apiError(404, "Board nicht gefunden.");
+  const board = await getBoardById(boardId);
   if (
     !board ||
     !tokenAllowsBoard(ctx, board.id) ||

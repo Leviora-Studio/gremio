@@ -36,6 +36,8 @@ import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import { deleteStoredFile } from "@/lib/attachments";
 import { doneSinceForStatus } from "@/lib/done-archive";
+import { budgetPositionsInputSchema } from "@/lib/card-budget";
+import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions } from "@/lib/card-budget-db";
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 /** Echtes Kalenderdatum (nicht nur Format) — weist z. B. 2026-99-99 ab. */
@@ -76,6 +78,8 @@ export const cardWriteSchema = z
     // eingefügten Steuerzeichen scheitert. Die Längengrenzen greifen NACH der
     // Bereinigung, also auf dem Wert, der tatsächlich gespeichert wird.
     title: z.preprocess(singleLineInput, z.string().min(1).max(200)).optional(),
+    budgetPositions: budgetPositionsInputSchema.optional(),
+    budgetRevision: z.number().int().min(0).max(2147483647).optional(),
     applicant: z.preprocess(singleLineInput, z.string().max(200)).nullish(),
     // 60 = kanonische Länge des Haushaltstitels (Matching-Schlüssel der
     // Finanzübersicht, wie Web-UI und Plan-Editor). Vorher erlaubte das Schema
@@ -83,12 +87,12 @@ export const cardWriteSchema = z
     // 200 OK, gespeichert war aber etwas anderes.
     budgetTitle: z.preprocess(singleLineInput, z.string().max(60)).nullish(),
     number: z.preprocess(singleLineInput, z.string().max(100)).nullish(),
-    statusId: z.number().int().positive().optional(),
-    position: z.number().int().min(0).optional(),
-    priorityId: z.number().int().positive().nullish(),
-    accountId: z.number().int().positive().nullish(),
-    assigneeUserIds: z.array(z.number().int().positive()).max(50).optional(),
-    creatorUserId: z.number().int().positive().nullish(),
+    statusId: z.number().int().positive().max(2147483647).optional(),
+    position: z.number().int().min(0).max(2147483647).optional(),
+    priorityId: z.number().int().positive().max(2147483647).nullish(),
+    accountId: z.number().int().positive().max(2147483647).nullish(),
+    assigneeUserIds: z.array(z.number().int().positive().max(2147483647)).max(50).optional(),
+    creatorUserId: z.number().int().positive().max(2147483647).nullish(),
     deadline: date,
     meeting: date,
     decisionRef: z.preprocess(singleLineInput, z.string().max(200)).nullish(),
@@ -316,6 +320,11 @@ export async function createCardViaApi(
 ): Promise<ApiResult<Card>> {
   if (!input.title || !input.title.trim())
     return fail(400, "Feld 'title' ist erforderlich.");
+  if (input.budgetPositions && ["budgetTitle", "accountId", "requestedAmountCents", "approvedAmountCents", "actualAmountCents"].some((key) => key in input))
+    return fail(400, "Haushaltspositionen und direkte Kartenbeträge/Kontozuordnung dürfen nicht gemeinsam geändert werden.");
+  if (input.budgetRevision != null && (!input.budgetPositions || input.budgetRevision !== 0))
+    return fail(400, "Beim Anlegen ist budgetRevision nur mit Haushaltspositionen und dem Wert 0 erlaubt.");
+  const visible = input.budgetPositions ? await getVisibleFieldKeys(board.id) : null;
 
   const members = await getBoardMemberUsers(board);
   const built = await buildCardValues(
@@ -363,7 +372,10 @@ export async function createCardViaApi(
             position,
             doneSince: doneSinceForStatus(board.doneStatusId, statusId, null),
           })
-          .returning({ id: cards.id });
+          .returning();
+        if (input.budgetPositions) {
+          await writeBudgetPositions(tx, c, input.budgetPositions, 0, visible!);
+        }
         await tx.insert(cardActivity).values({
           cardId: c.id,
           userId: user.id,
@@ -381,6 +393,7 @@ export async function createCardViaApi(
       });
       break;
     } catch (e) {
+      if (e instanceof BudgetValidationError) return fail(400, e.message);
       if (isTokenConflict(e) && attempt < 5) continue;
       throw e;
     }
@@ -404,6 +417,9 @@ export async function updateCardViaApi(
 ): Promise<ApiResult<Card>> {
   if ("title" in input && (!input.title || !input.title.trim()))
     return fail(400, "Feld 'title' darf nicht leer sein.");
+  if (input.budgetPositions && ["budgetTitle", "accountId", "requestedAmountCents", "approvedAmountCents", "actualAmountCents"].some((k) => k in input)) return fail(400, "Haushaltspositionen und direkte Kartenbeträge/Kontozuordnung dürfen nicht gemeinsam geändert werden.");
+  if (input.budgetPositions && input.budgetRevision == null) return fail(400, "budgetRevision ist für Positionsänderungen erforderlich.");
+  if (input.budgetRevision != null && !input.budgetPositions) return fail(400, "budgetRevision darf nur gemeinsam mit budgetPositions gesetzt werden.");
 
   const members = await getBoardMemberUsers(board);
   const built = await buildCardValues(
@@ -448,19 +464,25 @@ export async function updateCardViaApi(
   const wantsReposition = moveTo != null || "position" in input;
   const targetStatusId = moveTo?.id ?? card.statusId;
 
-  if (Object.keys(update).length === 0 && !wantsReposition) {
+  if (Object.keys(update).length === 0 && !wantsReposition && !input.budgetPositions && assigneeUserIds === undefined) {
     return { ok: true, value: card }; // nichts zu tun
   }
 
   update.updatedAt = new Date();
-  await db.transaction(async (tx) => {
+  const visible = input.budgetPositions ? await getVisibleFieldKeys(board.id) : null;
+  try { await db.transaction(async (tx) => {
+    const fresh = await guardBudgetCardUpdate(tx, card.id, update);
+    if (input.budgetPositions) await writeBudgetPositions(tx, fresh, input.budgetPositions, input.budgetRevision!, visible!);
     if (Object.keys(update).length > 0) {
       await tx.update(cards).set(update).where(eq(cards.id, card.id));
     }
     if (wantsReposition) {
       await repositionCard(tx, board.id, targetStatusId, card.id, input.position);
     }
-  });
+  }); } catch (e) {
+    if (e instanceof BudgetValidationError) return fail(400, e.message);
+    throw e;
+  }
 
   if (moveTo) {
     await logActivity(

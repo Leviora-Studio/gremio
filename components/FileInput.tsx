@@ -16,6 +16,8 @@ export function FileInput({
   onSelect,
   hideStatus,
   triggerClassName,
+  multiple = false,
+  onFiles,
 }: {
   name?: string;
   accept?: string;
@@ -26,6 +28,8 @@ export function FileInput({
   onSelect?: () => void;
   hideStatus?: boolean;
   triggerClassName?: string;
+  multiple?: boolean;
+  onFiles?: (files: File[]) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -68,12 +72,19 @@ export function FileInput({
         ref={ref}
         id={id}
         type="file"
+        multiple={multiple}
         name={name}
         accept={accept}
         required={required}
         disabled={disabled}
         className="sr-only"
         onChange={(e) => {
+          if (onFiles) {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (files.length) onFiles(files);
+            return;
+          }
           const file = e.target.files?.[0];
           setFileName(file?.name ?? "");
           if (file) onSelect?.();

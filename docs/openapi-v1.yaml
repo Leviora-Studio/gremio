@@ -121,9 +121,10 @@ paths:
         Board, seine Status-Spalten (nach `position`) und die am Board **aktivierten** Kartenfelder.
 
 
-        **Berechtigung:** Board-Zugriff. `isInstructionTrigger` an den Spalten und `ownerId` am
-        Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator) — genau wie in der
-        Weboberfläche.
+        **Berechtigung:** Board-Zugriff. `isInstructionTrigger`, `isTransferTrigger`,
+        `isReceiptTrigger` an den Spalten sowie `ownerId`, `receiptToStatusId`, `resubmitStatusId`
+        am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator). Mehrere Spalten
+        können Archiv- und Quittungs-Auslöser sein.
       parameters:
         - name: id
           in: path
@@ -175,12 +176,13 @@ paths:
         - name: statusId
           in: query
           required: false
-          description: Nur Karten dieser Spalte. Nicht-numerische Werte werden ignoriert.
+          description: Nur Karten dieser Spalte. Ungültige oder außerhalb des int32-Bereichs liegende Werte
+            ergeben 400.
           schema:
             type: integer
             format: int32
             minimum: 1
-        - &a4
+        - &a5
           name: archived
           in: query
           required: false
@@ -189,6 +191,7 @@ paths:
           schema:
             type: string
             enum:
+              - "false"
               - "true"
               - all
       responses:
@@ -201,6 +204,8 @@ paths:
               example:
                 cards:
                   - id: 42
+                    budgetMode: single
+                    budgetRevision: 0
                     boardId: 1
                     statusId: 10
                     statusName: Eingegangen
@@ -218,6 +223,27 @@ paths:
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
+        "400": &a4
+          description: "Ungültige Eingabe: kaputtes JSON, unbekanntes Body-Feld, Schema-Verstoß, ein am Board
+            **deaktiviertes** Feld, eine nicht zum Board gehörende `statusId`, eine unbekannte
+            `priorityId`/`accountId`, ein Nutzer ohne Board-Zugriff oder `archived: true` (manuelles
+            Archivieren gibt es nicht)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+              examples:
+                schema:
+                  summary: Schema-Verstoß
+                  value:
+                    error: Ungültige Eingabe.
+                    issues:
+                      - path: title
+                        message: String must contain at least 1 character(s)
+                fieldDisabled:
+                  summary: Feld am Board deaktiviert
+                  value:
+                    error: Feld 'budgetTitle' ist auf diesem Board nicht aktiviert.
         "401": *a1
         "404": *a2
     post:
@@ -239,7 +265,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CardWrite"
+              $ref: "#/components/schemas/CardCreate"
             examples:
               minimal:
                 summary: Nur Titel
@@ -261,8 +287,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: &a5
+                card: &a6
                   id: 42
+                  budgetMode: single
+                  budgetRevision: 0
                   boardId: 1
                   statusId: 10
                   position: 0
@@ -278,27 +306,8 @@ paths:
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
-        "400": &a6
-          description: "Ungültige Eingabe: kaputtes JSON, unbekanntes Body-Feld, Schema-Verstoß, ein am Board
-            **deaktiviertes** Feld, eine nicht zum Board gehörende `statusId`, eine unbekannte
-            `priorityId`/`accountId`, ein Nutzer ohne Board-Zugriff oder `archived: true` (manuelles
-            Archivieren gibt es nicht)."
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ValidationError"
-              examples:
-                schema:
-                  summary: Schema-Verstoß
-                  value:
-                    error: Ungültige Eingabe.
-                    issues:
-                      - path: title
-                        message: String must contain at least 1 character(s)
-                fieldDisabled:
-                  summary: Feld am Board deaktiviert
-                  value:
-                    error: Feld 'budgetTitle' ist auf diesem Board nicht aktiviert.
+                budgetPositions: []
+        "400": *a4
         "401": *a1
         "403": &a7
           description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`)."
@@ -336,7 +345,7 @@ paths:
         **Berechtigung:** jeder gültige Token; die Ergebnismenge folgt den Board-Zugriffen des
         Nutzers.
       parameters:
-        - *a4
+        - *a5
       responses:
         "200":
           description: Zugewiesene Karten.
@@ -347,6 +356,8 @@ paths:
               example:
                 cards:
                   - id: 42
+                    budgetMode: single
+                    budgetRevision: 0
                     boardId: 1
                     statusId: 10
                     statusName: Eingegangen
@@ -364,6 +375,7 @@ paths:
                     approvedAmountCents: 25000
                     notes: null
                     boardName: Antragsboard
+        "400": *a4
         "401": *a1
   /api/v1/cards/{id}:
     get:
@@ -394,6 +406,8 @@ paths:
               example:
                 card:
                   id: 42
+                  budgetMode: single
+                  budgetRevision: 0
                   boardId: 1
                   statusId: 10
                   statusName: Eingegangen
@@ -411,6 +425,7 @@ paths:
                   approvedAmountCents: 25000
                   notes: null
                   boardName: Antragsboard
+                budgetPositions: []
         "401": *a1
         "404": &a8
           description: Karte nicht gefunden — **oder** kein Zugriff auf ihr Board, **oder** der Token ist auf
@@ -431,8 +446,10 @@ paths:
 
 
         **Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein
-        Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Nextcloud-Archiv) greifen wie
-        in der Oberfläche. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.
+        Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum,
+        Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt
+        Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem
+        `position` wird an eine bestimmte Stelle einsortiert.
 
 
         **Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true`
@@ -478,8 +495,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: *a5
-        "400": *a6
+                card: *a6
+                budgetPositions: []
+        "400": *a4
         "401": *a1
         "403": *a7
         "404": *a8
@@ -666,6 +684,18 @@ components:
             - "null"
           format: int32
           description: Spalte, die vom Done-Sweep archiviert wird (null = aus).
+        receiptToStatusId:
+          type:
+            - integer
+            - "null"
+          format: int32
+          description: Zielspalte nach Quittungseinreichung; null = aus. Nur für Board-Verwalter enthalten.
+        resubmitStatusId:
+          type:
+            - integer
+            - "null"
+          format: int32
+          description: Spalte für Nachreichungen; null = aus. Nur für Board-Verwalter enthalten.
         createdAt:
           type: string
           format: date-time
@@ -691,6 +721,13 @@ components:
         isInstructionTrigger:
           type: boolean
           description: Setzt beim Erreichen das Anweisungsdatum. Nur für Board-Verwalter enthalten.
+        isTransferTrigger:
+          type: boolean
+          description: Setzt beim Erreichen das Überweisungsdatum. Nur für Board-Verwalter enthalten.
+        isReceiptTrigger:
+          type: boolean
+          description: Quittungs-Quellspalte; mehrere erlaubt. Benötigt receiptToStatusId, Archiv-Sperre hat
+            Vorrang. Nur für Board-Verwalter enthalten.
     BoardDetail:
       type: object
       required:
@@ -740,6 +777,8 @@ components:
         `YYYY-MM-DD`.
       required:
         - id
+        - budgetMode
+        - budgetRevision
         - boardId
         - statusId
         - position
@@ -800,6 +839,17 @@ components:
           type:
             - string
             - "null"
+        budgetMode:
+          type: string
+          enum:
+            - single
+            - positions
+          description: In positions mode accountId/budgetTitle are null and card amounts are automatically
+            computed totals.
+        budgetRevision:
+          type: integer
+          minimum: 0
+          description: Optimistic revision required when replacing budgetPositions.
         priorityId:
           type:
             - integer
@@ -869,9 +919,64 @@ components:
       type: object
       required:
         - card
+        - budgetPositions
       properties:
         card:
           $ref: "#/components/schemas/Card"
+        budgetPositions:
+          type: array
+          description: "GET/PATCH detail and POST response: stable ordered positions from the same snapshot as
+            card totals/revision, only board-visible fields. Empty in single mode. List responses
+            contain card totals only; request detail for allocations."
+          items:
+            $ref: "#/components/schemas/BudgetPosition"
+    BudgetPosition:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - position
+      description: Read-only projection. Amounts are nullable integer cents. Board-hidden fields are
+        omitted. Strip position before writing; cardId is never exposed.
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          readOnly: true
+        budgetTitle:
+          type:
+            - string
+            - "null"
+          maxLength: 60
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        accountId:
+          type: integer
+          minimum: 1
+          description: Required existing account for each stored position.
+        requestedAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
+        approvedAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
+        actualAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
     CardList:
       type: object
       required:
@@ -881,6 +986,63 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Card"
+    BudgetPositionWrite:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - budgetTitle
+        - description
+        - accountId
+      description: "Stable, unique UUID per row; array order determines stored order. Omitted amounts
+        remain unchanged (new rows: null; initial first row: previous card value). Hidden amounts
+        must remain unchanged. Each amount and its total are limited to 2,000,000,000 cents."
+      properties:
+        id:
+          type: string
+          format: uuid
+        budgetTitle:
+          type:
+            - string
+            - "null"
+          maxLength: 60
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        accountId:
+          type: integer
+          format: int32
+          minimum: 1
+        requestedAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
+        approvedAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
+        actualAmount:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 2000000000
+    CardCreate:
+      allOf:
+        - $ref: "#/components/schemas/CardWrite"
+      required:
+        - title
+      description: Create with optional budgetPositions in one atomic transaction. budgetRevision may be
+        omitted or 0 when positions are supplied. Without positions it must be omitted.
+      properties:
+        budgetRevision:
+          const: 0
     CardWrite:
       type: object
       description: Schreibbare Kartenfelder. **Unbekannte Felder werden mit `400` abgelehnt**
@@ -888,6 +1050,22 @@ components:
         erforderlich. `null` löscht ein Feld.
       additionalProperties: false
       properties:
+        budgetPositions:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/BudgetPositionWrite"
+          description: Atomic full replacement; PATCH requires the last read budgetRevision. POST supports
+            positions directly. Cannot combine with top-level budgetTitle/accountId/amounts. Board
+            fields budget_title and account must be enabled. Visible prefilled values may be changed
+            on the first transition. A single row returns to single mode only if its description is
+            empty.
+        budgetRevision:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: Only with budgetPositions. Required for PATCH; on POST omit or set 0. Stale revisions
+            return 400 without changing the card.
         title:
           type: string
           minLength: 1
@@ -909,7 +1087,7 @@ components:
             - string
             - "null"
           maxLength: 100
-          description: Nur für Board-Verwalter.
+          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
         statusId:
           type: integer
           format: int32
@@ -967,13 +1145,13 @@ components:
             - string
             - "null"
           format: date
-          description: Nur für Board-Verwalter.
+          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
         transferDate:
           type:
             - string
             - "null"
           format: date
-          description: Nur für Board-Verwalter.
+          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
         requestedAmountCents:
           type:
             - integer

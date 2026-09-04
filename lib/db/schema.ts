@@ -105,8 +105,8 @@ export const boards = pgTable("boards", {
     (): AnyPgColumn => boardStatuses.id,
     { onDelete: "set null" },
   ),
-  // Gate 2 „Quittung": Spalte, ab der eingereicht werden kann (from), + Ziel-
-  // spalte, in die die Karte nach dem Einreichen verschoben wird (to).
+  // Legacy source retained for migration compatibility only. Sources now live
+  // on board_statuses.is_receipt_trigger; receiptToStatusId remains the target.
   receiptFromStatusId: integer("receipt_from_status_id").references(
     (): AnyPgColumn => boardStatuses.id,
     { onDelete: "set null" },
@@ -159,7 +159,7 @@ export const boardAccess = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// board_statuses — Spalten pro Board, max. ein Archiv-Trigger
+// board_statuses — beliebig viele Archiv- und Quittungsquellen pro Board
 // ---------------------------------------------------------------------------
 export const boardStatuses = pgTable(
   "board_statuses",
@@ -171,6 +171,7 @@ export const boardStatuses = pgTable(
     name: text("name").notNull(),
     position: integer("position").notNull().default(0),
     isArchiveTrigger: boolean("is_archive_trigger").notNull().default(false),
+    isReceiptTrigger: boolean("is_receipt_trigger").notNull().default(false),
     // Erreicht eine Karte diese Spalte, wird das Anweisungsdatum auto-gesetzt.
     isInstructionTrigger: boolean("is_instruction_trigger")
       .notNull()
@@ -180,8 +181,7 @@ export const boardStatuses = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
-    // Archiv-Trigger: bewusst KEIN Unique-Index mehr — pro Board sind bis zu
-    // ZWEI Trigger-Spalten erlaubt (App-Logik begrenzt auf max. 2).
+    // Archive and receipt sources intentionally have no uniqueness constraint.
     oneInstrTrigger: uniqueIndex("board_statuses_one_instr_trigger")
       .on(t.boardId)
       .where(sql`${t.isInstructionTrigger} = true`),
@@ -259,6 +259,8 @@ export const cards = pgTable(
     title: text("title").notNull(),
     applicant: text("applicant").notNull(),
     budgetTitle: text("budget_title"), // optionaler "Haushaltstitel"
+    budgetMode: text("budget_mode").notNull().default("single"),
+    budgetRevision: integer("budget_revision").notNull().default(0),
     requestedAmount: integer("requested_amount"), // Beantragter Betrag in Cent
     number: text("number"), // Antragsnummer (board-spezifisch, optional)
     token: text("token").notNull().unique(),
@@ -314,6 +316,24 @@ export const cards = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Budget rows are authoritative in positions mode. Legacy card amounts are
+// server-maintained totals; legacy account/title are null in that mode.
+export const cardBudgetPositions = pgTable("card_budget_positions", {
+  id: text("id").primaryKey(),
+  cardId: integer("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  budgetTitle: text("budget_title"),
+  description: text("description"),
+  accountId: integer("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  requestedAmount: integer("requested_amount"),
+  approvedAmount: integer("approved_amount"),
+  actualAmount: integer("actual_amount"),
+}, (t) => ({
+  cardIdx: index("card_budget_positions_card_idx").on(t.cardId, t.position),
+  accountIdx: index("card_budget_positions_account_idx").on(t.accountId),
+  amounts: check("card_budget_positions_amounts", sql`(${t.requestedAmount} is null or ${t.requestedAmount} between 0 and 2000000000) and (${t.approvedAmount} is null or ${t.approvedAmount} between 0 and 2000000000) and (${t.actualAmount} is null or ${t.actualAmount} between 0 and 2000000000)`),
+}));
+
 // card_assignees — „Zugewiesen zu" (n:m): eine Karte kann mehreren Nutzern
 // zugewiesen sein. Mitgliedschaft = Board-Zugriff prüft die App-Logik.
 // ---------------------------------------------------------------------------
@@ -349,6 +369,7 @@ export const attachments = pgTable(
         "other",
       ],
     }).notNull(),
+    uploadPurpose: text("upload_purpose"), // null = legacy/internal; never infer from filename
     filename: text("filename").notNull(),
     path: text("path").notNull(),
     mime: text("mime").notNull(),
@@ -404,11 +425,6 @@ export const boardTemplateStatuses = pgTable(
     position: integer("position").notNull().default(0),
     isArchiveTrigger: boolean("is_archive_trigger").notNull().default(false),
   },
-  (t) => ({
-    oneTrigger: uniqueIndex("board_template_statuses_one_trigger")
-      .on(t.templateId)
-      .where(sql`${t.isArchiveTrigger} = true`),
-  }),
 );
 
 // ---------------------------------------------------------------------------

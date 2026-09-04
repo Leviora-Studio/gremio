@@ -602,6 +602,7 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
                       application: {
                         title: "Grillabend am FB5",
                         applicant: "Max Mustermann",
+                        approvedAmountCents: 35000,
                       },
                       status: {
                         name: "In Bearbeitung",
@@ -622,6 +623,8 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
                         },
                       ],
                       availableActions: {
+                        canResubmit: false,
+                        canReceipt: true,
                         canUploadDocuments: true,
                         submitMode: "receipt",
                       },
@@ -722,6 +725,8 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
           "Welche Aktionen die öffentliche Webansicht gerade anbietet. Dieser Endpunkt stellt nur den Status bereit — die Aktionen selbst laufen über die Weboberfläche.",
         required: ["canUploadDocuments", "submitMode"],
         properties: {
+          canResubmit: { type: "boolean", description: "Nachreichung aktuell freigeschaltet (Anträge). Kann gleichzeitig mit canReceipt wahr sein." },
+          canReceipt: { type: "boolean", description: "Quittungen aktuell freigeschaltet (Anträge); Archiv-Sperre hat Vorrang." },
           canUploadDocuments: {
             type: "boolean",
             description:
@@ -731,7 +736,7 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
             type: ["string", "null"],
             enum: ["resubmission", "receipt", null],
             description:
-              "`resubmission` = Nachreichung einreichbar, `receipt` = Quittung einreichbar, `null` = kein Einreichen-Knopf. Ergibt sich aus den Board-Gates und dem aktuellen Stand; die Zielspalte wird bewusst nicht ausgegeben.",
+              "Kompatibilitätsfeld: resubmission hat Vorrang, sonst receipt, sonst null. Für gleichzeitig freigegebene Bereiche canResubmit/canReceipt auswerten. Zielspalten bleiben intern.",
           },
         },
       },
@@ -768,10 +773,11 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
           updatedAt: { type: "string", format: "date-time" },
           application: {
             type: "object",
-            required: ["title", "applicant"],
+            required: ["title", "applicant", "approvedAmountCents"],
             properties: {
               title: { type: "string", description: "Antragsgegenstand." },
               applicant: { type: ["string", "null"] },
+              approvedAmountCents: { type: ["integer", "null"], minimum: 0, description: "Genehmigter Gesamtbetrag in Cent; null = nicht eingetragen, 0 = ausdrücklich null Euro. Keine Konten oder Einzelpositionen." },
             },
           },
           status: {
@@ -805,6 +811,7 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
           },
           availableActions: {
             $ref: "#/components/schemas/PublicStatusActions",
+            required: ["canResubmit", "canReceipt"],
           },
         },
       },

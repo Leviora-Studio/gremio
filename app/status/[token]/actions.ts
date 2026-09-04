@@ -1,247 +1,55 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Leviora Studio
-
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, max, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { cards, attachments, boards, boardStatuses } from "@/lib/db/schema";
-import { MAX_PUBLIC_OTHER_FILES, PDF_MIME } from "@/lib/constants";
-import {
-  deleteStoredFile,
-  nextReceiptIndex,
-  receiptFileName,
-  saveAntragFile,
-  validateUpload,
-} from "@/lib/attachments";
-import { dbErrorWithoutParams } from "@/lib/db-errors";
+import { PDF_MIME } from "@/lib/constants";
+import { validateUpload } from "@/lib/attachments";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
-import { doneSinceForStatus } from "@/lib/done-archive";
 import { allowFormRequest } from "@/lib/rate-limit";
 import { resolveApplicationCardId } from "@/lib/public-status";
+import { storePublicAttachment, submitPublicWorkflow, PublicWorkflowError } from "@/lib/public-workflow";
 
 export type PublicUploadState = { error?: string; success?: string };
 
-/**
- * Antragsteller reicht über den Status-Link eine PDF bei „weitere Dateien" nach.
- * Nur Hinzufügen (append-only) — kein Bearbeiten/Löschen vorhandener Dateien.
- */
-export async function addPublicFileAction(
-  token: string,
-  _prev: PublicUploadState,
-  formData: FormData,
-): Promise<PublicUploadState> {
-  if (!(await allowFormRequest("public-upload"))) {
-    return { error: "Zu viele Uploads. Bitte versuche es in einer Minute erneut." };
-  }
-  let row: { card: typeof cards.$inferSelect; isArchiveTrigger: boolean | null } | undefined;
-  try {
-    [row] = await db
-      .select({ card: cards, isArchiveTrigger: boardStatuses.isArchiveTrigger })
-      .from(cards)
-      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-      .where(eq(cards.token, token))
-      .limit(1);
-  } catch (e) {
-    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
-    throw dbErrorWithoutParams(e, "public-upload");
-  }
-  if (!row?.card) return { error: "Antrag nicht gefunden." };
-  // Feedback-Tokens hier abweisen (siehe resolveApplicationCardId).
-  if ((await resolveApplicationCardId(token)) == null) {
-    return { error: "Antrag nicht gefunden." };
-  }
-  const card = row.card;
-
-  // Sperre: Sobald der Antrag in der Archiv-Spalte (Nextcloud-Trigger) liegt,
-  // sind die Dateien archiviert — über den öffentlichen Link darf nichts mehr
-  // nachgereicht werden (sonst wäre der Nextcloud-Stand unvollständig).
-  if (row.isArchiveTrigger) {
-    return {
-      error:
-        "Dieser Antrag ist bereits archiviert. Es können keine weiteren Dateien hinzugefügt werden.",
-    };
-  }
-
+export async function addPublicFileAction(token: string, _prev: PublicUploadState, formData: FormData): Promise<PublicUploadState> {
+  if (!(await allowFormRequest("public-upload"))) return { error: "Zu viele Uploads. Bitte versuche es in einer Minute erneut." };
+  const cardId = await resolveApplicationCardId(token);
+  if (cardId == null) return { error: "Antrag nicht gefunden." };
+  const purpose = formData.get("purpose") ?? "general";
+  if (purpose !== "general" && purpose !== "resubmission" && purpose !== "receipt") return { error: "Ungültige Uploadart." };
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Bitte eine PDF-Datei auswählen." };
+  if (!(file instanceof File) || !file.size) return { error: "Bitte eine PDF-Datei auswählen." };
+  const error = validateUpload(file, PDF_MIME);
+  if (error) return { error };
+  let filename: string;
+  try { filename = await storePublicAttachment(cardId, purpose, file); }
+  catch (e) {
+    return { error: e instanceof PublicWorkflowError ? e.message : "Datei konnte nicht zugeordnet werden. Bitte erneut versuchen." };
   }
-  const err = validateUpload(file, PDF_MIME);
-  if (err) return { error: err };
-
-  const existing = await db
-    .select({ id: attachments.id, filename: attachments.filename })
-    .from(attachments)
-    .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, "other")));
-  if (existing.length >= MAX_PUBLIC_OTHER_FILES) {
-    return { error: "Maximale Anzahl an Dateien erreicht." };
-  }
-
-  // Quittungen automatisch fortlaufend benennen: <Antragsnummer>_Q1, _Q2 …
-  // Lücken werden wiederverwendet; vorhandene Dateien bleiben unverändert.
-  const saved = await saveAntragFile(card.id, file);
-  // Grenze ATOMAR durchsetzen: Die Zählung oben ist nur die freundliche
-  // Vorprüfung — parallele Uploads sahen beide denselben Stand und konnten die
-  // Obergrenze überschreiten. Der Advisory-Lock (Namespace "PU" = Public
-  // Upload, je Karte) serialisiert die Uploads einer Karte; gezählt wird
-  // innerhalb der Sperre erneut.
-  const inserted = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5055}, ${card.id})`);
-    const fresh = await tx
-      .select({ id: attachments.id, filename: attachments.filename })
-      .from(attachments)
-      .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, "other")));
-    if (fresh.length >= MAX_PUBLIC_OTHER_FILES) return null;
-    const index = nextReceiptIndex(
-      card.number,
-      fresh.map((e) => e.filename),
-    );
-    const displayName = receiptFileName(card.number, index, saved.filename);
-    await tx.insert(attachments).values({
-      cardId: card.id,
-      kind: "other",
-      filename: displayName,
-      path: saved.relPath,
-      mime: saved.mime,
-      size: saved.size,
-      uploadedBy: null,
-    });
-    return displayName;
-  });
-  if (inserted == null) {
-    // Grenze im Rennen erreicht → frisch geschriebene Datei wieder entfernen.
-    await deleteStoredFile(saved.relPath);
-    return { error: "Maximale Anzahl an Dateien erreicht." };
-  }
-  const displayName = inserted;
-  await db.update(cards).set({ updatedAt: new Date() }).where(eq(cards.id, card.id));
-  await logActivity(
-    card.id,
-    null,
-    "attachment_added",
-    `Datei nachgereicht (öffentlich): ${displayName}`,
-  );
-
+  // Committed uploads remain successful even if ancillary activity logging fails.
+  try { await logActivity(cardId, null, "attachment_added", `Datei eingereicht (öffentlich, ${purpose}): ${filename}`); } catch { /* upload remains successful */ }
   revalidatePath(`/status/${token}`);
-  return { success: "Datei wurde hinzugefügt." };
+  return { success: `Hinzugefügt: ${filename}` };
 }
 
-/**
- * Antragsteller klickt auf der Status-Seite „Einreichen". Je nach aktueller
- * Spalte greift eines der beiden board-konfigurierten Gates (autoritativ
- * serverseitig anhand des aktuellen Status bestimmt):
- *  - Gate „Nachreichung": Karte bleibt liegen, wird farblich markiert.
- *  - Gate „Quittung": Karte springt in die Zielspalte (mit Triggern).
- */
-export async function submitPublicAction(
-  token: string,
-  _prev: PublicUploadState,
-  _formData: FormData,
-): Promise<PublicUploadState> {
-  if (!(await allowFormRequest("public-submit"))) {
-    return { error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut." };
-  }
-  let card: typeof cards.$inferSelect | undefined;
+export async function submitPublicAction(token: string, _prev: PublicUploadState, formData: FormData): Promise<PublicUploadState> {
+  if (!(await allowFormRequest("public-submit"))) return { error: "Zu viele Anfragen. Bitte versuche es in einer Minute erneut." };
+  const cardId = await resolveApplicationCardId(token);
+  if (cardId == null) return { error: "Antrag nicht gefunden." };
+  const purpose = formData.get("purpose");
+  if (purpose !== "receipt" && purpose !== "resubmission") return { error: "Bitte den Einreichungsbereich auswählen." };
   try {
-    [card] = await db
-      .select()
-      .from(cards)
-      .where(eq(cards.token, token))
-      .limit(1);
-  } catch (e) {
-    // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
-    throw dbErrorWithoutParams(e, "public-submit");
-  }
-  if (!card) return { error: "Antrag nicht gefunden." };
-  if ((await resolveApplicationCardId(token)) == null) {
-    return { error: "Antrag nicht gefunden." };
-  }
-  const [board] = await db
-    .select()
-    .from(boards)
-    .where(eq(boards.id, card.boardId))
-    .limit(1);
-  if (!board) return { error: "Antrag nicht gefunden." };
-
-  // Archiv-Sperre serverseitig erzwingen (analog addPublicFileAction): liegt die
-  // Karte in der Archiv-Trigger-Spalte, ist der Antrag abgeschlossen — kein
-  // öffentliches Einreichen mehr, egal was das UI anzeigt.
-  const [st] = await db
-    .select({ isArchiveTrigger: boardStatuses.isArchiveTrigger })
-    .from(boardStatuses)
-    .where(eq(boardStatuses.id, card.statusId))
-    .limit(1);
-  if (st?.isArchiveTrigger) {
-    return { error: "Dieser Antrag ist bereits archiviert." };
-  }
-
-  // Gate „Nachreichung" — Karte bleibt in der Spalte, nur farbliche Markierung.
-  if (board.resubmitStatusId && card.statusId === board.resubmitStatusId) {
-    await db
-      .update(cards)
-      .set({ resubmittedAt: new Date(), updatedAt: new Date() })
-      .where(eq(cards.id, card.id));
-    await logActivity(
-      card.id,
-      null,
-      "status",
-      "Nachreichung eingereicht (öffentlich)",
-    );
+    const result = await submitPublicWorkflow(cardId, purpose);
+    await logActivity(cardId, null, "status", purpose === "receipt" ? "Quittung eingereicht (öffentlich)" : "Nachreichung eingereicht (öffentlich)");
+    if (result.target != null) {
+      await maybeSetTriggerDates(cardId, result.target);
+      await maybeArchive(cardId);
+    }
     revalidatePath(`/status/${token}`);
-    revalidatePath(`/intern/board/${board.id}`);
-    return {
-      success: "Deine Nachreichung wurde eingereicht. Das Gremium wurde informiert.",
-    };
-  }
-
-  // Gate „Quittung" — Karte in die Zielspalte verschieben (ans Ende), Trigger.
-  if (
-    board.receiptFromStatusId &&
-    board.receiptToStatusId &&
-    card.statusId === board.receiptFromStatusId
-  ) {
-    const target = board.receiptToStatusId;
-    const [row] = await db
-      .select({ m: max(cards.position) })
-      .from(cards)
-      .where(and(eq(cards.boardId, board.id), eq(cards.statusId, target)));
-    await db
-      .update(cards)
-      .set({
-        statusId: target,
-        position: (row?.m ?? -1) + 1,
-        resubmittedAt: null,
-        // Done-Archiv-Uhr setzen, falls die Zielspalte die Done-Spalte ist.
-        doneSince: doneSinceForStatus(board.doneStatusId, target, card.doneSince),
-        updatedAt: new Date(),
-      })
-      .where(eq(cards.id, card.id));
-    const [from] = await db
-      .select({ name: boardStatuses.name })
-      .from(boardStatuses)
-      .where(eq(boardStatuses.id, card.statusId))
-      .limit(1);
-    const [to] = await db
-      .select({ name: boardStatuses.name })
-      .from(boardStatuses)
-      .where(eq(boardStatuses.id, target))
-      .limit(1);
-    await logActivity(
-      card.id,
-      null,
-      "status",
-      `${from?.name ?? "?"} → ${to?.name ?? "?"} (öffentlich eingereicht)`,
-    );
-    await maybeSetTriggerDates(card.id, target);
-    await maybeArchive(card.id);
-    revalidatePath(`/status/${token}`);
-    revalidatePath(`/intern/board/${board.id}`);
+    revalidatePath(`/intern/board/${result.boardId}`);
     return { success: "Eingereicht. Vielen Dank!" };
+  } catch (e) {
+    return { error: e instanceof PublicWorkflowError ? e.message : "Einreichen konnte nicht abgeschlossen werden. Bitte den Status prüfen." };
   }
-
-  return { error: "Aktuell ist kein Einreichen möglich." };
 }

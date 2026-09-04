@@ -4,6 +4,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { usePublicUploads } from "@/components/PublicUploadScope";
 import {
   submitPublicAction,
   type PublicUploadState,
@@ -12,17 +13,21 @@ import {
 export function PublicSubmitForm({
   token,
   label,
+  purpose,
 }: {
   token: string;
   label: string;
+  purpose: "receipt" | "resubmission";
 }) {
+  const { busy } = usePublicUploads();
   const [state, action, pending] = useActionState(
     submitPublicAction.bind(null, token),
     {} as PublicUploadState,
   );
   return (
     <form action={action}>
-      <button type="submit" disabled={pending} className="btn-success">
+      <input type="hidden" name="purpose" value={purpose} />
+      <button type="submit" disabled={pending || busy} className="btn-success">
         {label}
       </button>
       {state.error && <p className="mt-2 text-sm text-red-600">{state.error}</p>}

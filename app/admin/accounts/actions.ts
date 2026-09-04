@@ -7,7 +7,8 @@ import { revalidatePath } from "next/cache";
 import { eq, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { accounts } from "@/lib/db/schema";
+import { accounts, cardBudgetPositions } from "@/lib/db/schema";
+import { isForeignKeyViolation } from "@/lib/db-errors";
 import { requireAdmin } from "@/lib/auth";
 
 export type State = { error?: string; success?: string };
@@ -66,9 +67,12 @@ export async function renameAccountAction(
   return { success: "Umbenannt." };
 }
 
-export async function deleteAccountAction(accountId: number): Promise<void> {
+export async function deleteAccountAction(accountId: number): Promise<State | void> {
   await requireAdmin();
   // cards.account_id ist ON DELETE SET NULL → Karten bleiben erhalten.
-  await db.delete(accounts).where(eq(accounts.id, accountId));
+  const used = await db.select({ id: cardBudgetPositions.id }).from(cardBudgetPositions).where(eq(cardBudgetPositions.accountId, accountId)).limit(1);
+  if (used.length) return { error: "Dieses Konto wird in Haushaltspositionen verwendet. Bitte dort zuerst ein anderes Konto zuordnen." };
+  try { await db.delete(accounts).where(eq(accounts.id, accountId)); }
+  catch (e) { if (isForeignKeyViolation(e)) return { error: "Das Konto wird noch verwendet und kann nicht gelöscht werden." }; throw e; }
   revalidatePath("/admin/accounts");
 }

@@ -2,14 +2,11 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { boardStatuses } from "@/lib/db/schema";
 import {
   apiError,
   authApi,
   requireWriteScope,
-  serializeCard,
+  parseApiId,
   tokenAllowsBoard,
   type ApiContext,
 } from "@/lib/api";
@@ -20,8 +17,8 @@ import {
   updateCardViaApi,
 } from "@/lib/api-cards";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
-import { getAssigneeIds } from "@/lib/assignees";
 import type { Board, Card } from "@/lib/db/schema";
+import { serializeApiCardDetail } from "@/lib/api-card-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,9 +32,10 @@ async function resolve(
 > {
   const ctx = await authApi(req);
   if (ctx instanceof NextResponse) return ctx;
-  if (!/^\d+$/.test(id)) return apiError(404, "Karte nicht gefunden.");
+  const cardId = parseApiId(id);
+  if (cardId == null) return apiError(404, "Karte nicht gefunden.");
 
-  const loaded = await loadApiCard(ctx.user, Number(id));
+  const loaded = await loadApiCard(ctx.user, cardId);
   if (!loaded.ok) return apiError(loaded.status, loaded.error);
   if (!tokenAllowsBoard(ctx, loaded.value.board.id))
     return apiError(404, "Karte nicht gefunden.");
@@ -52,24 +50,9 @@ export async function GET(
   const r = await resolve(req, id);
   if (r instanceof NextResponse) return r;
 
-  const [status] = await db
-    .select({ name: boardStatuses.name })
-    .from(boardStatuses)
-    .where(eq(boardStatuses.id, r.card.statusId))
-    .limit(1);
-
   const visible = await getVisibleFieldKeys(r.board.id);
-  return NextResponse.json({
-    card: serializeCard(
-      r.card,
-      {
-        statusName: status?.name ?? "",
-        boardName: r.board.name,
-        assigneeUserIds: await getAssigneeIds(r.card.id),
-      },
-      visible,
-    ),
-  });
+  const detail = await serializeApiCardDetail(r.card.id, visible, r.board.name);
+  return detail ? NextResponse.json(detail) : apiError(404, "Karte nicht gefunden.");
 }
 
 export async function PATCH(
@@ -107,13 +90,8 @@ export async function PATCH(
   const result = await updateCardViaApi(r.ctx.user, r.board, r.card, parsed.data);
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(r.board.id);
-  return NextResponse.json({
-    card: serializeCard(
-      result.value,
-      { assigneeUserIds: await getAssigneeIds(result.value.id) },
-      visible,
-    ),
-  });
+  const detail = await serializeApiCardDetail(result.value.id, visible);
+  return detail ? NextResponse.json(detail) : apiError(404, "Karte nicht gefunden.");
 }
 
 export async function DELETE(

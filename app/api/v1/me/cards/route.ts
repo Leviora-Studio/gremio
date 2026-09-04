@@ -13,7 +13,7 @@ import {
 } from "@/lib/db/schema";
 import { getAccessibleBoards } from "@/lib/authz";
 import { getAssigneeIdsForCards } from "@/lib/assignees";
-import { authApi, serializeCard, tokenAllowsBoard } from "@/lib/api";
+import { apiError, authApi, serializeCard, tokenAllowsBoard } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,13 +23,16 @@ export async function GET(req: Request) {
   const ctx = await authApi(req);
   if (ctx instanceof NextResponse) return ctx;
 
+  const archived = new URL(req.url).searchParams.get("archived");
+  if (archived != null && !["false", "true", "all"].includes(archived))
+    return apiError(400, "archived muss false, true oder all sein.");
+
   const accessible = (await getAccessibleBoards(ctx.user)).filter((b) =>
     tokenAllowsBoard(ctx, b.id),
   );
   const boardIds = accessible.map((b) => b.id);
   if (!boardIds.length) return NextResponse.json({ cards: [] });
 
-  const archived = new URL(req.url).searchParams.get("archived");
   // Karten, in denen der Nutzer zu den Zugewiesenen gehört (n:m).
   const myCardIds = db
     .select({ id: cardAssignees.cardId })

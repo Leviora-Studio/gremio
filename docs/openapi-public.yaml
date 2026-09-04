@@ -556,6 +556,7 @@ paths:
                     application:
                       title: Grillabend am FB5
                       applicant: Max Mustermann
+                      approvedAmountCents: 35000
                     status:
                       name: In Bearbeitung
                       resubmittedAt: null
@@ -568,6 +569,8 @@ paths:
                         mimeType: application/pdf
                         downloadUrl: https://gremio.example/api/status/abc123/attachment/12
                     availableActions:
+                      canResubmit: false
+                      canReceipt: true
                       canUploadDocuments: true
                       submitMode: receipt
                 feedback:
@@ -695,6 +698,13 @@ components:
         - canUploadDocuments
         - submitMode
       properties:
+        canResubmit:
+          type: boolean
+          description: Nachreichung aktuell freigeschaltet (Anträge). Kann gleichzeitig mit canReceipt wahr
+            sein.
+        canReceipt:
+          type: boolean
+          description: Quittungen aktuell freigeschaltet (Anträge); Archiv-Sperre hat Vorrang.
         canUploadDocuments:
           type: boolean
           description: Dürfen weitere Dateien hinzugefügt werden? Bei archivierten Vorgängen `false`. Für
@@ -707,9 +717,9 @@ components:
             - resubmission
             - receipt
             - null
-          description: "`resubmission` = Nachreichung einreichbar, `receipt` = Quittung einreichbar, `null` =
-            kein Einreichen-Knopf. Ergibt sich aus den Board-Gates und dem aktuellen Stand; die
-            Zielspalte wird bewusst nicht ausgegeben."
+          description: "Kompatibilitätsfeld: resubmission hat Vorrang, sonst receipt, sonst null. Für
+            gleichzeitig freigegebene Bereiche canResubmit/canReceipt auswerten. Zielspalten bleiben
+            intern."
     PublicApplicationStatusResponse:
       type: object
       description: Status eines Antrags.
@@ -753,6 +763,7 @@ components:
           required:
             - title
             - applicant
+            - approvedAmountCents
           properties:
             title:
               type: string
@@ -761,6 +772,13 @@ components:
               type:
                 - string
                 - "null"
+            approvedAmountCents:
+              type:
+                - integer
+                - "null"
+              minimum: 0
+              description: Genehmigter Gesamtbetrag in Cent; null = nicht eingetragen, 0 = ausdrücklich null Euro.
+                Keine Konten oder Einzelpositionen.
         status:
           type: object
           required:
@@ -793,6 +811,9 @@ components:
             $ref: "#/components/schemas/PublicStatusDocument"
         availableActions:
           $ref: "#/components/schemas/PublicStatusActions"
+          required:
+            - canResubmit
+            - canReceipt
     PublicFeedbackStatusResponse:
       type: object
       description: Status eines Feedbacks. Bereich, Name und Text stammen aus dem unveränderlichen

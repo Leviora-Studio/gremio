@@ -6,7 +6,6 @@ import {
   PDFBool,
   PDFDocument,
   PDFCheckBox,
-  PDFDict,
   PDFDropdown,
   PDFField,
   PDFName,
@@ -17,10 +16,18 @@ import {
   PDFTextField,
   StandardFonts,
 } from "pdf-lib";
+import { locatePdfWidgets, syncLegacyWidgetAppearances } from "@/lib/pdf-widget-compat";
 
 // Markierung an „unseren" Freitextfeldern, damit sie sich von echten
 // Formularfeldern unterscheiden lassen (nur diese sind frei verschieb-/skalierbar).
 const GREMIO_TEXT_KEY = "GremioFreeText";
+
+// Some old producers omit the Radio flag on a single-value button group.
+// Distinct widget On states distinguish it from repeated views of one checkbox.
+function isLegacyRadioGroup(field: PDFField): boolean {
+  if (!(field instanceof PDFCheckBox)) return false;
+  try { return radioOnOptions(field).length > 1; } catch { return false; }
+}
 
 /** Trägt ein Feld unsere Freitext-Markierung? Nur solche dürfen verschoben/überschrieben werden. */
 function isGremioText(field: PDFField): boolean {
@@ -172,6 +179,9 @@ export async function applyPdfEdits(
 ): Promise<{ pdf: Buffer; failed: string[] }> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
   const form = doc.getForm();
+  // pdf-lib returns fresh PDFField wrappers; their underlying dictionaries are stable.
+  const widgetLocations = new Map([...locatePdfWidgets(doc, form.getFields())].map(([field, widgets]) => [field.acroField.dict, widgets]));
+  const changedFields = new Set<PDFField>();
   // Felder, die NICHT gesetzt werden konnten — der Aufrufer meldet sie statt sie
   // still zu verschlucken (sonst „gespeichert" trotz Datenverlust).
   const failed: string[] = [];
@@ -193,6 +203,11 @@ export async function applyPdfEdits(
         continue;
       }
       try {
+        if (isLegacyRadioGroup(field)) {
+          // Only explicit editing repairs the missing flag; opening is read-only.
+          field.acroField.setFlags(field.acroField.getFlags() | (1 << 15));
+          field = form.getField(fe.name);
+        }
         if (field instanceof PDFTextField) {
           // Mehrzeilen-Felder mit Auto-/absurd großer Schrift auf eine
           // vernünftige feste Größe setzen — sonst bäckt pdf-lib beim Speichern
@@ -230,6 +245,7 @@ export async function applyPdfEdits(
             field.clear();
           }
         }
+        changedFields.add(field);
       } catch (e) {
         console.warn(
           "[pdf-edit] Feld konnte nicht gesetzt werden:",
@@ -319,6 +335,10 @@ export async function applyPdfEdits(
     }
   }
 
+  if ([...changedFields].some(field => widgetLocations.get(field.acroField.dict)?.some(w => w.widget.dict !== w.source.dict))) {
+    form.updateFieldAppearances();
+    for (const field of changedFields) syncLegacyWidgetAppearances(field, widgetLocations.get(field.acroField.dict) ?? []);
+  }
   return { pdf: Buffer.from(await doc.save()), failed };
 }
 
@@ -366,28 +386,16 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
   }
   const pages = doc.getPages();
 
-  // Widget-Dict → Seitenindex (zum Positionieren der Felder).
-  const pageOfDict = new Map<PDFDict, number>();
-  pages.forEach((p, i) => {
-    const annots = p.node.Annots();
-    if (!annots) return;
-    for (let k = 0; k < annots.size(); k++) {
-      try {
-        pageOfDict.set(annots.lookup(k, PDFDict), i);
-      } catch {
-        /* ignore */
-      }
-    }
-  });
+  let fields: PDFField[];
+  try { fields = doc.getForm().getFields(); } catch { return []; }
+  const locations = locatePdfWidgets(doc, fields);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function placement(field: any, multiline = false): Pick<FieldMeta, "page" | "rect" | "sizeRatio"> {
     try {
-      const widgets = field.acroField.getWidgets();
-      if (!widgets.length) return {};
-      const w = widgets[0];
-      const pageIndex = pageOfDict.get(w.dict);
-      if (pageIndex == null) return {};
+      const first = locations.get(field)?.[0];
+      if (!first) return {};
+      const { widget: w, page: pageIndex } = first;
       const g = pageGeom(pages[pageIndex]);
       const r = w.getRectangle();
       const rect = rectPdfToView(g, r);
@@ -414,9 +422,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
   function widgetRects(field: any): NonNullable<FieldMeta["widgets"]> {
     const out: NonNullable<FieldMeta["widgets"]> = [];
     try {
-      for (const w of field.acroField.getWidgets()) {
-        const pageIndex = pageOfDict.get(w.dict);
-        if (pageIndex == null) continue;
+      for (const { widget: w, page: pageIndex } of locations.get(field) ?? []) {
         const g = pageGeom(pages[pageIndex]);
         out.push({ page: pageIndex, rect: rectPdfToView(g, w.getRectangle()) });
       }
@@ -432,9 +438,7 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
   function radioWidgets(field: any): NonNullable<FieldMeta["optionWidgets"]> {
     const out: NonNullable<FieldMeta["optionWidgets"]> = [];
     try {
-      for (const w of field.acroField.getWidgets()) {
-        const pageIndex = pageOfDict.get(w.dict);
-        if (pageIndex == null) continue;
+      for (const { widget: w, page: pageIndex } of locations.get(field) ?? []) {
         const on = w.getOnValue?.();
         const value = on ? on.decodeText() : "";
         if (!value) continue;
@@ -452,12 +456,6 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
   }
 
   const out: FieldMeta[] = [];
-  let fields;
-  try {
-    fields = doc.getForm().getFields();
-  } catch {
-    return [];
-  }
   for (const f of fields) {
     const name = f.getName();
     const readOnly = f.isReadOnly();
@@ -481,6 +479,8 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
         ...placement(f, multiline),
         widgets: widgetRects(f),
       });
+    } else if (isLegacyRadioGroup(f)) {
+      out.push({ name, type: "radio", value: radioOnValue(f), options: radioOnOptions(f), readOnly, optionWidgets: radioWidgets(f) });
     } else if (f instanceof PDFCheckBox) {
       out.push({
         name,
@@ -571,7 +571,7 @@ function selectChoice(field: PDFDropdown | PDFOptionList, value: string): void {
 }
 
 /** Aktuell gewählter Radio-Wert = der On-State im /V (maßgeblich, /Opt egal). */
-function radioOnValue(field: PDFRadioGroup): string {
+function radioOnValue(field: PDFField): string {
   try {
     const v = field.acroField.dict.lookup(PDFName.of("V"));
     return v instanceof PDFName ? v.decodeText() : "";
@@ -581,9 +581,12 @@ function radioOnValue(field: PDFRadioGroup): string {
 }
 
 /** Radio-Optionen = die Widget-On-States (echte Werte, auch bei kaputtem /Opt). */
-function radioOnOptions(field: PDFRadioGroup): string[] {
+function radioOnOptions(field: PDFField): string[] {
   try {
-    return field.acroField.getOnValues().map((n) => n.decodeText());
+    return [...new Set(field.acroField.getWidgets().flatMap(w => {
+      const value = w.getOnValue();
+      return value ? [value.decodeText()] : [];
+    }))];
   } catch {
     return [];
   }

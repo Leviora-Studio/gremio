@@ -15,7 +15,8 @@ import { sanitizeSingleLine } from "@/lib/text";
 // bereits abgelegter oder künftiger Anhänge.
 //
 // 'other' (Weitere PDFs / Quittungen) ist bewusst NICHT enthalten → bleibt
-// unter seinem Originalnamen (Quittungen benennt der Antragsteller selbst).
+// unter seinem Originalnamen. Nur explizite öffentliche Quittungsuploads
+// erhalten in lib/public-workflow.ts das fortlaufende Quittungsschema.
 const SLOT_LABEL: Partial<Record<AttachmentKind, string>> = {
   finance_request: "Finanzantrag",
   annex_a: "AnlageA",
@@ -76,7 +77,7 @@ export function nextReceiptIndex(
   existingFilenames: string[],
 ): number {
   const num = cardNumber?.trim();
-  const prefix = num ? `${num}_Q` : "Q";
+  const prefix = (num ? `${num}_Q` : "Q").replace(/[\\/\r\n"]+/g, "_");
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`^${escaped}(\\d+)(?:\\.[a-z0-9]+)?$`, "i");
   const used = new Set<number>();
@@ -201,7 +202,7 @@ export async function saveAntragFile(
   );
   const abs = absPath(rel);
   await mkdir(dirname(abs), { recursive: true });
-  await writeFile(abs, buf);
+  await writeFile(abs, buf, { flag: "wx" });
   return {
     relPath: rel,
     filename: displayFileName(file.name),

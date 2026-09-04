@@ -43,6 +43,8 @@ import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
+import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions, loadBudgetPositions } from "@/lib/card-budget-db";
+import { AMOUNT_KEYS, BUDGET_FIELDS } from "@/lib/card-budget";
 
 export type State = { error?: string; success?: string };
 
@@ -260,7 +262,15 @@ export async function saveCardAction(
     update.applicantNote = v ? v.slice(0, 20000) : null;
   }
 
-  await db.update(cards).set(update).where(eq(cards.id, card.id));
+  try {
+    await db.transaction(async (tx) => {
+      await guardBudgetCardUpdate(tx, card.id, update);
+      await tx.update(cards).set(update).where(eq(cards.id, card.id));
+    });
+  } catch (e) {
+    if (e instanceof BudgetValidationError) return { ok: false, error: e.message };
+    throw e;
+  }
 
   if (targetAssignees) {
     const { added, removed } = await setCardAssignees(card.id, targetAssignees);
@@ -282,6 +292,34 @@ export async function saveCardAction(
   revalidatePath(`/intern/card/${card.id}`);
   revalidatePath(`/intern/board/${board.id}`);
   return { ok: true };
+}
+
+export async function saveBudgetPositionsAction(cardId: number, rows: unknown, revision: number) {
+  const { card, board } = await loadCard(cardId);
+  const visible = await visibleFields(board.id);
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [fresh] = await tx.select().from(cards).where(eq(cards.id, card.id)).for("update");
+      if (!fresh) throw new BudgetValidationError("Karte nicht gefunden.");
+      return writeBudgetPositions(tx, fresh, rows, revision, visible);
+    });
+    revalidatePath(`/intern/card/${card.id}`);
+    revalidatePath(`/intern/board/${board.id}`);
+    return { ok: true as const, ...result,
+      rows: result.rows.map((row) => ({ ...row, ...Object.fromEntries(AMOUNT_KEYS.filter((key) => !visible.has(BUDGET_FIELDS[key])).map((key) => [key, null])) })),
+      totals: { ...result.totals, ...Object.fromEntries(AMOUNT_KEYS.filter((key) => !visible.has(BUDGET_FIELDS[key])).map((key) => [key, null])) },
+    };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof BudgetValidationError ? e.message : "Haushaltspositionen konnten nicht gespeichert werden. Der Entwurf bleibt erhalten." };
+  }
+}
+
+export async function getBudgetSnapshotAction(cardId: number) {
+  const { card, board } = await loadCard(cardId);
+  const visible = await visibleFields(board.id);
+  if (!["budget_title", "account"].every((k) => visible.has(k))) notFound();
+  const masked = Object.fromEntries(AMOUNT_KEYS.filter((key) => !visible.has(BUDGET_FIELDS[key])).map((key) => [key, null]));
+  return { card: { budgetTitle: card.budgetTitle, accountId: card.accountId, requestedAmount: card.requestedAmount, approvedAmount: card.approvedAmount, actualAmount: card.actualAmount, ...masked }, rows: (await loadBudgetPositions(cardId)).map((row) => ({ ...row, ...masked })), revision: card.budgetRevision, defaultAccountId: board.defaultAccountId };
 }
 
 export async function setCardStatusAction(

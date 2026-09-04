@@ -145,6 +145,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
         application: {
           title: a.title,
           applicant: a.applicant,
+          approvedAmountCents: a.approvedAmountCents,
         },
         status: {
           name: a.statusName,
@@ -165,6 +166,8 @@ export const POST = withPublicApi500(async function POST(req: Request) {
           downloadUrl: attachmentUrlFor(parsed.token, d.id),
         })),
         availableActions: {
+          canResubmit: a.canResubmit,
+          canReceipt: a.canReceipt,
           canUploadDocuments: a.canUploadDocuments,
           submitMode: a.submitMode,
         },

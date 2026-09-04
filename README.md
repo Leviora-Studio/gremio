@@ -1,5 +1,26 @@
 # Gremio
 
+### Migration: Haushaltspositionen und öffentliche Uploads
+
+`0062_card_budget_and_public_workflows.sql` ergänzt strukturierte Haushaltspositionen
+mit eigener Kontozuordnung und serverseitigen Gesamtsummen, mehrere Quittungsquellen
+je Board und einen expliziten Uploadzweck. Bestehende Karten bleiben unverändert im
+Einzelmodus; bisherige Quittungs- und Archivkonfigurationen werden übernommen.
+Der bisherige Ein-Trigger-Constraint für Board-Vorlagen entfällt. Vor dem Update wie
+üblich ein Datenbankbackup anlegen und `npm run db:migrate` ausführen (Containerstart
+verwendet weiterhin den bestehenden Migrationsablauf). Keine neuen Abhängigkeiten.
+
+Öffentlich sind genehmigte Gesamtsummen sichtbar, nicht Positionskonten/-details.
+Uploads unterstützen sofortige Mehrfachauswahl mit Einzelstatus/Retry; nur der
+Quittungsbereich benennt Dateien automatisch um. Bestehende PDF-/Größenlimits gelten.
+Fachliche Details stehen in `CLAUDE.md`, API-Kontrakte in `docs/API.md` und
+`docs/PUBLIC_API.md`. Der [API-Abgleich seit v2.7.7](docs/API_PARITY_AUDIT.md)
+dokumentiert die nachgezogenen Schnittstellenänderungen und die bewusst
+unveränderte Abgrenzung zu reinen Web-Funktionen. Neue Karten können per REST
+direkt mit Haushaltspositionen angelegt werden; bestehende Einzelkarten bleiben
+kompatibel. Coding-Agenten starten bei [AGENTS.md](AGENTS.md).
+
+
 **Gremio** ist eine Web-App zur Verwaltung von Anträgen in Gremien — z. B.
 Studierendenvertretungen, Vereinen, Verbänden oder Ausschüssen. Ein
 **öffentliches Antragsformular** speist Anträge je nach Standort in **interne
@@ -173,13 +194,21 @@ npm run dev                   # http://localhost:3000
 | `npm run openapi:yaml` | `docs/openapi-*.yaml` aus den TS-Quellen neu erzeugen |
 | `npm run openapi:public:yaml` / `openapi:internal:yaml` | nur die jeweilige Spezifikation erzeugen |
 
-Die Tests unter `tests/` halten je EINEN behobenen Fehler fest und schlagen ohne
-den zugehörigen Fix fehl. Die datenbankgestützten überspringen sich selbst, wenn
-`DATABASE_URL` auf keine erreichbare Instanz zeigt:
+Die Tests unter `tests/` prüfen Regressionen und API-Verträge. Eine vollständige
+lokale Konfiguration gemäß `.env.example` und eine **isolierte, migrierte
+Testdatenbank** sind erforderlich. Neuere DB-Suiten schlagen ohne Datenbank fehl;
+ältere Tests überspringen sich teilweise. Niemals die normalen App-Daten oder
+Produktionsdaten für Testläufe verwenden:
 
 ```bash
-DATABASE_URL=postgres://gremio:PASSWORT@localhost:5432/gremio npm test
+DATABASE_URL=postgres://gremio:PASSWORT@localhost:5432/gremio_test npm test
 ```
+
+`tests/api-parity.test.ts` prüft die echten REST-Handler mit Test-Tokens;
+`tests/api-contract.test.ts` gleicht Routen, Schemas, Beispiele und die generierten
+YAML-Dateien ab. Browser-/HTTP-Prüfungen und der gesonderte Migrationstest sind
+in [tests/browser/README.md](tests/browser/README.md) beschrieben. Der
+API-Vertragsabgleich benötigt keine neue Migration zusätzlich zu `0062`.
 
 ---
 

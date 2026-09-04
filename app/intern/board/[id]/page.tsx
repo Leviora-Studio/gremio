@@ -17,6 +17,7 @@ import { formatCents } from "@/lib/money";
 import { KanbanBoard, type KanbanCard } from "@/components/kanban/KanbanBoard";
 import { NewCardButton } from "@/components/kanban/NewCardButton";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { budgetDisplayForCards } from "@/lib/card-budget-db";
 
 export default async function BoardPage({
   params,
@@ -65,6 +66,7 @@ export default async function BoardPage({
 
   // Zugewiesene (mehrere) je Karte in EINER Query nachladen.
   const assigneeMap = await getAssigneesForCards(cardRows.map((r) => r.id));
+  const budgetDisplay = await budgetDisplayForCards(cardRows.map((r) => r.id));
 
   const kanbanCards: KanbanCard[] = cardRows.map((r) => {
     const assignees = (assigneeMap.get(r.id) ?? []).map((a) => ({
@@ -77,7 +79,7 @@ export default async function BoardPage({
       r.title,
       r.number,
       r.applicant,
-      r.budgetTitle,
+      budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle,
       r.notes,
       r.deadline,
       r.meeting,
@@ -85,7 +87,7 @@ export default async function BoardPage({
       r.transferDate,
       assignees.map((a) => a.name).join(" "),
       r.priorityId != null ? priorityLabel.get(r.priorityId) : null,
-      r.accountId != null ? accountLabel.get(r.accountId) : null,
+      budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) : null),
       statusLabel.get(r.statusId),
       r.approvedAmount != null ? formatCents(r.approvedAmount) : null,
       r.actualAmount != null ? formatCents(r.actualAmount) : null,

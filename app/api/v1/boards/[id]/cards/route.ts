@@ -9,13 +9,15 @@ import { canAccessBoard, getBoardById } from "@/lib/authz";
 import {
   apiError,
   authApi,
+  parseApiId,
   requireWriteScope,
   serializeCard,
   tokenAllowsBoard,
 } from "@/lib/api";
 import { cardWriteSchema, createCardViaApi } from "@/lib/api-cards";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
-import { getAssigneeIds, getAssigneeIdsForCards } from "@/lib/assignees";
+import { getAssigneeIdsForCards } from "@/lib/assignees";
+import { serializeApiCardDetail } from "@/lib/api-card-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,7 +30,9 @@ export async function GET(
   if (ctx instanceof NextResponse) return ctx;
 
   const { id } = await params;
-  const board = await getBoardById(Number(id));
+  const boardId = parseApiId(id);
+  if (boardId == null) return apiError(404, "Board nicht gefunden.");
+  const board = await getBoardById(boardId);
   if (
     !board ||
     !tokenAllowsBoard(ctx, board.id) ||
@@ -38,10 +42,14 @@ export async function GET(
 
   const sp = new URL(req.url).searchParams;
   const statusFilter = sp.get("statusId");
-  const archived = sp.get("archived"); // "true" | "all" | sonst = nur aktive
+  const archived = sp.get("archived");
+  if (archived != null && !["false", "true", "all"].includes(archived))
+    return apiError(400, "archived muss false, true oder all sein.");
   const conds = [eq(cards.boardId, board.id)];
-  if (statusFilter && /^\d+$/.test(statusFilter)) {
-    conds.push(eq(cards.statusId, Number(statusFilter)));
+  if (statusFilter != null) {
+    const statusId = parseApiId(statusFilter);
+    if (statusId == null) return apiError(400, "statusId muss eine gültige positive ID sein.");
+    conds.push(eq(cards.statusId, statusId));
   }
   if (archived === "true") conds.push(isNotNull(cards.archivedAt));
   else if (archived !== "all") conds.push(isNull(cards.archivedAt));
@@ -79,7 +87,9 @@ export async function POST(
   if (denied) return denied;
 
   const { id } = await params;
-  const board = await getBoardById(Number(id));
+  const boardId = parseApiId(id);
+  if (boardId == null) return apiError(404, "Board nicht gefunden.");
+  const board = await getBoardById(boardId);
   if (
     !board ||
     !tokenAllowsBoard(ctx, board.id) ||
@@ -114,14 +124,6 @@ export async function POST(
   const result = await createCardViaApi(ctx.user, board, parsed.data);
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(board.id);
-  return NextResponse.json(
-    {
-      card: serializeCard(
-        result.value,
-        { assigneeUserIds: await getAssigneeIds(result.value.id) },
-        visible,
-      ),
-    },
-    { status: 201 },
-  );
+  const detail = await serializeApiCardDetail(result.value.id, visible);
+  return detail ? NextResponse.json(detail, { status: 201 }) : apiError(404, "Karte nicht gefunden.");
 }

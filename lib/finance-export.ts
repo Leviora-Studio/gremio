@@ -126,45 +126,19 @@ function expenseTable(title: string, view: FinanceData["live"]): Table {
   };
 }
 
-// View 4a: Anträge — gruppiert nach Haushaltstitel mit Zwischensummen.
+// Requests remain one row each. A title display is never an allocation key.
 function antraegeTable(data: FinanceData): Table {
-  const groups = new Map<string, FinanceData["cardRows"]>();
-  for (const c of data.cardRows) {
-    const key = c.budgetTitle ?? "";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(c);
-  }
-  const keys = [...groups.keys()].sort((a, b) => a.localeCompare(b, "de"));
-
   const rows: Row[] = [];
   let totApproved = 0;
   let totActual = 0;
-  for (const key of keys) {
-    const cards = groups.get(key)!;
-    const gApproved = cards.reduce((s, c) => s + (c.approvedAmount ?? 0), 0);
-    const gActual = cards.reduce((s, c) => s + (c.actualAmount ?? 0), 0);
-    totApproved += gApproved;
-    totActual += gActual;
-    rows.push({
-      cells: [
-        "",
-        key || "(ohne Haushaltstitel)",
-        `${cards.length} ${cards.length === 1 ? "Antrag" : "Anträge"}`,
-        "",
-        "",
-        "",
-        "",
-        eur(gApproved),
-        eur(gActual),
-      ],
-      style: "top",
-    });
-    for (const c of cards) {
+  for (const c of [...data.cardRows].sort((a, b) => (a.budgetTitle ?? "").localeCompare(b.budgetTitle ?? "", "de", { numeric: true }))) {
+      totApproved += c.approvedAmount ?? 0;
+      totActual += c.actualAmount ?? 0;
       rows.push({
         cells: [
           c.number ?? "—",
-          "",
-          IND + c.title,
+          dash(c.budgetTitle),
+          c.title,
           c.applicant || "—",
           dash(c.decisionRef),
           dash(c.instructionDate),
@@ -172,9 +146,7 @@ function antraegeTable(data: FinanceData): Table {
           eur(c.approvedAmount),
           eur(c.actualAmount),
         ],
-        style: "sub",
       });
-    }
   }
   rows.push({
     cells: ["", "", "Summe", "", "", "", "", eur(totApproved), eur(totActual)],
@@ -182,7 +154,7 @@ function antraegeTable(data: FinanceData): Table {
   });
 
   return {
-    title: "Anträge nach Haushaltstitel",
+    title: "Anträge nach Haushaltstitel (vollständige Kartensummen)",
     columns: [
       { header: "Antragsnr.", width: 1.9 },
       HT,

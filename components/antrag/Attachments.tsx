@@ -7,6 +7,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import type { AttachmentKind } from "@/lib/constants";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { FileInput } from "@/components/FileInput";
+import { UploadQueue } from "@/components/UploadQueue";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import {
   deleteAttachmentAction,
@@ -174,12 +175,7 @@ export function WeitereAttachments({
       {items.map((a) => (
         <FileLine key={a.id} cardId={cardId} att={a} hasCert={hasCert} />
       ))}
-      <UploadForm
-        cardId={cardId}
-        kind="other"
-        accept="application/pdf,.pdf"
-        label="PDF hinzufügen"
-      />
+      <UploadQueue upload={(file) => { const data = new FormData(); data.set("file", file); return uploadAttachmentAction(cardId, "other", {}, data); }} />
     </div>
   );
 }

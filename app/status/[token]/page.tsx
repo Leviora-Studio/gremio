@@ -11,6 +11,9 @@ import { LiveRefresh } from "@/components/LiveRefresh";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { StatusLinkBox } from "@/components/StatusLinkBox";
 import { getApplicationStatusByToken } from "@/lib/public-status";
+import { PublicUploadScope } from "@/components/PublicUploadScope";
+import { formatCents } from "@/lib/money";
+import { PublicGate } from "@/components/PublicGate";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -36,11 +39,7 @@ export default async function StatusPage({
   if (!antrag) notFound();
 
   const isArchived = antrag.archived;
-  const canResubmit = antrag.submitMode === "resubmission";
-  const canReceipt = antrag.submitMode === "receipt";
-  const submitLabel = canResubmit
-    ? "Nachreichung einreichen"
-    : "Quittung einreichen";
+  const { canResubmit, canReceipt } = antrag;
 
   const link = `${publicBaseUrl()}/status/${token}`;
 
@@ -48,6 +47,7 @@ export default async function StatusPage({
     // Etwas breiter als die übrigen öffentlichen Seiten: Der Status-Link oben
     // ist lang und soll neben dem PDF-Button nicht auf drei Zeilen umbrechen.
     <main className="mx-auto max-w-2xl px-4 py-10">
+      <PublicUploadScope>
       <LiveRefresh src={`/api/status/${token}/stream`} />
       <ScrollToTop />
 
@@ -94,6 +94,10 @@ export default async function StatusPage({
               </span>
             </div>
           )}
+        </div>
+        <div>
+          <div className="text-xs font-medium uppercase text-slate-400">Genehmigter Betrag</div>
+          <div>{antrag.approvedAmountCents == null ? "Noch nicht eingetragen" : formatCents(antrag.approvedAmountCents)}</div>
         </div>
         <div className="grid grid-cols-2 gap-4 text-sm text-slate-500">
           <div>Eingegangen: {fmt(antrag.createdAt)}</div>
@@ -146,37 +150,37 @@ export default async function StatusPage({
       {/* Datei nachreichen (nur hinzufügen, nichts überschreiben/löschen).
           Entfällt, sobald der Antrag archiviert ist. */}
       <div className="card mt-6 space-y-3 p-6">
-        <h2 className="text-lg font-semibold">Datei nachreichen</h2>
-        {isArchived ? (
+        <h2 className="text-lg font-semibold">Dateien einreichen</h2>
+        {isArchived && (
           <p className="text-sm text-slate-500">
-            Dieser Antrag ist abgeschlossen und archiviert. Es können keine
+            Dieser Antrag ist abgeschlossen. Es können keine
             weiteren Dateien mehr hinzugefügt werden.
           </p>
-        ) : (
-          <>
+        )}
+          <PublicGate allowed={!isArchived} className="space-y-4">
             <p className="text-sm text-slate-500">
-              Du kannst weitere PDF-Dateien hinzufügen (z. B. Quittungen oder
-              nachgeforderte Unterlagen). Bereits hochgeladene Dateien bleiben
-              erhalten und können hier nicht gelöscht werden.
+              Hier kannst du allgemeine Dateien und Nachträge als PDF hochladen. Bitte lade hier keine Quittungen hoch. Nutze dafür den Bereich ‚Quittung einreichen‘, sobald dieser freigeschaltet ist. Bereits hochgeladene Dateien bleiben erhalten und können hier nicht gelöscht werden.
             </p>
             <PublicUploadForm token={token} />
-          </>
-        )}
+          </PublicGate>
       </div>
 
       {/* Einreichen — nur wenn die aktuelle Spalte ein Gate aktiviert hat */}
-      {(canResubmit || canReceipt) && (
-        <div className="card mt-6 space-y-3 border-brand-100 p-6">
+      <PublicGate allowed={canResubmit} className="card mt-6 space-y-4 p-6">
+        <h2 className="text-lg font-semibold">Unterlagen nachreichen</h2>
+        <p className="text-sm text-slate-500">Lade die nachgeforderten Unterlagen als PDF hoch und reiche sie anschließend ein. Dein Antrag wird dann als nachgereicht markiert.</p>
+        <PublicUploadForm token={token} purpose="resubmission" />
+        <PublicSubmitForm token={token} purpose="resubmission" label="Nachreichung einreichen" />
+      </PublicGate>
+      <PublicGate allowed={canReceipt} className="card mt-6 space-y-4 border-brand-100 p-6">
           <h2 className="text-lg font-semibold">
-            {canResubmit ? "Unterlagen einreichen" : "Quittung einreichen"}
+            Quittung einreichen
           </h2>
           <p className="text-sm text-slate-500">
-            {canResubmit
-              ? "Lade hier die nachgeforderten Unterlagen als PDF hoch und reiche sie anschließend ein. Dein Antrag wird dann als nachgereicht markiert."
-              : "Lade hier die Quittung(en) als PDF hoch und reiche sie anschließend ein. Dein Antrag geht damit in den nächsten Schritt."}
+            Lade hier die Quittung(en) als PDF hoch und reiche sie anschließend ein. Dein Antrag geht damit in den nächsten Schritt.
           </p>
           {/* Benennungs-Hinweis nur beim Einreichen von Quittungen. */}
-          {!canResubmit && (
+          {(
             <div className="rounded-md border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900">
               <p className="font-semibold">Wichtig für deine Quittungen</p>
               <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -199,13 +203,13 @@ export default async function StatusPage({
               </ul>
             </div>
           )}
-          <PublicUploadForm token={token} />
+          <PublicUploadForm token={token} purpose="receipt" />
           <div className="border-t border-slate-100 pt-3">
-            <PublicSubmitForm token={token} label={submitLabel} />
+            <PublicSubmitForm token={token} purpose="receipt" label="Quittung einreichen" />
           </div>
-        </div>
-      )}
+      </PublicGate>
 
+      </PublicUploadScope>
     </main>
   );
 }

@@ -43,6 +43,7 @@ export function NewCardButton({
   const [open, setOpen] = useState(false);
   const [cardId, setCardId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unsaved, setUnsaved] = useState(false);
   // Verhindert ein Rennen zwischen Verwerfen und Behalten (z.B. Escape/Backdrop
   // während des Verwerfen-Awaits): Sobald einer der beiden Wege startet, ist der
   // andere gesperrt – sonst könnte eine gerade verworfene Karte über onClose
@@ -50,6 +51,7 @@ export function NewCardButton({
   const closing = useRef(false);
 
   async function start() {
+    setUnsaved(false);
     setBusy(true);
     const res = await createBlankCardAction(boardId);
     setBusy(false);
@@ -63,7 +65,7 @@ export function NewCardButton({
   // Behalten (Fertig/Schließen): hier wird – falls aktiv – die Antragsnummer
   // vergeben. Verwerfen läuft NICHT hier durch → verbraucht keine Nummer.
   async function keep() {
-    if (closing.current) return;
+    if (closing.current || unsaved) return;
     closing.current = true;
     const id = cardId;
     setOpen(false);
@@ -108,7 +110,7 @@ export function NewCardButton({
             <button onClick={discard} className="btn-danger btn-sm">
               Verwerfen
             </button>
-            <button onClick={keep} className="btn-primary btn-sm">
+            <button onClick={keep} disabled={unsaved} title={unsaved ? "Bitte zuerst alle Felder gültig ausfüllen und das automatische Speichern abwarten." : undefined} className="btn-primary btn-sm">
               Fertig
             </button>
           </>
@@ -117,6 +119,7 @@ export function NewCardButton({
         {cardId !== null && (
           <div className="space-y-6">
             <CardEditor
+              onDirtyChange={setUnsaved}
               cardId={cardId}
               boardId={boardId}
               visible={visible}

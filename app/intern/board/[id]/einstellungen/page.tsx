@@ -365,22 +365,14 @@ export default async function BoardSettingsPage({
             Rückmeldung (öffentlicher Status-Link) → Karte weiterschieben
           </h3>
           <p className="text-xs text-slate-500">
-            Ab der Quell-Spalte kann der Antragsteller/Entleiher über den
-            Status-Link etwas einreichen (z. B. Quittung oder unterschriebenen
-            Vertrag); danach springt die Karte automatisch in die Zielspalte.
+            In jeder ausgewählten Quellspalte können Quittungen über den Status-Link
+            eingereicht werden. Erst das abschließende Einreichen verschiebt die Karte
+            in die Zielspalte. Archiv-Trigger haben Vorrang und sperren das Einreichen.
           </p>
-          <SelectSaveForm
+          <ArchiveTriggerForm
             action={setReceiptFromStatusAction.bind(null, boardId)}
-            name="statusId"
-            label="Quell-Spalte (ab hier einreichbar)"
-            submitLabel="Setzen"
-            initial={
-              board.receiptFromStatusId ? String(board.receiptFromStatusId) : ""
-            }
-            options={[
-              { value: "", label: "— deaktiviert —" },
-              ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
-            ]}
+            statuses={statuses}
+            initial={statuses.filter((s) => s.isReceiptTrigger).map((s) => s.id)}
           />
           <SelectSaveForm
             action={setReceiptToStatusAction.bind(null, boardId)}
@@ -441,7 +433,7 @@ export default async function BoardSettingsPage({
           <p className="text-xs text-slate-500">
             Erreicht ein Antrag eine dieser Spalten und ist die Archivierung
             unten aktiv, werden alle Anhänge automatisch hochgeladen. Optional
-            lassen sich bis zu zwei Spalten festlegen.
+            lassen sich beliebig viele Spalten festlegen.
           </p>
           <ArchiveTriggerForm
             action={setArchiveTriggerAction.bind(null, boardId)}

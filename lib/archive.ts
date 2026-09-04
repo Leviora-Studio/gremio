@@ -13,6 +13,8 @@ import {
 import { decryptSecret } from "@/lib/crypto";
 import { uploadAntragArchive } from "@/lib/nextcloud";
 import { logActivity } from "@/lib/activity";
+import { loadBudgetPositions } from "@/lib/card-budget-db";
+import { budgetTitles } from "@/lib/card-budget";
 import {
   DEFAULT_ARCHIVE_FOLDER_FIELDS,
   DEFAULT_ARCHIVE_FOLDER_SEPARATOR,
@@ -165,7 +167,7 @@ async function archiveLocked(cardId: number): Promise<void> {
     // Ordnername aus der Board-Konfiguration (Felder + Trennzeichen);
     // sanitizeSegment in uploadAntragArchive säubert ihn final.
     const subfolder = buildArchiveFolderName(
-      card,
+      card.budgetMode === "positions" ? { ...card, budgetTitle: budgetTitles(await loadBudgetPositions(card.id)) } : card,
       archive.folderFields,
       archive.folderSeparator,
     );

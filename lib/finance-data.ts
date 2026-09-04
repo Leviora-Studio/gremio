@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accounts,
   cards,
+  cardBudgetPositions,
   financeBoardAccounts,
   financeBoardExpenseAccounts,
   financePlanItems,
   type FinanceBoard,
 } from "@/lib/db/schema";
 import { resolveSourceBoards } from "@/lib/finance";
+import { budgetTitles } from "@/lib/card-budget";
 
 export type PlanItem = typeof financePlanItems.$inferSelect;
 
@@ -146,11 +148,12 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   const incomeTops = tops.filter((i) => i.kind === "income");
   const expenseTops = tops.filter((i) => i.kind === "expense");
 
-  const cardRows: AntragRow[] =
+  const sourceCards =
     accessibleIds.length && accountIds.length
       ? await db
           .select({
             id: cards.id,
+            budgetMode: cards.budgetMode,
             number: cards.number,
             budgetTitle: cards.budgetTitle,
             title: cards.title,
@@ -166,16 +169,24 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
           .where(
             and(
               inArray(cards.boardId, accessibleIds),
-              inArray(cards.accountId, accountIds),
-              isNotNull(cards.budgetTitle),
-              ne(cards.budgetTitle, ""),
+              or(
+                and(eq(cards.budgetMode, "single"), inArray(cards.accountId, accountIds)),
+                and(eq(cards.budgetMode, "positions"), sql`exists (select 1 from ${cardBudgetPositions} where ${cardBudgetPositions.cardId} = ${cards.id} and ${inArray(cardBudgetPositions.accountId, accountIds)})`),
+              ),
             ),
           )
       : [];
 
+  const positionCardIds = sourceCards.filter((c) => c.budgetMode === "positions").map((c) => c.id);
+  const positions = positionCardIds.length ? await db.select().from(cardBudgetPositions).where(inArray(cardBudgetPositions.cardId, positionCardIds)).orderBy(asc(cardBudgetPositions.position)) : [];
+  const byCard = new Map<number, typeof positions>();
+  for (const row of positions) { const rows = byCard.get(row.cardId) ?? []; rows.push(row); byCard.set(row.cardId, rows); }
+  const cardRows: AntragRow[] = sourceCards.map((c) => ({ ...c, budgetTitle: c.budgetMode === "positions" ? budgetTitles(byCard.get(c.id) ?? []) : c.budgetTitle })).filter((c) => !!c.budgetTitle);
+
   const liveByTitle = new Map<string, number>();
   const actualByTitle = new Map<string, number>();
-  for (const c of cardRows) {
+  const expenseRows = sourceCards.flatMap<Pick<AntragRow, "budgetTitle" | "accountId" | "approvedAmount" | "actualAmount">>((c) => c.budgetMode === "positions" ? byCard.get(c.id) ?? [] : [c]);
+  for (const c of expenseRows) {
     const t = c.budgetTitle ?? "";
     if (!t) continue;
     // Ausgaben-Berechnung nur für die (ggf. eingeschränkten) Ausgaben-Konten.

@@ -3,7 +3,7 @@
 
 "use client";
 
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PriorityOption } from "@/lib/priorities";
 import type { AccountOption } from "@/lib/accounts";
 import { Select } from "@/components/Select";
@@ -11,6 +11,9 @@ import { DatePicker } from "@/components/DatePicker";
 import { AutoTextarea } from "@/components/AutoTextarea";
 import { UserTypeahead } from "./UserTypeahead";
 import { UserMultiTypeahead } from "./UserMultiTypeahead";
+import { BudgetPositionsEditor } from "./BudgetPositionsEditor";
+import { BUDGET_FIELDS, type BudgetPosition } from "@/lib/card-budget";
+import { centsToInput } from "@/lib/money";
 import {
   saveCardAction,
   type CardValues,
@@ -37,6 +40,10 @@ export function CardEditor({
   // „Antragsteller". Nur die Beschriftung — Spalte und API-Feld heißen
   // weiterhin `applicant`.
   applicantLabel = "Antragsteller",
+  budgetPositions = [],
+  budgetRevision = 0,
+  budgetMode = "single",
+  onDirtyChange,
 }: {
   cardId: number;
   boardId: number;
@@ -64,7 +71,13 @@ export function CardEditor({
   priorities: PriorityOption[];
   accounts: AccountOption[];
   applicantLabel?: string;
+  budgetPositions?: BudgetPosition[];
+  budgetRevision?: number;
+  budgetMode?: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const [positionsActive, setPositionsActive] = useState(budgetMode === "positions");
+  const [budgetDirty, setBudgetDirty] = useState(false);
   const valuesRef = useRef<CardValues>({
     title: initial.title,
     applicant: initial.applicant,
@@ -93,35 +106,50 @@ export function CardEditor({
   // Snapshot zurückschreiben und z. B. ein zwischenzeitlich automatisch
   // gesetztes Anweisungsdatum wieder auf null überschreiben.
   const dirty = useRef<Set<keyof CardValues>>(new Set());
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  useEffect(() => { onDirtyChange?.(budgetDirty || status === "saving" || status === "error"); }, [budgetDirty, status, onDirtyChange]);
+  const observedBudgetMode = useRef(budgetMode);
+  useEffect(() => {
+    if (observedBudgetMode.current === budgetMode || budgetDirty || dirty.current.size) return;
+    observedBudgetMode.current = budgetMode;
+    valuesRef.current = { ...valuesRef.current, budgetTitle: initial.budgetTitle, accountId: initial.accountId, requestedAmount: initial.requestedAmount, approvedAmount: initial.approvedAmount, actualAmount: initial.actualAmount };
+    setPositionsActive(budgetMode === "positions");
+  }, [budgetMode, budgetDirty, initial]);
 
-  function doSave() {
+  async function doSave(): Promise<boolean> {
+    if (inFlight.current && !(await inFlight.current)) return false;
     const keys = [...dirty.current];
     if (keys.length === 0) {
       setStatus((s) => (s === "saving" ? "saved" : s));
-      return;
+      return true;
     }
     const patch: Partial<CardValues> = {};
     for (const k of keys) {
       (patch as Record<string, unknown>)[k] = valuesRef.current[k];
     }
     setStatus("saving");
-    saveCardAction(cardId, patch)
+    const request = saveCardAction(cardId, patch)
       .then((r) => {
         if (r.ok) {
           // Nur die gesendeten Keys als „sauber" markieren — während des
           // Requests geänderte Felder bleiben dirty und werden nachgespeichert.
-          for (const k of keys) dirty.current.delete(k);
+          for (const k of keys) if (valuesRef.current[k] === patch[k]) dirty.current.delete(k);
           if (dirty.current.size) schedule();
           else setStatus("saved");
+          return true;
         } else {
           setStatus("error");
           setErrorMsg(r.error ?? "Fehler beim Speichern.");
+          return false;
         }
       })
       .catch(() => {
         setStatus("error");
         setErrorMsg("Netzwerkfehler.");
-      });
+        return false;
+      }).finally(() => { inFlight.current = null; });
+    inFlight.current = request;
+    return request;
   }
 
   function flushNow() {
@@ -349,14 +377,12 @@ export function CardEditor({
   };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
       <div className="relative sm:col-span-2">
-        {/* Auto-Speichern-Status in der Ecke — verbraucht keine eigene Zeile,
-            damit die Felder direkt unter der Überschrift beginnen. */}
-        <div className="absolute right-0 top-0 z-10">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <label className="label">Titel *</label>
           <SaveIndicator status={status} errorMsg={errorMsg} />
         </div>
-        <label className="label">Titel *</label>
         <input
           defaultValue={valuesRef.current.title}
           className="input"
@@ -366,8 +392,12 @@ export function CardEditor({
         />
       </div>
       {visible.map((k) =>
-        fieldNodes[k] ? <Fragment key={k}>{fieldNodes[k]}</Fragment> : null,
+        positionsActive && Object.values(BUDGET_FIELDS).includes(k as never) ? null : fieldNodes[k] ? <Fragment key={k}>{fieldNodes[k]}</Fragment> : null,
       )}
+      <BudgetPositionsEditor cardId={cardId} initial={budgetPositions} revision={budgetRevision} accounts={accounts} visible={visible} active={positionsActive} onDirtyChange={setBudgetDirty} onActive={(active, single) => {
+        if (single) valuesRef.current = { ...valuesRef.current, budgetTitle: single.budgetTitle, accountId: single.accountId, requestedAmount: centsToInput(single.requestedAmount), approvedAmount: centsToInput(single.approvedAmount), actualAmount: centsToInput(single.actualAmount) };
+        setPositionsActive(active);
+      }} beforeStart={async () => { if (timer.current) clearTimeout(timer.current); return doSave(); }} />
     </div>
   );
 }

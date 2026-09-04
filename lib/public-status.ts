@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
+import { publicGates } from "@/lib/public-workflow";
 
 /**
  * Gemeinsame LESENDE Sicht auf den öffentlichen Antragsstatus — genutzt von
@@ -135,6 +136,9 @@ export type PublicDocument = {
 export type SubmitMode = "resubmission" | "receipt" | null;
 
 export type PublicApplicationStatus = {
+  approvedAmountCents: number | null;
+  canResubmit: boolean;
+  canReceipt: boolean;
   token: string;
   number: string | null;
   title: string;
@@ -172,6 +176,7 @@ export async function getApplicationStatusByToken(
         boardId: cards.boardId,
         statusId: cards.statusId,
         number: cards.number,
+        approvedAmountCents: cards.approvedAmount,
         title: cards.title,
         applicant: cards.applicant,
         createdAt: cards.createdAt,
@@ -180,6 +185,7 @@ export async function getApplicationStatusByToken(
         applicantNote: cards.applicantNote,
         statusName: boardStatuses.name,
         isArchiveTrigger: boardStatuses.isArchiveTrigger,
+        isReceiptTrigger: boardStatuses.isReceiptTrigger,
       })
       .from(cards)
       .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
@@ -196,7 +202,6 @@ export async function getApplicationStatusByToken(
   const [board] = await db
     .select({
       resubmitStatusId: boards.resubmitStatusId,
-      receiptFromStatusId: boards.receiptFromStatusId,
       receiptToStatusId: boards.receiptToStatusId,
       inventoryBoardId: boards.inventoryBoardId,
     })
@@ -211,15 +216,8 @@ export async function getApplicationStatusByToken(
   // Liegt der Antrag in der Archiv-Spalte (Nextcloud-Trigger), ist er
   // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.
   const archived = !!row.isArchiveTrigger;
-  const canResubmit =
-    !archived &&
-    !!board?.resubmitStatusId &&
-    row.statusId === board.resubmitStatusId;
-  const canReceipt =
-    !archived &&
-    !!board?.receiptFromStatusId &&
-    !!board?.receiptToStatusId &&
-    row.statusId === board.receiptFromStatusId;
+  const target = board?.receiptToStatusId == null ? [] : await db.select({ id: boardStatuses.id }).from(boardStatuses).where(and(eq(boardStatuses.id, board.receiptToStatusId), eq(boardStatuses.boardId, row.boardId)));
+  const { canResubmit, canReceipt } = publicGates(archived, !!row.isReceiptTrigger, row.statusId, board ?? { resubmitStatusId: null, receiptToStatusId: null }, target.length > 0);
 
   const atts = await db
     .select()
@@ -261,6 +259,9 @@ export async function getApplicationStatusByToken(
 
   return {
     token,
+    approvedAmountCents: row.approvedAmountCents,
+    canResubmit,
+    canReceipt,
     number: row.number,
     title: row.title,
     applicant: row.applicant,

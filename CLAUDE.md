@@ -91,8 +91,8 @@ board_access   (id, board_id FK→boards ON DELETE CASCADE,
 
 board_statuses (id, board_id FK→boards ON DELETE CASCADE, name,
                 position INTEGER, is_archive_trigger INTEGER DEFAULT 0, created_at)
--- Archiv-Trigger: bis zu ZWEI Spalten je Board möglich (kein Unique-Index; die
--- App begrenzt auf max. 2). Erreicht ein Antrag EINE der Trigger-Spalten und ist
+-- Archiv-Trigger: beliebig viele Spalten je Board möglich. Erreicht ein Antrag
+-- EINE der Trigger-Spalten und ist
 -- die Nextcloud-Archivierung aktiv, wird archiviert.
 
 -- Nextcloud-Archiv pro Board (1:1), eigene Verbindung je Board:
@@ -109,7 +109,7 @@ board_numbering (board_id PK FK→boards ON DELETE CASCADE,
 -- cards.number = vergebene Antragsnummer (Text, NULL = keine).
 --   Vergabe atomar (UPDATE … next=next+1 … RETURNING) beim Formular-Eingang und
 --   beim BEHALTEN einer manuellen Karte (Verwerfen verbraucht keine Nummer).
---   Editierbar nur durch Board-Verwalter; Zähler bleibt davon unberührt.
+--   Bei aktiviertem Feld durch jedes Board-Mitglied editierbar; Zähler bleibt davon unberührt.
 --   Keine Eindeutigkeitsgarantie (Dubletten durch Reset/leere Blöcke bewusst erlaubt).
 
 -- Karte gehört zu genau einem Board und steht in einer Status-Spalte dieses Boards:
@@ -183,7 +183,7 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 > 2. **Anweisungsdatum** (`instruction_date`) — wird beim Erreichen der Anweisungs-Trigger-Spalte gesetzt.
 > 3. **Überweisungsdatum** (`transfer_date`) — analog, eigener Trigger.
 > 4. **Done-Sweep** — Karten in der „Done"-Spalte werden täglich zur eingestellten Uhrzeit archiviert (nur ausgeblendet, nichts gelöscht).
-> 5. **Quittungs-Gate** — reicht der Antragsteller öffentlich ein, wandert die Karte von der Von- in die Nach-Spalte (nur aus der Quell-Spalte).
+> 5. **Quittungs-Gate** — erst beim abschließenden öffentlichen Einreichen wandert die Karte aus einer aktuell ausgewählten Quellspalte in die gemeinsame Zielspalte. Beliebig viele Quellen, keine historische Freigabe.
 > 6. **Antragsnummer** — wird bei aktiver Board-Nummerierung automatisch vergeben.
 > 7. **Leihvorgang-Sync** (Inventar) — die Spalte der Leihkarte setzt den Vorgangsstatus (siehe „Inventar- & Entleihsystem").
 
@@ -334,7 +334,7 @@ Nach dem Login landet jeder Nutzer auf der **Startseite** (`/intern`): Dashboard
 - Wird nicht per Mail verschickt — wird am Ende der Einreichung angezeigt
 - Antragsteller sieht: aktuellen Status + Datum der letzten Änderung
 - **Dokumente ansehen:** Finanzantrag, Anlage A/B und „weitere Dateien" sind über den Token herunterladbar (so sieht man z.B. später die unterschriebene Version). Der **Studierendenausweis bleibt intern** (nicht öffentlich).
-- **Nachreichen (append-only):** Antragsteller kann über den Link **PDFs zu „weitere Dateien" hinzufügen** (z.B. Quittungen). Öffentlich kann **nichts bearbeitet/gelöscht/überschrieben** werden — einmal vorhandene Dateien bleiben erhalten. Max. Anzahl begrenzt (Missbrauchsschutz).
+- **Dateien einreichen (append-only):** Allgemeine PDFs behalten ihren Namen; Quittungen werden ausschließlich im zusätzlich freigeschalteten Quittungsbereich hochgeladen. Öffentlich kann **nichts bearbeitet/gelöscht/überschrieben** werden. Max. Anzahl begrenzt (Missbrauchsschutz); Archiv-Trigger sperren Uploads.
 
 ### Eingangsbestätigung (PDF, downloadbar)
 Enthält:
@@ -414,10 +414,69 @@ board_templates        (id, name UNIQUE, description, created_at)
 
 board_template_statuses(id, template_id FK→board_templates ON DELETE CASCADE, name,
                         position INTEGER, is_archive_trigger INTEGER DEFAULT 0)
--- max. ein Archiv-Trigger je Template (partieller UNIQUE-Index)
+-- beliebig viele Archiv-Trigger; beim Kopieren vollständig übernehmen
 ```
 
 ---
+
+## Haushaltspositionen und öffentliche Einreichung (Migration 0062)
+
+Bestehende Karten bleiben `budget_mode='single'`: bisherige Felder und optionale
+Kontozuordnung bleiben unverändert. `card_budget_positions` speichert im Modus
+`positions` UUID, Karten-FK (CASCADE), Reihenfolge, Haushaltstitel, Bezeichnung,
+verpflichtende Konto-FK (RESTRICT) und drei nullable Centbeträge. `cards.account_id`
+und `cards.budget_title` sind dann NULL; die drei Kartenbeträge sind atomar mit den
+Positionen gespeicherte Gesamtsummen. Es gibt keine zweite Kontozuordnung.
+Je Betragsart gilt: ausschließlich vorhandene Werte summieren, alle leer → NULL,
+echte Null → 0; Positionswerte und Gesamtsummen maximal 2.000.000.000 Cent.
+Die Live-Ausgabe verwendet je Position tatsächlich, sonst genehmigt, sonst 0.
+
+Der erste Wechsel füllt Position 1 mit den bisherigen Kartenwerten vor; sichtbare
+Felder können bereits vor dem ersten Speichern geändert werden. Neue Positionen
+haben leere Beträge. Interne Datenbankfelder (`cardId`, `position`) werden nicht
+in den bearbeitbaren Entwurf oder das Schreibobjekt übernommen.
+Beim Autosave-/Live-Abgleich bleibt der eingegebene Betragstext erhalten, wenn
+der Centwert unverändert ist; kein Ergänzen von Nachkommastellen während der
+Bearbeitung. Tatsächlich geänderte Serverwerte werden in saubere Entwürfe übernommen.
+Fehlende Konten blockieren den gesamten Speichervorgang und
+lassen den lokalen Entwurf stehen. `budget_revision` erkennt konkurrierende
+Budgetänderungen. Einzelne befüllte Positionen werden nur nach Bestätigung entfernt.
+Eine verbleibende Position kehrt erst bei leerer Bezeichnung verlustfrei in den
+Einzelmodus zurück. Im Editor müssen Haushaltstitel und Konto aktiviert sein.
+Ausgeblendete Betragsfelder bleiben ausgeblendet und werden beim Speichern erhalten;
+Positionen mit ausgeblendeten befüllten Feldern dürfen nicht indirekt gelöscht werden.
+REST und Server Actions prüfen dieselben Regeln und sperren direkte Änderungen an
+Mehrfach-Kartengesamtsummen und globalem Konto. Löschen verwendeter Positionskonten
+ist gesperrt; Einzelkarten behalten die bisherige SET-NULL-Regel.
+
+Die Finanz-Antragsliste zeigt jede Karte einmal mit vollständigen Kartensummen
+und deduplizierten, kommagetrennten Haushaltstiteln. Aufnahme bei mindestens einem
+passenden Positionskonto; Ausgaben werden dagegen ausschließlich aus den Positionen
+der ausgewählten Konten berechnet, inklusive Ausgaben-Konten-Override. Leere Titel
+bleiben wie bisher ohne Plan-Zuordnung. Antragslistenexporte sind flach, sortiert nach
+Nummer oder Titelanzeige; keine irreführenden Zwischensummen nach Titelkombinationen.
+Archivpfad, Kanban-Suche, Aufgabenübersicht und Protokollverknüpfungen verwenden bei
+Bedarf eine separate Titel-/Kontenanzeige; niemals als Schlüssel für die Auswertung.
+
+Quittungsquellen stehen in `board_statuses.is_receipt_trigger`; die Altspalte
+`boards.receipt_from_status_id` wird nur migrationsbedingt aufbewahrt und nicht mehr
+ausgewertet. Migration übernimmt die bisherige Quelle. Zielspalte bleibt erhalten.
+Archiv- und Quittungstrigger erlauben jeweils beliebig viele Quellen desselben Boards.
+Archiv-Trigger sperren öffentlich Uploads und Einreichen unabhängig von anderen Gates.
+Nachreichung und Quittung dürfen gleichzeitig angeboten werden; jede Aktion benennt
+ihren Zweck ausdrücklich. Allgemeine Uploads bleiben unabhängig davon möglich.
+
+Öffentliche Uploads starten nach Mehrfachauswahl sofort, einzeln in einer Warteschlange
+mit Dateistatus und gezieltem Retry. Kein Upload löst die abschließende Einreichung aus;
+während Uploads laufen sind beide Einreichen-Aktionen blockiert. `upload_purpose`
+unterscheidet general/resubmission/receipt (Altdateien bleiben NULL). Nur receipt
+erhält die vorhandene Q-Nummerierung; allgemeine Dateinamen bleiben sicher bereinigt
+erhalten. Quittungsnummer und 30-Dateien-Grenze werden unter Kartensperre vergeben;
+Status und Board-Gates werden innerhalb derselben Transaktion frisch geprüft. Bei
+fehlgeschlagener DB-Zuordnung wird die neu gespeicherte Datei entfernt. Interne
+Mehrfach-PDF-Anhänge nutzen dieselbe Warteschlange; Einzeldokument-Slots bleiben einzeln.
+Die öffentliche Statusseite und API zeigen ausschließlich den genehmigten Karten-
+Gesamtbetrag zusätzlich an (NULL und 0 unterscheidbar), keine Konten oder Positionen.
 
 ## Card-Titel Format
 ```
@@ -1054,9 +1113,10 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **Finanz-Sichtbarkeit am Eigentümer:** Welche Quell-Boards in eine Finanzübersicht einfließen, entscheidet der **Finanzboard-Eigentümer** (Spec „Freigabe wie Boards"). Wer eine Übersicht freigegeben bekommt, sieht damit Karten-Finanzdaten auch von Boards ohne eigenen Zugriff — bewusste Informations-Freigabe.
 - **Archivierte Karten zählen in der Finanzauswertung mit** (Done-Archiv blendet nur die Board-/Aufgaben-Ansicht aus). Für „tatsächliche Ausgaben" sollen abgeschlossene Anträge mitzählen.
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
-- **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Verwalter-exklusiv bleiben nur Antragsnummer, Anweisungsdatum und Überweisungsdatum (UI **und** REST-API). Beim Archiv-Status gilt: **manuelles Archivieren kann niemand** (nur der Done-Sweep archiviert), **Wiederherstellen darf jedes Board-Mitglied** — in Web und API identisch.
+- **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Seit v2.7.9 dürfen auch Antragsnummer, Anweisungsdatum und Überweisungsdatum von jedem Mitglied geändert werden, sofern am Board aktiviert (UI **und** REST-API). Board-Einstellungen bleiben Eigentümer/Admin vorbehalten. Beim Archiv-Status gilt: **manuelles Archivieren kann niemand** (nur der Done-Sweep archiviert), **Wiederherstellen darf jedes Board-Mitglied** — in Web und API identisch.
 - **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Zugriff via `canAccessBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
-- **Öffentliches Nachreichen ist append-only**, ohne Spalten-Gate/Frist (bis 30 PDFs je Karte) — gewollt; gegen Missbrauch zusätzlich ratenbegrenzt.
+- **REST-Vertragsabgleich:** Umfang bleibt Boards/Karten sowie öffentliche Anträge/Feedback. `POST` kann Haushaltspositionen atomar anlegen, `PATCH` ersetzt sie mit `budgetRevision`; `lib/api-card-response.ts` liest Summen/Revision/Positionen im selben Snapshot. Reine Zuständigen-PATCHes einschließlich `[]` werden gespeichert. Trigger-Metadaten für Quittungen/Überweisungen sind für Board-Verwalter vollständig; Listen liefern Summen, Details die Positionen. Siehe `docs/API_PARITY_AUDIT.md` für Abdeckung und bewusst nicht externe Web-Funktionen.
+- **Öffentliche allgemeine Uploads sind append-only**, unabhängig vom Quittungs-Gate (bis 30 PDFs je Karte) — gewollt; Archiv-Trigger sperren sie, gegen Missbrauch zusätzlich ratenbegrenzt.
 - **Öffentliches Inventar ist eine Whitelist, keine Blacklist:** `PUBLIC_INVENTORY_FIELD_KEYS` listet auf, was *nach außen darf* (Bezeichnung, Kategorie, Verfügbarkeit) — neue Item-Felder sind damit automatisch **nicht** öffentlich. Standort, Preis, Seriennummer, Belege und „aktuell bei" bleiben intern; öffentlich erscheint nur die Ausleihfrist ohne Person.
 - **Leih-System-Boards sind serverseitig gegen Verwaltung gesperrt:** `requireBoardManage` weist Boards mit `inventory_board_id` mit 404 ab — sonst ließen sich Done-Spalte/Archiv-Trigger/Nextcloud darauf aktivieren und würden laufende Leihkarten wegräumen. Ihre Zugriffs- und Mitgliederliste spiegelt bewusst das Inventar statt eigener Freigaben (eine Freigabequelle, kein Auseinanderlaufen).
 - **Drei öffentliche Status-Wege, drei getrennte Tokens:** Antrag → `/status/{cards.token}`, Feedback → `/feedback/status/{cards.token}` (getrennt über den `feedback_submissions`-Snapshot), Ausleihe → `/inventar/status/{inventory_loans.token}` — ein **eigener** Token an der Vorgangszeile. Die Tracking-Karte eines Leihvorgangs hat zwangsläufig auch ein `cards.token` (die Spalte ist NOT NULL UNIQUE), das aber **kein** Status-Link ist: Alle Antrags-Einstiege (`/status/{token}`, dessen PDF, Anhang-Route, SSE-Stream und die öffentlichen Server Actions) weisen es mit 404 ab, und die interne Kartenansicht zeigt dafür keinen Link mehr. Sonst gäbe es zu einem Leihvorgang eine zweite, ungewollte öffentliche Seite samt PDF-Upload. Die Sperre sitzt in `lib/public-status.ts` (`resolveApplicationCardId` / `getApplicationStatusByToken` / `isPublicCardStreamToken`) — der Feedback-Weg und der Ausleih-Weg bleiben unberührt.
@@ -1082,6 +1142,15 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der Viewer ist zugleich Editor:
 - **Anzeigen:** `react-pdf` (pdf.js) rendert PDF-Seiten; Bilder (Studierendenausweis) werden als `<img>` gezeigt. Auf der **öffentlichen Statusseite** ist der Viewer **read-only**.
 - **Bearbeiten (intern, Board-Mitglieder):** Freitext per Klick platzieren und vorhandene **AcroForm-Formularfelder** über ein Seitenpanel ausfüllen. Beim Speichern werden die Änderungen serverseitig mit `pdf-lib` ins PDF geschrieben (`lib/pdf-edit.ts`).
+- **Alte Formularstruktur:** `lib/pdf-widget-compat.ts` ordnet getrennte Kopien in
+  `AcroForm/Fields` und Seiten-`Annots` anhand vollständigem Feldnamen, Feldtyp,
+  Wert, Rechteck und Optionszustand zu. Mehrfachplatzierungen werden zusätzlich
+  über Seitenreferenz/Appearance unterschieden. Native Verknüpfungen haben Vorrang;
+  widersprüchliche oder mehrdeutige Zuordnungen bleiben im Seitenpanel. Das Öffnen
+  schreibt keine PDF-Bytes um (auch keine vorhandenen Signaturen). Erst beim
+  ausdrücklichen Bearbeiten werden Werte und Appearances eindeutig zugeordneter
+  Seitenkopien synchronisiert. Alte Radiogruppen ohne Radio-Flag werden an ihren
+  unterschiedlichen Widget-On-Zuständen erkannt; wiederholte Checkboxen bleiben Checkboxen.
 - **Signieren:** sichtbare Signatur-Box platzieren → serverseitige **PAdES-Signatur** mit dem persönlichen `.p12` des Nutzers (`lib/sign.ts`, `@signpdf`). Verlangt ein in den Konto-Einstellungen hinterlegtes Zertifikat (`lib/cert.ts`, `inspectP12`).
 - **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Zugriff erforderlich, Aktivitätseintrag.
 - **Feld-Metadaten:** `GET /api/attachment/{id}/fields` liefert die ausfüllbaren Felder fürs Seitenpanel.
@@ -1094,12 +1163,14 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
 ## Hinweise
 
 ### Dokumentation im Repo
+- **`AGENTS.md`** — Arbeitsregeln und Einstieg für Coding-Agenten; verweist auf die kanonischen Fach-/API-Dokumente.
 - **`CLAUDE.md`** (diese Datei) — Fachkonzept, Datenmodell, bewusste Entscheidungen. Bei fachlichen Änderungen **mitpflegen**.
 - **`README.md`** — Betrieb: Setup, `.env`, Deployment, Backups. Aktuell.
 - **`docs/API.md`** — REST-API `/api/v1` (Tokens, Scopes, Endpunkte).
 - **`docs/PUBLIC_API.md`** — öffentliche API `/api/public/v1` (ohne Anmeldung, Idempotenz, Limits).
+- **`docs/API_PARITY_AUDIT.md`** — Abgleich seit v2.7.7 einschließlich noch nicht veröffentlichter Änderungen, Regressionen und Abgrenzung der REST-API.
 - **`lib/db/schema.ts`** — die **maßgebliche** Schemaquelle (Drizzle). Die SQL-Blöcke hier sind konzeptionelle Beschreibung; im Zweifel gilt das Schema.
-- **`tests/`** — Regressionstests zu behobenen Fehlern, ausgeführt mit `npm test` (Node-Test-Runner über `tsx`, **keine** zusätzliche Test-Abhängigkeit). Bewusst kein flächendeckendes Testnetz: Jeder Test hält EINEN konkreten Fehler fest und schlägt ohne den zugehörigen Fix fehl. Tests, die eine Datenbank brauchen, überspringen sich selbst, wenn keine erreichbar ist.
+- **`tests/`** — Regressionstests, ausgeführt mit `npm test` (Node-Test-Runner über `tsx`, **keine** zusätzliche Test-Abhängigkeit). DB-Tests nur gegen eine isolierte, migrierte Testdatenbank ausführen; neuere Suiten schlagen ohne DB bewusst fehl, ältere überspringen sich teilweise. Migrationstest benötigt zusätzlich eine explizite leere Upgrade-Testdatenbank. `api-parity.test.ts` prüft echte Route Handler und Rechte, `api-contract.test.ts` sichert Schemas, Beispiele, Routeninventar und generierte YAML-Dateien ab.
 - ⚠️ **`IMPLEMENTATION_PLAN.md` ist historisch** (Bauplan der Erstumsetzung) und in Teilen überholt — er nennt noch SQLite, die Tabelle `antraege`, `/intern/antrag/{id}` und lokale Passwörter. **Nicht als Referenz verwenden.**
 
 ### Sonstiges

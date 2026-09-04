@@ -7,6 +7,13 @@ import { authenticateApiToken, type ApiContext } from "@/lib/api-token";
 
 export type { ApiContext } from "@/lib/api-token";
 
+/** IDs use PostgreSQL integer columns; reject malformed/out-of-range input before querying. */
+export function parseApiId(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 && id <= 2147483647 ? id : null;
+}
+
 /** Einheitliche JSON-Fehlerantwort. */
 export function apiError(
   status: number,
@@ -63,7 +70,11 @@ export function serializeBoard(board: Board, user: User) {
     description: board.description,
     // Die rohe Eigentümer-ID sieht im Web nur ein Verwalter (in den Einstellungen);
     // ein normales Mitglied erfährt über `role` nur, ob es selbst Eigentümer ist.
-    ...(canManage ? { ownerId: board.ownerId } : {}),
+    ...(canManage ? {
+      ownerId: board.ownerId,
+      receiptToStatusId: board.receiptToStatusId,
+      resubmitStatusId: board.resubmitStatusId,
+    } : {}),
     role,
     doneStatusId: board.doneStatusId,
     createdAt: board.createdAt,
@@ -78,7 +89,11 @@ export function serializeStatus(s: BoardStatus, canManage = false) {
     isArchiveTrigger: s.isArchiveTrigger,
     // Der Anweisungs-Trigger ist im Web nur in den (verwalter-exklusiven)
     // Board-Einstellungen sichtbar — daher nur für Verwalter ausgeben.
-    ...(canManage ? { isInstructionTrigger: s.isInstructionTrigger } : {}),
+    ...(canManage ? {
+      isInstructionTrigger: s.isInstructionTrigger,
+      isTransferTrigger: s.isTransferTrigger,
+      isReceiptTrigger: s.isReceiptTrigger,
+    } : {}),
   };
 }
 
@@ -98,6 +113,8 @@ export function serializeCard(
   const show = (key: string) => visible == null || visible.has(key);
   const out: Record<string, unknown> = {
     id: c.id,
+    budgetMode: c.budgetMode,
+    budgetRevision: c.budgetRevision,
     boardId: c.boardId,
     statusId: c.statusId,
     ...(extra?.statusName !== undefined ? { statusName: extra.statusName } : {}),

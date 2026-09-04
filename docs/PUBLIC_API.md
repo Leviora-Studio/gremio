@@ -1,5 +1,36 @@
 # Gremio — Öffentliche API (`/api/public/v1`)
 
+Der [API-Abgleich seit v2.7.7](API_PARITY_AUDIT.md) umfasst auch den aktuellen,
+noch nicht veröffentlichten Arbeitsstand. Der externe Funktionsumfang bleibt
+unverändert; die folgenden Ergänzungen sind additive Felder bestehender Antworten.
+
+## Ergänzungen zum Antragsstatus
+
+`POST /api/public/v1/status` liefert bei Anträgen zusätzlich
+`application.approvedAmountCents`: den genehmigten Gesamtbetrag in ganzzahligen
+Cent, unabhängig von der Quittungsfreigabe. `null` bedeutet „Noch nicht eingetragen“,
+`0` bedeutet ausdrücklich 0,00 €. Bei mehreren Haushaltspositionen ist dies die
+vollständige genehmigte Kartensumme. Konten und Einzelpositionen bleiben intern.
+
+`availableActions.canResubmit` und `availableActions.canReceipt` bilden die zwei
+unabhängigen Freigaben ab und können gleichzeitig wahr sein. Das bestehende
+`submitMode` bleibt rückwärtskompatibel (Nachreichung hat dort Vorrang). Quittungen
+sind nur in aktuell ausgewählten Quellspalten mit gültiger gemeinsamer Zielspalte
+freigeschaltet, nicht historisch. Eine Archiv-Trigger-Spalte sperrt alle öffentlichen
+Uploads und abschließenden Einreichungen.
+
+Die beiden Freigabefelder und der Gesamtbetrag sind bei Antragsantworten immer
+vorhanden. Feedback bleibt unverändert: keine Beträge, `documents: []`,
+`canUploadDocuments: false` und `submitMode: null`; dort werden `canResubmit`
+und `canReceipt` nicht geliefert. Clients sollen nach `type` unterscheiden.
+
+Die Weboberfläche trennt allgemeine Dateien, nachgeforderte Unterlagen und
+Quittungen ausdrücklich. Allgemeine Dateien behalten ihre bereinigten Originalnamen;
+nur Quittungen erhalten das fortlaufende Q-Schema. Mehrfachauswahl lädt sofort hoch,
+ohne automatisch abschließend einzureichen. Es gibt weiterhin keine öffentliche
+REST-Schreibschnittstelle für diese Status-Uploads; sie laufen über die Weboberfläche.
+
+
 Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und
 **Feedback**. Sie ist für **direkte native Android-/iOS-Clients** gedacht: kein
 zwischengeschalteter Backend-Server, kein API-Token.
@@ -297,7 +328,8 @@ Nur `application/json`, Body maximal 8 KiB, nur das Feld `statusUrl`.
   "updatedAt": "2026-08-05T08:30:00.000Z",
   "application": {
     "title": "Grillabend am FB5",
-    "applicant": "Max Mustermann"
+    "applicant": "Max Mustermann",
+    "approvedAmountCents": 35000
   },
   "status": {
     "name": "In Bearbeitung",

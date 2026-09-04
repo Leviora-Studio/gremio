@@ -136,11 +136,13 @@ const archivedParam = {
   required: false,
   description:
     "Archivierte (weggeräumte) Karten. Ohne Angabe werden **nur aktive** Karten geliefert; `true` liefert **nur** archivierte, `all` beide.",
-  schema: { type: "string", enum: ["true", "all"] },
+  schema: { type: "string", enum: ["false", "true", "all"] },
 } as const;
 
 const cardExample = {
   id: 42,
+  budgetMode: "single",
+  budgetRevision: 0,
   boardId: 1,
   statusId: 10,
   statusName: "Eingegangen",
@@ -248,7 +250,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "getBoard",
         summary: "Board mit Spalten und sichtbaren Feldern",
         description:
-          "Board, seine Status-Spalten (nach `position`) und die am Board **aktivierten** Kartenfelder.\n\n**Berechtigung:** Board-Zugriff. `isInstructionTrigger` an den Spalten und `ownerId` am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator) — genau wie in der Weboberfläche.",
+          "Board, seine Status-Spalten (nach `position`) und die am Board **aktivierten** Kartenfelder.\n\n**Berechtigung:** Board-Zugriff. `isInstructionTrigger`, `isTransferTrigger`, `isReceiptTrigger` an den Spalten sowie `ownerId`, `receiptToStatusId`, `resubmitStatusId` am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator). Mehrere Spalten können Archiv- und Quittungs-Auslöser sein.",
         parameters: [
           {
             name: "id",
@@ -291,7 +293,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             name: "statusId",
             in: "query",
             required: false,
-            description: "Nur Karten dieser Spalte. Nicht-numerische Werte werden ignoriert.",
+            description: "Nur Karten dieser Spalte. Ungültige oder außerhalb des int32-Bereichs liegende Werte ergeben 400.",
             schema: { type: "integer", format: "int32", minimum: 1 },
           },
           archivedParam,
@@ -306,6 +308,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
               },
             },
           },
+          400: badRequest,
           401: unauthorized,
           404: notFoundBoard,
         },
@@ -320,7 +323,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/CardWrite" },
+              schema: { $ref: "#/components/schemas/CardCreate" },
               examples: {
                 minimal: {
                   summary: "Nur Titel",
@@ -346,7 +349,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CardEnvelope" },
-                example: { card: cardWriteResponseExample },
+                example: { card: cardWriteResponseExample, budgetPositions: [] },
               },
             },
           },
@@ -378,6 +381,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
               },
             },
           },
+          400: badRequest,
           401: unauthorized,
         },
       },
@@ -404,7 +408,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CardEnvelope" },
-                example: { card: { ...cardExample, boardName: "Antragsboard" } },
+                example: { card: { ...cardExample, boardName: "Antragsboard" }, budgetPositions: [] },
               },
             },
           },
@@ -417,7 +421,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "updateCard",
         summary: "Karte ändern oder verschieben",
         description:
-          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.",
+          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.",
         parameters: [
           {
             name: "id",
@@ -455,7 +459,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CardEnvelope" },
-                example: { card: cardWriteResponseExample },
+                example: { card: cardWriteResponseExample, budgetPositions: [] },
               },
             },
           },
@@ -615,6 +619,14 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
             format: "int32",
             description: "Spalte, die vom Done-Sweep archiviert wird (null = aus).",
           },
+          receiptToStatusId: {
+            type: ["integer", "null"], format: "int32",
+            description: "Zielspalte nach Quittungseinreichung; null = aus. Nur für Board-Verwalter enthalten.",
+          },
+          resubmitStatusId: {
+            type: ["integer", "null"], format: "int32",
+            description: "Spalte für Nachreichungen; null = aus. Nur für Board-Verwalter enthalten.",
+          },
           createdAt: { type: "string", format: "date-time" },
         },
       },
@@ -633,6 +645,14 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
             type: "boolean",
             description:
               "Setzt beim Erreichen das Anweisungsdatum. Nur für Board-Verwalter enthalten.",
+          },
+          isTransferTrigger: {
+            type: "boolean",
+            description: "Setzt beim Erreichen das Überweisungsdatum. Nur für Board-Verwalter enthalten.",
+          },
+          isReceiptTrigger: {
+            type: "boolean",
+            description: "Quittungs-Quellspalte; mehrere erlaubt. Benötigt receiptToStatusId, Archiv-Sperre hat Vorrang. Nur für Board-Verwalter enthalten.",
           },
         },
       },
@@ -659,6 +679,8 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           "Karte. **Optionale Felder erscheinen nur, wenn sie am Board aktiviert sind** — die Liste unten zeigt alle möglichen. Beträge sind Integer in **Cent**, Datumsfelder `YYYY-MM-DD`.",
         required: [
           "id",
+          "budgetMode",
+          "budgetRevision",
           "boardId",
           "statusId",
           "position",
@@ -695,6 +717,8 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           applicant: { type: ["string", "null"] },
           number: { type: ["string", "null"], description: "Antragsnummer." },
           budgetTitle: { type: ["string", "null"] },
+          budgetMode: { type: "string", enum: ["single", "positions"], description: "In positions mode accountId/budgetTitle are null and card amounts are automatically computed totals." },
+          budgetRevision: { type: "integer", minimum: 0, description: "Optimistic revision required when replacing budgetPositions." },
           priorityId: { type: ["integer", "null"], format: "int32" },
           accountId: { type: ["integer", "null"], format: "int32" },
           assigneeUserIds: {
@@ -719,8 +743,23 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
       },
       CardEnvelope: {
         type: "object",
-        required: ["card"],
-        properties: { card: { $ref: "#/components/schemas/Card" } },
+        required: ["card", "budgetPositions"],
+        properties: { card: { $ref: "#/components/schemas/Card" }, budgetPositions: { type: "array", description: "GET/PATCH detail and POST response: stable ordered positions from the same snapshot as card totals/revision, only board-visible fields. Empty in single mode. List responses contain card totals only; request detail for allocations.", items: { $ref: "#/components/schemas/BudgetPosition" } } },
+      },
+      BudgetPosition: {
+        type: "object", additionalProperties: false,
+        required: ["id", "position"],
+        description: "Read-only projection. Amounts are nullable integer cents. Board-hidden fields are omitted. Strip position before writing; cardId is never exposed.",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          position: { type: "integer", readOnly: true },
+          budgetTitle: { type: ["string", "null"], maxLength: 60 },
+          description: { type: ["string", "null"], maxLength: 1000 },
+          accountId: { type: "integer", minimum: 1, description: "Required existing account for each stored position." },
+          requestedAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+          approvedAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+          actualAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+        },
       },
       CardList: {
         type: "object",
@@ -729,12 +768,34 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           cards: { type: "array", items: { $ref: "#/components/schemas/Card" } },
         },
       },
+      BudgetPositionWrite: {
+        type: "object", additionalProperties: false,
+        required: ["id", "budgetTitle", "description", "accountId"],
+        description: "Stable, unique UUID per row; array order determines stored order. Omitted amounts remain unchanged (new rows: null; initial first row: previous card value). Hidden amounts must remain unchanged. Each amount and its total are limited to 2,000,000,000 cents.",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          budgetTitle: { type: ["string", "null"], maxLength: 60 },
+          description: { type: ["string", "null"], maxLength: 1000 },
+          accountId: { type: "integer", format: "int32", minimum: 1 },
+          requestedAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+          approvedAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+          actualAmount: { type: ["integer", "null"], minimum: 0, maximum: MAX_AMOUNT_CENTS },
+        },
+      },
+      CardCreate: {
+        allOf: [{ $ref: "#/components/schemas/CardWrite" }],
+        required: ["title"],
+        description: "Create with optional budgetPositions in one atomic transaction. budgetRevision may be omitted or 0 when positions are supplied. Without positions it must be omitted.",
+        properties: { budgetRevision: { const: 0 } },
+      },
       CardWrite: {
         type: "object",
         description:
           "Schreibbare Kartenfelder. **Unbekannte Felder werden mit `400` abgelehnt** (Tippfehler-Schutz). Bei `PATCH` sind alle Felder optional; bei `POST` ist `title` erforderlich. `null` löscht ein Feld.",
         additionalProperties: false,
         properties: {
+          budgetPositions: { type: "array", minItems: 1, items: { $ref: "#/components/schemas/BudgetPositionWrite" }, description: "Atomic full replacement; PATCH requires the last read budgetRevision. POST supports positions directly. Cannot combine with top-level budgetTitle/accountId/amounts. Board fields budget_title and account must be enabled. Visible prefilled values may be changed on the first transition. A single row returns to single mode only if its description is empty." },
+          budgetRevision: { type: "integer", minimum: 0, maximum: 2147483647, description: "Only with budgetPositions. Required for PATCH; on POST omit or set 0. Stale revisions return 400 without changing the card." },
           title: { type: "string", minLength: 1, maxLength: 200 },
           applicant: { type: ["string", "null"], maxLength: 200 },
           budgetTitle: {
@@ -746,7 +807,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           number: {
             type: ["string", "null"],
             maxLength: 100,
-            description: "Nur für Board-Verwalter.",
+            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           statusId: {
             type: "integer",
@@ -780,12 +841,12 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           instructionDate: {
             type: ["string", "null"],
             format: "date",
-            description: "Nur für Board-Verwalter.",
+            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           transferDate: {
             type: ["string", "null"],
             format: "date",
-            description: "Nur für Board-Verwalter.",
+            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           requestedAmountCents: {
             type: ["integer", "null"],

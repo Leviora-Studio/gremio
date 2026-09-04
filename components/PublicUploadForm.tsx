@@ -1,41 +1,14 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Leviora Studio
-
 "use client";
+import { useId } from "react";
+import { UploadQueue } from "@/components/UploadQueue";
+import { usePublicUploads } from "@/components/PublicUploadScope";
+import { addPublicFileAction } from "@/app/status/[token]/actions";
+import type { UploadPurpose } from "@/lib/public-workflow";
 
-import { useActionState, useEffect, useRef } from "react";
-import { FileInput } from "@/components/FileInput";
-import { SubmitButton } from "@/components/SubmitButton";
-import {
-  addPublicFileAction,
-  type PublicUploadState,
-} from "@/app/status/[token]/actions";
-
-export function PublicUploadForm({ token }: { token: string }) {
-  const [state, action] = useActionState(
-    addPublicFileAction.bind(null, token),
-    {} as PublicUploadState,
-  );
-  const ref = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (state.success) ref.current?.reset();
-  }, [state.success]);
-
-  return (
-    <form ref={ref} action={action} className="space-y-3" noValidate>
-      <FileInput name="file" accept="application/pdf,.pdf" label="PDF auswählen" />
-      <div className="flex items-center gap-3">
-        <SubmitButton className="btn-primary">Datei hochladen</SubmitButton>
-        {(state.error || state.success) && (
-          <span
-            className={`text-sm ${
-              state.error ? "text-red-600" : "text-green-600"
-            }`}
-          >
-            {state.error ?? state.success}
-          </span>
-        )}
-      </div>
-    </form>
-  );
+export function PublicUploadForm({ token, purpose = "general" }: { token: string; purpose?: UploadPurpose }) {
+  const id = useId();
+  const scope = usePublicUploads();
+  return <UploadQueue label={purpose === "receipt" ? "Quittungen hochladen" : "Dateien hochladen"}
+    onBusy={(busy) => scope.change(id, busy)}
+    upload={(file) => { const data = new FormData(); data.set("file", file); data.set("purpose", purpose); return addPublicFileAction(token, {}, data); }} />;
 }

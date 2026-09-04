@@ -28,6 +28,7 @@ import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
 import { CardEditor } from "@/components/antrag/CardEditor";
+import { loadBudgetPositions } from "@/lib/card-budget-db";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
 import { AttachmentSlot, WeitereAttachments } from "@/components/antrag/Attachments";
@@ -275,6 +276,16 @@ export default async function AntragDetailPage({
       <section className="card p-5">
         <h2 className="mb-2 text-lg font-semibold">Felder</h2>
         <CardEditor
+          budgetPositions={(await loadBudgetPositions(card.id)).map((row) => ({ ...row,
+            budgetTitle: visible.includes("budget_title") ? row.budgetTitle : null,
+            description: visible.includes("budget_title") ? row.description : null,
+            accountId: visible.includes("account") ? row.accountId : 0,
+            requestedAmount: visible.includes("requested_amount") ? row.requestedAmount : null,
+            approvedAmount: visible.includes("approved_amount") ? row.approvedAmount : null,
+            actualAmount: visible.includes("actual_amount") ? row.actualAmount : null,
+          }))}
+          budgetRevision={card.budgetRevision}
+          budgetMode={card.budgetMode}
           cardId={card.id}
           boardId={board.id}
           visible={visible}

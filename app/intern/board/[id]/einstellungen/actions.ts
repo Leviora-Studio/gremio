@@ -2,10 +2,11 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+import { setBoardTriggerSources } from "@/lib/board-triggers";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, inArray, isNull, max, ne, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, max, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -217,30 +218,8 @@ export async function setArchiveTriggerAction(
   formData: FormData,
 ): Promise<State> {
   await requireBoardManage(boardId);
-  // Bis zu zwei Auslöse-Spalten (optional). Leere/ungültige werden ignoriert,
-  // Duplikate entfernt.
-  const ids = [...new Set(
-    ["statusId", "statusId2"]
-      .map((k) => Number(formData.get(k)))
-      .filter((n) => Number.isInteger(n) && n > 0),
-  )].slice(0, 2);
-  await db.transaction(async (tx) => {
-    await tx
-      .update(boardStatuses)
-      .set({ isArchiveTrigger: false })
-      .where(eq(boardStatuses.boardId, boardId));
-    if (ids.length) {
-      await tx
-        .update(boardStatuses)
-        .set({ isArchiveTrigger: true })
-        .where(
-          and(
-            eq(boardStatuses.boardId, boardId),
-            inArray(boardStatuses.id, ids),
-          ),
-        );
-    }
-  });
+  const result = await setBoardTriggerSources(boardId, "archive", formData.getAll("statusIds"));
+  if (result.error) return result;
   rev(boardId);
   return { success: "Archiv-Trigger gespeichert." };
 }
@@ -329,11 +308,8 @@ export async function setReceiptFromStatusAction(
   formData: FormData,
 ): Promise<State> {
   await requireBoardManage(boardId);
-  const id = await validBoardStatus(boardId, formData.get("statusId"));
-  await db
-    .update(boards)
-    .set({ receiptFromStatusId: id })
-    .where(eq(boards.id, boardId));
+  const result = await setBoardTriggerSources(boardId, "receipt", formData.getAll("statusIds"));
+  if (result.error) return result;
   rev(boardId);
   return { success: "Gespeichert." };
 }
