@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; sessionId: string }> }) {
   const user = await getCurrentUser();
   const { id, sessionId } = await params;
-  const response = await protocolPdfResponse(user, Number(id), Number(sessionId), new URL(request.url).searchParams.get("name") ?? "");
+  const response = await protocolPdfResponse(user, Number(id), Number(sessionId), { filename: new URL(request.url).searchParams.get("name") ?? "", subfolder: new URL(request.url).searchParams.get("folder") ?? "" });
   if (!response.ok) return response;
   try {
     const fields = await readPdfFields(Buffer.from(await response.arrayBuffer()));

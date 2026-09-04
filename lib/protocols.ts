@@ -3,6 +3,7 @@
 
 import { and, asc, desc, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { protocolDirectoryPath } from "@/lib/protocol-paths";
 import { db } from "@/lib/db";
 import {
   boardStatuses,
@@ -17,10 +18,10 @@ import {
   type User,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
+import { getProtocolFinanceDetails } from "@/lib/protocol-finance-fields";
 import { canAccessBoard, getBoardById, getUserGroupIds } from "@/lib/authz";
 import { decryptSecret } from "@/lib/crypto";
 import {
-  joinWebDavPath,
   listWebDavDirectory,
   type NcCredentials,
   type WebDavEntry,
@@ -259,14 +260,16 @@ export async function getProtocolSession(
 export async function listProtocolSessionFiles(
   area: ProtocolArea,
   session: ProtocolSession,
+  subfolder = "",
 ): Promise<WebDavEntry[]> {
   return listWebDavDirectory(
     protocolCredentials(area),
-    joinWebDavPath(area.rootPath, session.folderName),
+    protocolDirectoryPath(area.rootPath, session.folderName, subfolder),
   );
 }
 
 export type ProtocolSuggestion = {
+  fields?: { key: string; label: string; value: string }[];
   id: number;
   number: string | null;
   title: string;
@@ -323,8 +326,9 @@ export async function getProtocolSuggestions(
       ),
     );
   const assigned = new Map(assignments.map((a) => [a.cardId, a.folderName]));
+  const details = await getProtocolFinanceDetails(area.boardId, rows.map(row => row.id), area.financeFields);
   return sortProtocolSuggestions(
-    rows.map((row) => ({ ...row, assignedSession: assigned.get(row.id) ?? null })),
+    rows.map((row) => ({ ...row, fields: details.get(row.id) ?? [], assignedSession: assigned.get(row.id) ?? null })),
   );
 }
 

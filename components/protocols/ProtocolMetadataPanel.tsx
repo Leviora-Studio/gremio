@@ -24,7 +24,6 @@ export function ProtocolMetadataPanel({ markdown, disabled, onChange, onDirtyCha
       <span className="label">{label}</span>
       <input aria-label={label} className="input" maxLength={2000} disabled={disabled || !!parsed.error} value={changes[key] ?? parsed.fields?.[key] ?? ""} onChange={event => change({ [key]: event.target.value })} />
     </label>)}
-    <p className="text-xs text-slate-500">Ein beim Export gewähltes Bereichslogo hat Vorrang vor „Logo-Dateiname“. Ohne Bereichslogo kann eine Bilddatei direkt aus diesem Sitzungsordner verwendet werden.</p>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={disabled || !!parsed.error} checked={changes.unterschriften ?? parsed.fields?.unterschriften ?? true} onChange={event => change({ unterschriften: event.target.checked })} />Unterschriftenfelder anzeigen</label>
     {(error || parsed.error) && <p role="alert" className="text-sm text-red-700">{error || parsed.error}</p>}
     <div className="flex gap-2">

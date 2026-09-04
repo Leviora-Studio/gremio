@@ -180,7 +180,7 @@ test("Listen in Codebeispielen bleiben erhalten und unmarkierte TOP-Listen werde
 
 test("Finanzblöcke tragen eine stabile Karten-ID und eine TOP-Nummer", () => {
   const block = formatFinanceBlock(
-    { id: 42, number: "2026_GSR_014", title: "Sommerfest", applicant: "Fachschaft", amount: 85000 },
+    { id: 42, number: "2026_GSR_014", title: "Sommerfest", applicant: "Fachschaft", amount: 85000, fields: [{ key: "requested_amount", label: "Beantragter Betrag", value: "850,00 €" }] },
     "5.1",
     "https://gremio.example/intern/card/42",
   );

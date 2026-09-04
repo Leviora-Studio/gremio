@@ -428,6 +428,13 @@
       "when": 1788471021869,
       "tag": "0060_petite_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1788525427802,
+      "tag": "0061_protocol_area_templates",
+      "breakpoints": true
     }
   ]
 }

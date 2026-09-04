@@ -1,13 +1,17 @@
 # Protocol PDF renderer
 
 `original.py` is the unmodified `protokoll_pdf.py` supplied by the project owner
-(from `protokoll-tools`). Its CSS, header, signature blocks and heading IDs are
+(from `protokoll-tools`). Its CSS, header and heading IDs are
 reused by `render.py`. The original command-line entry point is **not** exposed
 to web requests.
 
 `render.py` reads one JSON request on stdin and writes PDF bytes to stdout. Its
-metadata comes exclusively from the Markdown frontmatter. The selected logo is
-an explicit override, just like the original `--logo` argument. All IBM Plex
+metadata comes from the Markdown: the PDF title is the first rendered H1 (falling
+back to the source filename without its extension), and its author is the YAML
+`protokollfuehrung` value, including its supported aliases, or empty if absent.
+Legacy YAML `title`, `author` and `logo` values are ignored. Logos come exclusively
+from area settings, using the export selection or the area default. Without area
+logos the export has no logo; session files are never used as a logo fallback. All IBM Plex
 fonts are bundled unmodified; their OFL license is in `fonts/LICENSE.txt`.
 
 Differences from the original desktop script:
@@ -15,13 +19,16 @@ Differences from the original desktop script:
 - No arbitrary filesystem paths, network requests, or HTML/CSS resource loads.
   Only supplied, verified raster images and the bundled fonts are fetchable.
 - Raw body HTML is restricted to document formatting; scripts, CSS, forms,
-  attachments and active elements are stripped. The generated signature date
-  fields remain interactive, as in the original.
+  attachments and active elements are stripped. Signature blocks retain the
+  original lines, roles and names, but omit date labels and date form fields.
 - The Node adapter enforces a 60-second wall timeout, a 25 MB output limit and
   two concurrent renderers per Node process. Linux workers additionally have
   45-second CPU and 1 GB address-space limits. The child does not receive
   Nextcloud credentials, database URLs, authentication or encryption secrets.
-- Local image references must be files directly in the session folder. Unknown
+- Local image references may use validated subfolders inside the session,
+  including `attachments`. The Markdown attribute list `{width=420}` sets a
+  bounded pixel width with preserved aspect ratio; arbitrary styles are rejected.
+  Unknown
   external resources cause an explicit export failure rather than silent loss.
 
 ## Local setup (macOS)

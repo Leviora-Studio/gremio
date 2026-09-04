@@ -8,6 +8,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
+import { Select } from "@/components/Select";
 import type { ProtocolMember, ProtocolMemberCommand, ProtocolMemberResult } from "@/lib/protocol-members";
 
 export function ProtocolMembersPanel({ members, action, onChange, onBusyChange, disabled }: {
@@ -91,10 +92,7 @@ function MemberRow({ member, members, disabled, pending, change }: {
       <DeleteConfirm disabled={disabled || pending} requireWord={false} buttonLabel="Entfernen" buttonClassName="text-xs text-red-600 hover:underline" title={`Mitglied „${member.name}“ entfernen?`} message="Entfernt das Mitglied aus diesem Protokollbereich und seine Anwesenheits- und Übertragungsdaten aus allen Sitzungen. Bereits in Nextcloud gespeicherte Protokolle werden dadurch nicht automatisch geändert." action={() => change({ type: "remove", memberId: member.id })} />
     </div>
     <label className="mt-2 block text-xs text-slate-600">Stimme übertragen auf
-      <select className="input mt-1" aria-label={`Stimme von ${member.name} übertragen auf`} disabled={disabled} aria-disabled={disabled || pending} value={member.proxyMemberId ?? ""} onChange={event => { if (!pending) void change({ type: "attendance", memberId: member.id, present: member.present, proxyMemberId: event.target.value ? Number(event.target.value) : null }); }}>
-        <option value="">Keine Übertragung</option>
-        {members.filter(other => other.id !== member.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}
-      </select>
+      <Select portal className="mt-1" ariaLabel={`Stimme von ${member.name} übertragen auf`} disabled={disabled || pending} value={String(member.proxyMemberId ?? "")} onChange={value => { if (!pending) void change({ type: "attendance", memberId: member.id, present: member.present, proxyMemberId: value ? Number(value) : null }); }} options={[{ value: "", label: "Keine Übertragung" }, ...members.filter(other => other.id !== member.id).map(other => ({ value: String(other.id), label: other.name }))]} />
     </label>
   </div>;
 }

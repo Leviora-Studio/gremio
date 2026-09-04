@@ -69,4 +69,9 @@ test("Bild-Endpunkt verwendet Bereichsrechte, Sitzungspfade und private Antworth
   assert.equal(result.headers.get("X-Content-Type-Options"), "nosniff");
   assert.match(result.headers.get("Content-Disposition")!, /inline;.*Foto%20%C3%A4.jpg/);
   assert.deepEqual(Buffer.from(await result.arrayBuffer()), bytes);
+  const nested = await protocolImageResponse(user, 2, 3, { filename: "Foto.jpg", subfolder: "Anlagen/Bilder" }, { ...deps, readWebDavImage: async (_creds, path) => { assert.equal(path, "/Protokolle/Sitzung/Anlagen/Bilder/Foto.jpg"); return { bytes, mime: "image/jpeg" }; } });
+  assert.equal(nested.status, 200);
+  const before = reads;
+  for (const subfolder of ["../Andere Sitzung", "/Privat", "Anlagen/../../Privat"]) assert.equal((await protocolImageResponse(user, 2, 3, { filename: "Foto.jpg", subfolder }, deps)).status, 400);
+  assert.equal(reads, before);
 });

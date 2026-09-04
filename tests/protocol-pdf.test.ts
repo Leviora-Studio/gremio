@@ -92,4 +92,9 @@ test("PDF-Endpunkt prüft Anmeldung, Bereichsrechte, Sitzungszuordnung und Pfad 
   const failed = await protocolPdfResponse(user, 2, 3, "Anlage.pdf", { ...deps, readWebDavPdf: async () => { throw new Error("private-password https://private-url"); } });
   assert.equal(failed.status, 502);
   assert.ok(!(await failed.text()).includes("private-"));
+  const nested = await protocolPdfResponse(user, 2, 3, { filename: "Anlage.pdf", subfolder: "Anlagen/Finanzen" }, { ...deps, readWebDavPdf: async (_creds, path) => { assert.equal(path, "/Protokolle/Sitzung/Anlagen/Finanzen/Anlage.pdf"); return pdf; } });
+  assert.equal(nested.status, 200);
+  const before = reads;
+  for (const subfolder of ["../Andere Sitzung", "/Privat", "Anlagen/../../Privat"]) assert.equal((await protocolPdfResponse(user, 2, 3, { filename: "Anlage.pdf", subfolder }, deps)).status, 400);
+  assert.equal(reads, before);
 });

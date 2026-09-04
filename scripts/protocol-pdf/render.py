@@ -48,6 +48,8 @@ class SafeBody(HTMLParser):
                 safe.append((key, value))
             elif tag == "img" and key == "src":
                 safe.append((key, value))
+            elif tag == "img" and key == "width" and value.isdigit() and 48 <= int(value) <= 1600:
+                safe.append(("style", f"width: {int(value)}px"))
             elif key in {"colspan", "rowspan", "start"} and value.isdigit() and 0 < int(value) <= 100:
                 safe.append((key, value))
         attributes = "".join(f' {key}="{html.escape(value, quote=True)}"' for key, value in safe)
@@ -66,6 +68,33 @@ class SafeBody(HTMLParser):
             self.parts.append(html.escape(data))
 
 
+class DocumentTitle(HTMLParser):
+    """Read the first rendered H1, including inline formatting but not its tags."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.active = False
+        self.finished = False
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "h1" and not self.finished:
+            self.active = True
+        if self.active and tag == "br":
+            self.parts.append(" ")
+        if self.active and tag == "img":
+            self.parts.append(dict(attrs).get("alt") or "")
+
+    def handle_endtag(self, tag):
+        if tag == "h1" and self.active:
+            self.active = False
+            self.finished = True
+
+    def handle_data(self, data):
+        if self.active:
+            self.parts.append(data)
+
+
 def frontmatter(raw):
     match = re.match(r"^\ufeff?[ \t]*(?:\r?\n[ \t]*)*---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|$)", raw, re.S | re.M)
     if not match:
@@ -79,10 +108,25 @@ def frontmatter(raw):
     return meta, raw[match.end():].lstrip("\r\n")
 
 
+def build_signatures(meta):
+    """Keep the original signature layout, without date labels or form fields."""
+    if str(meta.get("unterschriften", "")).strip().lower() in ("false", "nein", "no", "0", "off"):
+        return ""
+    columns = []
+    for role, key in [("Sitzungsleitung", "sitzungsleitung"), ("Protokollführung", "protokollfuehrer")]:
+        name = original.field_value(meta, key)
+        name_html = f'<div class="name">{html.escape(name)}</div>' if name else ""
+        columns.append(
+            '<div class="sig"><div class="space"></div><div class="line"></div>'
+            '<div class="cap">Unterschrift</div>'
+            f'<div class="role">{role}</div>{name_html}</div>'
+        )
+    return '<div class="signatures">' + "".join(columns) + '</div>'
+
+
 def render(request):
     meta, body = frontmatter(request["markdown"])
-    title = str(meta.get("title") or request["sourceName"].rsplit(".", 1)[0]).strip()
-    author = str(meta.get("author") or original.DEFAULT_AUTHOR).strip()
+    author = original.field_value(meta, "protokollfuehrer")
     fonts = Path(__file__).resolve().parent / "fonts"
     resources = {}
     font_css = []
@@ -110,10 +154,13 @@ def render(request):
     sanitizer = SafeBody()
     sanitizer.feed(body_html)
     body_html = original.add_heading_ids("".join(sanitizer.parts))
+    heading = DocumentTitle()
+    heading.feed(body_html)
+    title = " ".join("".join(heading.parts).split()) or request["sourceName"].rsplit(".", 1)[0]
     document = f'''<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
 <title>{html.escape(title)}</title><meta name="author" content="{html.escape(author)}">
-<style>{''.join(font_css)}{original.CSS}</style></head><body>
-{original.build_header_html(meta, logo_uri)}<main>{body_html}{original.build_signatures(meta)}</main></body></html>'''
+<style>{''.join(font_css)}{original.CSS} main img {{max-width: 100%; height: auto;}}</style></head><body>
+{original.build_header_html(meta, logo_uri)}<main>{body_html}{build_signatures(meta)}</main></body></html>'''
     pdf = HTML(string=document, base_url="https://gremio.invalid/", url_fetcher=fetch).write_pdf(font_config=FontConfiguration())
     if denied:
         raise ValueError("An image or resource is not a permitted session file")

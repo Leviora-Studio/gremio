@@ -82,9 +82,16 @@ Apps, interaktiv unter `/api/public/docs`).
 - **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für
   erledigte Karten (der „Done"-Sweep räumt sie täglich weg, löscht aber nichts).
 - **Protokolle** (`/intern/protokolle`): eigene Protokollbereiche mit
-  Nutzer-/Gruppenfreigaben, synchronisierten Nextcloud-Sitzungsordnern,
-  Markdown-Editor mit direktem Überschreiben beim Speichern, TOP-Tagesordnung und optionaler
-  Finanzantrags-Verknüpfung. Die einklappbare Seitenleiste bietet außerdem
+  Nutzer-/Gruppenfreigaben und synchronisierten Nextcloud-Sitzungsordnern.
+  Eigenständiger Vollbild-Markdown-Editor für alle `.md`/`.markdown`-Dateien im
+  Sitzungsordner, mit festen Werkzeugleisten, Formatierungsschaltflächen,
+  Tabellenraster und Gliederung. Die Live-Ansicht bleibt auch während des Tippens
+  formatiert; Tabellen werden direkt in den einzelnen Zellen bearbeitet.
+  Die Dokumentensuche (Strg/Cmd+F) bietet Treffermarkierung und Vor-/Zurück-Navigation
+  in allen drei Ansichten.
+  Protokolle erhalten zusätzlich die
+  Sitzungsverwaltung und Finanzanträge. Direktes Überschreiben beim Speichern, TOP-Tagesordnung und optionale
+  Finanzantrags-Verknüpfung. Der separate Bereich „Sitzungsdaten“ bietet außerdem
   bereichseigene Mitgliederlisten mit Sortierung sowie Anwesenheit und
   Stimmübertragungen je Sitzung als automatische Markdown-Tabelle. Sitzungsgäste
   mit Name, Zugehörigkeit und Anliegen werden als eigene Tabelle ergänzt.

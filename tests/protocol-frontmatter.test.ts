@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseProtocolFrontmatter, updateProtocolFrontmatter } from "../lib/protocol-frontmatter";
+import { parseProtocolFrontmatter, protocolMetadataFields, updateProtocolFrontmatter } from "../lib/protocol-frontmatter";
 import { getMarkdownHeadings, syncProtocolAttendance, setAttendanceSectionIncluded, upsertAgenda } from "../lib/protocol-markdown";
 
 test("session form writes YAML, preserves unknown fields/comments/body and reads aliases", () => {
@@ -25,20 +25,32 @@ test("session form writes YAML, preserves unknown fields/comments/body and reads
 
 test("frontmatter can be created, cleared, manually edited, and never duplicated", () => {
   const body = "# Sitzung\n\n## TOP 1\nText";
-  const first = updateProtocolFrontmatter(body, { title: "Protokoll", author: "Person" });
-  const next = updateProtocolFrontmatter(first, { author: "", title: "Manuell" });
-  assert.equal(parseProtocolFrontmatter(next).fields.author, "");
+  const first = updateProtocolFrontmatter(body, { sitzungsort: "Raum 1", protokollfuehrung: "Person" });
+  const next = updateProtocolFrontmatter(first, { protokollfuehrung: "", sitzungsort: "Raum 2" });
+  assert.equal(parseProtocolFrontmatter(next).fields.protokollfuehrung, "");
   assert.equal((next.match(/^---$/gm) ?? []).length, 2);
   assert.equal(parseProtocolFrontmatter('---\nbeginn: 18:00\nunterschriften: false\n---\nText').fields.beginn, "18:00");
   assert.ok(next.endsWith(body));
 });
 
 test("malformed YAML, duplicate keys, complex known values and aliases are reported without data loss", () => {
-  for (const header of ['title: [', 'title: a\ntitle: b', 'title: [a,b]', 'other: &x [a]\ntitle: *x']) {
+  for (const header of ['sitzungsort: [', 'sitzungsort: a\nsitzungsort: b', 'sitzungsort: [a,b]', 'other: &x [a]\nsitzungsort: *x']) {
     assert.throws(() => parseProtocolFrontmatter(`---\n${header}\n---\nText`));
-    assert.throws(() => updateProtocolFrontmatter(`---\n${header}\n---\nText`, { title: "Neu" }));
+    assert.throws(() => updateProtocolFrontmatter(`---\n${header}\n---\nText`, { sitzungsort: "Neu" }));
   }
   assert.throws(() => parseProtocolFrontmatter('---\ntitle: Unfertig'));
+});
+
+test("title, author and logo are not editable metadata options or generated YAML fields", () => {
+  assert.ok(protocolMetadataFields.every(([key]) => !["title", "author", "logo"].includes(key)));
+  const next = updateProtocolFrontmatter("# Sitzung", { protokollfuehrung: "Ben" });
+  const parsed = parseProtocolFrontmatter(next);
+  assert.ok(!parsed.document.has("title"));
+  assert.ok(!parsed.document.has("author"));
+  assert.ok(!("title" in parsed.fields));
+  assert.ok(!("author" in parsed.fields));
+  assert.ok(!parsed.document.has("logo"));
+  assert.ok(!("logo" in parsed.fields));
 });
 
 test("agenda and attendance preserve YAML byte-for-byte and ignore headings inside YAML blocks", () => {

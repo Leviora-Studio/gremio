@@ -18,3 +18,14 @@ export function replaceMarkdownRange(markdown: string, start: number, end: numbe
   const to = Math.max(from, Math.min(end, markdown.length));
   return { markdown: markdown.slice(0, from) + text + markdown.slice(to), offset: from + text.length };
 }
+
+/** Keep a cursor anchored when external forms insert YAML or attendance before it. */
+export function remapMarkdownOffset(before: string, after: string, offset: number) {
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < before.length - prefix && suffix < after.length - prefix && before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++;
+  if (offset < prefix) return offset;
+  if (offset >= before.length - suffix) return Math.max(0, Math.min(after.length, offset + after.length - before.length));
+  return prefix;
+}

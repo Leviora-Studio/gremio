@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { AnchoredPopover } from "./AnchoredPopover";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const MONTHS = [
@@ -56,6 +57,8 @@ export function DatePicker({
   placeholder = "Datum wählen…",
   disabled,
   className,
+  ariaLabel,
+  portal = false,
 }: {
   value?: string;
   defaultValue?: string;
@@ -64,12 +67,15 @@ export function DatePicker({
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  ariaLabel?: string;
+  portal?: boolean;
 }) {
   const isControlled = value !== undefined;
   const [internal, setInternal] = useState(defaultValue ?? "");
   const current = isControlled ? (value as string) : internal;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = parseISO(current);
   const today = new Date();
@@ -80,7 +86,7 @@ export function DatePicker({
     // Beim Öffnen auf den ausgewählten Monat springen.
     setView(parseISO(current) ?? new Date());
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -98,6 +104,7 @@ export function DatePicker({
     if (!isControlled) setInternal(s);
     onChange?.(s);
     setOpen(false);
+    ref.current?.querySelector("button")?.focus({ preventScroll: true });
   }
 
   const year = view.getFullYear();
@@ -114,6 +121,10 @@ export function DatePicker({
       {name && <input type="hidden" name={name} value={current} />}
       <button
         type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onKeyDown={e => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={clsx(
@@ -130,7 +141,8 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-72 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+        <AnchoredPopover anchor={ref} width={288} enabled={portal}>
+        <div ref={menuRef} role="dialog" aria-label={ariaLabel ? `${ariaLabel}: Kalender` : "Kalender"} onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); ref.current?.querySelector("button")?.focus(); } }} className={`${portal ? "w-full" : "absolute z-30 mt-1 w-72"} rounded-md border border-slate-200 bg-white p-3 shadow-lg`}>
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
@@ -201,6 +213,7 @@ export function DatePicker({
             </button>
           </div>
         </div>
+        </AnchoredPopover>
       )}
     </div>
   );

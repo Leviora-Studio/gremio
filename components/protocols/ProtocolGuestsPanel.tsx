@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ProtocolGuest, ProtocolGuestCommand, ProtocolGuestFields, ProtocolGuestResult } from "@/lib/protocol-guests";
 
 const emptyFields: ProtocolGuestFields = { name: "", affiliation: "", concern: "" };
@@ -19,6 +20,7 @@ export function ProtocolGuestsPanel({ guests, action, onChange, onBusyChange, on
 }) {
   const [fields, setFields] = useState(emptyFields);
   const [editing, setEditing] = useState<ProtocolGuest | null>(null);
+  const [pendingGuest, setPendingGuest] = useState<ProtocolGuest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const locked = useRef(false);
@@ -27,6 +29,7 @@ export function ProtocolGuestsPanel({ guests, action, onChange, onBusyChange, on
   const dirty = fields.name !== baseline.name || fields.affiliation !== baseline.affiliation || fields.concern !== baseline.concern;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   function reset() { setEditing(null); setFields(emptyFields); }
+  function editGuest(guest: ProtocolGuest) { setEditing(guest); setFields({ name: guest.name, affiliation: guest.affiliation, concern: guest.concern }); setError(null); nameInput.current?.focus(); }
   async function change(command: ProtocolGuestCommand): Promise<{ error?: string }> {
     if (locked.current || disabled) return { error: "Bitte die laufende Speicherung abwarten." };
     locked.current = true; setBusy(true); onBusyChange(true); setError(null);
@@ -73,8 +76,7 @@ export function ProtocolGuestsPanel({ guests, action, onChange, onBusyChange, on
         </dl>
         <div className="flex gap-3">
           <button type="button" className="text-xs text-brand-600 hover:underline" disabled={busy || disabled} onClick={() => {
-            if (dirty && !window.confirm("Nicht übernommene Gästedaten verwerfen?")) return;
-            setEditing(guest); setFields({ name: guest.name, affiliation: guest.affiliation, concern: guest.concern }); setError(null); nameInput.current?.focus();
+            if (dirty) setPendingGuest(guest); else editGuest(guest);
           }}>Bearbeiten</button>
           <DeleteConfirm disabled={busy || disabled} requireWord={false} buttonLabel="Entfernen" buttonClassName="text-xs text-red-600 hover:underline" title={`Gast „${guest.name}“ entfernen?`} message="Entfernt den Gast nur aus dieser Sitzung. Die aktualisierte Protokolltabelle anschließend in Nextcloud speichern." action={() => change({ type: "remove", guestId: guest.id })} />
         </div>
@@ -83,5 +85,6 @@ export function ProtocolGuestsPanel({ guests, action, onChange, onBusyChange, on
     {!guests.length && <p className="rounded border border-dashed p-4 text-sm text-slate-500">Noch keine Gäste eingetragen.</p>}
     <p className="text-xs text-slate-500">Gästedaten mit dem Button übernehmen. Die aktualisierte Tabelle anschließend in Nextcloud speichern.</p>
     <p role="status" className="min-h-4 text-xs text-slate-500">{busy ? "Gästedaten werden gespeichert…" : dirty ? "Gästedaten noch nicht übernommen." : ""}</p>
+    <ConfirmDialog open={!!pendingGuest} title="Gästedaten verwerfen?" message="Nicht übernommene Gästedaten verwerfen und einen anderen Gast bearbeiten?" disabled={busy || disabled} onClose={() => setPendingGuest(null)} onConfirm={() => { if (pendingGuest) editGuest(pendingGuest); setPendingGuest(null); }} />
   </div>;
 }

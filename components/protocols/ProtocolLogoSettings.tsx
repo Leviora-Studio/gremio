@@ -4,12 +4,15 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
 import type { ProtocolLogo, ProtocolLogoResult } from "@/lib/protocol-logos";
 
 export function ProtocolLogoSettings({ areaId, initialLogos, action }: { areaId: number; initialLogos: ProtocolLogo[]; action: (form: FormData) => Promise<ProtocolLogoResult> }) {
   const [logos, setLogos] = useState(initialLogos);
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   async function run(type: string, logoId?: number, file?: File) {
     const form = new FormData(); form.set("type", type);
@@ -20,12 +23,10 @@ export function ProtocolLogoSettings({ areaId, initialLogos, action }: { areaId:
     if (result.error) throw new Error(result.error);
   }
   async function change(type: string, logoId: number) {
-    if (type === "remove" && !window.confirm("Dieses Logo aus dem Protokollbereich entfernen? Bereits exportierte PDFs bleiben unverändert.")) return;
     setBusy(true); setError("");
     try { await run(type, logoId); } catch (cause) { setError((cause as Error).message || "Logo konnte nicht geändert werden."); } finally { setBusy(false); }
   }
-  return <section className="card space-y-4 p-5">
-    <h2 className="text-lg font-semibold">Logos für den PDF-Export</h2>
+  return <CollapsibleSection title="Logos für den PDF-Export" contentClassName="space-y-4">
     <p className="text-sm text-slate-500">Diese Logos gelten nur für diesen Protokollbereich. Das Standardlogo wird beim Export vorausgewählt.</p>
     <div className="grid gap-3 sm:grid-cols-3">
       {logos.map(logo => <div key={logo.id} className="rounded border border-slate-200 p-3">
@@ -33,20 +34,20 @@ export function ProtocolLogoSettings({ areaId, initialLogos, action }: { areaId:
         <p className="break-words text-sm">{logo.name}</p>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
           {logo.isDefault ? <span className="text-brand-600">Standardlogo</span> : <button type="button" disabled={busy} className="text-brand-600 hover:underline" onClick={() => change("default", logo.id)}>Als Standard</button>}
-          <button type="button" disabled={busy} className="text-red-600 hover:underline" onClick={() => change("remove", logo.id)}>Entfernen</button>
+          <DeleteConfirm disabled={busy} requireWord={false} buttonLabel="Entfernen" buttonClassName="text-red-600 hover:underline" title="Logo entfernen?" message="Dieses Logo aus dem Protokollbereich entfernen? Bereits exportierte PDFs bleiben unverändert." action={async () => { setBusy(true); try { await run("remove", logo.id); return {}; } catch (cause) { return { error: (cause as Error).message }; } finally { setBusy(false); } }} />
         </div>
       </div>)}
     </div>
-    {!logos.length && <p className="text-sm text-slate-500">Noch keine Logos hinterlegt. Ohne Bereichslogo wird das YAML-Logo beziehungsweise logo.png aus dem Sitzungsordner verwendet, falls vorhanden.</p>}
-    <label className="block text-sm"><span className="label">Logos hinzufügen (jeweils bis 5 MB)</span><input aria-label="Logos hinzufügen" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={async event => {
+    {!logos.length && <p className="text-sm text-slate-500">Noch keine Logos hinterlegt. Ohne Bereichslogo wird das Protokoll ohne Logo exportiert.</p>}
+    <div className="space-y-2"><button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => fileInput.current?.click()}>Logos hinzufügen</button><p className="text-xs text-slate-500">Jeweils bis 5 MB.</p><input ref={fileInput} className="sr-only" tabIndex={-1} aria-label="Logos hinzufügen" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={async event => {
       const node = event.currentTarget; const files = [...(node.files ?? [])];
       if (!files.length) return;
       setBusy(true); setError("");
       try { for (const file of files) { if (file.size > 5 * 1024 * 1024) throw new Error(`„${file.name}“ ist größer als 5 MB.`); await run("upload", undefined, file); } node.value = ""; }
       catch (cause) { setError((cause as Error).message || "Upload fehlgeschlagen."); }
       finally { setBusy(false); }
-    }} /></label>
+    }} /></div>
     {busy && <p role="status" className="text-sm text-slate-500">Logos werden gespeichert…</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-  </section>;
+  </CollapsibleSection>;
 }

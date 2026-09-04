@@ -27,12 +27,12 @@ export function ProtocolMarkdownPreview({ markdown, activeLine, editor }: { mark
           <table className="w-full border-collapse text-left text-sm">
             <thead><tr data-markdown-line={index}>{activeLine === index
               ? <th colSpan={Math.max(1, header.length)}>{editor}</th>
-              : header.map((cell, i) => <th key={i} className="border border-slate-300 bg-slate-50 p-2">{cell}</th>)}</tr></thead>
+              : header.map((cell, i) => <th key={i} className="border border-slate-300 bg-slate-50 p-2">{inlineMarkdown(cell)}</th>)}</tr></thead>
             <tbody>
               {activeLine === index + 1 && <tr><td colSpan={Math.max(1, header.length)}>{editor}</td></tr>}
               {rows.map(row => <tr key={row.line} data-markdown-line={row.line}>{activeLine === row.line
                 ? <td colSpan={Math.max(1, header.length)}>{editor}</td>
-                : row.cells.map((cell, j) => <td key={j} className="border border-slate-300 p-2">{cell}</td>)}</tr>)}
+                : row.cells.map((cell, j) => <td key={j} className="border border-slate-300 p-2">{inlineMarkdown(cell)}</td>)}</tr>)}
             </tbody>
           </table>
         </div>;
@@ -46,19 +46,29 @@ export function ProtocolMarkdownPreview({ markdown, activeLine, editor }: { mark
       }
       const bullet = /^[-*]\s+(.+)/.exec(line);
       if (bullet) return <div key={index} data-markdown-line={index} className="pl-4">• {inlineMarkdown(bullet[1])}</div>;
+      const ordered = /^(\d+)[.)]\s+(.+)/.exec(line);
+      if (ordered) return <div key={index} data-markdown-line={index} className="pl-4">{ordered[1]}. {inlineMarkdown(ordered[2])}</div>;
+      const quote = /^>\s?(.*)/.exec(line);
+      if (quote) return <blockquote key={index} data-markdown-line={index} className="border-l-2 border-slate-300 pl-4 text-slate-600">{inlineMarkdown(quote[1])}</blockquote>;
       if (!line.trim()) return <div key={index} data-markdown-line={index} className="h-2" />;
       return <p key={index} data-markdown-line={index} className="whitespace-pre-wrap">{inlineMarkdown(line)}</p>;
     })}
   </>;
 }
 
-function inlineMarkdown(text: string) {
+function inlineMarkdown(text: string, depth = 0): ReactNode {
+  if (depth > 8) return text;
   const parts: ReactNode[] = [];
   let cursor = 0;
-  for (const match of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+|#[^)]+)\)/g)) {
+  const tokens = /`([^`]+)`|\*\*(.+?)\*\*|\*([^*]+)\*|<u>(.*?)<\/u>|\[([^\]]+)\]\((https?:\/\/[^)]+|#[^)]+)\)/g;
+  for (const match of text.matchAll(tokens)) {
     const index = match.index ?? 0;
     parts.push(text.slice(cursor, index));
-    parts.push(<a key={index} href={match[2]} className="text-brand-600 underline" target={match[2].startsWith("http") ? "_blank" : undefined} rel="noopener">{match[1]}</a>);
+    if (match[1] !== undefined) parts.push(<code key={index} className="rounded bg-slate-100 px-1 font-mono text-[0.9em]">{match[1]}</code>);
+    else if (match[2] !== undefined) parts.push(<strong key={index}>{inlineMarkdown(match[2], depth + 1)}</strong>);
+    else if (match[3] !== undefined) parts.push(<em key={index}>{inlineMarkdown(match[3], depth + 1)}</em>);
+    else if (match[4] !== undefined) parts.push(<u key={index}>{inlineMarkdown(match[4], depth + 1)}</u>);
+    else parts.push(<a key={index} href={match[6]} className="text-brand-600 underline" target={match[6].startsWith("http") ? "_blank" : undefined} rel="noopener">{inlineMarkdown(match[5], depth + 1)}</a>);
     cursor = index + match[0].length;
   }
   parts.push(text.slice(cursor));

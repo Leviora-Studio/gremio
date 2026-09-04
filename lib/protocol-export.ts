@@ -6,6 +6,8 @@ import type { User } from "@/lib/db/schema";
 import { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials } from "@/lib/protocols";
 import { readWebDavImage, readWebDavText, statWebDavEntry, writeWebDavBinary } from "@/lib/nextcloud";
 import { protocolDeletionPath } from "@/lib/protocol-deletion";
+import { protocolFilePath } from "@/lib/protocol-paths";
+import { markdownImageLocation } from "@/lib/markdown-images";
 import { parseProtocolFrontmatter } from "@/lib/protocol-frontmatter";
 import { getProtocolLogos, getProtocolLogoBytes, normalizeProtocolLogo } from "@/lib/protocol-logos";
 import { renderProtocolPdf, type ProtocolPdfRenderInput } from "@/lib/protocol-pdf-renderer";
@@ -48,29 +50,23 @@ export async function exportProtocolPdf(user: User, areaId: number, sessionId: n
     if (logoId) {
       logo = await deps.getProtocolLogoBytes(areaId, logoId);
       if (!logo) throw new ExportError("Das Logo wurde entfernt. Bitte den Exportdialog erneut öffnen.");
-    } else {
-      const name = parsed.fields.logo || "logo.png";
-      let logoPath: string;
-      try { logoPath = protocolDeletionPath(area.rootPath, folderName, name); } catch { throw new ExportError("Das YAML-Logo muss eine Bilddatei direkt im Sitzungsordner sein, kein externer oder absoluter Pfad."); }
-      try { logo = await deps.normalizeProtocolLogo((await deps.readWebDavImage(creds, logoPath)).bytes); }
-      catch (cause) { if (parsed.fields.logo || (cause as { status?: number }).status !== 404) throw new ExportError("Das im YAML angegebene Logo konnte nicht aus dem Sitzungsordner geladen werden."); }
     }
     const images: ProtocolPdfRenderInput["images"] = {};
     // Local Markdown images (including reference definitions) and HTML img sources.
-    const references = [...parsed.body.matchAll(/!\[[^\]]*\]\(<?([^\s)>]+)>?(?:\s+[^)]*)?\)|^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?|<img\b[^>]*\bsrc=["']([^"']+)["']/gmi)]
+    const references = [...parsed.body.matchAll(/!\[(?:\\.|[^\]\\])*\]\(<?([^\s)>]+)>?(?:\s+[^)]*)?\)|^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?|<img\b[^>]*\bsrc=["']([^"']+)["']/gmi)]
       .map(match => match[1] ?? match[2] ?? match[3]).filter(value => !/^(?:https?:|#|mailto:)/i.test(value));
     if (new Set(references).size > 30) throw new ExportError("Das Protokoll enthält zu viele Bildverweise (maximal 30).");
     let imageBytes = 0;
     for (const reference of new Set(references)) {
-      let name: string;
-      try { name = decodeURIComponent(reference.replace(/^\.\//, "")); protocolDeletionPath(area.rootPath, folderName, name); }
-      catch { throw new ExportError("Bilder müssen direkt im Sitzungsordner liegen; externe oder verschachtelte Bildpfade sind nicht erlaubt."); }
-      if (!/\.(png|jpe?g|webp|gif)$/i.test(name)) continue;
-      const image = await deps.readWebDavImage(creds, protocolDeletionPath(area.rootPath, folderName, name));
+      // Reference definitions can also describe ordinary document links.
+      if (!/\.(png|jpe?g|webp|gif)$/i.test(reference)) continue;
+      const location = markdownImageLocation(reference);
+      if (!location) throw new ExportError("Bilder müssen mit einem relativen Pfad innerhalb des Sitzungsordners verlinkt sein.");
+      const image = await deps.readWebDavImage(creds, protocolFilePath(area.rootPath, folderName, location.filename, location.subfolder));
       const png = await deps.normalizeProtocolLogo(image.bytes);
       imageBytes += png.length;
       if (imageBytes > 20 * 1024 * 1024) throw new ExportError("Die eingebundenen Bilder sind zusammen größer als 20 MB.");
-      images[name] = { data: png.toString("base64"), mime: "image/png" };
+      images[location.relativePath] = { data: png.toString("base64"), mime: "image/png" };
     }
     let pdf: Buffer;
     try { pdf = await deps.renderProtocolPdf({ markdown: source.content, sourceName, logo: logo?.toString("base64") ?? null, images }); }

@@ -5,11 +5,13 @@
 
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { clsx } from "clsx";
+import { AnchoredPopover } from "./AnchoredPopover";
 
 export type SelectOption = { value: string; label: string };
 
@@ -25,6 +27,8 @@ export function Select({
   id,
   searchable = false,
   searchPlaceholder = "Suchen…",
+  ariaLabel,
+  portal = false,
 }: {
   options: SelectOption[];
   value?: string;
@@ -37,6 +41,8 @@ export function Select({
   id?: string;
   searchable?: boolean;
   searchPlaceholder?: string;
+  ariaLabel?: string;
+  portal?: boolean;
 }) {
   const isControlled = value !== undefined;
   const [internal, setInternal] = useState(defaultValue ?? "");
@@ -44,6 +50,8 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   // Per Pfeiltasten hervorgehobener Eintrag (Index in visibleOptions).
   const [active, setActive] = useState(0);
@@ -52,7 +60,7 @@ export function Select({
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -83,6 +91,7 @@ export function Select({
     if (!isControlled) setInternal(val);
     onChange?.(val);
     setOpen(false);
+    ref.current?.querySelector("button")?.focus({ preventScroll: true });
   }
 
   const selectedLabel = options.find((o) => o.value === current)?.label;
@@ -106,16 +115,27 @@ export function Select({
       if (opt) choose(opt.value);
     } else if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       setOpen(false);
     }
   }
 
+  const menu = <div ref={menuRef} id={menuId} className={`${portal ? "" : "absolute z-30 mt-1 "}w-full rounded-md border border-slate-200 bg-white text-sm shadow-lg`} onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); ref.current?.querySelector("button")?.focus(); } }}>
+    {searchable && <div className="border-b border-slate-100 p-1.5"><input ref={searchRef} autoFocus={portal} type="text" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={handleKey} placeholder={searchPlaceholder} aria-label={searchPlaceholder} className="h-8 w-full rounded border border-slate-300 px-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" /></div>}
+    <ul role="listbox" aria-label={ariaLabel} className="max-h-60 overflow-auto py-1">
+      {visibleOptions.length === 0 ? <li className="px-3 py-1.5 text-slate-400">Keine Treffer</li> : visibleOptions.map((o, idx) => <li key={o.value}><button ref={idx === active ? activeRef : null} type="button" role="option" aria-selected={o.value === current} onClick={() => choose(o.value)} onMouseEnter={() => setActive(idx)} className={clsx("block w-full px-3 py-1.5 text-left", idx === active && "bg-brand-50", o.value === current ? "font-medium text-brand-700" : "text-slate-700")}>{o.label}</button></li>)}
+    </ul>
+  </div>;
   return (
     <div ref={ref} className={clsx("relative", className)}>
       {name && <input type="hidden" name={name} value={current} />}
       <button
         type="button"
         id={id}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         disabled={disabled}
         // Maus-Klick klappt auf/zu. Tastatur-„Klicks" (Enter/Space erzeugen einen
         // synthetischen Klick mit e.detail===0) ignorieren — die behandelt
@@ -166,50 +186,7 @@ export function Select({
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute z-30 mt-1 w-full rounded-md border border-slate-200 bg-white text-sm shadow-lg">
-          {searchable && (
-            <div className="border-b border-slate-100 p-1.5">
-              <input
-                ref={searchRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder={searchPlaceholder}
-                className="h-8 w-full rounded border border-slate-300 px-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
-          )}
-          <ul role="listbox" className="max-h-60 overflow-auto py-1">
-            {visibleOptions.length === 0 ? (
-              <li className="px-3 py-1.5 text-slate-400">
-                Keine Treffer
-              </li>
-            ) : (
-              visibleOptions.map((o, idx) => (
-                <li key={o.value}>
-                  <button
-                    ref={idx === active ? activeRef : null}
-                    type="button"
-                    onClick={() => choose(o.value)}
-                    onMouseEnter={() => setActive(idx)}
-                    className={clsx(
-                      "block w-full px-3 py-1.5 text-left",
-                      idx === active && "bg-brand-50",
-                      o.value === current
-                        ? "font-medium text-brand-700"
-                        : "text-slate-700",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-      )}
+      {open && (portal ? <AnchoredPopover anchor={ref}>{menu}</AnchoredPopover> : menu)}
     </div>
   );
 }

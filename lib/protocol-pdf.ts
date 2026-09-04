@@ -3,18 +3,19 @@
 
 import type { User } from "@/lib/db/schema";
 import { contentDisposition } from "@/lib/attachments";
-import { protocolDeletionPath } from "@/lib/protocol-deletion";
+import { protocolFilePath } from "@/lib/protocol-paths";
 import { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials } from "@/lib/protocols";
 import { readWebDavPdf, readWebDavImage, WebDavPdfError, type NcCredentials } from "@/lib/nextcloud";
 
 const dependencies = { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials, readWebDavPdf };
+type MediaTarget = string | { filename: string; subfolder?: string };
 
 /** Shared response boundary, with injectable IO for authorization/path tests. */
 export async function protocolPdfResponse(
   user: User | null,
   areaId: number,
   sessionId: number,
-  filename: string,
+  filename: MediaTarget,
   deps = dependencies,
 ): Promise<Response> {
   return protocolMediaResponse(user, areaId, sessionId, filename, {
@@ -23,15 +24,16 @@ export async function protocolPdfResponse(
   });
 }
 
-export async function protocolImageResponse(user: User | null, areaId: number, sessionId: number, filename: string,
+export async function protocolImageResponse(user: User | null, areaId: number, sessionId: number, filename: MediaTarget,
   deps = { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials, readWebDavImage },
 ): Promise<Response> {
   return protocolMediaResponse(user, areaId, sessionId, filename, { ...deps, readMedia: deps.readWebDavImage });
 }
 
-async function protocolMediaResponse(user: User | null, areaId: number, sessionId: number, filename: string,
+async function protocolMediaResponse(user: User | null, areaId: number, sessionId: number, location: MediaTarget,
   deps: Omit<typeof dependencies, "readWebDavPdf"> & { readMedia: (creds: NcCredentials, path: string) => Promise<{ bytes: Buffer; mime: string }> },
 ): Promise<Response> {
+  const { filename, subfolder = "" } = typeof location === "string" ? { filename: location } : location;
   const error = (message: string, status: number) => new Response(message, {
     status, headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" },
   });
@@ -43,8 +45,7 @@ async function protocolMediaResponse(user: User | null, areaId: number, sessionI
   if (!session) return error("Not found", 404);
   let path: string;
   try {
-    // Reads use the same exact-child validation as file deletion: never a client-supplied path.
-    path = protocolDeletionPath(area.rootPath, session.folderName, filename);
+    path = protocolFilePath(area.rootPath, session.folderName, filename, subfolder);
   } catch { return error("Ungültiger Dateiname oder Sitzungsordner.", 400); }
   try {
     const { bytes, mime } = await deps.readMedia(deps.protocolCredentials(area), path);

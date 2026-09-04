@@ -5,6 +5,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { protocolDirectoryPath, protocolFilePath } from "@/lib/protocol-paths";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import {
@@ -21,6 +22,8 @@ import {
 import { requireUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { encryptSecret } from "@/lib/crypto";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { availableProtocolFinanceFields, orderedProtocolFinanceFields, parseProtocolAreaContent, protocolTemplateSource } from "@/lib/protocol-area-config";
 import { isSafeExternalUrl } from "@/lib/url-guard";
 import {
   createWebDavDirectoryExclusive,
@@ -30,6 +33,7 @@ import {
   listWebDavDirectory,
   readWebDavText,
   overwriteWebDavText,
+  statWebDavEntry,
 } from "@/lib/nextcloud";
 import {
   extractFinanceLinks,
@@ -112,7 +116,7 @@ function validateConfig(formData: FormData, currentPassword?: string) {
   const filePattern = String(formData.get("filePattern") ?? "").trim();
   const decisionRefPattern = String(formData.get("decisionRefPattern") ?? "").trim();
   const password = String(formData.get("ncPassword") ?? "") || currentPassword || "";
-  const templateId = Number(formData.get("templateId"));
+  const contentConfig = parseProtocolAreaContent(formData);
   const rawBoard = String(formData.get("boardId") ?? "");
   const rawStatus = String(formData.get("sourceStatusId") ?? "");
   const boardId = rawBoard ? Number(rawBoard) : null;
@@ -127,7 +131,13 @@ function validateConfig(formData: FormData, currentPassword?: string) {
   validateFilePattern(filePattern, "2026-08-14", name, sampleFolder);
   if (!decisionRefPattern) throw new Error("Das Beschlussreferenz-Muster ist erforderlich.");
   renderDecisionRef(decisionRefPattern, sampleFolder, "2026-08-14", "5.1");
-  return { name: name.slice(0, 120), description, ncUrl, ncUsername, password, rootPath, folderPattern, filePattern, decisionRefPattern, templateId, boardId, sourceStatusId };
+  return { name: name.slice(0, 120), description, ncUrl, ncUsername, password, rootPath, folderPattern, filePattern, decisionRefPattern, ...contentConfig, boardId, sourceStatusId };
+}
+
+async function validateAreaContent(value: ReturnType<typeof validateConfig>) {
+  if (value.templateId !== null) await validateTemplate(value.templateId);
+  const available = value.boardId ? availableProtocolFinanceFields([...await getVisibleFieldKeys(value.boardId)]) : [];
+  value.financeFields = orderedProtocolFinanceFields(value.financeFields, available);
 }
 
 export async function createProtocolAreaAction(_prev: ProtocolState, formData: FormData): Promise<ProtocolState> {
@@ -135,8 +145,8 @@ export async function createProtocolAreaAction(_prev: ProtocolState, formData: F
   let value: ReturnType<typeof validateConfig>;
   try {
     value = validateConfig(formData);
-    await validateTemplate(value.templateId);
     await validateBoardLink(user, value.boardId, value.sourceStatusId);
+    await validateAreaContent(value);
     try {
       await listWebDavDirectory(
         { url: value.ncUrl, username: value.ncUsername, password: value.password },
@@ -164,8 +174,8 @@ export async function updateProtocolAreaAction(areaId: number, _prev: ProtocolSt
   const { user, area } = await requireProtocolAreaManage(areaId);
   try {
     const value = validateConfig(formData, "__KEEP__");
-    await validateTemplate(value.templateId);
     await validateBoardLink(user, value.boardId, value.sourceStatusId);
+    await validateAreaContent(value);
     const newPassword = String(formData.get("ncPassword") ?? "");
     const ncPasswordEnc = newPassword ? encryptSecret(newPassword) : area.ncPasswordEnc;
     const passwordForTest = newPassword || protocolCredentials(area).password;
@@ -189,12 +199,18 @@ export async function updateProtocolAreaAction(areaId: number, _prev: ProtocolSt
         folderPattern: value.folderPattern,
         filePattern: value.filePattern,
         templateId: value.templateId,
+        customTemplateMarkdown: value.customTemplateMarkdown,
+        financeFields: value.financeFields,
+        decisionTemplateEnabled: value.decisionTemplateEnabled,
+        decisionTemplateMarkdown: value.decisionTemplateMarkdown,
         boardId: value.boardId,
         sourceStatusId: value.sourceStatusId,
         decisionRefPattern: value.decisionRefPattern,
       })
       .where(eq(protocolAreas.id, areaId));
     revalidatePath(`/intern/protokolle/${areaId}`);
+    revalidatePath(`/intern/protokolle/${areaId}/einstellungen`);
+    revalidatePath(`/dokumente/${areaId}`, "layout");
     return { success: "Einstellungen und Verbindung geprüft und gespeichert." };
   } catch (error) {
     return { error: errorMessage(error) };
@@ -216,7 +232,7 @@ export async function createSessionAction(areaId: number, _prev: ProtocolState, 
   const { area } = await requireProtocolAreaAccess(areaId);
   const date = String(formData.get("date") ?? "");
   try {
-    const template = await validateTemplate(area.templateId);
+    const template = await protocolTemplateSource(area, validateTemplate);
     const folderName = renderSessionName(area.folderPattern, date, area.name);
     const fileName = validateFilePattern(area.filePattern, date, area.name, folderName);
     const creds = protocolCredentials(area);
@@ -228,7 +244,7 @@ export async function createSessionAction(areaId: number, _prev: ProtocolState, 
       if (existing) redirect(`/intern/protokolle/${areaId}/sitzung/${existing.id}?existing=1`);
       throw new Error("Der Sitzungsordner existiert bereits und wurde nicht verändert.");
     }
-    const content = renderProtocolTemplate(template.markdown, {
+    const content = renderProtocolTemplate(template, {
       "session.date": date,
       "session.date_de": date.split("-").reverse().join("."),
       "session.folder_name": folderName,
@@ -259,12 +275,12 @@ export async function createProtocolForSessionAction(areaId: number, sessionId: 
   const session = await getProtocolSession(areaId, sessionId);
   if (!session) return { error: "Sitzung nicht gefunden." };
   const date = String(formData.get("date") ?? session.sessionDate ?? "");
-  const templateId = Number(formData.get("templateId") || area.templateId);
+  const requested = String(formData.get("templateId") ?? "");
   try {
-    const template = await validateTemplate(templateId);
+    const template = await protocolTemplateSource({ ...area, templateId: !requested ? area.templateId : requested === "custom" ? null : Number(requested) }, validateTemplate);
     const fileName = validateFilePattern(area.filePattern, date, area.name, session.folderName);
     const path = joinWebDavPath(area.rootPath, session.folderName, fileName);
-    const content = renderProtocolTemplate(template.markdown, {
+    const content = renderProtocolTemplate(template, {
       "session.date": date,
       "session.date_de": date.split("-").reverse().join("."),
       "session.folder_name": session.folderName,
@@ -302,6 +318,7 @@ export async function deleteProtocolFileAction(
   expectedFolderName: string,
   fileName: string,
   expectedFileId: string | null,
+  subfolder = "",
 ): Promise<ProtocolState> {
   const { user, area } = await requireProtocolAreaAccess(areaId);
   const session = await getProtocolSession(areaId, sessionId);
@@ -309,8 +326,8 @@ export async function deleteProtocolFileAction(
   if (session.folderName !== expectedFolderName) return { error: "Der Sitzungsordner wurde umbenannt. Bitte neu laden." };
   let cloudDeleted = false;
   try {
-    const folderPath = protocolDeletionPath(area.rootPath, session.folderName);
-    const path = protocolDeletionPath(area.rootPath, session.folderName, fileName);
+    const folderPath = protocolDirectoryPath(area.rootPath, session.folderName, subfolder);
+    const path = protocolFilePath(area.rootPath, session.folderName, fileName, subfolder);
     let isProtocol = session.protocolPath === path;
     const creds = protocolCredentials(area);
     const folder = resolveProtocolDeletionTarget(
@@ -375,10 +392,12 @@ export async function deleteProtocolSessionAction(
   redirect(`/intern/protokolle/${areaId}`);
 }
 
-export async function saveProtocolAction(areaId: number, sessionId: number, content: string, replannedCardIds: number[] = []): Promise<ProtocolState> {
+export async function saveProtocolAction(areaId: number, sessionId: number, content: string, replannedCardIds: number[] = [], expected?: { path: string; fileId: string | null }): Promise<ProtocolState> {
   const { user, area } = await requireProtocolAreaAccess(areaId);
   const session = await getProtocolSession(areaId, sessionId);
   if (!session?.protocolPath) return { error: "Keine Protokolldatei registriert." };
+  if (expected && expected.path !== session.protocolPath) return { error: "Die Protokollzuordnung hat sich geändert. Bitte den Editor erneut öffnen." };
+  if (typeof content !== "string" || Buffer.byteLength(content) > 2 * 1024 * 1024) return { error: "Die Markdown-Datei darf höchstens 2 MB groß sein." };
   const [members, guests] = await Promise.all([getProtocolMembers(areaId, sessionId), getProtocolGuests(areaId, sessionId)]);
   content = syncProtocolAttendance(content, members, guests);
   const links = extractFinanceLinks(content);
@@ -411,6 +430,10 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
 
   let stat;
   try {
+    if (expected) {
+      const file = await statWebDavEntry(protocolCredentials(area), session.protocolPath);
+      if (file.type !== "file" || (expected.fileId && file.fileId !== expected.fileId)) return { error: "Die Protokolldatei wurde ersetzt oder verschoben. Bitte neu öffnen." };
+    }
     stat = await overwriteWebDavText(protocolCredentials(area), session.protocolPath, content);
   } catch (error) {
     return { error: `Speichern in Nextcloud fehlgeschlagen: ${errorMessage(error)}` };

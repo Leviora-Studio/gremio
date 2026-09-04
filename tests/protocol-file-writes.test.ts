@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { PDFDocument } from "pdf-lib";
 import { pool } from "../lib/db";
 import { MAX_UPLOAD_BYTES } from "../lib/constants";
-import { uploadProtocolFile, saveProtocolPdf } from "../lib/protocol-file-writes";
+import { createProtocolMarkdownFile, uploadProtocolFile, saveProtocolPdf } from "../lib/protocol-file-writes";
 import { writeWebDavBinaryWithClient, statWebDavEntryWithClient } from "../lib/nextcloud";
 import { applyEditsAndSign } from "../lib/pdf-apply";
 import { readPdfFields } from "../lib/pdf-edit";
@@ -36,6 +36,27 @@ function setup() {
   return { deps, writes };
 }
 
+test("new Markdown files are empty, exclusive and created in the selected folder", async () => {
+  const { deps } = setup();
+  const created: { path: string; content: string }[] = [];
+  const io = { ...deps, createWebDavTextExclusive: async (_creds: unknown, path: string, content: string) => { created.push({ path, content }); return { created: true }; } };
+  assert.deepEqual(await createProtocolMarkdownFile(user, 2, 3, "Sitzung", "Notizen", io), { filename: "Notizen.md" });
+  io.statWebDavEntry = async (creds, path) => path.endsWith("/Anlagen/Details") ? { ...await deps.statWebDavEntry(creds, path), type: "directory" } : deps.statWebDavEntry(creds, path);
+  const folder = { folderName: "Sitzung", subfolder: "Anlagen/Details" };
+  assert.deepEqual(await createProtocolMarkdownFile(user, 2, 3, folder, "Übersicht.MD", io), { filename: "Übersicht.MD" });
+  assert.deepEqual(created, [{ path: "/Protokolle/Sitzung/Notizen.md", content: "" }, { path: "/Protokolle/Sitzung/Anlagen/Details/Übersicht.MD", content: "" }]);
+  const collision = await createProtocolMarkdownFile(user, 2, 3, folder, "Notizen.md", { ...io, createWebDavTextExclusive: async () => ({ created: false }) });
+  assert.match(collision.error!, /existiert bereits.*nicht überschrieben/);
+  assert.equal(collision.filename, undefined);
+  for (const name of ["", " ", ".md", "../Datei", "a/b", "a\\b", "x\0x", "ü".repeat(128), "__PATH_SEPARATOR_POSIX__x"]) assert.ok((await createProtocolMarkdownFile(user, 2, 3, folder, name, io)).error);
+  assert.ok((await createProtocolMarkdownFile(user, 2, 3, { ...folder, subfolder: "../Privat" }, "Notizen", io)).error);
+  assert.ok((await createProtocolMarkdownFile(user, 2, 3, { ...folder, subfolder: "Datei.txt" }, "Notizen", io)).error);
+  assert.ok((await createProtocolMarkdownFile(user, 2, 4, folder, "Notizen", io)).error);
+  assert.ok((await createProtocolMarkdownFile(user, 2, 3, folder, "Notizen", { ...io, canAccessProtocolArea: async () => false })).error);
+  assert.ok((await createProtocolMarkdownFile(user, 2, 3, "Renamed", "Notizen", io)).error);
+  assert.equal(created.length, 2);
+});
+
 test("Upload erhält Dateiname und Bytes und überschreibt keine vorhandene Datei", async () => {
   const { deps, writes } = setup();
   const bytes = new Uint8Array([0, 255, 13, 10]);
@@ -44,6 +65,25 @@ test("Upload erhält Dateiname und Bytes und überschreibt keine vorhandene Date
   assert.deepEqual(writes, [{ path: "/Protokolle/Sitzung/Unterlagen ä.zip", bytes: Buffer.from(bytes), mime: "application/zip", replace: false }]);
   const conflict = await uploadProtocolFile(user, 2, 3, "Sitzung", file, { ...deps, writeWebDavBinary: async () => false });
   assert.match(conflict.error!, /existiert bereits.*nicht überschrieben/);
+});
+
+test("nested uploads and PDF saves target only the selected session subfolder", async () => {
+  const { deps, writes } = setup();
+  const stat = deps.statWebDavEntry;
+  deps.statWebDavEntry = async (creds, path) => path === "/Protokolle/Sitzung/Anlagen/Prüfung" ? { ...await stat(creds, path), type: "directory" } : stat(creds, path);
+  const location = { folderName: "Sitzung", subfolder: "Anlagen/Prüfung" };
+  assert.ok((await uploadProtocolFile(user, 2, 3, location, new File(["Test"], "Datei.txt"), deps)).success);
+  assert.equal(writes[0].path, "/Protokolle/Sitzung/Anlagen/Prüfung/Datei.txt");
+  assert.equal(writes[0].replace, false);
+  deps.applyEditsAndSign = async () => ({ ok: true, pdf: Buffer.from("%PDF-1.7\nEdited"), signed: false });
+  assert.ok((await saveProtocolPdf(user, 2, 3, location, "Anlage.pdf", "pdf-1", input, deps)).ok);
+  assert.equal(writes[1].path, "/Protokolle/Sitzung/Anlagen/Prüfung/Anlage.pdf");
+  assert.equal(writes[1].replace, true);
+  for (const subfolder of ["../Andere Sitzung", "/Privat", "Anlagen/../../Privat", "Anlagen//Prüfung", "Anlage.pdf"]) {
+    assert.ok((await uploadProtocolFile(user, 2, 3, { ...location, subfolder }, new File(["Test"], "Datei.txt"), deps)).error);
+    assert.equal((await saveProtocolPdf(user, 2, 3, { ...location, subfolder }, "Anlage.pdf", "pdf-1", input, deps)).ok, false);
+  }
+  assert.equal(writes.length, 2);
 });
 
 test("Upload prüft Rechte, Sitzung, Dateiname, Dateigröße und Ordneridentität vor dem Schreiben", async () => {

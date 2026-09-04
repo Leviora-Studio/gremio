@@ -587,8 +587,11 @@ Server Actions und Seiten verwenden dafür `requireProtocolAreaAccess` bzw.
 
 ### Mitglieder und Anwesenheit
 
-Die einklappbare Protokoll-Seitenleiste enthält die Reiter „Finanzanträge“,
-„Mitglieder“ und „Gäste“. `protocol_members` speichert je Bereich Namen und Reihenfolge;
+Im eigenständigen Dokumenteditor öffnet „Sitzungsdaten“ einen modalen Vorbereitungsbereich
+mit aufklappbaren Abschnitten für Mitglieder, Gäste und Sitzungsinformationen.
+Formularentwürfe bleiben beim Schließen erhalten; nicht übernommene Eingaben
+blockieren Speichern und Export und werden in der Kopfzeile angezeigt.
+`protocol_members` speichert je Bereich Namen und Reihenfolge;
 `protocol_attendance` speichert je Sitzung/Mitglied Anwesenheit und optional
 das andere Bereichsmitglied, auf das die Stimme übertragen wurde. Namen sind
 keine Benutzerkonten. Bereichsmitglieder dürfen diese Daten bearbeiten. Die
@@ -597,7 +600,7 @@ gesamten Bereich. Ohne Auswahl gilt „Nein“ bzw. keine Übertragung. Selbst- 
 bereichsfremde Übertragungen sind serverseitig ausgeschlossen; darüber hinaus
 werden keine fachlichen Stimmrechtsregeln angenommen.
 
-Mitgliederdaten werden direkt in Gremio gespeichert, auch ohne Protokolldatei.
+Mitgliederdaten werden direkt in Gremio gespeichert, unabhängig vom Cloud-Speichern.
 Im geöffneten Editor wird unter `## Anwesenheit` / `### Mitglieder` automatisch
 eine Tabelle mit „Mitglied“, „Anwesend“ und „übertragen auf“ aktualisiert.
 Sie enthält alle Mitglieder in Listenreihenfolge, Ja/Nein und einen Namen oder
@@ -646,6 +649,44 @@ werden beim Laden im Editor und serverseitig beim Speichern konsistent erzeugt.
 
 ### Datei-Upload und PDF-Editor
 
+Im Dokumenteditor lädt „Bild einfügen“ ein Bild in `attachments` neben der
+geöffneten Markdown-Datei. Der Server prüft die Dokumentberechtigung und
+Dateiidentität, dekodiert PNG/JPEG/WebP/GIF (maximal 5 MB und 16 Megapixel) und
+legt eine metadatenbereinigte PNG-Datei mit eindeutigem Namen exklusiv ab.
+GIFs werden dabei als Standbild übernommen. Der relative Markdown-Verweis
+`![Bild](attachments/name.png)` wird an der gemerkten Cursorposition eingefügt;
+während des Uploads eingegebener Text bleibt erhalten. Bilddateien werden sofort
+hochgeladen; Verweis und Größenänderungen folgen dem normalen Dokument-Speichern.
+Entfernen eines Verweises oder Rückgängig löscht keine Datei in Nextcloud.
+
+Strg/Cmd+V fügt Bilddateien aus der Zwischenablage über denselben Uploadweg ein,
+in Live-Vorschau und Bearbeiten. Der Paste-Handler fängt nur Bilder innerhalb
+des bearbeitbaren Dokuments ab; Text-Paste und Formulare bleiben unverändert.
+Bild-Paste verwendet die aktuelle Auswahl, nicht die zuletzt für den Dateidialog
+gemerkte Position. Pro Einfügevorgang wird ein Bild übernommen; mehrere Bilder
+oder Einfügen während eines laufenden Vorgangs zeigen eine Meldung statt eines
+teilweisen Uploads. Clipboard-HTML wird nicht nach externen Bild-URLs durchsucht.
+
+In der Live-Vorschau erscheinen beim Überfahren des Bildes vier ziehbare Ecken.
+Skalierung erhält das Seitenverhältnis und speichert die Breite als
+`![Bild](attachments/name.png){width=420}` (Markdown-Attributliste). Drag-Vorschauen
+ändern nur die Darstellung; Loslassen erzeugt genau einen Undo-Schritt, Escape
+bricht ab. Live-/Lesevorschau teilen denselben Bildrenderer. Relative Bildpfade
+werden ausschließlich über den berechtigten Image-Endpunkt geladen; externe
+URLs, Elternpfade, SVG/HTML und Data-URLs werden nicht als Bilder eingebunden.
+Der PDF-Export lädt lokale Unterordnerbilder in seine Ressourcen-Allowlist und
+übernimmt ausschließlich geprüfte numerische Breiten, keine freien CSS-Styles.
+
+Die Sitzungsdateiliste öffnet Unterordner über deren Namen oder „Öffnen“ innerhalb
+von Gremio (`?folder=Anlagen%2FUnterordner`). Die Pfadnavigation und „Übergeordneter
+Ordner“ führen zurück. `lib/protocol-paths.ts` validiert jedes relative Segment;
+absolute Pfade, Traversal und interne WebDAV-Trenner sind verboten. Die
+Protokollerkennung bleibt auf die oberste Ebene des Sitzungsordners beschränkt.
+Uploads, PDF-/Bildvorschau, PDF-Bearbeitung, Markdown-Editor und Dateilöschung
+übernehmen den geöffneten Unterordner. Im Markdown-Editor führt Zurück wieder
+in diesen Ordner; gleichnamige Markdown-Dateien in Unterordnern sind keine
+zusätzlichen Sitzungsprotokolle.
+
 Unter der Sitzungsdateiliste lädt `ProtocolFileUpload` eine Datei sofort nach der
 Auswahl in den geöffneten Nextcloud-Ordner (1 Byte bis 25 MB, beliebige Dateitypen).
 Ein zusätzlicher Upload-Klick entfällt; bei Fehlern ist „Erneut versuchen“ möglich.
@@ -653,7 +694,14 @@ Dateinamen bleiben erhalten; Pfade, versteckte und überlange Namen werden abgew
 Der Upload ist atomar mit `If-None-Match: *`: gleichnamige Dateien bleiben erhalten.
 Nach Erfolg wird die Liste aktualisiert; nach Fehler bleibt die Dateiauswahl bestehen.
 
-PDF-Dateien in der Sitzungsdateiliste öffnen über „PDF öffnen“ den vorhandenen
+„Markdown-Datei erstellen“ legt nach Eingabe eines Dateinamens eine leere `.md`
+im aktuell geöffneten Ordner an und öffnet sie direkt im Dokumenteditor. Fehlendes
+`.md` wird ergänzt. Der Server prüft dieselben Bereichs-, Sitzungs-, Ordner- und
+Dateinamengrenzen wie beim Upload; `createWebDavTextExclusive` verhindert das
+Überschreiben vorhandener Dateien. Fehler bleiben im Dialog, ohne bestehende
+Dateien zu öffnen oder zu ersetzen. Die Erstellung ist ratenbegrenzt.
+
+PDF-Dateien in der Sitzungsdateiliste öffnen über ihren Dateinamen den vorhandenen
 `AttachmentLink`/`PdfViewerModal` mit Freitext-/Formularbearbeitung und der vorhandenen
 optionalen Signaturfunktion. `pdf/fields?name=...` liefert Formularfelder über denselben
 berechtigten Lesepfad. `saveProtocolPdfEditsAction` verwendet `applyEditsAndSign` und
@@ -664,13 +712,14 @@ explizitem Depth-0-PROPFIND ergänzt. Upload und PDF-Speichern sind ratenbegrenz
 beide halten Nextcloud-Zugangsdaten und Dateiinhalte aus PostgreSQL heraus.
 `GET /api/protokolle/{areaId}/sitzung/{sessionId}/pdf?name=...` prüft Anmeldung,
 Bereichszugriff und Sitzungszuordnung. Der Dateipfad wird ausschließlich aus
-konfiguriertem Wurzelpfad, gespeichertem Sitzungsordner und validiertem direkten
-Dateinamen gebildet; Nextcloud-Zugangsdaten bleiben serverseitig. Der geschützte
+konfiguriertem Wurzelpfad, gespeichertem Sitzungsordner, optionalem validiertem
+Unterordner (`folder`) und direktem Dateinamen gebildet; Nextcloud-Zugangsdaten
+bleiben serverseitig. Der geschützte
 WebDAV-Client lädt maximal 25 MB mit 30 Sekunden Zeitlimit, prüft Dateityp und
 PDF-Kennung und zählt die tatsächlichen Bytes. Antworten sind `private, no-store`
 und `nosniff`; WebDAV-Fehlerdetails werden nicht an den Browser weitergegeben.
 
-PNG-, JPEG-, GIF- und WebP-Dateien öffnen über ihren Dateinamen oder „Bild ansehen“
+PNG-, JPEG-, GIF- und WebP-Dateien öffnen über ihren Dateinamen
 denselben Viewer im Bildmodus. `GET .../sitzung/{sessionId}/image?name=...` verwendet
 dieselben Bereichs-/Sitzungsprüfungen und den begrenzten WebDAV-Lesepfad wie PDFs.
 Der Antwort-MIME-Typ wird anhand der Dateikennung ermittelt; SVG/HTML werden
@@ -707,15 +756,96 @@ automatischen Lösch- oder Aufräumjobs.
 
 ### Vorlagen, Markdown und Finanzkarten
 
+Die Protokolleinstellungen verwenden dieselbe `CollapsibleSection` wie die
+Board-Einstellungen (eingeklappte Karten, gemeinsame Abstände und Seitenbreite).
+WebDAV ist als URL/Pfad, darunter Benutzername/Passwort angeordnet. Formular-
+Inhalte bleiben beim Einklappen gemountet; ungültige Pflichtfelder öffnen ihre
+Karte. Auswahlfelder und Sitzungskalender verwenden die vorhandenen `Select`
+und `DatePicker`, auch bei Mitglieder-Stimmübertragung und in Mini-Editoren.
+Der optionale `AnchoredPopover`-Portalmodus verhindert abgeschnittene Menüs in
+Toolbars und scrollbaren Modals und begrenzt ihre Position auf den Viewport.
+Der übrige App-Einsatz dieser Komponenten behält den bisherigen Inline-Modus.
+Sitzungsdaten und Bestätigungen verwenden `Modal`/`ConfirmDialog`, Logoentfernung
+`DeleteConfirm`; der Sitzungsdialog erhält durch `keepMounted` nicht übernommene
+Formulareingaben auch beim Schließen. Fokus wird beim Öffnen/Schließen geführt.
+Nur der Dateiauswahldialog und die unvermeidliche Browserwarnung beim Schließen
+oder Neuladen des gesamten Tabs bleiben betriebssystem-/browserseitig.
+
+Markdown-Dateinamen (`.md`/`.markdown`) im Sitzungsordner öffnen das Modul
+`/dokumente/[areaId]/[sessionId]?name=…`. Die Ordnerseite lädt keinen Editor und
+keinen Markdown-Inhalt mehr. `lib/markdown-documents.ts` prüft bei Laden/Speichern
+Bereichsrechte, Sitzungszuordnung, validierte Unterordnerpfade, Dateityp, Größenlimit und
+bekannte Nextcloud-Datei-IDs. Nur die registrierte Protokolldatei erhält die
+optionale Protokollerweiterung des `DocumentEditor`; andere Markdown-Dateien
+werden unverändert ohne Anwesenheits- oder Finanzsynchronisierung gespeichert.
+Eine inzwischen geänderte Protokollzuordnung erfordert erneutes Öffnen.
+
+Der Editor füllt den Viewport ohne äußeren Seitenscroll. Kopfzeile und separate
+Formatierungsleiste bleiben sichtbar; Dokument und rechte Werkzeugliste scrollen
+unabhängig. Mobil wird die Werkzeugliste über dem Dokument eingeblendet. Die
+Gliederung navigiert zu Überschriften, markiert den aktuellen Abschnitt und schreibt
+kein Inhaltsverzeichnis in den Quelltext. Protokolle mit Board erhalten zusätzlich
+kompakte Finanzanträge mit Suche, Filtern, TOP-Eingabe, Drag-and-drop und Sprung zum TOP.
+„Sitzungsdaten“ enthält die seltener benötigten Protokolleingaben.
+Der Kopfbereich ist kompakt; der Chevron rechts in der grauen Werkzeugleiste
+blendet nur den Dateikopf mit Speichern, Neu laden, Exportieren und Sitzungsdaten aus
+bzw. wieder ein. Ansichtsauswahl, Suchen und die abgetrennten Formatierungswerkzeuge
+(einschließlich „Tabellen“ ohne Zusatzsymbol) bleiben in dieser Reihenfolge in der
+grauen Leiste. „Tagesordnung aktualisieren“ folgt für Protokolle nach den Werkzeugen.
+Seitenleisten-Schalter und Chevron liegen außerhalb des horizontal scrollenden
+Bereichs und bleiben auch mobil erreichbar. Suchfeld und Fehlerhinweise bleiben
+bei Bedarf unter der Leiste sichtbar; Strg/Cmd+S und Strg/Cmd+F funktionieren auch eingeklappt.
+
+Die Formatierungsleiste nutzt reine Texttransformationen in `markdown-formatting.ts`:
+H1/H2/H3, Aufzählungen, nummerierte Listen, Fett, Kursiv, Unterstreichen (`<u>`),
+Zitat, Inline-Code und Tabellenraster. Tabellen bleiben im gewählten Modus mit
+markierter erster Kopfzelle. Live- und Quelltextmodus unterstützen Rückgängig/
+Wiederholen; Strg/Cmd+B/I/U formatiert, Strg/Cmd+S speichert. Vorschau bleibt
+schreibgeschützt. Die Bedienung benötigt keine neue Produktionsabhängigkeit.
+
+„Suchen“ bzw. Strg/Cmd+F öffnet die feste In-Dokument-Suchleiste (`DocumentSearch`).
+Die Suche ist wörtlich und ignoriert Groß-/Kleinschreibung; Enter/Umschalt+Enter
+und die Pfeilbuttons navigieren zyklisch durch Treffer, Escape schließt die Suche.
+Live/Vorschau durchsuchen nur sichtbare Textblöcke (auch über Inline-Formatierungen
+hinweg und innerhalb von Tabellenzellen), der Quelltextmodus die gesamte Markdown-Datei.
+CSS Custom Highlights markieren Treffer ohne DOM-/Quelltextänderung. Die statischen
+`::highlight`-Regeln werden erst beim Öffnen der Suche als Style-Element
+registriert, da der CSS-Parser von Next 15/Turbopack diese Selektoren zurückweist.
+Beim Schließen werden Regeln und Highlight-Registrierungen entfernt. Für Browser
+ohne diese API und im Textfeld wird der aktive Treffer als positionsgetreues Overlay
+markiert. Such-/Scrollzustand verändert keine gespeicherten Inhalte.
+
 Protokollvorlagen liegen als verwaltete Vorlagen in PostgreSQL; erlaubt sind
 `{{session.date}}`, `{{session.date_de}}`, `{{session.folder_name}}`,
 `{{protocol_area.name}}` und `{{created_at}}`. Unbekannte Variablen werden beim
 Speichern und Erzeugen abgewiesen. Ordner-/Dateimuster erlauben eine begrenzte
 Platzhaltermenge und verbieten leere, versteckte oder pfadübergreifende Namen.
-Der Editor startet in „Live Vorschau“: dieselbe Markdown-Darstellung wie in
-„Vorschau“, aber die aktive Quellzeile ist direkt editierbar. Auch Tabellen
-behalten ihre Darstellung außerhalb der aktiven Zeile. Klick, Pfeiltasten,
-Zeilenumbrüche, mehrzeiliges Einfügen und Undo/Redo werden unterstützt.
+Alternativ wählt ein Bereich „Eigene“: `protocol_areas.template_id = NULL`
+aktiviert `custom_template_markdown`, ohne eine globale Vorlage anzulegen.
+Der Entwurf bleibt beim Wechsel auf eine Systemvorlage erhalten. Beide Wege
+werden beim Erstellen einer Sitzung und beim nachträglichen Anlegen ihres
+Protokolls über `protocolTemplateSource` aufgelöst. Änderungen wirken nur auf
+neu erzeugte Dateien; eine leere eigene Vorlage ist zulässig.
+`MarkdownSettingsEditor` verwendet denselben Live-Renderer und dieselben
+Formatierungswerkzeuge wie der Dokumenteditor (einschließlich Quelltext,
+Vorschau, Tabellen und Undo/Redo), aber ohne Dateiablage oder Sitzungswerkzeuge.
+Die eigene Vorlage ist in den Einstellungen einklappbar und beim erneuten
+Öffnen zunächst eingeklappt. Gespeichert wird mit dem Bereichsformular.
+Der Editor startet in „Live Vorschau“: `MarkdownLiveEditor` bearbeitet formatierte
+Blöcke direkt per `contentEditable`, auch während des Tippens. Überschriften,
+Listen und Inline-Formatierung bleiben sichtbar; Tabellen haben einzeln editierbare
+Zellen mit Tab/Shift+Tab-Navigation. „Vorschau“ nutzt denselben Blockbaum und dieselben
+Layoutklassen im `readOnly`-Modus (ohne editierbare Felder, mit anklickbaren Links).
+Dadurch bleiben Zeilenhöhen, Abstände, Umbrüche und Tabellengeometrie beim
+Moduswechsel identisch; der Browsertest vergleicht Geometrie und Screenshots.
+Jede Änderung wird auf den zugehörigen
+Markdown-Quellbereich zurückgeführt; YAML und unsichtbare Verwaltungsmarker bleiben
+erhalten. `markdown-rich-editor.ts` liefert Struktur-/Zellenbereiche und ausschließlich
+selbst erzeugtes, escaptes Inline-HTML. Browser-veränderte DOM-Kinder werden nicht
+durch React reconciliert; die Auswahl wird über Quelltextpositionen wiederhergestellt.
+Eingefügter Text wird ausschließlich als Klartext übernommen, Pipes in Zellen werden
+escaped. Klick, Pfeiltasten, Zeilenumbrüche, mehrzeiliges Einfügen und Undo/Redo
+werden unterstützt. Codeblöcke bleiben im Live-Modus als Quelltext editierbar.
 „Bearbeiten“ bietet weiterhin das vollständige Markdown-Textfeld, „Vorschau“
 bleibt schreibgeschützt. Im Live-Modus werden verwaltete Anwesenheit und
 Tagesordnung beim Verlassen des Editors abgeglichen, damit während des Tippens
@@ -741,7 +871,7 @@ weder Status noch Position der Karten. Nach Eingabe der TOP-Nummer können sie
 per Button oder Drag-and-drop in den Markdown-Editor eingefügt werden. Beim
 Ziehen zeigt eine sichtbare Einfügemarke die tatsächliche Textposition unter
 der Maus (einschließlich Umbrüchen und Scrollposition); Ablegen ersetzt keine
-vorherige Textauswahl. In der Vorschau bleibt das Einfügen per Button möglich.
+vorherige Textauswahl. In der Vorschau ist auch das Einfügen deaktiviert.
 Beim Einfügen entsteht ein zentral
 formatierter Markdown-Block. Seine stabile Karten-ID steht nicht nur in
 HTML-Kommentaren, sondern zusätzlich im normalen HTTPS-Link zur Kartenseite;
@@ -749,6 +879,30 @@ dadurch kann Gremio die Relation auch dann erkennen, wenn ein Editor Kommentare
 entfernt. Die Markerhaltung muss bei einem konkret eingesetzten
 Nextcloud-Text-Release vor Produktivfreigabe nochmals interoperabilitätsgeprüft
 werden.
+
+Die Bereichseinstellungen enthalten bei verknüpftem Board eine sortierbare
+Kartenfeldauswahl (`finance_fields`: JSONB mit Schlüssel und Aktivierung).
+Alle Felder starten ausgeschaltet, auch bei bestehenden Bereichen. Verfügbar
+sind die sichtbaren `board_card_fields` sowie die immer sichtbaren Zeitstempel;
+Titel wird bereits in der TOP-Überschrift verwendet. Auswahl und Reihenfolge
+werden pro Bereich gespeichert, nicht am Board. Veraltete/ausgeblendete Felder
+werden beim Speichern und Laden der Vorschläge herausgefiltert; neue Felder
+starten ausgeschaltet. TOP-Überschrift und der stabile Kartenlink bleiben
+unabhängig davon bestehen. Anhangsfelder übernehmen nur Dateinamen, keine
+Dateien, Serverpfade oder öffentlichen Zugriffstoken. Relationen (Zugewiesene,
+Ersteller, Konto, Priorität) werden als Namen aufgelöst; Abfragen erfolgen erst
+nach Board-Zugriffsprüfung. Status und Kartenposition bleiben unverändert.
+
+`decision_template_enabled` und `decision_template_markdown` speichern eine
+optionale Beschlussvorlage pro Bereich. Der Mini-Markdown-Editor ist nur bei
+Aktivierung sichtbar; Deaktivieren erhält den Text. Beim Einplanen per Button
+oder Drag-and-drop wird der Text hinter die ausgewählten Angaben und den
+Kartenlink vor den Endmarker gesetzt: ohne Trimmen oder Variablenersetzung,
+ohne zusätzliche Leerzeile davor, mit einer Trennzeile zum Endmarker danach.
+Leer/deaktiviert fügt nichts hinzu. Bestehende
+TOP-Blöcke werden bei Einstellungsänderungen nicht umgeschrieben. Markdown-
+Eingaben sind serverseitig auf 200.000 Zeichen (eigene Protokollvorlage) bzw.
+50.000 Zeichen (Beschlussvorlage) begrenzt. Migration: `0061_protocol_area_templates`.
 
 `protocol_card_links` bildet Sitzung↔Karte als n:m-Beziehung ab und speichert TOP,
 den zuletzt automatisch erzeugten Referenzwert und einen Konfliktstatus. Eine
@@ -777,13 +931,17 @@ Ausbaustufe.
 
 Der Reiter „Sitzungsinformationen“ bearbeitet ausschließlich den YAML-Kopf der
 Markdown-Datei, keine separaten Sitzungsfelder in der Datenbank. Unterstützt
-werden `title`, `author`, `sitzungsdatum`, `beginn`, `ende`, `sitzungsort`,
-`sitzungsleitung`, `protokollfuehrung`, `logo` und `unterschriften`, einschließlich
+werden `sitzungsdatum`, `beginn`, `ende`, `sitzungsort`,
+`sitzungsleitung`, `protokollfuehrung` und `unterschriften`, einschließlich
 der Alias-Schreibweisen aus dem ursprünglichen Konverter. „Übernehmen“ schreibt
 in den Editor; erst „In Nextcloud speichern“ persistiert die Datei. Unbestätigte
 Formulareingaben blockieren Speichern/Export, unbekannte YAML-Felder und
 Kommentare bleiben erhalten. Fehlerhaftes YAML wird nicht still ersetzt.
 Tagesordnung/Anwesenheit ändern den YAML-Kopf nicht; die Vorschau blendet ihn aus.
+PDF-Titel und -Autor sind keine eigenen YAML-Optionen: Der Export verwendet die
+erste gerenderte H1-Überschrift als Titel (ersatzweise den Markdown-Dateinamen
+ohne Endung) und die Protokollführung als Autor (ohne Angabe leer). Alte YAML-Felder
+`title` und `author` werden beim Export ignoriert; vorhandene Dateien bleiben erhalten.
 
 `protocol_logos` (Migration 0060) enthält bereichsbezogene Logos als normalisierte
 PNG-Bytes (Base64 in PostgreSQL), Namen und Standardmarkierung. Verwaltung nur
@@ -797,9 +955,12 @@ Es werden keine Logos aus anderen Bereichen oder private Serverpfade akzeptiert.
 Standardlogo. Der Vorschlag ersetzt `.md` durch `.pdf`. Der Server liest die
 gespeicherte Markdown-Datei erneut aus Nextcloud und übergibt sie unverändert an
 den Renderer. Die YAML-Metadaten werden im Renderer aus dieser Datei gelesen.
-Ein ausgewähltes Bereichslogo überschreibt wie `--logo` den YAML-Wert; ohne
-Bereichslogo gilt ein YAML-Dateiname direkt im Sitzungsordner, sonst optional
-`logo.png`. Ohne vorhandenes Standardbild ist ein Export ohne Logo möglich.
+Logos stammen ausschließlich aus den Bereichseinstellungen: verwendet wird das
+beim Export ausgewählte Logo, ersatzweise das Standardlogo. YAML-`logo` und eine
+Datei namens `logo.png` im Sitzungsordner werden nicht als Logo berücksichtigt.
+Ohne hinterlegte Bereichslogos wird ohne Logo exportiert.
+Die optionalen Unterschriftenblöcke enthalten Linien, Rollen und Namen, aber keine
+Datumsbeschriftungen oder Datumsformularfelder.
 Das PDF wird ausschließlich in denselben Sitzungsordner geschrieben, mit
 atomarem `If-None-Match: *`: vorhandene Dateien werden nicht überschrieben.
 Die Dateiliste wird nach Erfolg aktualisiert und verwendet den bestehenden

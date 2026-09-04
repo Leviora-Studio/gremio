@@ -10,5 +10,5 @@ export const runtime = "nodejs";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; sessionId: string }> }) {
   const user = await getCurrentUser();
   const { id, sessionId } = await params;
-  return protocolImageResponse(user, Number(id), Number(sessionId), new URL(request.url).searchParams.get("name") ?? "");
+  return protocolImageResponse(user, Number(id), Number(sessionId), { filename: new URL(request.url).searchParams.get("name") ?? "", subfolder: new URL(request.url).searchParams.get("folder") ?? "" });
 }

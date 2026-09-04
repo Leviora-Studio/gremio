@@ -4,10 +4,9 @@
 import { isMap, parseDocument } from "yaml";
 
 export const protocolMetadataFields = [
-  ["title", "Titel"], ["author", "Autor (PDF-Metadaten)"],
   ["sitzungsdatum", "Sitzungsdatum"], ["beginn", "Beginn"], ["ende", "Ende"],
   ["sitzungsort", "Sitzungsort"], ["sitzungsleitung", "Sitzungsleitung"],
-  ["protokollfuehrung", "Protokollführung"], ["logo", "Logo-Dateiname (optional)"],
+  ["protokollfuehrung", "Protokollführung"],
 ] as const;
 export type ProtocolMetadataKey = typeof protocolMetadataFields[number][0];
 export type ProtocolMetadata = Record<ProtocolMetadataKey, string> & { unterschriften: boolean };

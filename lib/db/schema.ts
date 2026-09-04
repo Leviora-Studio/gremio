@@ -637,8 +637,11 @@ export const protocolAreas = pgTable("protocol_areas", {
   folderPattern: text("folder_pattern").notNull().default("{YYYY}-{MM}-{DD}"),
   filePattern: text("file_pattern").notNull().default("Protokoll.md"),
   templateId: integer("template_id")
-    .notNull()
     .references(() => protocolTemplates.id, { onDelete: "restrict" }),
+  customTemplateMarkdown: text("custom_template_markdown").notNull().default(""),
+  financeFields: jsonb("finance_fields").$type<{ key: string; enabled: boolean }[]>().notNull().default([]),
+  decisionTemplateEnabled: boolean("decision_template_enabled").notNull().default(false),
+  decisionTemplateMarkdown: text("decision_template_markdown").notNull().default(""),
   boardId: integer("board_id").references(() => boards.id, {
     onDelete: "set null",
   }),

@@ -468,6 +468,7 @@ export function upsertAgenda(markdown: string): string {
 }
 
 export type FinanceBlockCard = {
+  fields?: { key: string; label: string; value: string }[];
   id: number;
   number: string | null;
   title: string;
@@ -479,18 +480,17 @@ export function formatFinanceBlock(
   card: FinanceBlockCard,
   top: string,
   cardUrl: string,
+  decisionTemplate = "",
 ): string {
-  const amount = card.amount == null
-    ? "—"
-    : new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(card.amount / 100);
+  // Card data is literal text, not Markdown; the decision template is deliberately raw.
+  const literal = (value: string) => value.replace(/\\/g, "\\\\").replace(/([`*_{}\[\]<>#!|])/g, "\\$1").replace(/\r?\n/g, "\n  ");
   return [
     `<!-- gremio:finance:start card=${card.id} -->`,
-    `## TOP ${top.trim()} Finanzantrag ${card.title}`,
+    `## TOP ${top.trim()} Finanzantrag ${literal(card.title).replace(/\n/g, " ")}`,
     "",
-    `- Antragsnummer: ${card.number || "—"}`,
-    `- Antragsteller: ${card.applicant || "—"}`,
-    `- Beantragter Betrag: ${amount}`,
+    ...(card.fields ?? []).map(field => `- ${field.label}: ${literal(field.value)}`),
     `- [Finanzantrag in Gremio öffnen](${cardUrl})`,
+    ...(decisionTemplate ? [decisionTemplate, ""] : []),
     `<!-- gremio:finance:end card=${card.id} -->`,
   ].join("\n");
 }

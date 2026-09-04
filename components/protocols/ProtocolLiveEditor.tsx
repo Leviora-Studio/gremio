@@ -4,13 +4,14 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { markdownLineAt, markdownLineStart, replaceMarkdownRange } from "@/lib/protocol-live-editor";
+import { markdownLineAt, markdownLineStart, remapMarkdownOffset, replaceMarkdownRange } from "@/lib/protocol-live-editor";
 import { textareaDropCaret } from "@/lib/textarea-drop-caret";
 import { ProtocolMarkdownPreview, protocolPreviewClassName } from "./ProtocolMarkdownPreview";
 
 export type ProtocolLiveEditorHandle = {
   selection: () => { start: number; end: number };
   focusAt: (offset: number) => void;
+  focusRange: (start: number, end: number) => void;
   clearDrop: () => void;
 };
 type Snapshot = { markdown: string; offset: number };
@@ -27,6 +28,7 @@ export const ProtocolLiveEditor = forwardRef<ProtocolLiveEditorHandle, {
   const root = useRef<HTMLDivElement>(null);
   const selection = useRef({ start: markdown.length, end: markdown.length });
   const pendingFocus = useRef<number | null>(null);
+  const pendingEnd = useRef<number | null>(null);
   const composing = useRef(false);
   const lastMarkdown = useRef(markdown);
   const undo = useRef<Snapshot[]>([]);
@@ -54,11 +56,20 @@ export const ProtocolLiveEditor = forwardRef<ProtocolLiveEditorHandle, {
     return selection.current;
   }
 
-  useImperativeHandle(ref, () => ({ selection: currentSelection, focusAt, clearDrop: () => setDrop(undefined) }));
+  useImperativeHandle(ref, () => ({ selection: currentSelection, focusAt, focusRange: (from, to) => {
+    focusAt(from);
+    pendingEnd.current = to;
+    if (input.current && line === markdownLineAt(markdown, from).index) {
+      input.current.setSelectionRange(from - start, to - start);
+      pendingEnd.current = null;
+    }
+  }, clearDrop: () => setDrop(undefined) }));
 
   useLayoutEffect(() => {
     if (lastMarkdown.current !== markdown) {
       // External changes (attendance, reload, insertion) establish a new undo baseline.
+      selection.current = { start: remapMarkdownOffset(lastMarkdown.current, markdown, selection.current.start), end: remapMarkdownOffset(lastMarkdown.current, markdown, selection.current.end) };
+      setActiveLine(undefined);
       undo.current = [];
       redo.current = [];
       lastMarkdown.current = markdown;
@@ -70,10 +81,11 @@ export const ProtocolLiveEditor = forwardRef<ProtocolLiveEditorHandle, {
     if (pendingFocus.current !== null && !composing.current) {
       const column = Math.max(0, pendingFocus.current - start);
       node.focus({ preventScroll: true });
-      node.setSelectionRange(column, column);
+      node.setSelectionRange(column, pendingEnd.current === null ? column : pendingEnd.current - start);
       pendingFocus.current = null;
+      pendingEnd.current = null;
     }
-  });
+  }, [markdown, start, line]);
 
   function apply(next: string, offset: number, remember = true) {
     if (remember) {

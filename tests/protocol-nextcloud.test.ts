@@ -110,6 +110,20 @@ test("Protokolldateien werden ausschließlich ohne Überschreiben angelegt", asy
   assert.equal(statCalls, 0);
 });
 
+test("empty Markdown files can be created without weakening exclusive writes", async () => {
+  const path = "/Protokolle/Sitzung/Anlagen/Notizen.md";
+  const client = {
+    putFileContents: async (requestedPath: string, content: unknown, options: { overwrite?: boolean }) => {
+      assert.equal(requestedPath, path); assert.equal(content, ""); assert.equal(options.overwrite, false);
+      return true;
+    },
+    stat: async () => ({ filename: path, basename: "Notizen.md", type: "file", size: 0, etag: "new-file", lastmod: "2026-09-04T12:00:00Z" }),
+  } as Parameters<typeof createWebDavTextExclusiveWithClient>[0];
+  const result = await createWebDavTextExclusiveWithClient(client, path, "");
+  assert.equal(result.created, true);
+  assert.equal(result.stat?.size, 0);
+});
+
 test("WebDAV-Fehler bleiben beim Überschreiben sichtbar und werden nicht als Erfolg behandelt", async () => {
   for (const status of [403, 409, 412, 423, 500]) {
     const failure = Object.assign(new Error(`WebDAV ${status}`), { status });

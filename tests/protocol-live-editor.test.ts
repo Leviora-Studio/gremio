@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { markdownLineAt, markdownLineStart, replaceMarkdownRange } from "../lib/protocol-live-editor";
+import { markdownLineAt, markdownLineStart, remapMarkdownOffset, replaceMarkdownRange } from "../lib/protocol-live-editor";
 
 test("live editor maps empty lines, line boundaries and end-of-document correctly", () => {
   assert.deepEqual(markdownLineAt("", 0), { index: 0, start: 0, end: 0 });
@@ -17,6 +17,15 @@ test("live editor maps empty lines, line boundaries and end-of-document correctl
     assert.equal(markdownLineAt(source, start).index, index);
     assert.equal(source.slice(start).split("\n")[0], source.split("\n")[index]);
   }
+});
+
+test("external metadata and attendance changes preserve the cursor anchor", () => {
+  const before = "# Titel\nText\nEnde";
+  const header = "---\nprotokollfuehrung: Anna\n---\n";
+  assert.equal(remapMarkdownOffset(before, header + before, before.length), header.length + before.length);
+  assert.equal(remapMarkdownOffset(before, header + before, 9), header.length + 9);
+  assert.equal(remapMarkdownOffset(header + before, before, header.length + 9), 9);
+  assert.equal(remapMarkdownOffset(before, "# Titel\nNeuer Text\nEnde", 3), 3);
 });
 
 test("live line edits and multiline paste preserve surrounding source and hidden markers", () => {

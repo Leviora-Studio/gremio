@@ -12,9 +12,13 @@ import {
   users,
 } from "@/lib/db/schema";
 import { getAccessibleBoards } from "@/lib/authz";
+import { getProtocolBoardFields } from "@/lib/protocol-finance-fields";
+import { availableProtocolFinanceFields } from "@/lib/protocol-area-config";
 import { requireProtocolAreaManage } from "@/lib/protocols";
 import { ProtocolAreaConfigForm } from "@/components/protocols/ProtocolAreaConfigForm";
 import { SubmitButton } from "@/components/SubmitButton";
+import { CollapsibleSection } from "@/components/board/CollapsibleSection";
+import { Select } from "@/components/Select";
 import { ProtocolLogoSettings } from "@/components/protocols/ProtocolLogoSettings";
 import { getProtocolLogos } from "@/lib/protocol-logos";
 import { changeProtocolLogoAction } from "../../export-actions";
@@ -45,12 +49,14 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
   const statuses = boardList.length
     ? await db.select({ id: boardStatuses.id, boardId: boardStatuses.boardId, name: boardStatuses.name }).from(boardStatuses).where(inArray(boardStatuses.boardId, boardList.map((board) => board.id))).orderBy(asc(boardStatuses.position))
     : [];
-  const boardOptions = boardList.map((board) => ({ id: board.id, name: board.name, statuses: statuses.filter((status) => status.boardId === board.id) }));
+  const fields = await getProtocolBoardFields(boardList.map(board => board.id));
+  const boardOptions = boardList.map((board) => ({ id: board.id, name: board.name, statuses: statuses.filter((status) => status.boardId === board.id), fields: availableProtocolFinanceFields(fields.filter(field => field.boardId === board.id && field.visible).map(field => field.key)) }));
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="mx-auto max-w-5xl space-y-8 py-2">
       <div>
         <Link href={`/intern/protokolle/${areaId}`} className="text-sm text-brand-600">← Zurück zum Protokollbereich</Link>
-        <h1 className="mt-1 text-2xl font-bold">Einstellungen: {area.name}</h1>
+        <h1 className="text-2xl font-bold">Protokollbereich-Einstellungen</h1>
+        <p className="mt-1 text-sm text-slate-500">{area.name}</p>
       </div>
       <ProtocolAreaConfigForm
         action={updateProtocolAreaAction.bind(null, areaId)}
@@ -65,6 +71,10 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
           folderPattern: area.folderPattern,
           filePattern: area.filePattern,
           templateId: area.templateId,
+          customTemplateMarkdown: area.customTemplateMarkdown,
+          financeFields: area.financeFields,
+          decisionTemplateEnabled: area.decisionTemplateEnabled,
+          decisionTemplateMarkdown: area.decisionTemplateMarkdown,
           boardId: area.boardId,
           sourceStatusId: area.sourceStatusId,
           decisionRefPattern: area.decisionRefPattern,
@@ -73,16 +83,15 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
 
       <ProtocolLogoSettings areaId={areaId} initialLogos={await getProtocolLogos(areaId)} action={changeProtocolLogoAction.bind(null, areaId)} />
 
-      <section className="card space-y-4 p-5">
-        <h2 className="text-lg font-semibold">Zugriffsfreigaben</h2>
+      <CollapsibleSection title="Freigaben" contentClassName="space-y-4">
         <p className="text-sm text-slate-500">Freigaben erlauben Sitzungen und Protokolle zu sehen und zu bearbeiten. Konfiguration bleibt Eigentümer und Administratoren vorbehalten.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form action={addProtocolAreaUserAccessAction.bind(null, areaId)} className="flex items-end gap-2">
-            <div className="flex-1"><label className="label">Nutzer</label><select name="userId" className="input">{activeUsers.map((entry) => <option key={entry.id} value={entry.id}>{entry.username}</option>)}</select></div>
+            <div className="min-w-0 flex-1"><label className="label">Nutzer</label><Select portal searchable name="userId" ariaLabel="Nutzer" defaultValue={String(activeUsers[0]?.id ?? "")} options={activeUsers.map(entry => ({ value: String(entry.id), label: entry.username }))} /></div>
             <SubmitButton className="btn-secondary">Freigeben</SubmitButton>
           </form>
           <form action={addProtocolAreaGroupAccessAction.bind(null, areaId)} className="flex items-end gap-2">
-            <div className="flex-1"><label className="label">Gruppe</label><select name="groupId" className="input">{allGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div>
+            <div className="min-w-0 flex-1"><label className="label">Gruppe</label><Select portal searchable name="groupId" ariaLabel="Gruppe" defaultValue={String(allGroups[0]?.id ?? "")} options={allGroups.map(group => ({ value: String(group.id), label: group.name }))} /></div>
             <SubmitButton className="btn-secondary">Freigeben</SubmitButton>
           </form>
         </div>
@@ -95,15 +104,15 @@ export default async function ProtocolSettingsPage({ params }: { params: Promise
           ))}
           {access.length === 0 && <p className="text-sm text-slate-500">Noch keine Freigaben.</p>}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="card p-5">
-        <h2 className="mb-3 text-lg font-semibold">Eigentümer übertragen</h2>
+      <CollapsibleSection title="Eigentum" className="border-red-200">
+        <h2 className="mb-3 font-semibold">Eigentümer übertragen</h2>
         <form action={transferProtocolAreaOwnerAction.bind(null, areaId)} className="flex max-w-lg items-end gap-2">
-          <div className="flex-1"><label className="label">Neuer Eigentümer</label><select name="ownerId" defaultValue={area.ownerId} className="input">{activeUsers.map((entry) => <option key={entry.id} value={entry.id}>{entry.username}</option>)}</select></div>
+          <div className="min-w-0 flex-1"><label className="label">Neuer Eigentümer</label><Select portal searchable name="ownerId" ariaLabel="Neuer Eigentümer" defaultValue={String(area.ownerId)} options={activeUsers.map(entry => ({ value: String(entry.id), label: entry.username }))} /></div>
           <SubmitButton className="btn-secondary">Übertragen</SubmitButton>
         </form>
-      </section>
+      </CollapsibleSection>
 
     </div>
   );

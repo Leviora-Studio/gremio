@@ -23,6 +23,7 @@ const nextConfig = {
   // Standalone-Output sie nicht mit, weil sie nirgends importiert werden.
   outputFileTracingIncludes: {
     "/intern/protokolle/**/*": ["./scripts/protocol-pdf/**/*"],
+    "/dokumente/**/*": ["./scripts/protocol-pdf/**/*"],
     // Swagger-Assets stehen nicht im Import-Graph (werden zur Laufzeit gelesen)
     // — beide Asset-Routen brauchen sie deshalb explizit im Standalone-Output.
     "/api/docs/assets/[file]": [

@@ -9,8 +9,8 @@ import { Modal } from "@/components/Modal";
 import type { ProtocolLogo } from "@/lib/protocol-logos";
 import type { ProtocolExportInput, ProtocolExportResult } from "@/lib/protocol-export";
 
-export function ProtocolExportButton({ areaId, sourceName, logos, disabled, action }: {
-  areaId: number; sourceName: string; logos: ProtocolLogo[]; disabled: boolean; action: (input: ProtocolExportInput) => Promise<ProtocolExportResult>;
+export function ProtocolExportButton({ areaId, sourceName, logos, disabled, action, compact = false }: {
+  areaId: number; sourceName: string; logos: ProtocolLogo[]; disabled: boolean; action: (input: ProtocolExportInput) => Promise<ProtocolExportResult>; compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [filename, setFilename] = useState("");
@@ -18,10 +18,10 @@ export function ProtocolExportButton({ areaId, sourceName, logos, disabled, acti
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProtocolExportResult>({});
   return <>
-    <button type="button" className="btn-secondary" disabled={disabled || busy} title={disabled ? "Bitte zuerst alle Änderungen übernehmen und das Protokoll in Nextcloud speichern." : undefined} onClick={() => {
+    <button type="button" aria-label="Protokoll exportieren" className={`btn-secondary ${compact ? "btn-sm !h-8 !px-3 !text-[13px]" : ""}`} disabled={disabled || busy} title={disabled ? "Bitte zuerst alle Änderungen übernehmen und das Protokoll in Nextcloud speichern." : undefined} onClick={() => {
       setFilename(sourceName.replace(/\.(md|markdown)$/i, "") + ".pdf");
       setLogoId(logos.find(logo => logo.isDefault)?.id ?? logos[0]?.id ?? null); setResult({}); setOpen(true);
-    }}>Protokoll exportieren</button>
+    }}>{compact ? "Exportieren" : "Protokoll exportieren"}</button>
     <Modal open={open} title="Protokoll exportieren" onClose={() => { if (!busy) setOpen(false); }}>
       <form className="space-y-4" onSubmit={async event => {
         event.preventDefault(); if (busy || disabled) return;
