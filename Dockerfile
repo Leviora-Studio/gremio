@@ -17,13 +17,14 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Platzhalter-Secrets nur für den Build (Runtime nutzt echte Werte aus .env)
-ENV AUTH_SECRET="build-time-placeholder-secret-please-override-xxxx"
-ENV ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000"
-ENV OIDC_ISSUER="http://localhost:3000"
-ENV OIDC_CLIENT_ID="build-placeholder"
-ENV OIDC_CLIENT_SECRET="build-placeholder"
-RUN npm run build
+# Nicht-sensitive Platzhalter gelten nur für diesen Build-Schritt. Die Runtime
+# erhält ihre echten Werte ausschließlich beim Containerstart aus der Umgebung.
+RUN AUTH_SECRET="build-time-placeholder-secret-please-override-xxxx" \
+    ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000" \
+    OIDC_ISSUER="http://localhost:3000" \
+    OIDC_CLIENT_ID="build-placeholder" \
+    OIDC_CLIENT_SECRET="build-placeholder" \
+    npm run build
 
 # ---- Runtime (schlank) ----
 FROM base AS runner
