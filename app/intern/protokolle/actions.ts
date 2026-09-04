@@ -25,15 +25,16 @@ import { encryptSecret } from "@/lib/crypto";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { availableProtocolFinanceFields, orderedProtocolFinanceFields, parseProtocolAreaContent, protocolTemplateSource } from "@/lib/protocol-area-config";
 import { isSafeExternalUrl } from "@/lib/url-guard";
+import { resolveMarkdownDocument } from "@/lib/markdown-documents";
 import {
   createWebDavDirectoryExclusive,
+  MAX_MARKDOWN_BYTES,
   createWebDavTextExclusive,
   deleteWebDavEntry,
   joinWebDavPath,
   listWebDavDirectory,
   readWebDavText,
   overwriteWebDavText,
-  statWebDavEntry,
 } from "@/lib/nextcloud";
 import {
   extractFinanceLinks,
@@ -126,6 +127,7 @@ function validateConfig(formData: FormData, currentPassword?: string) {
   if (!rootPath.startsWith("/") || /(^|\/)\.\.?(\/|$)|[\\\0?#]/.test(rootPath)) {
     throw new Error("Der WebDAV-Wurzelpfad muss ein absoluter, sicherer Pfad ohne . oder .. sein.");
   }
+  protocolDeletionPath(rootPath, "validation");
   renderSessionName(folderPattern, "2026-08-14", name);
   const sampleFolder = renderSessionName(folderPattern, "2026-08-14", name);
   validateFilePattern(filePattern, "2026-08-14", name, sampleFolder);
@@ -397,7 +399,7 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
   const session = await getProtocolSession(areaId, sessionId);
   if (!session?.protocolPath) return { error: "Keine Protokolldatei registriert." };
   if (expected && expected.path !== session.protocolPath) return { error: "Die Protokollzuordnung hat sich geändert. Bitte den Editor erneut öffnen." };
-  if (typeof content !== "string" || Buffer.byteLength(content) > 2 * 1024 * 1024) return { error: "Die Markdown-Datei darf höchstens 2 MB groß sein." };
+  if (typeof content !== "string" || Buffer.byteLength(content) > MAX_MARKDOWN_BYTES) return { error: "Die Markdown-Datei darf höchstens 2 MB groß sein." };
   const [members, guests] = await Promise.all([getProtocolMembers(areaId, sessionId), getProtocolGuests(areaId, sessionId)]);
   content = syncProtocolAttendance(content, members, guests);
   const links = extractFinanceLinks(content);
@@ -430,10 +432,13 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
 
   let stat;
   try {
-    if (expected) {
-      const file = await statWebDavEntry(protocolCredentials(area), session.protocolPath);
-      if (file.type !== "file" || (expected.fileId && file.fileId !== expected.fileId)) return { error: "Die Protokolldatei wurde ersetzt oder verschoben. Bitte neu öffnen." };
-    }
+    // Old RPC callers must obey the same path/identity checks as the full editor.
+    const context = await resolveMarkdownDocument(user, { areaId, sessionId,
+      filename: session.protocolPath.split("/").pop()!, folderName: session.folderName,
+      fileId: expected?.fileId ?? session.protocolFileId, isProtocol: true });
+    if (context.path !== session.protocolPath) throw new Error("Die Protokollzuordnung hat sich geändert. Bitte neu öffnen.");
+    // A changed/removed configured board does not grant access to old links.
+    if (mayReconcile) await assertProtocolDeletionBoardAccess(user, session);
     stat = await overwriteWebDavText(protocolCredentials(area), session.protocolPath, content);
   } catch (error) {
     return { error: `Speichern in Nextcloud fehlgeschlagen: ${errorMessage(error)}` };
@@ -474,10 +479,14 @@ export async function saveProtocolAction(areaId: number, sessionId: number, cont
 }
 
 export async function loadProtocolDocumentAction(areaId: number, sessionId: number): Promise<{ content?: string; etag?: string; error?: string; members?: ProtocolMember[]; guests?: ProtocolGuest[] }> {
-  const { area } = await requireProtocolAreaAccess(areaId);
+  const { user, area } = await requireProtocolAreaAccess(areaId);
   const session = await getProtocolSession(areaId, sessionId);
   if (!session?.protocolPath) return { error: "Keine Protokolldatei registriert." };
   try {
+    const context = await resolveMarkdownDocument(user, { areaId, sessionId,
+      filename: session.protocolPath.split("/").pop()!, folderName: session.folderName,
+      fileId: session.protocolFileId, isProtocol: true });
+    if (context.path !== session.protocolPath) throw new Error("Die Protokollzuordnung hat sich geändert. Bitte neu öffnen.");
     const result = await readWebDavText(protocolCredentials(area), session.protocolPath);
     return {
       content: result.content,

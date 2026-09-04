@@ -8,6 +8,8 @@ import { getAccessibleBoards } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
 import { getPriorities } from "@/lib/priorities";
 import { budgetDisplayForCards } from "@/lib/card-budget-db";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 
 export type TaskCardRow = {
   id: number;
@@ -105,7 +107,8 @@ export async function loadTaskOverviewData(
 
   const boardName = new Map(boards.map((b) => [b.id, b.name]));
   const budgetDisplay = await budgetDisplayForCards(raw.map((c) => c.id));
-  const cardRows: TaskCardRow[] = raw.map((c) => ({
+  const visible = new Map(await Promise.all(boardIds.map(async id => [id, await getVisibleFieldKeys(id)] as const)));
+  const cardRows: TaskCardRow[] = raw.map((c) => maskHiddenCardFields({
     id: c.id,
     boardId: c.boardId,
     boardName: boardName.get(c.boardId) ?? "?",
@@ -123,7 +126,7 @@ export async function loadTaskOverviewData(
     actualAmount: c.actualAmount,
     notes: c.notes,
     statusPosition: statusPos.get(c.statusId) ?? 0,
-  }));
+  }, visible.get(c.boardId) ?? new Set()));
 
   return {
     cards: cardRows,

@@ -5,7 +5,7 @@ import type { User } from "@/lib/db/schema";
 import { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials } from "@/lib/protocols";
 import { protocolDeletionPath } from "@/lib/protocol-deletion";
 import { protocolFilePath } from "@/lib/protocol-paths";
-import { readWebDavText, overwriteWebDavText, statWebDavEntry } from "@/lib/nextcloud";
+import { MAX_MARKDOWN_BYTES, readWebDavText, overwriteWebDavText, statWebDavEntry } from "@/lib/nextcloud";
 
 export type MarkdownTarget = { areaId: number; sessionId: number; filename: string; subfolder?: string; folderName?: string; fileId?: string | null; isProtocol?: boolean };
 const dependencies = { canAccessProtocolArea, getProtocolAreaById, getProtocolSession, protocolCredentials, readWebDavText, overwriteWebDavText, statWebDavEntry };
@@ -27,7 +27,7 @@ export async function resolveMarkdownDocument(user: User, target: MarkdownTarget
   if (folder.type !== "directory" || (session.folderFileId && folder.fileId !== session.folderFileId)) throw new MarkdownDocumentError("Der Sitzungsordner wurde ersetzt oder verschoben.");
   const file = await deps.statWebDavEntry(creds, path);
   if (file.type !== "file" || (target.fileId && file.fileId !== target.fileId)) throw new MarkdownDocumentError("Die Datei wurde ersetzt oder verschoben. Bitte den Ordner erneut öffnen.");
-  if (file.size > 2 * 1024 * 1024) throw new MarkdownDocumentError("Markdown-Dateien dürfen höchstens 2 MB groß sein.");
+  if (file.size > MAX_MARKDOWN_BYTES) throw new MarkdownDocumentError("Markdown-Dateien dürfen höchstens 2 MB groß sein.");
   const isProtocol = session.protocolPath === path;
   if (isProtocol && session.protocolFileId && file.fileId !== session.protocolFileId) throw new MarkdownDocumentError("Die registrierte Protokolldatei wurde ersetzt. Bitte den Ordner synchronisieren.");
   if (target.isProtocol !== undefined && target.isProtocol !== isProtocol) throw new MarkdownDocumentError("Die Protokollzuordnung hat sich geändert. Bitte den Editor erneut öffnen.");
@@ -43,7 +43,7 @@ export async function readMarkdownDocument(user: User, target: MarkdownTarget, d
 
 /** Generic Markdown never invokes attendance or finance reconciliation. */
 export async function saveMarkdownDocument(user: User, target: MarkdownTarget, content: string, deps = dependencies) {
-  if (typeof content !== "string" || Buffer.byteLength(content) > 2 * 1024 * 1024) throw new MarkdownDocumentError("Markdown-Dateien dürfen höchstens 2 MB groß sein.");
+  if (typeof content !== "string" || Buffer.byteLength(content) > MAX_MARKDOWN_BYTES) throw new MarkdownDocumentError("Markdown-Dateien dürfen höchstens 2 MB groß sein.");
   const context = await resolveMarkdownDocument(user, target, deps);
   if (context.isProtocol) throw new MarkdownDocumentError("Protokolle müssen über die Protokollfunktionen gespeichert werden.");
   await deps.overwriteWebDavText(context.creds, context.path, content);

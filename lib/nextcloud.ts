@@ -23,7 +23,7 @@ export interface NcCredentials {
   password: string;
 }
 
-const MAX_MARKDOWN_BYTES = 2_000_000;
+export const MAX_MARKDOWN_BYTES = 2_000_000;
 
 /** Schnelle Vorab-Prüfung der konfigurierten URL (Schema + Literal-Host + TLS). */
 function assertSafeNcUrl(rawUrl: string): void {
@@ -244,14 +244,36 @@ export async function readWebDavText(
   path: string,
 ): Promise<{ content: string; stat: WebDavEntry }> {
   assertSafeNcUrl(creds.url);
-  const c = client(creds);
+  return readWebDavTextWithClient(client(creds), path);
+}
+
+/** Bound the actual response, including chunked bodies and changing metadata. */
+export async function readWebDavTextWithClient(
+  c: Pick<WebDAVClient, "stat" | "customRequest">,
+  path: string,
+): Promise<{ content: string; stat: WebDavEntry }> {
   const normalized = normalizeBase(path);
-  const fileStat = (await c.stat(normalized)) as FileStat;
-  if (fileStat.size > MAX_MARKDOWN_BYTES) {
-    throw new Error("Die Markdown-Datei ist größer als 2 MB und kann nicht in Gremio bearbeitet werden.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const tooLarge = () => new Error("Die Markdown-Datei ist größer als 2 MB und kann nicht in Gremio bearbeitet werden.");
+  try {
+    const fileStat = await c.stat(normalized, { signal: controller.signal }) as FileStat;
+    if (fileStat.type !== "file") throw new Error("Keine Markdown-Datei gefunden.");
+    if (fileStat.size > MAX_MARKDOWN_BYTES) throw tooLarge();
+    const response = await c.customRequest(normalized, { method: "GET", signal: controller.signal });
+    if (Number(response.headers.get("content-length")) > MAX_MARKDOWN_BYTES) throw tooLarge();
+    const chunks: Buffer[] = [];
+    let size = 0;
+    if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      size += chunk.byteLength;
+      if (size > MAX_MARKDOWN_BYTES) throw tooLarge();
+      chunks.push(Buffer.from(chunk));
+    }
+    return { content: Buffer.concat(chunks, size).toString("utf8"), stat: entry(fileStat) };
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
   }
-  const content = (await c.getFileContents(normalized, { format: "text" })) as string;
-  return { content, stat: entry(fileStat) };
 }
 
 export class WebDavPdfError extends Error {

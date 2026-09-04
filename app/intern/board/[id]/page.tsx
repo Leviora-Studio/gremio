@@ -17,6 +17,7 @@ import { formatCents } from "@/lib/money";
 import { KanbanBoard, type KanbanCard } from "@/components/kanban/KanbanBoard";
 import { NewCardButton } from "@/components/kanban/NewCardButton";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { budgetDisplayForCards } from "@/lib/card-budget-db";
 
 export default async function BoardPage({
@@ -68,18 +69,29 @@ export default async function BoardPage({
   const assigneeMap = await getAssigneesForCards(cardRows.map((r) => r.id));
   const budgetDisplay = await budgetDisplayForCards(cardRows.map((r) => r.id));
 
-  const kanbanCards: KanbanCard[] = cardRows.map((r) => {
-    const assignees = (assigneeMap.get(r.id) ?? []).map((a) => ({
+  const fieldRows = await db
+    .select({ k: boardCardFields.fieldKey })
+    .from(boardCardFields)
+    .where(
+      and(eq(boardCardFields.boardId, boardId), eq(boardCardFields.visible, true)),
+    )
+    .orderBy(asc(boardCardFields.position));
+  const visible = fieldRows.map((r) => r.k);
+  const visibleSet = new Set(visible);
+
+  const kanbanCards: KanbanCard[] = cardRows.map((row) => {
+    const r = maskHiddenCardFields(row, visibleSet);
+    const assignees = (visibleSet.has("assignee") ? assigneeMap.get(r.id) ?? [] : []).map((a) => ({
       id: a.id,
       name: a.name || a.username,
       avatarPath: a.avatarPath,
     }));
-    // Durchsuchbarer Text aus ALLEN Feldern (lowercase, serverseitig).
+    // Search text must obey the same visibility rules as displayed fields.
     const searchText = [
       r.title,
       r.number,
       r.applicant,
-      budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle,
+      visibleSet.has("budget_title") ? budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle : null,
       r.notes,
       r.deadline,
       r.meeting,
@@ -87,7 +99,7 @@ export default async function BoardPage({
       r.transferDate,
       assignees.map((a) => a.name).join(" "),
       r.priorityId != null ? priorityLabel.get(r.priorityId) : null,
-      budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) : null),
+      visibleSet.has("account") ? budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) : null) : null,
       statusLabel.get(r.statusId),
       r.approvedAmount != null ? formatCents(r.approvedAmount) : null,
       r.actualAmount != null ? formatCents(r.actualAmount) : null,
@@ -110,14 +122,6 @@ export default async function BoardPage({
     };
   });
 
-  const fieldRows = await db
-    .select({ k: boardCardFields.fieldKey })
-    .from(boardCardFields)
-    .where(
-      and(eq(boardCardFields.boardId, boardId), eq(boardCardFields.visible, true)),
-    )
-    .orderBy(asc(boardCardFields.position));
-  const visible = fieldRows.map((r) => r.k);
   const members = await getBoardMemberUsers(board);
 
   return (

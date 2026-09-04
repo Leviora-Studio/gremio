@@ -430,6 +430,8 @@ Positionen gespeicherte Gesamtsummen. Es gibt keine zweite Kontozuordnung.
 Je Betragsart gilt: ausschließlich vorhandene Werte summieren, alle leer → NULL,
 echte Null → 0; Positionswerte und Gesamtsummen maximal 2.000.000.000 Cent.
 Die Live-Ausgabe verwendet je Position tatsächlich, sonst genehmigt, sonst 0.
+Kartenbeträge, Positionszeilen und Budgetrevision werden beim Öffnen des Editors
+und beim Start einer Mehrfachzuordnung aus demselben Datenbanksnapshot gelesen.
 
 Der erste Wechsel füllt Position 1 mit den bisherigen Kartenwerten vor; sichtbare
 Felder können bereits vor dem ersten Speichern geändert werden. Neue Positionen
@@ -643,6 +645,15 @@ Server Actions und Seiten verwenden dafür `requireProtocolAreaAccess` bzw.
   serverabhängige Eigenschaft, bleiben Pfad und ETag der nachvollziehbare
   Fallback. Zugangsdaten bleiben serverseitig, sind AES-256-GCM-verschlüsselt und
   durch die bestehende HTTPS-/DNS-Pinning-/Redirect-SSRF-Härtung geschützt.
+
+Die direkten Protokoll-Lade-/Speicheraktionen prüfen dieselben aktuellen
+Wurzelpfad-, Sitzungsordner- und Dateiidentitäten wie der Dokumenteditor, auch
+wenn der Aufrufer keine erwartete Datei-ID liefert. Markdown wird beim Lesen
+auf tatsächlich übertragene 2.000.000 Bytes und 30 Sekunden begrenzt; dasselbe
+Bytelimit gilt beim Schreiben. Generierte Datei-/Ordnernamen werden bereits
+vor der Erstellung gegen die WebDAV-Pfadregeln und die 255-Byte-Grenze geprüft.
+Während „Neu laden“ bleibt das Dokument schreibgeschützt, damit neu eingetippter
+Text nicht durch die eintreffende Antwort verloren geht.
 
 ### Mitglieder und Anwesenheit
 
@@ -1127,7 +1138,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **DB-Verbindung ohne TLS** ist im privaten Docker-Netz ok; bei **externem** Postgres `ssl` aktivieren.
 - **CSP** setzt nur `frame-ancestors 'none'` (+ `X-Frame-Options`, `nosniff`); **HSTS** terminiert nginx. Eine strikte `script-src`-CSP (Nonces) ist bewusst zurückgestellt.
 - **Upload-Validierung** prüft MIME/Endung (keine Magic-Bytes); ausgeliefert wird mit erzwungenem Content-Type + `nosniff` → kein Stored-XSS, Restrisiko nur „Müll-PDFs".
-- **Dependencies:** `npm audit --omit=dev` ist **ohne Befund**. Verbleibende Funde (esbuild über drizzle-kit) sind **build-/dev-only** — kein Laufzeitrisiko; behoben wären sie nur über einen Rückschritt auf drizzle-kit 0.18.
+- **Dependencies (Audit 04.09.2026):** `npm audit` ist inklusive Entwicklungsbaum ohne Befund. `@esbuild-kit/core-utils` verwendet über einen gezielten Override esbuild ^0.25.12; kein Drizzle-Downgrade. Auch `pip-audit` meldet für die gepinnten PDF-Renderer-Abhängigkeiten keine bekannten Schwachstellen. Der Stand ist zeitgebunden; Details und Grenzen stehen in `docs/SECURITY_AUDIT_SINCE_2.7.0.md`.
 - **Eingangsbereinigung freier Texte** (`lib/text.ts`): `sanitizeSingleLine` für Titel/Namen, `sanitizeMultiLine` für Freitext. Entfernt NUL (das PostgreSQL ablehnt) und C0-Steuerzeichen (an denen der WinAnsi-Encoder der PDF-Bestätigung wirft) an der **Eingangsgrenze** — Formular, REST-API und öffentliche API laufen alle darüber. `winAnsiSafe` in `lib/pdf.ts` bleibt als zweite Verteidigungslinie.
 - **Öffentliche Zeitfalle ist an den Client gebunden** (`lib/antispam.ts`): Das signierte Token deckt Zeitstempel **und** eine pseudonyme Client-Kennung ab und gilt **6 Stunden**. Abgelaufen/fremd ist KEIN stiller Verwurf mehr, sondern eine sichtbare Meldung samt frischem Token — die stille Fake-Bestätigung bleibt Honeypot und „zu schnell ausgefüllt" vorbehalten (dort soll der Bot nicht lernen, woran er scheitert).
 - **Idempotenz-Schlüssel der öffentlichen API verfallen nach 30 Tagen** (`IDEMPOTENCY_TTL_DAYS`, Tages-Sweeper aus `runStartupBootstrap`). Ein Retry NACH Ablauf legt eine zweite Einreichung an — so in `docs/PUBLIC_API.md` und in der OpenAPI-Beschreibung zugesichert.
@@ -1159,6 +1170,22 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
 > Hinweis: pdf.js (v5) benötigt `Promise.withResolvers` (moderne Browser ≥ 2024). Der pdf.js-Worker wird als statisches Asset ausgeliefert (kein CDN).
 
 ---
+
+## Ergänzungen aus dem Audit seit 2.7.0
+
+Ausgeblendete Kartenfelder werden vor der Übergabe von Client-Props entfernt,
+auch in Karteneditor, Kanban-Suchtext, Aufgabenübersicht und den Basisdaten der
+Protokollvorschläge. Die Feldsichtbarkeit gilt damit ebenfalls für Werte, die
+nicht als sichtbares Formularelement gerendert würden; gespeicherte Werte bleiben erhalten.
+
+Die Finanzverknüpfungs-Bereinigung prüft vor einem Cloud-Schreibzugriff auch die
+Berechtigung auf bisher verknüpfte Boards, wenn die Bereichskonfiguration inzwischen
+geändert wurde. Entfernte Board-Verknüpfungen hinterlassen keine veralteten
+automatischen Beschlussreferenzen. Relationensynchronisation und Löschbereinigung
+sperren Sitzung und betroffene Karten in stabiler Reihenfolge, bevor sie Referenzen
+lesen/ändern; widersprüchliche automatische Referenzen werden nicht als Rückfallwert
+verwendet. Das ausdrücklich überschreibende Speichern des Markdown-Inhalts in
+Nextcloud bleibt bestehen.
 
 ## Hinweise
 

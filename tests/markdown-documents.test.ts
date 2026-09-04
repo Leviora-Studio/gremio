@@ -56,3 +56,11 @@ test("registered protocols cannot use the generic save path or change classifica
   await assert.rejects(resolveMarkdownDocument(user, { ...protocolTarget, isProtocol: false }, deps), /zuordnung/i);
   assert.deepEqual(writes, []);
 });
+
+
+test("registered documents cannot follow a stale path outside a changed area root", async () => {
+  const { deps, writes } = setup();
+  const moved = { ...deps, getProtocolAreaById: async () => ({ id: 2, rootPath: "/NewRoot" } as ProtocolArea) };
+  await assert.rejects(resolveMarkdownDocument(user, { ...target, filename: "Protokoll.md", isProtocol: true }, moved), /zuordnung/i);
+  assert.deepEqual(writes, []);
+});

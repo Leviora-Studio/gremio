@@ -34,9 +34,20 @@ const assert = require('node:assert/strict');
     for(const key of ['budget_title','account','requested_amount','approved_amount','actual_amount','other_pdfs']) await query('insert into board_card_fields(board_id,field_key,visible) values ($1,$2,true)',[boardId,key]);
     const token=randomUUID().replaceAll('-','').slice(0,30);
     const card=(await query("insert into cards(board_id,status_id,title,applicant,token,number,budget_title,account_id,requested_amount,approved_amount,actual_amount) values ($1,$2,'Browser-Antrag','Test',$3,'TEST_1','12345',$4,20000,15000,13000) returning id",[boardId,statuses[0].id,token,accs[0].id])).rows[0];
+    const hiddenNote = `hidden-note-${randomUUID()}`;
+    const hiddenApplicant = `hidden-applicant-${randomUUID()}`;
+    await query('update cards set notes=$1,applicant=$2 where id=$3',[hiddenNote,hiddenApplicant,card.id]);
+    await query('insert into card_assignees(card_id,user_id) values ($1,$2)',[card.id,ownerId]);
     browser=await chromium.launch({ executablePath:process.env.CHROME_PATH || undefined,headless:true });
     const page=await browser.newPage({viewport:{width:1400,height:1000}});
     await page.context().addCookies([{name:'gremio_session',value:await sealData({userId:ownerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+    for(const route of [`/intern/card/${card.id}`, `/intern/board/${boardId}`, '/intern/aufgaben']) {
+      const response = await page.request.get(base+route);
+      assert.equal(response.status(),200);
+      const html = await response.text();
+      assert.equal(html.includes(hiddenNote),false,`${route}: hidden notes leaked in HTML/client props`);
+      assert.equal(html.includes(hiddenApplicant),false,`${route}: hidden applicant leaked in HTML/client props`);
+    }
     await page.goto(`${base}/intern/card/${card.id}`);
     await page.getByRole('button',{name:'Weiteren Haushaltstitel hinzufügen',exact:true}).click();
     const first=page.getByRole('group',{name:'Position 1',exact:true}), second=page.getByRole('group',{name:'Position 2',exact:true});

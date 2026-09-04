@@ -7,7 +7,7 @@ import { db, pool } from "../lib/db";
 import { accounts, attachments, boards, boardStatuses, cardBudgetPositions, cards, users, boardCardFields, boardTemplates, boardTemplateStatuses, financeBoards, financeBoardAccounts, financeBoardExpenseAccounts, financeBoardSources, financePlanItems } from "../lib/db/schema";
 import { createBoardFromTemplate } from "../lib/boards";
 import { BUDGET_FIELDS, type BudgetPosition } from "../lib/card-budget";
-import { guardBudgetCardUpdate, loadBudgetPositions, writeBudgetPositions } from "../lib/card-budget-db";
+import { guardBudgetCardUpdate, loadBudgetPositions, loadBudgetSnapshot, writeBudgetPositions } from "../lib/card-budget-db";
 import { getApplicationStatusByToken } from "../lib/public-status";
 import { insertPublicAttachment, submitPublicWorkflow, publicGates, storePublicAttachment } from "../lib/public-workflow";
 import { setBoardTriggerSources } from "../lib/board-triggers";
@@ -52,6 +52,15 @@ test("atomic multi-account budgets, public sums, account-specific expenses, guar
     const multi = await fresh();
     assert.equal(multi.budgetMode, "positions"); assert.equal(multi.accountId, null); assert.equal(multi.budgetTitle, null);
     assert.deepEqual([multi.requestedAmount, multi.approvedAmount, multi.actualAmount], [40000, 35000, 31000]);
+    const writing = (async () => {
+      for (let i = 0; i < 20; i++) await put([{ ...a, approvedAmount: i }, b]);
+    })();
+    for (let i = 0; i < 20; i++) {
+      const snapshot = await loadBudgetSnapshot(initial.id);
+      assert.equal(snapshot.card.approvedAmount, snapshot.rows.reduce((sum, row) => sum + (row.approvedAmount ?? 0), 0), "card totals and position rows must come from one committed revision");
+    }
+    await writing;
+    await put([a, b]);
     const publicStatus = await getApplicationStatusByToken(suffix);
     assert.equal(publicStatus?.approvedAmountCents, 35000);
     assert.equal("accountId" in publicStatus!, false); assert.equal("budgetPositions" in publicStatus!, false);

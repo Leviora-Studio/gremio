@@ -14,7 +14,10 @@ createRoot(document.getElementById("root")!).render(
   <DocumentEditor filename={protocolMode ? "Protokoll.md" : "Notizen.md"} initialContent={initialContent} backHref="#folder"
     contextLabel="Browser fixture"
     saveAction={async (text, planned) => { saved.push({ text, planned }); return { savedToNextcloud: true, content: text }; }}
-    reloadAction={async () => ({ content: initialContent })}
+    reloadAction={async () => {
+      if (location.search.includes("slow-reload")) await new Promise<void>(resolve => Object.assign(window, { releaseReload: resolve }));
+      return { content: initialContent };
+    }}
     images={imageMode ? { areaId: 2, sessionId: 3, subfolder: "Anlagen", uploadAction: async data => {
       const file = data.get("file") as File;
       imageUploads.push(file.name);

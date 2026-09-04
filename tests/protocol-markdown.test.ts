@@ -204,3 +204,11 @@ test("Beschlussreferenz wird aus Sitzung und TOP erzeugt", () => {
   assert.equal(mayReplaceDecisionRef("2026-08-14-TOP-5.1", ["2026-08-14-TOP-5.1"]), true);
   assert.equal(mayReplaceDecisionRef("Manueller Beschluss 7/26", ["2026-08-14-TOP-5.1"]), false);
 });
+
+
+test("generated session and file names obey the same path and byte limits as writes", () => {
+  for (const name of ["Sitzung\nNeu", "Sitzung\tNeu", "a__PATH_SEPARATOR_POSIX__b", "a__PATH_SEPARATOR_WINDOWS__b", "界".repeat(86)]) {
+    assert.throws(() => renderSessionName(name, "2026-09-04", "Area"));
+    assert.throws(() => validateFilePattern(`${name}.md`, "2026-09-04", "Area", "Session"));
+  }
+});

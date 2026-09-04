@@ -43,7 +43,7 @@ import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
-import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions, loadBudgetPositions } from "@/lib/card-budget-db";
+import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions, loadBudgetSnapshot } from "@/lib/card-budget-db";
 import { AMOUNT_KEYS, BUDGET_FIELDS } from "@/lib/card-budget";
 
 export type State = { error?: string; success?: string };
@@ -315,11 +315,12 @@ export async function saveBudgetPositionsAction(cardId: number, rows: unknown, r
 }
 
 export async function getBudgetSnapshotAction(cardId: number) {
-  const { card, board } = await loadCard(cardId);
+  const { board } = await loadCard(cardId);
   const visible = await visibleFields(board.id);
   if (!["budget_title", "account"].every((k) => visible.has(k))) notFound();
+  const { card, rows } = await loadBudgetSnapshot(cardId);
   const masked = Object.fromEntries(AMOUNT_KEYS.filter((key) => !visible.has(BUDGET_FIELDS[key])).map((key) => [key, null]));
-  return { card: { budgetTitle: card.budgetTitle, accountId: card.accountId, requestedAmount: card.requestedAmount, approvedAmount: card.approvedAmount, actualAmount: card.actualAmount, ...masked }, rows: (await loadBudgetPositions(cardId)).map((row) => ({ ...row, ...masked })), revision: card.budgetRevision, defaultAccountId: board.defaultAccountId };
+  return { card: { budgetTitle: card.budgetTitle, accountId: card.accountId, requestedAmount: card.requestedAmount, approvedAmount: card.approvedAmount, actualAmount: card.actualAmount, ...masked }, rows: rows.map((row) => ({ ...row, ...masked })), revision: card.budgetRevision, defaultAccountId: board.defaultAccountId };
 }
 
 export async function setCardStatusAction(

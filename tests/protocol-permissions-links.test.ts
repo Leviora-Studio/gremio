@@ -222,6 +222,30 @@ test("Protokollbereich prüft Eigentum, Admin sowie Nutzer- und Gruppenfreigaben
   assert.equal(linked.position, 7, "Sitzungsverknüpfung darf die Kartenposition nicht ändern");
   assert.equal(linked.decisionRef, "2026-08-14-TOP-5.1");
 
+  // Hold a concurrent manual edit uncommitted until reconciliation waits.
+  const editor = await pool.connect();
+  let concurrent: ReturnType<typeof reconcileProtocolCardLinks> | undefined;
+  try {
+    await editor.query("BEGIN");
+    const { rows: [backend] } = await editor.query("select pg_backend_pid() as pid");
+    await editor.query("update cards set decision_ref = $1 where id = $2", ["Concurrent manual reference", card.id]);
+    concurrent = reconcileProtocolCardLinks(area, session, [{ cardId: card.id, top: "5.1" }]);
+    let waiting = false;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const result = await pool.query("select 1 from pg_stat_activity where $1::int = any(pg_blocking_pids(pid))", [backend.pid]);
+      if (result.rowCount) { waiting = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(waiting, "reconciliation must wait for the card lock");
+    await editor.query("COMMIT");
+    assert.equal((await concurrent).conflicts, 1);
+    assert.equal((await db.select().from(cards).where(eq(cards.id, card.id)))[0].decisionRef, "Concurrent manual reference");
+  } finally {
+    await editor.query("ROLLBACK");
+    editor.release();
+    await concurrent;
+  }
+
   await db.update(cards).set({ decisionRef: "Manueller Beschluss 7/26" }).where(eq(cards.id, card.id));
   const conflict = await reconcileProtocolCardLinks(area, session, [{ cardId: card.id, top: "5.1" }]);
   assert.equal(conflict.conflicts, 1);
@@ -250,11 +274,21 @@ test("Protokollbereich prüft Eigentum, Admin sowie Nutzer- und Gruppenfreigaben
   assert.equal((await db.select().from(cards).where(eq(cards.id, card.id)))[0].decisionRef, "2026-08-14-TOP-5.2", "Erneutes Einplanen nach gespeichertem Entfernen muss die Referenz setzen");
   await reconcileProtocolCardLinks(area, session, []);
 
+  await reconcileProtocolCardLinks(area, session, [{ cardId: card.id, top: "5.2" }]);
+  await reconcileProtocolCardLinks({ ...area, boardId: null }, session, []);
+  assert.equal((await db.select().from(cards).where(eq(cards.id, card.id)))[0].decisionRef, null, "disconnecting the configured board must clear obsolete automatic references");
+  assert.equal((await db.select().from(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id))).length, 0);
+
   // Löschbereinigung: tatsächliche Boardrechte, n:m-Fallback, manuelle Werte,
   // Protokoll-Metadaten und komplette Sitzungsmetadaten bleiben konsistent.
   const [otherSession] = await db.insert(protocolSessions).values({ areaId: area.id, folderName: "2026-08-15", sessionDate: "2026-08-15" }).returning();
   await db.update(cards).set({ decisionRef: null }).where(eq(cards.id, card.id));
   await reconcileProtocolCardLinks(area, otherSession, [{ cardId: card.id, top: "3" }]);
+  await reconcileProtocolCardLinks(area, session, [{ cardId: card.id, top: "4" }]);
+  await db.update(protocolCardLinks).set({ decisionRefConflict: true }).where(eq(protocolCardLinks.sessionId, otherSession.id));
+  await reconcileProtocolCardLinks(area, session, []);
+  assert.equal((await db.select().from(cards).where(eq(cards.id, card.id)))[0].decisionRef, null, "a conflicting automatic reference is not a valid fallback");
+  await db.update(protocolCardLinks).set({ decisionRefConflict: false }).where(eq(protocolCardLinks.sessionId, otherSession.id));
   await reconcileProtocolCardLinks(area, session, [{ cardId: card.id, top: "4" }]);
   await assert.rejects(assertProtocolDeletionBoardAccess(direct, session), /Antragsboards/);
   await assert.rejects(cleanupDeletedProtocolResource(direct, session, "session"), /Antragsboards/);

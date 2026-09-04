@@ -7,6 +7,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, pool } from "../lib/db";
 import { attachments, boardCardFields, boards, boardStatuses, cardAssignees, cards, protocolAreas, users } from "../lib/db/schema";
 import { getProtocolSuggestions } from "../lib/protocols";
+import { loadTaskOverviewData } from "../lib/task-overview-data";
 import { getProtocolFinanceDetails } from "../lib/protocol-finance-fields";
 after(() => pool.end());
 
@@ -31,10 +32,16 @@ test("area-local templates and ordered visible finance fields persist, without a
     const fields = [{ key: "assignee", enabled: true }, { key: "budget_title", enabled: true }, { key: "notes", enabled: true }, { key: "finance_request", enabled: true }, { key: "created_at", enabled: false }];
     const [updated] = await db.update(protocolAreas).set({ financeFields: fields }).where(eq(protocolAreas.id, areas[0].id)).returning();
     const suggestions = await getProtocolSuggestions(owner, updated);
+    assert.equal(suggestions[0].amount, null, "hidden requested amount must not leak through the suggestion header");
+    assert.equal(suggestions[0].applicant, "", "hidden applicant must not leak through search/details");
+    assert.equal(suggestions[0].number, null);
     assert.deepEqual(suggestions[0].fields?.map(field => field.key), ["assignee", "budget_title", "finance_request"]);
     assert.deepEqual(suggestions[0].fields?.map(field => field.value), [owner.username, "0201", "Antrag.pdf"]);
     assert.ok(!JSON.stringify(suggestions).includes("HIDDEN NOTES")); assert.ok(!JSON.stringify(suggestions).includes("unused-test-path")); assert.equal(Object.hasOwn(suggestions[0], "token"), false);
     assert.deepEqual(await getProtocolSuggestions(outsider, updated), []);
+    const task = (await loadTaskOverviewData(owner)).cards.find(row => row.id === card.id)!;
+    assert.equal(task.notes, null); assert.equal(task.applicant, "");
+    assert.equal(task.budgetTitle, "0201", "visible fields remain available in tasks");
     assert.deepEqual((await getProtocolSuggestions(owner, areas[1]))[0].fields, []);
     await db.update(boardCardFields).set({ visible: false }).where(and(eq(boardCardFields.boardId, board.id), eq(boardCardFields.fieldKey, "budget_title")));
     assert.deepEqual((await getProtocolFinanceDetails(board.id, [card.id], fields)).get(card.id)?.map(field => field.key), ["assignee", "finance_request"]);

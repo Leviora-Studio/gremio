@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { protocolFrontmatterRange } from "./protocol-frontmatter";
+import { protocolDeletionPath } from "./protocol-deletion";
 
 export const SESSION_PATTERN_VARIABLES = [
   "YYYY",
@@ -81,7 +82,8 @@ export function renderSessionName(
   if (/[\\/\0]/.test(value) || value.startsWith(".")) {
     throw new Error("Namen dürfen keine Pfadtrenner oder versteckten Pfade enthalten.");
   }
-  if (value.length > 120) throw new Error("Der erzeugte Name ist zu lang.");
+  protocolDeletionPath("/", value);
+  if (value.length > 120 || new TextEncoder().encode(value).length > 255) throw new Error("Der erzeugte Name ist zu lang.");
   return value;
 }
 

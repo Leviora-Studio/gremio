@@ -28,7 +28,8 @@ import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
 import { CardEditor } from "@/components/antrag/CardEditor";
-import { loadBudgetPositions } from "@/lib/card-budget-db";
+import { loadBudgetSnapshot } from "@/lib/card-budget-db";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
 import { AttachmentSlot, WeitereAttachments } from "@/components/antrag/Attachments";
@@ -53,7 +54,7 @@ export default async function AntragDetailPage({
   const cardId = Number(id);
   if (!Number.isInteger(cardId)) notFound();
   const user = await requireUser();
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  let [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) notFound();
 
   // Leihvorgang-Karte: immer die Leih-Detailansicht öffnen (egal ob man über
@@ -67,6 +68,8 @@ export default async function AntragDetailPage({
 
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) notFound();
+  const budget = await loadBudgetSnapshot(card.id);
+  card = budget.card;
 
   const statuses = await db
     .select()
@@ -276,7 +279,7 @@ export default async function AntragDetailPage({
       <section className="card p-5">
         <h2 className="mb-2 text-lg font-semibold">Felder</h2>
         <CardEditor
-          budgetPositions={(await loadBudgetPositions(card.id)).map((row) => ({ ...row,
+          budgetPositions={budget.rows.map((row) => ({ ...row,
             budgetTitle: visible.includes("budget_title") ? row.budgetTitle : null,
             description: visible.includes("budget_title") ? row.description : null,
             accountId: visible.includes("account") ? row.accountId : 0,
@@ -289,7 +292,7 @@ export default async function AntragDetailPage({
           cardId={card.id}
           boardId={board.id}
           visible={visible}
-          initial={{
+          initial={maskHiddenCardFields({
             title: card.title,
             applicant: card.applicant,
             budgetTitle: card.budgetTitle,
@@ -306,9 +309,9 @@ export default async function AntragDetailPage({
             accountId: card.accountId,
             notes: card.notes,
             applicantNote: card.applicantNote,
-          }}
-          creator={creator}
-          assignees={assignees}
+          }, new Set(visible))}
+          creator={visible.includes("creator") ? creator : null}
+          assignees={visible.includes("assignee") ? assignees : []}
           priorities={priorities}
           accounts={accounts}
           applicantLabel={feedback ? "Einreicher" : "Antragsteller"}

@@ -18,6 +18,7 @@ import {
   type User,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { getProtocolFinanceDetails } from "@/lib/protocol-finance-fields";
 import { canAccessBoard, getBoardById, getUserGroupIds } from "@/lib/authz";
 import { decryptSecret } from "@/lib/crypto";
@@ -33,7 +34,7 @@ import {
 } from "@/lib/protocol-markdown";
 
 export async function getProtocolAreaById(id: number): Promise<ProtocolArea | undefined> {
-  if (!Number.isInteger(id)) return undefined;
+  if (!Number.isInteger(id) || id < 1 || id > 2147483647) return undefined;
   const [area] = await db.select().from(protocolAreas).where(eq(protocolAreas.id, id)).limit(1);
   return area;
 }
@@ -248,7 +249,7 @@ export async function getProtocolSession(
   areaId: number,
   sessionId: number,
 ): Promise<ProtocolSession | undefined> {
-  if (!Number.isInteger(sessionId)) return undefined;
+  if (!Number.isInteger(sessionId) || sessionId < 1 || sessionId > 2147483647) return undefined;
   const [session] = await db
     .select()
     .from(protocolSessions)
@@ -326,9 +327,15 @@ export async function getProtocolSuggestions(
       ),
     );
   const assigned = new Map(assignments.map((a) => [a.cardId, a.folderName]));
+  const visible = await getVisibleFieldKeys(area.boardId);
   const details = await getProtocolFinanceDetails(area.boardId, rows.map(row => row.id), area.financeFields);
   return sortProtocolSuggestions(
-    rows.map((row) => ({ ...row, fields: details.get(row.id) ?? [], assignedSession: assigned.get(row.id) ?? null })),
+    rows.map((row) => ({ ...row,
+      number: visible.has("number") ? row.number : null,
+      applicant: visible.has("applicant") ? row.applicant : "",
+      amount: visible.has("requested_amount") ? row.amount : null,
+      priority: visible.has("priority") ? row.priority : null,
+      fields: details.get(row.id) ?? [], assignedSession: assigned.get(row.id) ?? null })),
   );
 }
 
@@ -341,20 +348,24 @@ export async function reconcileProtocolCardLinks(
 ): Promise<{ conflicts: number }> {
   if (!area.boardId) {
     if (links.length) throw new Error("Für diesen Protokollbereich ist kein Finanzboard konfiguriert.");
-    await db.delete(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
-    return { conflicts: 0 };
   }
   const ids = [...new Set(links.map((link) => link.cardId))];
   if (!Array.isArray(replannedCardIds) || replannedCardIds.some(id => !Number.isSafeInteger(id) || !ids.includes(id))) throw new Error("Ungültige neu eingeplante Finanzanträge.");
   const replanned = new Set(replannedCardIds);
   const validCards = ids.length
-    ? await db.select({ id: cards.id }).from(cards).where(and(eq(cards.boardId, area.boardId), inArray(cards.id, ids)))
+    ? await db.select({ id: cards.id }).from(cards).where(and(eq(cards.boardId, area.boardId!), inArray(cards.id, ids)))
     : [];
   if (validCards.length !== ids.length) throw new Error("Mindestens eine Finanzverknüpfung gehört nicht zum konfigurierten Board.");
 
   let conflicts = 0;
   await db.transaction(async (tx) => {
+    const [locked] = await tx.select({ id: protocolSessions.id }).from(protocolSessions)
+      .where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, area.id))).for("update");
+    if (!locked) throw new Error("Sitzung nicht mehr vorhanden.");
     const existing = await tx.select().from(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
+    const affectedIds = [...new Set([...ids, ...existing.map(link => link.cardId)])];
+    if (affectedIds.length) await tx.select({ id: cards.id }).from(cards)
+      .where(inArray(cards.id, affectedIds)).orderBy(asc(cards.id)).for("update");
     const byCard = new Map(existing.map((link) => [link.cardId, link]));
     const removedIds = existing.filter((entry) => !ids.includes(entry.cardId)).map((entry) => entry.cardId);
     if (removedIds.length) {
@@ -366,7 +377,8 @@ export async function reconcileProtocolCardLinks(
         const [other] = await tx
           .select({ value: protocolCardLinks.lastAutoDecisionRef })
           .from(protocolCardLinks)
-          .where(and(eq(protocolCardLinks.cardId, removed.cardId), ne(protocolCardLinks.sessionId, session.id)))
+          .where(and(eq(protocolCardLinks.cardId, removed.cardId), ne(protocolCardLinks.sessionId, session.id),
+            isNotNull(protocolCardLinks.lastAutoDecisionRef), eq(protocolCardLinks.decisionRefConflict, false)))
           .orderBy(desc(protocolCardLinks.updatedAt))
           .limit(1);
         await tx.update(cards).set({ decisionRef: other?.value ?? null, updatedAt: new Date() }).where(eq(cards.id, removed.cardId));
@@ -434,7 +446,7 @@ export async function assertProtocolDeletionBoardAccess(user: User, session: Pro
   for (const { boardId } of linkedBoards) {
     const board = await getBoardById(boardId);
     if (!board || !(await canAccessBoard(user, board))) {
-      throw new Error("Zum Löschen dieses Protokolls oder dieser Sitzung ist auch Zugriff auf alle verknüpften Antragsboards erforderlich.");
+      throw new Error("Zum Ändern der Finanzverknüpfungen oder Löschen des Protokolls ist auch Zugriff auf alle verknüpften Antragsboards erforderlich.");
     }
   }
 }
@@ -451,6 +463,8 @@ export async function cleanupDeletedProtocolResource(
       .where(and(eq(protocolSessions.id, session.id), eq(protocolSessions.areaId, session.areaId)))
       .for("update");
     const links = await tx.select().from(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
+    if (links.length) await tx.select({ id: cards.id }).from(cards)
+      .where(inArray(cards.id, links.map(link => link.cardId))).orderBy(asc(cards.id)).for("update");
     await tx.delete(protocolCardLinks).where(eq(protocolCardLinks.sessionId, session.id));
     for (const link of links) {
       if (!link.lastAutoDecisionRef) continue;

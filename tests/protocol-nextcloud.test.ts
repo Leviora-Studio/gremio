@@ -9,6 +9,7 @@ import {
   joinWebDavPath,
   nextcloudBrowserUrl,
   overwriteWebDavTextWithClient,
+  readWebDavTextWithClient,
 } from "../lib/nextcloud";
 
 test("Speichern überschreibt den Cloud-Inhalt ohne Versionsbedingung", async () => {
@@ -155,4 +156,32 @@ test("auch überschreibendes Speichern hält das Größenlimit ein", async () =>
     overwriteWebDavTextWithClient(client, "/Protokoll.md", "x".repeat(2_000_001)),
     /höchstens 2 MB/,
   );
+});
+
+
+test("Markdown reads count actual bytes, reject directories and abort their response", async () => {
+  const path = "/Protokoll.md";
+  const makeClient = (chunks: Buffer[], type = "file") => {
+    let signal: AbortSignal | undefined;
+    let requests = 0;
+    return {
+      getSignal: () => signal,
+      getRequests: () => requests,
+      stat: async () => ({ filename: path, basename: "Protokoll.md", type, size: 1, etag: "etag", lastmod: "" }),
+      customRequest: async (_path: string, options: { signal: AbortSignal }) => {
+        requests++; signal = options.signal;
+        return { headers: new Headers(), body: (async function* () { yield* chunks; })() };
+      },
+    };
+  };
+  const oversized = makeClient([Buffer.alloc(1_000_000), Buffer.alloc(1_000_001)]);
+  await assert.rejects(readWebDavTextWithClient(oversized as unknown as Parameters<typeof readWebDavTextWithClient>[0], path), /größer als 2 MB/);
+  assert.equal(oversized.getSignal()?.aborted, true);
+  const utf8 = Buffer.from("# Grüße");
+  const valid = makeClient([utf8.subarray(0, 6), utf8.subarray(6)]);
+  assert.equal((await readWebDavTextWithClient(valid as unknown as Parameters<typeof readWebDavTextWithClient>[0], path)).content, "# Grüße");
+  assert.equal(valid.getSignal()?.aborted, true);
+  const directory = makeClient([], "directory");
+  await assert.rejects(readWebDavTextWithClient(directory as unknown as Parameters<typeof readWebDavTextWithClient>[0], path), /Keine Markdown-Datei/);
+  assert.equal(directory.getRequests(), 0);
 });

@@ -41,10 +41,15 @@ YAML preservation, table insertion, cell typing, navigation, and saving at deskt
 and mobile widths. Screenshots and the compiled fixture remain in the printed
 temporary directory.
 
-Live and read-only preview also share a geometry and pixel-equality regression
+Live and read-only preview also share an exact geometry and pixel-parity regression
 at 1500, 600, and 390 pixels: headings, blank lines, wrapped paragraphs, lists,
 quotes, inline formatting, tables, code fences, and hidden YAML/comments.
 The test verifies that preview stays read-only and preserves clickable links.
+Pixel comparison permits only Chromium antialiasing noise: at most one channel
+level in 0.01% of pixels, with identical dimensions and exact layout geometry.
+Delayed reload checks cover the temporary read-only state in live/raw mode.
+The production suite also verifies that disabled fields never appear in HTML
+or serialized client props on card, board and task pages.
 
 Image tests upload through local action doubles, verify that concurrent typing
 survives, and check relative attachment URLs, corner resizing, aspect ratio,

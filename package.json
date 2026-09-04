@@ -45,7 +45,10 @@
   "overrides": {
     "postcss": "^8.5.25",
     "sharp": "^0.35.3",
-    "brace-expansion": "^2.0.2"
+    "brace-expansion": "^2.0.2",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

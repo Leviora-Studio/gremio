@@ -199,7 +199,7 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
   }
   function clearDrop() { dragged.current = null; setDrop(null); live.current?.clearDrop(); }
   function insertCard(card: ProtocolSuggestion, offset?: number) {
-    if (!protocol || !tops[card.id]?.trim() || linkedIds.has(card.id) || mode === "preview") return;
+    if (busy || !protocol || !tops[card.id]?.trim() || linkedIds.has(card.id) || mode === "preview") return;
     const range = capture(); const from = offset ?? range.start; const to = offset ?? range.end;
     const block = `${from ? "\n\n" : ""}${formatFinanceBlock(card, tops[card.id], `${protocol.cardBaseUrl}/${card.id}`, protocol.decisionTemplate)}\n`;
     setReplanned(current => ({ ...current, [card.id]: ++revision.current }));
@@ -245,7 +245,7 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
     if (sessionOpen || confirmation || document.querySelector('[aria-modal="true"]') || !event.ctrlKey && !event.metaKey || event.altKey) return;
     const key = event.key.toLowerCase();
     if (key === "s") { event.preventDefault(); void save(); return; }
-    if (!(event.target as Element).closest('[data-document-content]') || mode === "preview") return;
+    if (loading || !(event.target as Element).closest('[data-document-content]') || mode === "preview") return;
     if (["b", "i", "u"].includes(key)) { event.preventDefault(); event.stopPropagation(); command(key === "b" ? "bold" : key === "i" ? "italic" : "underline"); }
     if (["z", "y"].includes(key)) {
       event.preventDefault(); event.stopPropagation(); capture(); const backwards = key === "z" && !event.shiftKey;
@@ -267,7 +267,7 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
       </div>
       <MarkdownToolbar disabled={mode === "preview" || busy} onCommand={command} onCapture={capture}
         leading={<>
-        <div className="flex shrink-0 rounded-md bg-slate-100 p-0.5" role="group" aria-label="Editoransicht">{[["live", "Live Vorschau"], ["edit", "Bearbeiten"], ["preview", "Vorschau"]].map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onMouseDown={() => capture()} onClick={() => { change(normalize(content)); setMode(value as typeof mode); clearDrop(); }} className={`min-h-8 rounded px-3 py-1.5 text-[13px] ${mode === value ? "bg-white font-medium text-brand-700 shadow-sm" : "text-slate-500"}`}>{label}</button>)}</div>
+        <div className="flex shrink-0 rounded-md bg-slate-100 p-0.5" role="group" aria-label="Editoransicht">{[["live", "Live Vorschau"], ["edit", "Bearbeiten"], ["preview", "Vorschau"]].map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} disabled={loading} onMouseDown={() => capture()} onClick={() => { change(normalize(content)); setMode(value as typeof mode); clearDrop(); }} className={`min-h-8 rounded px-3 py-1.5 text-[13px] ${mode === value ? "bg-white font-medium text-brand-700 shadow-sm" : "text-slate-500"}`}>{label}</button>)}</div>
         <button ref={searchButton} type="button" aria-label="Dokument durchsuchen" aria-expanded={searchOpen} aria-controls="document-search" title="Im Dokument suchen (Strg/Cmd+F)" onClick={openSearch} className={`flex min-h-8 shrink-0 items-center gap-1.5 px-2 text-[13px] ${searchOpen ? "text-brand-700" : "text-slate-500 hover:text-brand-700"}`}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>Suchen</button>
         </>}
         after={(images || protocol) && <>
@@ -298,8 +298,8 @@ export function DocumentEditor({ initialContent, filename, backHref, contextLabe
         void uploadImage(files[0]);
       }}>
         <div className="mx-auto max-w-[56rem]">
-          {mode !== "edit" ? <MarkdownLiveEditor ref={live} markdown={content} readOnly={mode === "preview"} imageUrl={images ? reference => markdownImageUrl(reference, images.areaId, images.sessionId, images.subfolder) : undefined} onChange={next => { capture(); change(next); }} onCommit={() => change(normalize(content))} onCardDrop={offset => { const card = protocol?.suggestions.find(card => card.id === dragged.current); if (card) insertCard(card, offset); clearDrop(); }} /> : <div className="relative">
-            <textarea ref={editor} aria-label="Markdown-Dokument" spellCheck={false} className="block min-h-[60vh] w-full resize-none overflow-hidden rounded-md border border-slate-200 bg-white p-5 font-mono text-sm leading-6 outline-none focus:border-slate-300" value={content} onSelect={() => { capture(); setActiveLine(markdownLineAt(content, selection.current.start).index); }} onChange={e => { const range = { start: e.target.selectionStart, end: e.target.selectionEnd }; change(e.target.value); selection.current = range; }} onKeyDown={e => { if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return; e.preventDefault(); const next = indentMarkdown(content, capture(), e.shiftKey); change(next.markdown, next.selection); }} onDragOver={e => {
+          {mode !== "edit" ? <MarkdownLiveEditor ref={live} markdown={content} readOnly={mode === "preview" || loading} imageUrl={images ? reference => markdownImageUrl(reference, images.areaId, images.sessionId, images.subfolder) : undefined} onChange={next => { capture(); change(next); }} onCommit={() => change(normalize(content))} onCardDrop={offset => { const card = protocol?.suggestions.find(card => card.id === dragged.current); if (card) insertCard(card, offset); clearDrop(); }} /> : <div className="relative">
+            <textarea ref={editor} readOnly={loading} aria-label="Markdown-Dokument" spellCheck={false} className="block min-h-[60vh] w-full resize-none overflow-hidden rounded-md border border-slate-200 bg-white p-5 font-mono text-sm leading-6 outline-none focus:border-slate-300" value={content} onSelect={() => { capture(); setActiveLine(markdownLineAt(content, selection.current.start).index); }} onChange={e => { const range = { start: e.target.selectionStart, end: e.target.selectionEnd }; change(e.target.value); selection.current = range; }} onKeyDown={e => { if (loading || e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return; e.preventDefault(); const next = indentMarkdown(content, capture(), e.shiftKey); change(next.markdown, next.selection); }} onDragOver={e => {
               if (dragged.current === null) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy";
               const bounds = scroller.current!.getBoundingClientRect(); if (e.clientY < bounds.top + 40) scroller.current!.scrollTop -= 24; else if (e.clientY > bounds.bottom - 40) scroller.current!.scrollTop += 24;
               setDrop(textareaDropCaret(e.currentTarget, e.clientX, e.clientY));

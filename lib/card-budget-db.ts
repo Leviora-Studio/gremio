@@ -10,6 +10,15 @@ export async function loadBudgetPositions(cardId: number, tx: Tx | typeof db = d
   return tx.select().from(cardBudgetPositions).where(eq(cardBudgetPositions.cardId, cardId)).orderBy(asc(cardBudgetPositions.position));
 }
 
+/** Revisions and position rows must describe the same committed budget. */
+export async function loadBudgetSnapshot(cardId: number) {
+  return db.transaction(async tx => {
+    const [card] = await tx.select().from(cards).where(eq(cards.id, cardId));
+    if (!card) throw new BudgetValidationError("Karte nicht gefunden.");
+    return { card, rows: await loadBudgetPositions(cardId, tx) };
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
+
 /** Batch display-only projection. Never use these strings for allocations. */
 export async function budgetDisplayForCards(cardIds: number[]) {
   const result = new Map<number, { budgetTitle: string | null; accountName: string }>();

@@ -311,8 +311,13 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
   gefluteter öffentlicher Scope kann die Anmeldung nicht aussperren.
 - Freie Texte werden an der **Eingangsgrenze** bereinigt (`lib/text.ts`): NUL und
   Steuerzeichen kommen weder in die Datenbank noch in die PDF-Bestätigung.
-- `npm audit --omit=dev` ist **ohne Befund**; verbleibende Funde betreffen nur
-  den Build-/Dev-Baum (esbuild über drizzle-kit).
+- Audit vom 04.09.2026: `npm audit` ist einschließlich Entwicklungsabhängigkeiten
+  **ohne Befund**. Der veraltete esbuild-Zweig unter `@esbuild-kit/core-utils`
+  wird gezielt auf eine korrigierte Version überschrieben; Drizzle bleibt auf
+  seiner bisherigen Version. Auch die gepinnten Python-Abhängigkeiten des
+  PDF-Renderers sind im `pip-audit` ohne Befund.
+- Befunde, Korrekturen und Prüfgrenzen seit 2.7.0:
+  [Security- und Bug-Audit](docs/SECURITY_AUDIT_SINCE_2.7.0.md).
 
 ---
 
