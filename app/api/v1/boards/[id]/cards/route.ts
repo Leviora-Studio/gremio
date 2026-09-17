@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { resolveApiBoard } from "@/lib/api-access";
+import { queryApiCards } from "@/lib/api-query";
 import { NextResponse } from "next/server";
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { boardStatuses, cards } from "@/lib/db/schema";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import {
   apiError,
   authApi,
   parseApiId,
   requireWriteScope,
-  serializeCard,
   tokenAllowsBoard,
 } from "@/lib/api";
 import { cardWriteSchema, createCardViaApi } from "@/lib/api-cards";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
-import { getAssigneeIdsForCards } from "@/lib/assignees";
 import { serializeApiCardDetail } from "@/lib/api-card-response";
 
 export const dynamic = "force-dynamic";
@@ -26,55 +23,9 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = await authApi(req);
-  if (ctx instanceof NextResponse) return ctx;
-
-  const { id } = await params;
-  const boardId = parseApiId(id);
-  if (boardId == null) return apiError(404, "Board nicht gefunden.");
-  const board = await getBoardById(boardId);
-  if (
-    !board ||
-    !tokenAllowsBoard(ctx, board.id) ||
-    !(await canAccessBoard(ctx.user, board))
-  )
-    return apiError(404, "Board nicht gefunden.");
-
-  const sp = new URL(req.url).searchParams;
-  const statusFilter = sp.get("statusId");
-  const archived = sp.get("archived");
-  if (archived != null && !["false", "true", "all"].includes(archived))
-    return apiError(400, "archived muss false, true oder all sein.");
-  const conds = [eq(cards.boardId, board.id)];
-  if (statusFilter != null) {
-    const statusId = parseApiId(statusFilter);
-    if (statusId == null) return apiError(400, "statusId muss eine gültige positive ID sein.");
-    conds.push(eq(cards.statusId, statusId));
-  }
-  if (archived === "true") conds.push(isNotNull(cards.archivedAt));
-  else if (archived !== "all") conds.push(isNull(cards.archivedAt));
-
-  const rows = await db
-    .select({ card: cards, statusName: boardStatuses.name })
-    .from(cards)
-    .innerJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(and(...conds))
-    .orderBy(asc(boardStatuses.position), asc(cards.position), asc(cards.id));
-
-  const visible = await getVisibleFieldKeys(board.id);
-  const assigneeMap = await getAssigneeIdsForCards(rows.map((r) => r.card.id));
-  return NextResponse.json({
-    cards: rows.map((r) =>
-      serializeCard(
-        r.card,
-        {
-          statusName: r.statusName,
-          assigneeUserIds: assigneeMap.get(r.card.id) ?? [],
-        },
-        visible,
-      ),
-    ),
-  });
+  const r = await resolveApiBoard(req, (await params).id);
+  if (r instanceof NextResponse) return r;
+  return queryApiCards(req, r.ctx, { boardId: r.board.id });
 }
 
 export async function POST(
@@ -125,5 +76,7 @@ export async function POST(
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(board.id);
   const detail = await serializeApiCardDetail(result.value.id, visible);
-  return detail ? NextResponse.json(detail, { status: 201 }) : apiError(404, "Karte nicht gefunden.");
+  return detail
+    ? NextResponse.json(detail, { status: 201 })
+    : apiError(404, "Karte nicht gefunden.");
 }

@@ -1,9 +1,12 @@
 # Gremio REST-API (v1)
 
 Externe Tools können Boards/Karten **lesen** und Karten **anlegen, ändern,
-verschieben und löschen**. Der Umfang bleibt bewusst auf diese Funktionen
-begrenzt; Protokolle, Dokumenteditoren, Uploads und administrative Einstellungen
-erhalten keine zusätzlichen externen REST-Endpunkte.
+verschieben und löschen**. Zusätzlich stehen boardgebundene Auswahlkataloge,
+Suche/Filter/Pagination, interne Kommentare, der lesbare Aktivitätsverlauf und
+Kartenanhänge (auflisten, herunterladen, hochladen) zur Verfügung. Protokolle,
+Dokumenteditoren, PDF-Bearbeitung/Signaturen und administrative Einstellungen
+bleiben ausgeschlossen. Der integrierte [MCP-Zugang](MCP.md) deckt dieselben
+Funktionen mit OAuth-Freigaben ab.
 
 Abgleich seit `v2.7.7`, einschließlich des aktuellen Arbeitsstands:
 [API_PARITY_AUDIT.md](API_PARITY_AUDIT.md).
@@ -281,3 +284,61 @@ Karte und ihre Anhänge löschen. → `200 { "ok": true }`
 
 > Zugriffskontrolle: Wer ein Board nicht sehen darf, bekommt `404` (nicht `403`)
 > — die Existenz wird nicht preisgegeben.
+
+## Erweiterungen: Auswahlkataloge, Suche, Kommentare und Anhänge
+
+Alle folgenden Routen verwenden dieselben persönlichen Tokens, Live-Boardrechte,
+Board-Beschränkungen und Feldsichtbarkeiten. Die öffentliche API bleibt unverändert.
+
+| Methode / Pfad unter `/api/v1` | Funktion |
+| --- | --- |
+| `GET /boards/{id}/users` | Aktive zuweisbare Nutzer (`id`, `username`, `name`), Suchtext `q`, `limit`, `offset`. Ersteller oder Zuständige müssen am Board aktiviert sein. |
+| `GET /boards/{id}/accounts` | Gemeinsamer auswählbarer Kontenkatalog (`id`, `name`, `position`), wenn Konto am Board aktiviert ist. Keine Kontostände/Finanzübersichten. |
+| `GET /boards/{id}/priorities` | Prioritäten (`id`, `label`, `color`, `position`), wenn Priorität aktiviert ist. |
+| `GET /cards` | Boardübergreifende Suche innerhalb des erlaubten Zugriffs; immer paginiert. |
+| `GET /cards/{id}/comments` | Kommentare, neueste zuerst, inklusive Autor-Anzeigename/-Benutzername; paginiert. |
+| `POST /cards/{id}/comments` | Kommentar hinzufügen: `{ "body": "…" }` (1–5000 bereinigte Zeichen). |
+| `PATCH /cards/{id}/comments/{commentId}` | Eigenen Kommentar bearbeiten: gleicher Body; auch Verwalter können keine fremden Kommentare umschreiben. Erstellungszeit bleibt erhalten. |
+| `DELETE /cards/{id}/comments/{commentId}` | Eigener Kommentar oder Board-Verwalter; zusätzlich Schreib-Scope. |
+| `GET /cards/{id}/activity` | Unveränderlicher Verlauf, neueste zuerst; paginiert. |
+| `GET /cards/{id}/attachments` | Sichtbare Anhänge mit Metadaten und geschütztem `downloadPath`; paginiert. |
+| `GET /cards/{id}/attachments/{attachmentId}` | Binärdownload mit Bearer-Token, `no-store`, `nosniff` und sicherem Dateinamen. |
+| `POST /cards/{id}/attachments` | Multipart-Upload mit genau `file` und `kind`. |
+
+**Suche/Filter** gelten für `/cards`, `/boards/{id}/cards` und `/me/cards`:
+`q`, `boardId`, `statusId`, `priorityId`, `accountId`, `assigneeUserId`,
+`unassigned=true|false`, `archived=false|true|all`, `deadlineBefore=YYYY-MM-DD`,
+`deadlineAfter=YYYY-MM-DD`, `overdue=true|false`, `sort=position|updated|deadline`,
+`limit` und `offset`. Datumsschranken sind exklusiv. `overdue=true` bedeutet:
+Deadline vor heute (Europe/Berlin), nicht in der Done-Spalte, nicht archiviert.
+`accountId` berücksichtigt auch Haushaltspositionen. `q` sucht einen wörtlichen,
+case-insensitiven Teilstring in Titel und sichtbarer Nummer, Antragsteller, Notizen
+und Haushaltstitel; `%` und `_` sind keine Wildcards. Verborgene Felder können auch
+über Filter oder Deadline-Sortierung nicht erschlossen werden. Unbekannte oder
+ungültige Suchparameter ergeben 400; ein unerlaubter expliziter Boardfilter 404.
+
+**Pagination:** `limit=1..100` (Standard 50), `offset=0..1000000` (Standard 0).
+Antworten ergänzen `pagination: { limit, offset, hasMore }`. Bei `hasMore=true`
+`offset` um `limit` erhöhen. Die alten Board-/Meine-Kartenlisten bleiben ohne
+`limit`/`offset` ungekappt, um vorhandene Integrationen nicht still zu verkürzen.
+Der neue `/cards`-Endpunkt und die neuen Kommentar-/Datei-/Verlaufs-/Nutzerlisten
+sind standardmäßig paginiert. Sortierungen haben einen stabilen ID-Tiebreaker;
+Offset-Seiten bilden keinen gemeinsamen Snapshot über parallele Änderungen.
+
+**Verlauf:** Änderungsdaten werden nicht umgeschrieben oder gelöscht. Details zu
+inzwischen ausgeblendeten Zuständigen/Deadlines sind `null`. Datei- und
+Archiv-Ereignisse erhalten allgemeine Texte statt alter Dateinamen oder interner
+Pfade; unbekannte Ereignisdetails werden vorsichtshalber nicht ausgegeben.
+
+**Dateien:** Maximal 25 MiB je Datei. `kind` ist `finance_request`, `annex_a`,
+`annex_b`, `student_card` oder `other`. PDF ist überall erlaubt; `student_card`
+erlaubt zusätzlich PNG/JPEG. Benannte Slots ersetzen vorhandene Dateien,
+`other` fügt hinzu. Ein deaktiviertes Anhangfeld ergibt beim Upload 400, beim
+Download 404 und wird in Listen ausgelassen. Generierte Anweisungsdateien folgen
+der bestehenden Sichtbarkeitsausnahme. Antwort: 201 `{ attachment: … }` ohne
+Speicherpfad. Zu große Request-Bodies ergeben 413. Schreibende Aktionen auf
+Inventar-Systemboards bleiben auch für Kommentare und Anhänge gesperrt (409).
+
+Kommentare sind interne Diskussionen, keine öffentlichen Antragstellerhinweise.
+Die API bietet keine freie Bearbeitung der Aktivitätshistorie und keine
+PDF-Bearbeitung, digitale Signatur oder externe Datei-URL-Importe.

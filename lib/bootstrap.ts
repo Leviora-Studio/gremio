@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { startMcpCredentialSweeper } from "@/lib/mcp-oauth";
 import { join } from "node:path";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db } from "@/lib/db";
@@ -96,5 +97,6 @@ export async function runStartupBootstrap(): Promise<void> {
   startArchiveRetryScheduler();
   // Idempotenz-Schlüssel der öffentlichen API nach Ablauf der Frist entfernen.
   startIdempotencySweeper();
+  startMcpCredentialSweeper();
   console.log("[bootstrap] Migrationen angewendet (kein Auto-Seed).");
 }

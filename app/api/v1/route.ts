@@ -24,6 +24,18 @@ export async function GET(req: Request) {
       boards: ctx.boardIds ? [...ctx.boardIds] : "all",
     },
     endpoints: {
+      "GET /api/v1/cards": "Karten boardübergreifend suchen und paginieren",
+      "GET /api/v1/boards/{id}/users": "Zuweisbare Nutzer suchen",
+      "GET /api/v1/boards/{id}/accounts": "Kontenauswahl",
+      "GET /api/v1/boards/{id}/priorities": "Prioritätsauswahl",
+      "GET /api/v1/cards/{id}/comments": "Kommentare lesen",
+      "POST /api/v1/cards/{id}/comments": "Kommentar hinzufügen",
+      "PATCH /api/v1/cards/{id}/comments/{commentId}": "Eigenen Kommentar bearbeiten",
+      "DELETE /api/v1/cards/{id}/comments/{commentId}": "Kommentar löschen (Autor/Verwalter)",
+      "GET /api/v1/cards/{id}/activity": "Unveränderlichen Verlauf lesen",
+      "GET /api/v1/cards/{id}/attachments": "Sichtbare Anhänge auflisten",
+      "GET /api/v1/cards/{id}/attachments/{attachmentId}": "Sichtbaren Anhang herunterladen",
+      "POST /api/v1/cards/{id}/attachments": "Anhang hochladen",
       "GET /api/v1/boards": "Zugängliche Boards auflisten",
       "GET /api/v1/boards/{id}": "Board mit Spalten & sichtbaren Feldern",
       "GET /api/v1/boards/{id}/cards":

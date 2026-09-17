@@ -1396,3 +1396,73 @@ export type InventoryNumbering = typeof inventoryNumbering.$inferSelect;
 export type InventoryLoan = typeof inventoryLoans.$inferSelect;
 export type InventoryDefect = typeof inventoryDefects.$inferSelect;
 export type InventoryAttachment = typeof inventoryAttachments.$inferSelect;
+
+// OAuth clients and revocable MCP grants. Only hashes of codes/tokens are stored.
+export const mcpClients = pgTable("mcp_clients", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+  createdAt: createdAt(),
+});
+export const mcpGrants = pgTable(
+  "mcp_grants",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope", { enum: ["read", "write"] }).notNull(),
+    restricted: boolean("restricted").notNull().default(true),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    scopeCheck: check(
+      "mcp_grants_scope_check",
+      sql`${t.scope} in ('read','write')`,
+    ),
+  }),
+);
+export const mcpGrantBoards = pgTable(
+  "mcp_grant_boards",
+  {
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => mcpGrants.id, { onDelete: "cascade" }),
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => boards.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.grantId, t.boardId] }) }),
+);
+export const mcpCodes = pgTable("mcp_codes", {
+  hash: text("hash").primaryKey(),
+  grantId: text("grant_id")
+    .notNull()
+    .references(() => mcpGrants.id, { onDelete: "cascade" }),
+  redirectUri: text("redirect_uri").notNull(),
+  challenge: text("challenge").notNull(),
+  resource: text("resource").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+});
+export const mcpTokens = pgTable(
+  "mcp_tokens",
+  {
+    hash: text("hash").primaryKey(),
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => mcpGrants.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["access", "refresh"] }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => ({
+    grantIdx: index("mcp_tokens_grant_idx").on(t.grantId),
+    expiryIdx: index("mcp_tokens_expiry_idx").on(t.expiresAt),
+  }),
+);

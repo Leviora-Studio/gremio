@@ -1,5 +1,17 @@
 # Gremio
 
+### Migration: OAuth und integrierter MCP-Zugang
+
+`0065_mcp_oauth.sql` ergänzt OAuth-Clients, Freigaben, Board-Zuordnungen sowie
+gehashte Codes und Tokens. Vor dem Update Datenbankbackup und `npm run db:migrate`
+(bzw. bestehender Containerstart). Keine neuen Geheimnisse oder Pflichtvariablen.
+MCP ist unter `APP_BASE_URL/api/mcp` erreichbar; Verbindungen werden unter
+**Mein Konto → Verbundene Anwendungen** verwaltet. Der vorhandene OIDC-Login bleibt
+bestehen. Reverse-Proxy-Anforderungen, Client-Kompatibilität und Token-Lebenszyklus:
+[docs/MCP.md](docs/MCP.md). Die interne REST-API erhält Auswahlkataloge, Suche,
+Kommentare, lesbaren Verlauf und Anhangzugriff; andere Bereiche bleiben bewusst
+ausgeschlossen.
+
 ### Migration: Ergebnisprotokoll-Dateinamen
 
 `0064_flawless_cyclops.sql` ergänzt das pro Protokollbereich konfigurierbare

@@ -65,6 +65,9 @@ const nextConfig = {
           },
         ],
       },
+      { source: "/oauth/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
+      { source: "/api/v1/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      { source: "/api/mcp", headers: [{ key: "Cache-Control", value: "no-store" }] },
       // NACH der Sammelregel, damit dieser Wert gewinnt: Beim Statusabruf wird
       // ein geheimer Status-Link übertragen — hier soll gar kein Referrer
       // hinausgehen, nicht bloß die Origin. Header aus dem Route-Handler

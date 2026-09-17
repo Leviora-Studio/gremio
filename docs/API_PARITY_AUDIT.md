@@ -1,5 +1,9 @@
 # API-Abgleich seit v2.7.7
 
+> Historischer Audit vom 4. September. Die anschließend ausdrücklich beauftragte
+> interne API-/MCP-Erweiterung ergänzt Kataloge, Suche, Kommentare, Verlauf und
+> Kartenanhänge. Der aktuelle Vertrag steht in [API.md](API.md) und [MCP.md](MCP.md).
+
 Stand: 4. September 2026. Geprüft wurden `v2.7.7..HEAD` sowie die vorhandenen,
 noch nicht veröffentlichten Änderungen (Haushaltspositionen, öffentliche Uploads,
 PDF-Kompatibilität). Dies ist keine neue Versionsfreigabe.

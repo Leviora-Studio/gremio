@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { internalApiContext } from "@/lib/api-context";
 import { NextResponse } from "next/server";
 import type { Board, BoardStatus, Card, User } from "@/lib/db/schema";
 import { authenticateApiToken, type ApiContext } from "@/lib/api-token";
@@ -29,7 +30,8 @@ export function apiError(
  * NextResponse` im Route-Handler prüfen).
  */
 export async function authApi(req: Request): Promise<ApiContext | NextResponse> {
-  const ctx = await authenticateApiToken(req.headers.get("authorization"));
+  const ctx = internalApiContext(req) ??
+    await authenticateApiToken(req.headers.get("authorization"));
   if (!ctx) {
     return apiError(401, "Ungültiger oder fehlender API-Token.", {
       hint: "Header 'Authorization: Bearer grm_…' setzen.",

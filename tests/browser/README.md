@@ -113,3 +113,11 @@ removal of edited blocks, preservation of unrelated manual text, first save,
 existing-file opening without regeneration, YAML-frontmatter transfer, export
 availability only after a confirmed save, keyboard selection, and the mobile
 Quelle/Ergebnis switch. It never reads or writes a real Nextcloud file.
+
+`mcp-production.cjs` starts a real production server with an isolated database
+(`gremio_workflows_test_*`) and a local mock OIDC issuer. It checks signed OIDC
+login, return to OAuth consent, board/read-write selection, actual SDK MCP calls,
+live grant edits, revocation and denial. Screenshots cover desktop, mobile and
+200% text. Use the same `PLAYWRIGHT_MODULE` and `CHROME_PATH` variables. All
+credentials and users are synthetic; uploads and screenshots use a temporary
+folder. No external identity provider or Nextcloud is used.

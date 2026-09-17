@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { extraPaths, extraSchemas, cardSearchParameters, paginationSchema } from "@/lib/openapi-v1-extras";
 import { API_TOKEN_PREFIX } from "@/lib/api-token";
 import { CARD_FIELD_KEYS } from "@/lib/constants";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
@@ -195,6 +196,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
   // authentifiziert über authApi().
   security: [{ BearerAuth: [] }],
   paths: {
+    ...extraPaths,
     "/api/v1": {
       get: {
         tags: ["Allgemein"],
@@ -297,6 +299,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             schema: { type: "integer", format: "int32", minimum: 1 },
           },
           archivedParam,
+          ...cardSearchParameters.filter(p => !["archived", "statusId"].includes(p.name)),
         ],
         responses: {
           200: {
@@ -368,7 +371,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         summary: "Mir zugewiesene Karten auflisten",
         description:
           "Alle dem Token-Nutzer **zugewiesenen** Karten board-übergreifend, inklusive `boardName` und `statusName`. Beschränkt auf die zugänglichen (und vom Token erlaubten) Boards; deaktivierte Felder werden je Board ausgeblendet.\n\n**Berechtigung:** jeder gültige Token; die Ergebnismenge folgt den Board-Zugriffen des Nutzers.",
-        parameters: [archivedParam],
+        parameters: cardSearchParameters,
         responses: {
           200: {
             description: "Zugewiesene Karten.",
@@ -519,6 +522,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
       },
     },
     schemas: {
+      ...extraSchemas,
       ErrorResponse: {
         type: "object",
         required: ["error"],
@@ -766,6 +770,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
         required: ["cards"],
         properties: {
           cards: { type: "array", items: { $ref: "#/components/schemas/Card" } },
+          pagination: paginationSchema,
         },
       },
       BudgetPositionWrite: {

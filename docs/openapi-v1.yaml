@@ -54,6 +54,583 @@ tags:
 security:
   - BearerAuth: []
 paths:
+  /api/v1/cards:
+    get:
+      tags:
+        - Karten
+      operationId: searchCards
+      summary: Karten boardübergreifend suchen
+      description: Only live accessible and token-allowed boards. Always paginated. Hidden fields cannot
+        match searches, filters or deadline sorting. accountId also matches budget positions.
+        Unknown query parameters return 400.
+      parameters: &a21
+        - &a3
+          name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - &a4
+          name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000000
+            default: 0
+        - &a8
+          name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+          description: Literal substring search (case-insensitive) in title and visible number, applicant,
+            notes and budget title; % and _ are literal.
+        - &a9
+          name: boardId
+          in: query
+          required: false
+          schema: &a1
+            type: integer
+            minimum: 1
+            maximum: 2147483647
+        - name: statusId
+          in: query
+          required: false
+          schema: *a1
+        - &a10
+          name: priorityId
+          in: query
+          required: false
+          schema: *a1
+        - &a11
+          name: accountId
+          in: query
+          required: false
+          schema: *a1
+        - &a12
+          name: assigneeUserId
+          in: query
+          required: false
+          schema: *a1
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "false"
+              - "true"
+              - all
+            default: "false"
+        - &a13
+          name: unassigned
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - &a14
+          name: overdue
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Deadline before today's date in Europe/Berlin, not in the board's done column and not
+            archived. Hidden deadlines never match.
+        - &a15
+          name: deadlineBefore
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Exclusive upper bound.
+        - &a16
+          name: deadlineAfter
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Exclusive lower bound.
+        - &a17
+          name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - position
+              - updated
+              - deadline
+            default: position
+          description: Position ascending, updated descending, or visible deadline ascending with nulls last.
+            Stable ID tie-breaker.
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardList"
+        "400": &a2
+          description: Ungültige Eingabe, fehlende Berechtigung oder nicht gefunden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/boards/{id}/users:
+    get:
+      tags:
+        - Boards
+      operationId: listAssignableUsers
+      summary: Zuweisbare Nutzer nachschlagen
+      description: Requires visible assignee or creator field. Only active users with board access; no
+        email, avatar paths or credentials.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - *a3
+        - *a4
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - users
+                  - pagination
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - username
+                        - name
+                      properties:
+                        id: *a1
+                        username:
+                          type: string
+                        name:
+                          type:
+                            - string
+                            - "null"
+                  pagination: &a5
+                    type: object
+                    required:
+                      - limit
+                      - offset
+                      - hasMore
+                    properties:
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+                      hasMore:
+                        type: boolean
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/boards/{id}/accounts:
+    get:
+      tags:
+        - Boards
+      operationId: listBoardAccounts
+      summary: Kontenauswahl nachschlagen
+      description: Requires enabled account field. Returns the shared selectable catalog, not balances or
+        finance-board data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - accounts
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: *a1
+                        name:
+                          type: string
+                        position:
+                          type: integer
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/boards/{id}/priorities:
+    get:
+      tags:
+        - Boards
+      operationId: listBoardPriorities
+      summary: Prioritäten nachschlagen
+      description: Requires enabled priority field.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - priorities
+                properties:
+                  priorities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: *a1
+                        label:
+                          type: string
+                        color:
+                          type: string
+                        position:
+                          type: integer
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/cards/{id}/comments:
+    get:
+      tags:
+        - Kommentare
+      operationId: listCardComments
+      summary: Kommentare lesen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - *a3
+        - *a4
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - comments
+                  - pagination
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Comment"
+                  pagination: *a5
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+    post:
+      tags:
+        - Kommentare
+      operationId: addCardComment
+      summary: Kommentar hinzufügen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &a6
+              type: object
+              additionalProperties: false
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 5000
+      responses:
+        "201":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - comment
+                properties:
+                  comment:
+                    $ref: "#/components/schemas/Comment"
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/cards/{id}/comments/{commentId}:
+    patch:
+      tags:
+        - Kommentare
+      operationId: editCardComment
+      summary: Eigenen Kommentar bearbeiten
+      description: Author only, even for administrators. Requires write scope. Does not change the
+        original creation time.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - name: commentId
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *a6
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - comment
+                properties:
+                  comment:
+                    $ref: "#/components/schemas/Comment"
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+    delete:
+      tags:
+        - Kommentare
+      operationId: deleteCardComment
+      summary: Kommentar löschen
+      description: Author or board manager, plus write scope.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - name: commentId
+          in: path
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/cards/{id}/activity:
+    get:
+      tags:
+        - Karten
+      operationId: listCardActivity
+      summary: Unveränderlichen Aktivitätsverlauf lesen
+      description: Newest first. Hidden assignment/deadline details are null. File and archive events use
+        generic labels; never expose historical filenames, archive paths or unknown raw details.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - *a3
+        - *a4
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - activity
+                  - pagination
+                properties:
+                  activity:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Activity"
+                  pagination: *a5
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/cards/{id}/attachments:
+    get:
+      tags:
+        - Anhänge
+      operationId: listCardAttachments
+      summary: Sichtbare Anhänge auflisten
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - *a3
+        - *a4
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - attachments
+                  - pagination
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Attachment"
+                  pagination: *a5
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+    post:
+      tags:
+        - Anhänge
+      operationId: uploadCardAttachment
+      summary: Anhang hochladen
+      description: Write scope; enabled attachment field. Exactly one file and kind. Max 25 MiB, PDF
+        except student_card also PNG/JPEG. Named slots replace existing files; other appends.
+        Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - file
+                - kind
+              properties:
+                file:
+                  type: string
+                  format: binary
+                kind:
+                  type: string
+                  enum:
+                    - finance_request
+                    - annex_a
+                    - annex_b
+                    - student_card
+                    - other
+      responses:
+        "201":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - attachment
+                properties:
+                  attachment:
+                    $ref: "#/components/schemas/Attachment"
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+        "413": *a2
+  /api/v1/cards/{id}/attachments/{attachmentId}:
+    get:
+      tags:
+        - Anhänge
+      operationId: downloadCardAttachment
+      summary: Sichtbaren Anhang herunterladen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - name: attachmentId
+          in: path
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Binary attachment with no-store and safe Content-Disposition.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "401": *a2
+        "404": *a2
   /api/v1:
     get:
       tags:
@@ -73,7 +650,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiInfo"
-        "401": &a1
+        "401": &a7
           description: "Kein oder ungültiger API-Token. Der Header `Authorization: Bearer …` fehlt, ist
             fehlerhaft, der Token wurde widerrufen oder das Konto ist deaktiviert."
           content:
@@ -110,7 +687,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Board"
-        "401": *a1
+        "401": *a7
   /api/v1/boards/{id}:
     get:
       tags:
@@ -141,8 +718,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardDetail"
-        "401": *a1
-        "404": &a2
+        "401": *a7
+        "404": &a18
           description: Board nicht gefunden — **oder** der Nutzer hat keinen Zugriff darauf, **oder** der
             Token ist auf andere Boards beschränkt. Bewusst identisch, damit die Existenz fremder
             Boards nicht preisgegeben wird.
@@ -182,8 +759,7 @@ paths:
             type: integer
             format: int32
             minimum: 1
-        - &a5
-          name: archived
+        - name: archived
           in: query
           required: false
           description: Archivierte (weggeräumte) Karten. Ohne Angabe werden **nur aktive** Karten geliefert;
@@ -194,6 +770,18 @@ paths:
               - "false"
               - "true"
               - all
+        - *a3
+        - *a4
+        - *a8
+        - *a9
+        - *a10
+        - *a11
+        - *a12
+        - *a13
+        - *a14
+        - *a15
+        - *a16
+        - *a17
       responses:
         "200":
           description: Karten des Boards.
@@ -218,12 +806,12 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: &a3
+                    assigneeUserIds: &a19
                       - 7
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
-        "400": &a4
+        "400": &a20
           description: "Ungültige Eingabe: kaputtes JSON, unbekanntes Body-Feld, Schema-Verstoß, ein am Board
             **deaktiviertes** Feld, eine nicht zum Board gehörende `statusId`, eine unbekannte
             `priorityId`/`accountId`, ein Nutzer ohne Board-Zugriff oder `archived: true` (manuelles
@@ -244,8 +832,8 @@ paths:
                   summary: Feld am Board deaktiviert
                   value:
                     error: Feld 'budgetTitle' ist auf diesem Board nicht aktiviert.
-        "401": *a1
-        "404": *a2
+        "401": *a7
+        "404": *a18
     post:
       tags:
         - Karten
@@ -287,7 +875,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: &a6
+                card: &a22
                   id: 42
                   budgetMode: single
                   budgetRevision: 0
@@ -302,14 +890,14 @@ paths:
                   applicant: Max Mustermann
                   number: A_0042_2026
                   priorityId: 3
-                  assigneeUserIds: *a3
+                  assigneeUserIds: *a19
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
                 budgetPositions: []
-        "400": *a4
-        "401": *a1
-        "403": &a7
+        "400": *a20
+        "401": *a7
+        "403": &a23
           description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`)."
           content:
             application/json:
@@ -320,8 +908,8 @@ paths:
                   summary: Token nur lesend
                   value:
                     error: Dieser Token hat nur Lese-Rechte (scope=read).
-        "404": *a2
-        "409": &a9
+        "404": *a18
+        "409": &a25
           description: "Leihvorgang-Board: Dessen Karten werden ausschließlich über das Inventar verwaltet,
             die API ist dort nur lesend."
           content:
@@ -344,8 +932,7 @@ paths:
 
         **Berechtigung:** jeder gültige Token; die Ergebnismenge folgt den Board-Zugriffen des
         Nutzers.
-      parameters:
-        - *a5
+      parameters: *a21
       responses:
         "200":
           description: Zugewiesene Karten.
@@ -370,13 +957,13 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: *a3
+                    assigneeUserIds: *a19
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
                     boardName: Antragsboard
-        "400": *a4
-        "401": *a1
+        "400": *a20
+        "401": *a7
   /api/v1/cards/{id}:
     get:
       tags:
@@ -420,14 +1007,14 @@ paths:
                   applicant: Max Mustermann
                   number: A_0042_2026
                   priorityId: 3
-                  assigneeUserIds: *a3
+                  assigneeUserIds: *a19
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
                   boardName: Antragsboard
                 budgetPositions: []
-        "401": *a1
-        "404": &a8
+        "401": *a7
+        "404": &a24
           description: Karte nicht gefunden — **oder** kein Zugriff auf ihr Board, **oder** der Token ist auf
             andere Boards beschränkt.
           content:
@@ -495,13 +1082,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: *a6
+                card: *a22
                 budgetPositions: []
-        "400": *a4
-        "401": *a1
-        "403": *a7
-        "404": *a8
-        "409": *a9
+        "400": *a20
+        "401": *a7
+        "403": *a23
+        "404": *a24
+        "409": *a25
     delete:
       tags:
         - Karten
@@ -537,10 +1124,10 @@ paths:
                     const: true
               example:
                 ok: true
-        "401": *a1
-        "403": *a7
-        "404": *a8
-        "409": *a9
+        "401": *a7
+        "403": *a23
+        "404": *a24
+        "409": *a25
 components:
   securitySchemes:
     BearerAuth:
@@ -555,6 +1142,96 @@ components:
         Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser
         Dokumentationsseite ersetzt ihn **nicht**.
   schemas:
+    Pagination: *a5
+    Comment:
+      type: object
+      required:
+        - id
+        - body
+        - userId
+        - createdAt
+      properties:
+        id: *a1
+        cardId: *a1
+        body:
+          type: string
+        userId:
+          type:
+            - integer
+            - "null"
+        authorName:
+          type:
+            - string
+            - "null"
+        authorUsername:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+    Activity:
+      type: object
+      required:
+        - id
+        - userId
+        - type
+        - detail
+        - createdAt
+      properties:
+        id: *a1
+        userId:
+          type:
+            - integer
+            - "null"
+        type:
+          type: string
+        detail:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+    Attachment:
+      type: object
+      required:
+        - id
+        - cardId
+        - kind
+        - filename
+        - mime
+        - size
+        - uploadedAt
+        - uploadedBy
+        - downloadPath
+      properties:
+        id: *a1
+        cardId: *a1
+        kind:
+          type: string
+          enum:
+            - finance_request
+            - annex_a
+            - annex_b
+            - student_card
+            - other
+        filename:
+          type: string
+        mime:
+          type: string
+        size:
+          type: integer
+        uploadedAt:
+          type: string
+          format: date-time
+        uploadedBy:
+          type:
+            - integer
+            - "null"
+        downloadPath:
+          type: string
+          description: Bearer-protected relative API download path; not a public URL.
     ErrorResponse:
       type: object
       required:
@@ -986,6 +1663,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Card"
+        pagination: *a5
     BudgetPositionWrite:
       type: object
       additionalProperties: false

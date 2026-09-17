@@ -302,14 +302,16 @@ export async function loadApiCard(
 
 /** Karte samt Anhängen löschen (Dateien werden mit entfernt). */
 export async function deleteCardViaApi(cardId: number): Promise<void> {
-  const atts = await db
-    .select()
-    .from(attachments)
-    .where(eq(attachments.cardId, cardId));
-  // Erst DB (CASCADE löscht attachments-Zeilen), dann Dateien — kein Risiko
-  // einer DB-Zeile ohne zugehörige Datei bei einem Fehler.
-  await db.delete(cards).where(eq(cards.id, cardId));
-  for (const a of atts) await deleteStoredFile(a.path);
+  const paths = await db.transaction(async (tx) => {
+    const [card] = await tx.select({ id: cards.id }).from(cards)
+      .where(eq(cards.id, cardId)).for("update");
+    if (!card) return [];
+    const atts = await tx.select({ path: attachments.path }).from(attachments)
+      .where(eq(attachments.cardId, cardId));
+    await tx.delete(cards).where(eq(cards.id, cardId));
+    return atts.map((a) => a.path);
+  });
+  for (const path of paths) await deleteStoredFile(path);
 }
 
 /** Neue Karte über die API anlegen. */

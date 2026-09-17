@@ -132,6 +132,11 @@ export default async function KontoPage() {
         version={user.signaturePath ?? ""}
       />
 
+      <section className="card p-6">
+        <h2 className="mb-2 text-lg font-semibold">Verbundene Anwendungen</h2>
+        <p className="mb-4 text-sm text-slate-500">Verbinde KI-Anwendungen über MCP und verwalte ihre Rechte und freigegebenen Boards.</p>
+        <a className="btn-secondary" href="/intern/konto/verbindungen">Verbindungen verwalten</a>
+      </section>
       <ApiTokens tokens={tokens} boards={boardOptions} baseUrl={baseUrl} />
     </div>
   );

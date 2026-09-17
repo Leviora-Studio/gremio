@@ -1212,7 +1212,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
 - **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Seit v2.7.9 dürfen auch Antragsnummer, Anweisungsdatum und Überweisungsdatum von jedem Mitglied geändert werden, sofern am Board aktiviert (UI **und** REST-API). Board-Einstellungen bleiben Eigentümer/Admin vorbehalten. Beim Archiv-Status gilt: **manuelles Archivieren kann niemand** (nur der Done-Sweep archiviert), **Wiederherstellen darf jedes Board-Mitglied** — in Web und API identisch.
 - **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Zugriff via `canAccessBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
-- **REST-Vertragsabgleich:** Umfang bleibt Boards/Karten sowie öffentliche Anträge/Feedback. `POST` kann Haushaltspositionen atomar anlegen, `PATCH` ersetzt sie mit `budgetRevision`; `lib/api-card-response.ts` liest Summen/Revision/Positionen im selben Snapshot. Reine Zuständigen-PATCHes einschließlich `[]` werden gespeichert. Trigger-Metadaten für Quittungen/Überweisungen sind für Board-Verwalter vollständig; Listen liefern Summen, Details die Positionen. Siehe `docs/API_PARITY_AUDIT.md` für Abdeckung und bewusst nicht externe Web-Funktionen.
+- **REST-Vertragsabgleich:** Die interne API umfasst Boards/Karten einschließlich Katalogen, Suche, Kommentaren, Verlauf und Anhängen (siehe `docs/API.md` und `docs/MCP.md`). Die öffentliche API bleibt auf Anträge/Feedback begrenzt. `POST` kann Haushaltspositionen atomar anlegen, `PATCH` ersetzt sie mit `budgetRevision`; `lib/api-card-response.ts` liest Summen/Revision/Positionen im selben Snapshot. Reine Zuständigen-PATCHes einschließlich `[]` werden gespeichert. Trigger-Metadaten für Quittungen/Überweisungen sind für Board-Verwalter vollständig; Listen liefern Summen, Details die Positionen. Siehe `docs/API_PARITY_AUDIT.md` für Abdeckung und bewusst nicht externe Web-Funktionen.
 - **Öffentliche allgemeine Uploads sind append-only**, unabhängig vom Quittungs-Gate (bis 30 PDFs je Karte) — gewollt; Archiv-Trigger sperren sie, gegen Missbrauch zusätzlich ratenbegrenzt.
 - **Öffentliches Inventar ist eine Whitelist, keine Blacklist:** `PUBLIC_INVENTORY_FIELD_KEYS` listet auf, was *nach außen darf* (Bezeichnung, Kategorie, Verfügbarkeit) — neue Item-Felder sind damit automatisch **nicht** öffentlich. Standort, Preis, Seriennummer, Belege und „aktuell bei" bleiben intern; öffentlich erscheint nur die Ausleihfrist ohne Person.
 - **Leih-System-Boards sind serverseitig gegen Verwaltung gesperrt:** `requireBoardManage` weist Boards mit `inventory_board_id` mit 404 ab — sonst ließen sich Done-Spalte/Archiv-Trigger/Nextcloud darauf aktivieren und würden laufende Leihkarten wegräumen. Ihre Zugriffs- und Mitgliederliste spiegelt bewusst das Inventar statt eigener Freigaben (eine Freigabequelle, kein Auseinanderlaufen).
@@ -1292,3 +1292,42 @@ Nextcloud bleibt bestehen.
 - Signatur-Zertifikate (`.p12` + Passphrase) werden ebenfalls **verschlüsselt** gespeichert (gleicher `ENCRYPTION_KEY`)
 - DSGVO: Token nur lokal anzeigen
 - Antragsteller-E-Mail wird nicht erfasst
+
+
+## Interne API-Erweiterungen und MCP
+
+Die authentifizierte REST-API umfasst jetzt zusätzlich boardgebundene Nutzer-,
+Konten- und Prioritätskataloge, feldsichtbare Suche/Filter/Pagination, Kommentare
+(lesen/anlegen, eigene bearbeiten, Autor/Verwalter löschen), unveränderlichen
+Aktivitätsverlauf und sichtbare Kartenanhänge (Liste/Download/Upload). Datei-Uploads
+verwenden dieselben Größen-/MIME-/Sichtbarkeitsregeln und sperren die Karte bei
+Dateizuordnung/Slotersatz; Dateisystemoperationen laufen außerhalb der Transaktion.
+Die API-Kartenlöschung sperrt ebenfalls die Karte gegen parallele Uploads.
+
+`/api/mcp` bildet alle 21 internen API-Methoden auf Werkzeuge ab (Vertragstest).
+Der MCP-Server verwendet dieselben Handler über einen nicht über HTTP setzbaren
+Request-Kontext. OAuth-Zugangstokens sind ausschließlich für MCP gültig; REST
+behält persönliche API-Tokens. Beide prüfen die aktuellen Boardrechte und
+sichtbaren Felder. Keine öffentlichen Status-Tokens oder Speicherpfade werden
+über neue Antworten ausgegeben. Historische Datei-/Archivdetails sind im Verlauf
+bewusst verallgemeinert, ausgeblendete Feldwerte werden dort nicht ausgegeben.
+
+Gremio bleibt OIDC-Client des bestehenden SSO und ist zusätzlich OAuth-Server für
+MCP. Public Clients registrieren exakte Redirects und verwenden PKCE S256. Auf der
+Freigabeseite werden standardmäßig Lesen und keine Boards ausgewählt. Alle Boards
+(einschließlich künftiger) müssen ausdrücklich gewählt werden. Der OAuth-Scope
+`gremio` bezeichnet die Verbindung; konkrete Rechte (`read`/`write`, ausgewählte
+Boards) liegen in einer live geprüften Freigabe. Dadurch greifen Änderungen und
+Widerruf unter `/intern/konto/verbindungen` ab dem nächsten Aufruf. Ein leerer
+beschränkter Board-Satz bedeutet keinen Zugriff, niemals alle Boards.
+
+Migration 0065 ergänzt `mcp_clients`, `mcp_grants`, `mcp_grant_boards`, `mcp_codes`
+und `mcp_tokens`. Codes/Tokens werden nur gehasht gespeichert. Codes: 5 Minuten,
+Access: 15 Minuten, rotierende Refresh-Tokens: 30 Tage. Erneute Verwendung eines
+bereits verbrauchten Refresh-Tokens widerruft die Verbindung. Der Bootstrap räumt
+abgelaufene Credentials stündlich auf. Bestehende OIDC-Tokens verlassen die
+Web-Session nicht. Protokolle, Finanz-/Inventarverwaltung, PDF-Bearbeitung und
+Board-Verwaltung bleiben außerhalb der API/MCP-Freigabe.
+
+Verträge und Betriebsgrenzen: `docs/API.md`, `docs/MCP.md`. Die älteren Aussagen in
+`docs/API_PARITY_AUDIT.md` beschreiben den damaligen Umfang, nicht diese Erweiterung.
