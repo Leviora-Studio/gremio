@@ -1,5 +1,16 @@
 # Gremio
 
+### Entfernung des Protokoll-Features
+
+Sitzungs- und Ergebnisprotokolle, der zugehörige Markdown-Editor, Protokollvorlagen
+und die Verknüpfungen zu Karten wurden entfernt. Migration `0066_remove_protocols.sql`
+löscht ausschließlich die neun Protokolltabellen; Karten, Beschlussreferenzen,
+Boards, Finanzen und MCP-Verbindungen bleiben erhalten. Historische Migrationen
+bleiben für bestehende Installationen unverändert. Vor dem Update Datenbankbackup
+und `npm run db:migrate` (bzw. bestehender Containerstart). Alte Nextcloud-Dateien
+und lokale Logo-Dateien werden nicht angefasst; etwaige Reste können liegen bleiben.
+Die Python-/WeasyPrint-Laufzeit wird im Docker-Image nicht mehr installiert.
+
 ### Migration: OAuth und integrierter MCP-Zugang
 
 `0065_mcp_oauth.sql` ergänzt OAuth-Clients, Freigaben, Board-Zuordnungen sowie
@@ -11,15 +22,6 @@ bestehen. Reverse-Proxy-Anforderungen, Client-Kompatibilität und Token-Lebenszy
 [docs/MCP.md](docs/MCP.md). Die interne REST-API erhält Auswahlkataloge, Suche,
 Kommentare, lesbaren Verlauf und Anhangzugriff; andere Bereiche bleiben bewusst
 ausgeschlossen.
-
-### Migration: Ergebnisprotokoll-Dateinamen
-
-`0064_flawless_cyclops.sql` ergänzt das pro Protokollbereich konfigurierbare
-Namensschema für Ergebnisprotokolle. Bestehende Bereiche erhalten automatisch
-`Ergebnisprotokoll.md` als Standard. Vor dem Update wie üblich ein
-Datenbankbackup anlegen und `npm run db:migrate` ausführen; der Containerstart
-verwendet weiterhin den bestehenden Migrationsablauf. Keine neuen Abhängigkeiten
-oder Umgebungsvariablen.
 
 ### Migration: Anweisungsformular pro Board
 
@@ -63,14 +65,12 @@ Fünf Module teilen sich Nutzer, Gruppen und dasselbe Freigabemodell:
 | **Kanban / Anträge** | `/intern/board/{id}` | Anträge und beliebige andere Vorgänge auf Boards |
 | **Finanzen** | `/finanzen` | Haushaltsplan und Ausgabenauswertung über Quell-Boards |
 | **Inventar & Ausleihe** | `/intern/inventar`, `/inventar` | Gegenstände, Leihvorgänge, Anlagenverzeichnis |
-| **Protokolle** | `/intern/protokolle` | Sitzungsprotokolle, deren Markdown-Dateien ausschließlich in Nextcloud liegen |
-| **Vorlagen** | `/vorlagen` | Board-, Finanz- und Protokollvorlagen |
+| **Vorlagen** | `/vorlagen` | Board- und Finanzvorlagen |
 
 Dazu kommt öffentliches **Feedback** (`/feedback`) als zweiter Eingangskanal
 neben dem Antragsformular.
 
-Die persönliche Startseite zeigt Aufgaben, Boards, Protokollbereiche,
-Finanzübersichten und Inventare. Unter „Startseite anpassen“ lassen sich alle
+Die persönliche Startseite zeigt Aufgaben, Boards, Finanzübersichten und Inventare. Unter „Startseite anpassen“ lassen sich alle
 Abschnitte ein- und ausblenden sowie in eine eigene Reihenfolge bringen.
 
 Stack: **Next.js (App Router) + React + TypeScript**, **PostgreSQL** (`pg` +
@@ -140,51 +140,7 @@ Apps, interaktiv unter `/api/public/docs`).
   und zugewiesenen Karten, pro Board konfigurierbar.
 - **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für
   erledigte Karten (der „Done"-Sweep räumt sie täglich weg, löscht aber nichts).
-- **Protokolle** (`/intern/protokolle`): eigene Protokollbereiche mit
-  Nutzer-/Gruppenfreigaben und synchronisierten Nextcloud-Sitzungsordnern.
-  Eigenständiger Vollbild-Markdown-Editor für alle `.md`/`.markdown`-Dateien im
-  Sitzungsordner, mit festen Werkzeugleisten, Formatierungsschaltflächen,
-  Tabellenraster und Gliederung. Die Live-Ansicht bleibt auch während des Tippens
-  formatiert; Tabellen werden direkt in den einzelnen Zellen bearbeitet und
-  eingerückte nummerierte Listen als hierarchische Nummern wie `2.1.` fortgeführt.
-  Die Dokumentensuche (Strg/Cmd+F) bietet Treffermarkierung und Vor-/Zurück-Navigation
-  in allen drei Ansichten. Zusätzlicher visueller Leerraum unter dem Dokument lässt
-  die letzte Schreibzeile bei Bedarf bis etwa in die Bildschirmmitte scrollen, ohne
-  den gespeicherten Inhalt zu verändern.
-  Protokolle erhalten zusätzlich die
-  Sitzungsverwaltung und Finanzanträge. Direktes Überschreiben beim Speichern, hierarchisch eingerückte TOP-Tagesordnung ohne Aufzählungszeichen und optionale
-  Finanzantrags-Verknüpfung. Der separate Bereich „Sitzungsdaten“ bietet außerdem
-  bereichseigene Mitgliederlisten mit Sortierung sowie Anwesenheit und
-  Stimmübertragungen je Sitzung als automatische Markdown-Tabelle. Sitzungsgäste
-  mit Name, Zugehörigkeit und Anliegen werden als eigene Tabelle ergänzt.
-  Dateien lassen sich direkt in den Sitzungsordner hochladen; PDFs können im
-  integrierten Editor angesehen und bearbeitet werden (jeweils bis 25 MB).
-  PNG-, JPEG-, GIF- und WebP-Bilder öffnen sich direkt im vorhandenen Bildviewer.
-  Sitzungsinformationen werden per Formular direkt im YAML-Kopf gepflegt.
-  Aus der gespeicherten registrierten Protokolldatei lässt sich in einer
-  zweispaltigen Arbeitsansicht ein Ergebnisentwurf erstellen: Gremio erkennt
-  regelbasiert eindeutig bezeichnete Beschlüsse, Abstimmungen, Ergebnisse,
-  Aufgaben, Zuständigkeiten und Fristen je TOP; Vorschläge bleiben auswählbar und
-  der Entwurf frei bearbeitbar. Gespeichert wird ausschließlich die über die
-  Bereichseinstellungen benannte Datei im selben Nextcloud-Sitzungsordner; das
-  Namensschema unterstützt dieselben Platzhalter wie das Verlaufsprotokoll und
-  verwendet standardmäßig `Ergebnisprotokoll.md`. Das Verlaufsprotokoll
-  bleibt unverändert. Bei der ersten Erstellung wird dessen technischer YAML-Kopf
-  unverändert in das Ergebnisprotokoll übernommen. Beide Dokumenttypen sind in
-  der Dateiübersicht gekennzeichnet und lassen sich als PDF exportieren; nur das
-  Verlaufsprotokoll zeigt die Werkzeuge für Sitzungsdaten, Mitglieder, Gäste und
-  Finanzverknüpfungen. Die Erkennung fasst nichts sprachlich zusammen, und eine
-  bereits vorhandene Ergebnisdatei wird beim Öffnen nicht neu generiert oder
-  automatisch mit der Quelle synchronisiert. Beide Spalten scrollen gekoppelt;
-  übernommene Blöcke behalten ihre Quellreihenfolge und Abschnittsstruktur.
-  PDF-Export mit bereichseigenen Logos und Standardlogo legt das PDF im selben
-  Nextcloud-Sitzungsordner ab (IBM Plex, Kopfzeilen und Unterschriften nach dem
-  bereitgestellten Konverter). Docker enthält die PDF-Laufzeit; lokale Einrichtung:
-  [PDF-Renderer](scripts/protocol-pdf/README.md).
-  Der vollständige Protokollinhalt liegt nie in
-  PostgreSQL. Einzelne Dateien und ganze Sitzungsordner können nach Bestätigung
-  direkt in Nextcloud gelöscht werden.
-- **Vorlagen** für Boards, Finanzpläne und Protokolle (Admin oder Template-Verwalter).
+- **Vorlagen** für Boards und Finanzpläne (Admin oder Template-Verwalter).
 - **Nextcloud-Archivierung** (optional, pro Board): erreicht ein Antrag die
   Trigger-Spalte, werden seine Dateien automatisch hochgeladen. Schlägt das fehl,
   wird **automatisch wiederholt**; nach > 24 h erscheint eine Warnung auf dem
@@ -314,9 +270,7 @@ lokalen Quellstand bauen will, ergänzt einen `build:`-Abschnitt in einer
 - Beim Start laufen automatisch **nur die Migrationen** (Instrumentation-Hook) —
   **kein** Auto-Seed. Startbestand bei Bedarf einmalig mit `npm run db:seed`.
 - Daten liegen in `./pgdata` (PostgreSQL) und `./uploads` (Dateien) — **beides
-  sichern**. Protokolldateien liegen dagegen ausschließlich im jeweils
-  konfigurierten Nextcloud-Sitzungsordner und müssen über dessen Backup- und
-  Versionierungsstrategie abgesichert werden.
+  sichern**. Optionale Nextcloud-Archive werden separat gesichert.
 - nginx-Beispiel: [`deploy/nginx.conf.example`](deploy/nginx.conf.example) — weist
   fremde Host-Header ab (`default_server` → 444), reicht
   `X-Forwarded-Proto`/`-For` + `Host` weiter und setzt `client_max_body_size 105m`
@@ -371,8 +325,8 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
 - Audit vom 04.09.2026: `npm audit` ist einschließlich Entwicklungsabhängigkeiten
   **ohne Befund**. Der veraltete esbuild-Zweig unter `@esbuild-kit/core-utils`
   wird gezielt auf eine korrigierte Version überschrieben; Drizzle bleibt auf
-  seiner bisherigen Version. Auch die gepinnten Python-Abhängigkeiten des
-  PDF-Renderers sind im `pip-audit` ohne Befund.
+  seiner bisherigen Version. Dies ist ein historischer Auditstand, keine Aussage
+  über die heute verfügbaren Sicherheitsmeldungen.
 - Befunde, Korrekturen und Prüfgrenzen seit 2.7.0:
   [Security- und Bug-Audit](docs/SECURITY_AUDIT_SINCE_2.7.0.md).
 

@@ -11,10 +11,9 @@ const section = (title: string) => <div><h2>{title}</h2><p>Testinhalt</p></div>;
 Object.assign(window, { savedHomePrefs: [] });
 createRoot(document.getElementById("root")!).render(
   <HomeDashboard
-    home={normalizeHomePref(undefined)}
+    home={normalizeHomePref({ protocols: true, order: ["tasks", "boards", "protocols", "finances", "inventories"] })}
     tasks={section("Meine Aufgaben")}
     boards={section("Deine Boards")}
-    protocols={section("Protokollbereiche")}
     finances={section("Finanzübersichten")}
     inventories={section("Deine Inventare")}
   />,

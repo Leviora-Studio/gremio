@@ -4,7 +4,6 @@
 export const HOME_SECTIONS = [
   { key: "tasks", label: "Meine Aufgaben" },
   { key: "boards", label: "Boards" },
-  { key: "protocols", label: "Protokollbereiche" },
   { key: "finances", label: "Finanzübersichten" },
   { key: "inventories", label: "Inventare" },
 ] as const;
@@ -23,7 +22,6 @@ export function normalizeHomePref(input: unknown): HomePref {
   return {
     tasks: source.tasks !== false,
     boards: source.boards !== false,
-    protocols: source.protocols !== false,
     finances: source.finances !== false,
     inventories: source.inventories !== false,
     order,

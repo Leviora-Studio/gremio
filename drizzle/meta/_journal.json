@@ -463,6 +463,13 @@
       "when": 1789658710108,
       "tag": "0065_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789661010793,
+      "tag": "0066_remove_protocols",
+      "breakpoints": true
     }
   ]
 }

@@ -19,7 +19,7 @@ export default async function VorlagenLayout({
       <div className="mx-auto w-full px-4 pb-24 pt-6 sm:px-6 lg:px-8 md:pb-6">
         <h1 className="mb-1 text-2xl font-bold">Vorlagen</h1>
         <p className="mb-4 text-sm text-slate-500">
-          Board-, Finanz- und Protokollvorlagen verwalten.
+          Board- und Finanzvorlagen verwalten.
         </p>
         <VorlagenTabs />
         {children}

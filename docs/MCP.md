@@ -108,7 +108,7 @@ cross-origin browser-only clients are not implemented. Requests carrying a forei
 Origin are rejected; no wildcard credentialed CORS is enabled. Test the intended
 client with the actual HTTPS reverse proxy before release.
 
-See `docs/API.md` for the REST contract. Protocols, finance/inventory management,
+See `docs/API.md` for the REST contract. Finance/inventory management,
 PDF editing/signing and board administration remain outside both interfaces.
 
 ## Verification

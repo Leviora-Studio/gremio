@@ -34,7 +34,7 @@ export const users = pgTable(
     email: text("email"), // E-Mail aus dem SSO (email-Scope), optional
     // Wird seit der SSO-Umstellung nicht mehr verwendet (Login läuft über OIDC).
     passwordHash: text("password_hash"),
-    // template_manager: wie user, darf zusätzlich Board-/Finanz-/Protokollvorlagen verwalten.
+    // template_manager: wie user, darf zusätzlich Board-/Finanzvorlagen verwalten.
     role: text("role", { enum: ["admin", "template_manager", "user"] })
       .notNull()
       .default("user"),
@@ -647,186 +647,6 @@ export const financeTemplateItems = pgTable("finance_template_items", {
 });
 
 // ---------------------------------------------------------------------------
-// Protokolle — Nextcloud ist die einzige Quelle für Protokolldateien. In der
-// DB liegen nur Konfiguration, technische Metadaten und Relationen.
-// ---------------------------------------------------------------------------
-export const protocolTemplates = pgTable("protocol_templates", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  description: text("description"),
-  markdown: text("markdown").notNull(),
-  createdAt: createdAt(),
-});
-
-export const protocolAreas = pgTable("protocol_areas", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  ownerId: integer("owner_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "restrict" }),
-  ncUrl: text("nc_url").notNull(),
-  ncUsername: text("nc_username").notNull(),
-  ncPasswordEnc: text("nc_password_enc").notNull(),
-  rootPath: text("root_path").notNull(),
-  folderPattern: text("folder_pattern").notNull().default("{YYYY}-{MM}-{DD}"),
-  filePattern: text("file_pattern").notNull().default("Protokoll.md"),
-  resultFilePattern: text("result_file_pattern").notNull().default("Ergebnisprotokoll.md"),
-  templateId: integer("template_id")
-    .references(() => protocolTemplates.id, { onDelete: "restrict" }),
-  customTemplateMarkdown: text("custom_template_markdown").notNull().default(""),
-  financeFields: jsonb("finance_fields").$type<{ key: string; enabled: boolean }[]>().notNull().default([]),
-  decisionTemplateEnabled: boolean("decision_template_enabled").notNull().default(false),
-  decisionTemplateMarkdown: text("decision_template_markdown").notNull().default(""),
-  boardId: integer("board_id").references(() => boards.id, {
-    onDelete: "set null",
-  }),
-  sourceStatusId: integer("source_status_id").references(
-    () => boardStatuses.id,
-    { onDelete: "set null" },
-  ),
-  decisionRefPattern: text("decision_ref_pattern")
-    .notNull()
-    .default("{session}-TOP-{top}"),
-  createdAt: createdAt(),
-});
-
-export const protocolAreaAccess = pgTable(
-  "protocol_area_access",
-  {
-    id: serial("id").primaryKey(),
-    areaId: integer("area_id")
-      .notNull()
-      .references(() => protocolAreas.id, { onDelete: "cascade" }),
-    userId: integer("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }),
-    groupId: integer("group_id").references(() => groups.id, {
-      onDelete: "cascade",
-    }),
-  },
-  (t) => ({
-    oneSubject: check(
-      "protocol_area_access_one_subject",
-      sql`(${t.userId} is null) <> (${t.groupId} is null)`,
-    ),
-    uqUser: uniqueIndex("protocol_area_access_area_user_uq").on(
-      t.areaId,
-      t.userId,
-    ),
-    uqGroup: uniqueIndex("protocol_area_access_area_group_uq").on(
-      t.areaId,
-      t.groupId,
-    ),
-  }),
-);
-
-export const protocolLogos = pgTable("protocol_logos", {
-  id: serial("id").primaryKey(),
-  areaId: integer("area_id").notNull().references(() => protocolAreas.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  pngBase64: text("png_base64").notNull(),
-  isDefault: boolean("is_default").notNull().default(false),
-  createdAt: createdAt(),
-}, (t) => ({
-  areaIndex: index("protocol_logos_area_idx").on(t.areaId, t.id),
-  oneDefault: uniqueIndex("protocol_logos_default_uq").on(t.areaId).where(sql`${t.isDefault} = true`),
-}));
-
-export const protocolSessions = pgTable(
-  "protocol_sessions",
-  {
-    id: serial("id").primaryKey(),
-    areaId: integer("area_id")
-      .notNull()
-      .references(() => protocolAreas.id, { onDelete: "cascade" }),
-    folderName: text("folder_name").notNull(),
-    sessionDate: text("session_date"),
-    folderFileId: text("folder_file_id"),
-    folderEtag: text("folder_etag"),
-    protocolPath: text("protocol_path"),
-    protocolFileId: text("protocol_file_id"),
-    protocolEtag: text("protocol_etag"),
-    protocolLastModified: timestamp("protocol_last_modified", {
-      withTimezone: true,
-    }),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    createdAt: createdAt(),
-  },
-  (t) => ({
-    uqFolder: uniqueIndex("protocol_sessions_area_folder_uq").on(
-      t.areaId,
-      t.folderName,
-    ),
-  }),
-);
-
-export const protocolCardLinks = pgTable(
-  "protocol_card_links",
-  {
-    id: serial("id").primaryKey(),
-    sessionId: integer("session_id")
-      .notNull()
-      .references(() => protocolSessions.id, { onDelete: "cascade" }),
-    cardId: integer("card_id")
-      .notNull()
-      .references(() => cards.id, { onDelete: "cascade" }),
-    top: text("top").notNull(),
-    lastAutoDecisionRef: text("last_auto_decision_ref"),
-    decisionRefConflict: boolean("decision_ref_conflict")
-      .notNull()
-      .default(false),
-    createdAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    uqSessionCard: uniqueIndex("protocol_card_links_session_card_uq").on(
-      t.sessionId,
-      t.cardId,
-    ),
-  }),
-);
-
-export const protocolMembers = pgTable("protocol_members", {
-  id: serial("id").primaryKey(),
-  areaId: integer("area_id").notNull().references(() => protocolAreas.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  position: integer("position").notNull().default(0),
-}, (t) => ({
-  areaOrder: index("protocol_members_area_order_idx").on(t.areaId, t.position, t.id),
-  uniqueName: uniqueIndex("protocol_members_area_name_uq").on(t.areaId, sql`lower(${t.name})`),
-  validName: check("protocol_members_name_check", sql`length(trim(${t.name})) between 1 and 200`),
-}));
-
-export const protocolAttendance = pgTable("protocol_attendance", {
-  sessionId: integer("session_id").notNull().references(() => protocolSessions.id, { onDelete: "cascade" }),
-  memberId: integer("member_id").notNull().references(() => protocolMembers.id, { onDelete: "cascade" }),
-  present: boolean("present").notNull().default(false),
-  proxyMemberId: integer("proxy_member_id").references(() => protocolMembers.id, { onDelete: "set null" }),
-}, (t) => ({
-  pk: primaryKey({ columns: [t.sessionId, t.memberId] }),
-  memberIndex: index("protocol_attendance_member_idx").on(t.memberId),
-  proxyIndex: index("protocol_attendance_proxy_idx").on(t.proxyMemberId),
-  noSelfProxy: check("protocol_attendance_no_self_proxy", sql`${t.proxyMemberId} is null or ${t.proxyMemberId} <> ${t.memberId}`),
-}));
-
-export const protocolGuests = pgTable("protocol_guests", {
-  id: serial("id").primaryKey(),
-  sessionId: integer("session_id").notNull().references(() => protocolSessions.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  affiliation: text("affiliation").notNull().default(""),
-  concern: text("concern").notNull().default(""),
-}, (t) => ({
-  sessionOrder: index("protocol_guests_session_order_idx").on(t.sessionId, t.id),
-  validName: check("protocol_guests_name_check", sql`length(trim(${t.name})) between 1 and 200`),
-  validFields: check("protocol_guests_fields_check", sql`length(${t.affiliation}) <= 300 and length(${t.concern}) <= 1000`),
-}));
-
-// ---------------------------------------------------------------------------
 // Persönliche Board-Reihenfolge (je Nutzer frei anordnenbar)
 // ---------------------------------------------------------------------------
 export const userBoardOrder = pgTable(
@@ -1375,11 +1195,6 @@ export type FinanceBoard = typeof financeBoards.$inferSelect;
 export type FinancePlanItem = typeof financePlanItems.$inferSelect;
 export type FinanceTemplate = typeof financeTemplates.$inferSelect;
 export type FinanceTemplateItem = typeof financeTemplateItems.$inferSelect;
-export type ProtocolTemplate = typeof protocolTemplates.$inferSelect;
-export type ProtocolArea = typeof protocolAreas.$inferSelect;
-export type ProtocolAreaAccess = typeof protocolAreaAccess.$inferSelect;
-export type ProtocolSession = typeof protocolSessions.$inferSelect;
-export type ProtocolCardLink = typeof protocolCardLinks.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type ApiTokenScope = ApiToken["scope"];
 export type UserTaskPrefs = typeof userTaskPrefs.$inferSelect;

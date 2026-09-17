@@ -1,5 +1,8 @@
 # Security- und Bug-Audit seit 2.7.0
 
+> Historical audit: the meeting-minutes feature has since been removed. References
+> to protocol routes, editors and tests below describe the audited version only.
+
 Stand: 04.09.2026. Alle unten aufgeführten Befunde wurden im Arbeitsverzeichnis
 korrigiert. Es wurde kein Commit erstellt und nichts veröffentlicht oder deployed.
 

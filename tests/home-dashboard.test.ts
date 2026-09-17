@@ -9,24 +9,35 @@ test("new and existing users see all home sections by default", () => {
   assert.deepEqual(normalizeHomePref(undefined), {
     tasks: true,
     boards: true,
-    protocols: true,
     finances: true,
     inventories: true,
-    order: ["tasks", "boards", "protocols", "finances", "inventories"],
+    order: ["tasks", "boards", "finances", "inventories"],
   });
   assert.deepEqual(normalizeHomePref({ tasks: false, finances: false }), {
     tasks: false,
     boards: true,
-    protocols: true,
     finances: false,
     inventories: true,
-    order: ["tasks", "boards", "protocols", "finances", "inventories"],
+    order: ["tasks", "boards", "finances", "inventories"],
   });
 });
 
 test("saved home order is validated, deduplicated and completed", () => {
   assert.deepEqual(
     normalizeHomePref({ order: ["protocols", "tasks", "protocols", "invalid", "boards"] }).order,
-    ["protocols", "tasks", "boards", "finances", "inventories"],
+    ["tasks", "boards", "finances", "inventories"],
   );
+});
+
+test("retired home sections are ignored without changing remaining preferences", () => {
+  assert.deepEqual(normalizeHomePref({
+    protocols: true,
+    tasks: false,
+    boards: false,
+    inventories: false,
+    order: ["protocols", "inventories", "boards", "tasks", "finances"],
+  }), {
+    tasks: false, boards: false, finances: true, inventories: false,
+    order: ["inventories", "boards", "tasks", "finances"],
+  });
 });

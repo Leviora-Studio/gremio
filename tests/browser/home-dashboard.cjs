@@ -38,14 +38,14 @@ writeFileSync(join(output, "index.html"), '<!doctype html><html lang="de"><meta 
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       await page.goto(url);
       const order = () => page.locator("[data-home-section]").evaluateAll(nodes => nodes.map(node => node.dataset.homeSection));
-      assert.deepEqual(await order(), ["tasks", "boards", "protocols", "finances", "inventories"]);
+      assert.deepEqual(await order(), ["tasks", "boards", "finances", "inventories"]);
       await page.getByRole("button", { name: /Startseite anpassen/ }).click();
-      for (const label of ["Meine Aufgaben", "Boards", "Protokollbereiche", "Finanzübersichten", "Inventare"]) {
+      for (const label of ["Meine Aufgaben", "Boards", "Finanzübersichten", "Inventare"]) {
         assert.equal(await page.getByRole("checkbox", { name: label, exact: true }).isChecked(), true);
         assert.equal(await page.getByRole("button", { name: `${label} verschieben`, exact: true }).count(), 1);
       }
       assert.equal(await page.getByRole("button", { name: / nach (oben|unten)$/ }).count(), 0);
-      const source = await page.getByRole("button", { name: "Protokollbereiche verschieben", exact: true }).boundingBox();
+      const source = await page.getByRole("button", { name: "Finanzübersichten verschieben", exact: true }).boundingBox();
       const target = await page.getByRole("button", { name: "Meine Aufgaben verschieben", exact: true }).boundingBox();
       assert.ok(source && target);
       await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
@@ -53,16 +53,22 @@ writeFileSync(join(output, "index.html"), '<!doctype html><html lang="de"><meta 
       await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2 - 10, { steps: 2 });
       await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 });
       await page.mouse.up();
-      assert.deepEqual(await order(), ["protocols", "tasks", "boards", "finances", "inventories"]);
+      assert.deepEqual(await order(), ["finances", "tasks", "boards", "inventories"]);
       await page.waitForTimeout(100);
       await page.getByRole("checkbox", { name: "Inventare", exact: true }).uncheck();
       await page.waitForFunction(() => !document.querySelector('[data-home-section="inventories"]'));
-      assert.deepEqual(await order(), ["protocols", "tasks", "boards", "finances"]);
+      assert.deepEqual(await order(), ["finances", "tasks", "boards"]);
       await page.waitForFunction(() => window.savedHomePrefs.at(-1)?.home?.inventories === false);
       const saved = await page.evaluate(() => window.savedHomePrefs.at(-1).home);
-      assert.deepEqual(saved.order, ["protocols", "tasks", "boards", "finances", "inventories"]);
+      assert.deepEqual(saved.order, ["finances", "tasks", "boards", "inventories"]);
       assert.equal(saved.inventories, false);
       await page.screenshot({ path: join(output, `home-${width}.png`), fullPage: true });
+      if (width === 1200) {
+        await page.addStyleTag({ content: 'html { font-size: 200%; }' });
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'home settings must remain usable at 200% text');
+        assert.equal(await page.getByRole('checkbox').count(), 4);
+        await page.screenshot({ path: join(output, 'home-text200.png'), fullPage: true });
+      }
       await page.close();
     }
   } finally {

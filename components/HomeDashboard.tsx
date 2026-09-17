@@ -32,14 +32,12 @@ export function HomeDashboard({
   boards,
   finances,
   inventories,
-  protocols,
 }: {
   home: HomePref;
   tasks: ReactNode;
   boards: ReactNode;
   finances: ReactNode;
   inventories: ReactNode;
-  protocols: ReactNode;
 }) {
   const [home, setHome] = useState<HomePref>(initial);
   const [showSettings, setShowSettings] = useState(false);
@@ -58,7 +56,7 @@ export function HomeDashboard({
   }, [home]);
 
   const noneVisible = HOME_SECTIONS.every(section => !home[section.key]);
-  const nodes: Record<HomeSectionKey, ReactNode> = { tasks, boards, protocols, finances, inventories };
+  const nodes: Record<HomeSectionKey, ReactNode> = { tasks, boards, finances, inventories };
   function dragEnd(event: DragEndEvent) {
     if (!event.over || event.active.id === event.over.id) return;
     setHome(current => {

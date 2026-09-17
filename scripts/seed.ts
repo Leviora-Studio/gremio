@@ -9,7 +9,6 @@ import {
   locations,
   boardTemplates,
   boardTemplateStatuses,
-  protocolTemplates,
 } from "../lib/db/schema";
 import { LOCATION_NAMES } from "../lib/constants";
 
@@ -97,24 +96,10 @@ async function seedAntragsboardTemplate() {
   );
 }
 
-async function seedProtocolTemplate() {
-  await db
-    .insert(protocolTemplates)
-    .values({
-      name: "Standardprotokoll",
-      description: "Schlichte Markdown-Grundstruktur für eine Sitzung",
-      markdown:
-        "# Sitzung {{session.date_de}}\n\nProtokollbereich: {{protocol_area.name}}\n\n## Anwesenheit\n\n## Tagesordnung\n",
-    })
-    .onConflictDoNothing({ target: protocolTemplates.name });
-  console.log("✅ Protokollvorlage 'Standardprotokoll' ist vorhanden.");
-}
-
 async function main() {
   await seedLocations();
   await seedPriorities();
   await seedAntragsboardTemplate();
-  await seedProtocolTemplate();
   console.log("🌱 Seed abgeschlossen.");
   await pool.end();
 }

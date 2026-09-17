@@ -70,6 +70,14 @@ function readZipEntries(buffer) {
     browser=await chromium.launch({ executablePath:process.env.CHROME_PATH || undefined,headless:true });
     const page=await browser.newPage({viewport:{width:1400,height:1000}});
     await page.context().addCookies([{name:'gremio_session',value:await sealData({userId:ownerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+    for (const route of ['/intern/protokolle', '/intern/protokolle/neu', '/intern/protokolle/1', '/intern/protokolle/1/einstellungen', '/intern/protokolle/1/sitzung/1', '/vorlagen/protokolle', '/dokumente/1/1', '/dokumente/1/1/ergebnis', '/api/protokolle/1/logos/1', '/api/protokolle/1/sitzung/1/image', '/api/protokolle/1/sitzung/1/pdf', '/api/protokolle/1/sitzung/1/pdf/fields']) {
+      assert.equal((await page.request.get(base + route)).status(), 404, `${route}: removed minutes route must not exist`);
+    }
+    for (const route of ['/intern', '/vorlagen/boards', '/finanzen', '/intern/inventar']) {
+      const response = await page.request.get(base + route);
+      assert.equal(response.status(), 200, `${route}: remaining module remains accessible`);
+      assert.doesNotMatch(await response.text(), /href=["'](?:\/intern\/protokolle|\/vorlagen\/protokolle)/);
+    }
     for(const route of [`/intern/card/${card.id}`, `/intern/board/${boardId}`, '/intern/aufgaben']) {
       const response = await page.request.get(base+route);
       assert.equal(response.status(),200);

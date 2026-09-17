@@ -36,12 +36,8 @@ ENV HOSTNAME=0.0.0.0
 # Zeitzone Europe/Berlin (für Logs/rohe Date-Nutzung; Anzeige nutzt zusätzlich
 # explizit Intl mit timeZone). tzdata, damit TZ auf Debian-slim auflöst.
 ENV TZ=Europe/Berlin
-ENV PROTOCOL_PDF_PYTHON=/opt/protocol-pdf/bin/python
-COPY scripts/protocol-pdf/requirements.txt /tmp/protocol-pdf-requirements.txt
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends tzdata python3 python3-venv libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
-  && python3 -m venv /opt/protocol-pdf \
-  && /opt/protocol-pdf/bin/pip install --no-cache-dir -r /tmp/protocol-pdf-requirements.txt \
+  && apt-get install -y --no-install-recommends tzdata \
   && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs
@@ -50,7 +46,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/scripts/protocol-pdf ./scripts/protocol-pdf
 
 # Upload-Verzeichnis (wird per Volume gemountet; DB liegt im Postgres-Container)
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app

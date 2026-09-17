@@ -1,5 +1,8 @@
 # API-Abgleich seit v2.7.7
 
+> Historical audit: the meeting-minutes feature has since been removed. References
+> to protocol routes, editors and tests below describe the audited version only.
+
 > Historischer Audit vom 4. September. Die anschließend ausdrücklich beauftragte
 > interne API-/MCP-Erweiterung ergänzt Kataloge, Suche, Kommentare, Verlauf und
 > Kartenanhänge. Der aktuelle Vertrag steht in [API.md](API.md) und [MCP.md](MCP.md).

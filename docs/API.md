@@ -3,8 +3,8 @@
 Externe Tools können Boards/Karten **lesen** und Karten **anlegen, ändern,
 verschieben und löschen**. Zusätzlich stehen boardgebundene Auswahlkataloge,
 Suche/Filter/Pagination, interne Kommentare, der lesbare Aktivitätsverlauf und
-Kartenanhänge (auflisten, herunterladen, hochladen) zur Verfügung. Protokolle,
-Dokumenteditoren, PDF-Bearbeitung/Signaturen und administrative Einstellungen
+Kartenanhänge (auflisten, herunterladen, hochladen) zur Verfügung.
+PDF-Bearbeitung/Signaturen und administrative Einstellungen
 bleiben ausgeschlossen. Der integrierte [MCP-Zugang](MCP.md) deckt dieselben
 Funktionen mit OAuth-Freigaben ab.
 
