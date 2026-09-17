@@ -631,6 +631,58 @@ paths:
                 format: binary
         "401": *a2
         "404": *a2
+  /api/v1/cards/{id}/attachments/{attachmentId}/text:
+    get:
+      tags:
+        - Anhänge
+      operationId: readCardAttachmentText
+      summary: PDF-Text einschließlich Formularwerten lesen
+      description: Reads stored PDF bytes locally without modifying the file. No OCR. Default 10, maximum
+        20 pages; follow nextPage. At most 200,000 extracted characters and 500 fields per page;
+        truncation is explicit. Password-protected, pure XFA or unreadable PDFs return 422.
+        Processing is limited to 15 seconds, two concurrent extractions per process and 30 requests
+        per user per minute.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+        - name: attachmentId
+          in: path
+          required: true
+          schema: *a1
+        - name: startPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+            default: 1
+        - name: pageLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentText"
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+        "413": *a2
+        "415": *a2
+        "422": *a2
+        "429": *a2
   /api/v1:
     get:
       tags:
@@ -1142,6 +1194,73 @@ components:
         Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser
         Dokumentationsseite ersetzt ihn **nicht**.
   schemas:
+    AttachmentText:
+      type: object
+      required:
+        - attachmentId
+        - filename
+        - totalPages
+        - pages
+        - text
+        - nextPage
+        - truncated
+        - warnings
+      properties:
+        attachmentId: *a1
+        filename:
+          type: string
+        totalPages:
+          type: integer
+        text:
+          type: string
+          description: Selected page text plus saved form-field names and values.
+        nextPage:
+          type:
+            - integer
+            - "null"
+        truncated:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+        pages:
+          type: array
+          items:
+            type: object
+            required:
+              - page
+              - text
+              - formFields
+              - hasText
+            properties:
+              page:
+                type: integer
+                minimum: 1
+              text:
+                type: string
+              hasText:
+                type: boolean
+              formFields:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - name
+                    - type
+                    - value
+                  properties:
+                    name:
+                      type: string
+                    type:
+                      type: string
+                      enum:
+                        - text
+                        - choice
+                        - radio
+                        - checkbox
+                    value:
+                      type: string
     Pagination: *a5
     Comment:
       type: object

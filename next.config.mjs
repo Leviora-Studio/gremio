@@ -22,6 +22,9 @@ const nextConfig = {
   // /api/public/docs/assets/[file]). Ohne diesen Hinweis nimmt der
   // Standalone-Output sie nicht mit, weil sie nirgends importiert werden.
   outputFileTracingIncludes: {
+    // Worker threads load the PDF parser and bundled font/CMap assets at runtime.
+    "/api/mcp": ["./scripts/pdf-text-worker.mjs", "./node_modules/pdfjs-dist/legacy/build/*.mjs", "./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*", "./node_modules/@napi-rs/canvas*/**/*"],
+    "/api/v1/cards/*/attachments/*/text": ["./scripts/pdf-text-worker.mjs", "./node_modules/pdfjs-dist/legacy/build/*.mjs", "./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*", "./node_modules/@napi-rs/canvas*/**/*"],
     // Swagger-Assets stehen nicht im Import-Graph (werden zur Laufzeit gelesen)
     // — beide Asset-Routen brauchen sie deshalb explizit im Standalone-Output.
     "/api/docs/assets/[file]": [
@@ -66,6 +69,7 @@ const nextConfig = {
       { source: "/oauth/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/api/v1/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
       { source: "/api/mcp", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      { source: "/api/mcp/:path*", headers: [{ key: "Cache-Control", value: "no-store" }, { key: "Referrer-Policy", value: "no-referrer" }] },
       // NACH der Sammelregel, damit dieser Wert gewinnt: Beim Statusabruf wird
       // ein geheimer Status-Link übertragen — hier soll gar kein Referrer
       // hinausgehen, nicht bloß die Origin. Header aus dem Route-Handler

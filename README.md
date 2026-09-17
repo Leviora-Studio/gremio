@@ -16,6 +16,8 @@ Die Python-/WeasyPrint-Laufzeit wird im Docker-Image nicht mehr installiert.
 `0065_mcp_oauth.sql` ergänzt OAuth-Clients, Freigaben, Board-Zuordnungen sowie
 gehashte Codes und Tokens. Vor dem Update Datenbankbackup und `npm run db:migrate`
 (bzw. bestehender Containerstart). Keine neuen Geheimnisse oder Pflichtvariablen.
+MCP liefert direkte Anhang-Downloads und PDF-Text einschließlich Formularwerten
+(serverseitiges PDF.js, keine Python-Laufzeit und keine OCR).
 MCP ist unter `APP_BASE_URL/api/mcp` erreichbar; Verbindungen werden unter
 **Mein Konto → Verbundene Anwendungen** verwaltet. Der vorhandene OIDC-Login bleibt
 bestehen. Reverse-Proxy-Anforderungen, Client-Kompatibilität und Token-Lebenszyklus:

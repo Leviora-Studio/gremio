@@ -56,6 +56,9 @@ import { POST as revokeRoute } from "../app/oauth/revoke/route";
 import { GET as oauthMetadata } from "../app/.well-known/oauth-authorization-server/route";
 import { GET as resourceMetadata } from "../app/.well-known/oauth-protected-resource/api/mcp/route";
 import { callMcpTool, mcpTools } from "../lib/mcp-tools";
+import { PDFDocument } from "pdf-lib";
+import { createMcpDownload, downloadMcpAttachment } from "../lib/mcp-downloads";
+import { attachmentTextApi } from "../lib/api-attachment-text";
 import { openApiV1Spec } from "../lib/openapi-v1";
 
 after(() => pool.end());
@@ -701,12 +704,16 @@ test("extended API and OAuth/MCP enforce live rights, privacy, file safety and t
         ).json();
         assert.equal(allowed.result.isError, false);
         const ctx = (await authenticateMcp(`Bearer ${access}`))!;
+        const pdf = await PDFDocument.create();
+        const pdfPage = pdf.addPage(); pdfPage.drawText("Testantrag");
+        const field = pdf.getForm().createTextField("Antragsteller"); field.setText("Anna Test"); field.addToPage(pdfPage);
+        const pdfBytes = Buffer.from(await pdf.save());
         const uploaded = await callMcpTool(ctx, "upload_attachment", {
           id: card.id,
           kind: "other",
           filename: "Test.pdf",
           mime: "application/pdf",
-          dataBase64: Buffer.from("%PDF-mcp").toString("base64"),
+          dataBase64: pdfBytes.toString("base64"),
         });
         assert.equal(uploaded.isError, false);
         const aid = (
@@ -716,7 +723,33 @@ test("extended API and OAuth/MCP enforce live rights, privacy, file safety and t
           id: card.id,
           attachmentId: aid,
         });
-        assert.equal(downloaded.content[0].type, "resource");
+        assert.equal(downloaded.content[0].type, "resource_link");
+        const link = downloaded.structuredContent as { url: string; expiresAt: string };
+        assert.equal(JSON.stringify(downloaded).includes('"blob"'), false);
+        assert.equal(link.url.includes(access), false, "no reusable OAuth token in URL");
+        const download = (url = link.url, cid = card.id, attachmentId = aid) => downloadMcpAttachment(new Request(url), String(cid), String(attachmentId));
+        const binary = await download();
+        assert.equal(binary.status, 200); assert.equal(binary.headers.get("content-type"), "application/pdf");
+        assert.match(binary.headers.get("content-disposition")!, /attachment;/);
+        assert.equal(binary.headers.get("referrer-policy"), "no-referrer");
+        assert.deepEqual(Buffer.from(await binary.arrayBuffer()), pdfBytes);
+        assert.equal((await download(resource)).status, 404);
+        assert.equal((await download(link.url, c[1].id)).status, 404, "ticket is bound to card");
+        assert.equal((await download(link.url, card.id, aid + 1)).status, 404, "ticket is bound to attachment");
+        const tampered = new URL(link.url); const ticket = tampered.searchParams.get("ticket")!;
+        tampered.searchParams.set("ticket", (ticket[0] === "A" ? "B" : "A") + ticket.slice(1));
+        assert.equal((await download(tampered.toString())).status, 404);
+        const expired = await createMcpDownload({ ...ctx, accessTokenExpiresAt: new Date(Date.now() - 1) }, card.id, aid);
+        assert.ok(!(expired instanceof Response));
+        assert.equal((await download(expired.url)).status, 404);
+        const text = await callMcpTool(ctx, "read_attachment_text", { id: card.id, attachmentId: aid });
+        assert.equal(text.isError, false);
+        assert.match(String(text.structuredContent!.text), /Antragsteller: Anna Test/);
+        assert.equal((await attachmentTextApi(request(read), String(card.id), String(aid))).status, 200, "REST read tokens can extract text too");
+        await db.update(boardCardFields).set({ visible: false }).where(and(eq(boardCardFields.boardId, board.id), eq(boardCardFields.fieldKey, "other_pdfs")));
+        assert.equal((await download()).status, 404, "field visibility is live");
+        assert.equal((await attachmentTextApi(request(read), String(card.id), String(aid))).status, 404);
+        await db.update(boardCardFields).set({ visible: true }).where(and(eq(boardCardFields.boardId, board.id), eq(boardCardFields.fieldKey, "other_pdfs")));
         await editMcpGrant(owner, grantId, {
           scope: "read",
           allBoards: false,
@@ -726,11 +759,19 @@ test("extended API and OAuth/MCP enforce live rights, privacy, file safety and t
           await call("tools/call", { name: "list_boards", arguments: {} })
         ).json();
         assert.deepEqual(empty.result.structuredContent.boards, []);
+        assert.equal((await download()).status, 404, "grant restrictions are live");
         await editMcpGrant(owner, grantId, {
           scope: "read",
           allBoards: false,
           boardIds: [board.id],
         });
+        assert.equal((await download()).status, 200);
+        await db.update(users).set({ isActive: false }).where(eq(users.id, owner.id));
+        assert.equal((await download()).status, 404, "user deactivation is live");
+        await db.update(users).set({ isActive: true }).where(eq(users.id, owner.id));
+        await db.update(mcpTokens).set({ expiresAt: new Date(Date.now() - 1) }).where(eq(mcpTokens.hash, tokenHash(access)));
+        assert.equal((await download()).status, 404, "access-token expiry is live");
+        await db.update(mcpTokens).set({ expiresAt: new Date(Date.now() + 60_000) }).where(eq(mcpTokens.hash, tokenHash(access)));
       },
     );
     await t.test(

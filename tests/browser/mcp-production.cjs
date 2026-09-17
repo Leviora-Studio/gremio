@@ -143,13 +143,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
         [id],
       );
       await query(
-        "insert into board_card_fields(board_id,field_key,visible) values ($1,'assignee',true)",
+        "insert into board_card_fields(board_id,field_key,visible) values ($1,'assignee',true),($1,'other_pdfs',true)",
         [id],
       );
     }
     child = spawn(
       process.execPath,
-      [
+      process.env.GREMIO_TEST_STANDALONE_DIR ? [join(process.env.GREMIO_TEST_STANDALONE_DIR, "server.js")] : [
         require.resolve("next/dist/bin/next"),
         "start",
         "-H",
@@ -158,8 +158,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
         String(port),
       ],
       {
+        cwd: process.env.GREMIO_TEST_STANDALONE_DIR || process.cwd(),
         env: {
           ...process.env,
+          HOSTNAME: "127.0.0.1",
+          PORT: String(port),
           APP_BASE_URL: base,
           PUBLIC_BASE_URL: base,
           OIDC_ISSUER: issuer,
@@ -297,7 +300,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
       }),
     );
     const tools = await mcpClient.listTools();
-    assert.equal(tools.tools.length, 21);
+    assert.equal(tools.tools.length, 22);
     const call = (name, args = {}) =>
       mcpClient.callTool({ name, arguments: args });
     let result = await call("list_boards");
@@ -332,6 +335,28 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
       data: { title: "Created through real MCP" },
     });
     assert.equal(result.isError, false);
+    const createdCardId = result.structuredContent.card.id;
+    const { PDFDocument } = require("pdf-lib");
+    const pdf = await PDFDocument.create(); const pdfPage = pdf.addPage();
+    pdfPage.drawText("MCP Antrag Kulturabend");
+    const field = pdf.getForm().createTextField("Antragsteller"); field.setText("Anna Browser"); field.addToPage(pdfPage);
+    const pdfBytes = Buffer.from(await pdf.save());
+    const uploaded = await call("upload_attachment", { id: createdCardId, kind: "other", filename: "Antrag.pdf", mime: "application/pdf", dataBase64: pdfBytes.toString("base64") });
+    assert.equal(uploaded.isError, false, JSON.stringify(uploaded));
+    const attachmentId = uploaded.structuredContent.attachment.id;
+    const downloaded = await call("download_attachment", { id: createdCardId, attachmentId });
+    assert.equal(downloaded.content[0].type, "resource_link");
+    const downloadUrl = downloaded.structuredContent.url;
+    const binary = await fetch(downloadUrl);
+    assert.equal(binary.status, 200);
+    assert.equal(binary.headers.get("content-type"), "application/pdf");
+    assert.equal(binary.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(binary.headers.get("cache-control"), "no-store");
+    assert.deepEqual(Buffer.from(await binary.arrayBuffer()), pdfBytes);
+    const pdfText = await call("read_attachment_text", { id: createdCardId, attachmentId });
+    assert.equal(pdfText.isError, false, JSON.stringify(pdfText));
+    assert.match(pdfText.structuredContent.text, /MCP Antrag Kulturabend/);
+    assert.match(pdfText.structuredContent.text, /Antragsteller: Anna Browser/);
     await page.screenshot({
       path: join(output, "connections-desktop.png"),
       fullPage: true,
@@ -357,6 +382,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     });
     assert.equal(revoked.status, 401);
+    assert.equal((await fetch(downloadUrl)).status, 404, "revocation must also invalidate file links");
     // Existing browser session returns directly to consent without another OIDC login.
     await page.goto(base + "/oauth/authorize?" + auth);
     await page.getByRole("heading", { name: "Mit Gremio verbinden" }).waitFor();
@@ -365,7 +391,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
     await page.waitForURL(issuer + "/mcp-callback?**");
     assert.equal(callback.searchParams.get("error"), "access_denied");
     console.log(
-      "PASS: OIDC login, consent, no-board validation, SDK MCP handshake/tools, live rights editing, revocation, denial, desktop/mobile and 200% text.",
+      "PASS: OIDC login, consent, no-board validation, SDK MCP handshake/tools, direct PDF download and form text, live rights editing, revocation, denial, desktop/mobile and 200% text.",
     );
     console.log("Screenshots: " + output);
   } catch (error) {

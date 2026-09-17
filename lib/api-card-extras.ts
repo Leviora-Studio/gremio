@@ -315,11 +315,44 @@ export async function storeApiAttachment(
   return result;
 }
 
+export async function resolveApiAttachment(req: Request, id: string, attachmentId: string) {
+  const r = await resolveApiCard(req, id);
+  if (r instanceof NextResponse) return r;
+  const aid = parseApiId(attachmentId);
+  if (!aid) return apiError(404, "Anhang nicht gefunden.");
+  const [attachment] = await db.select().from(attachments)
+    .where(and(eq(attachments.id, aid), eq(attachments.cardId, r.card.id)));
+  const visible = await getVisibleFieldKeys(r.board.id);
+  if (!attachment || !isCardAttachmentVisible(attachment, visible))
+    return apiError(404, "Anhang nicht gefunden.");
+  return { ...r, attachment };
+}
+
 export async function attachmentsApi(
   req: Request,
   id: string,
   attachmentId?: string,
 ) {
+  if (req.method === "GET" && attachmentId) {
+    const resolved = await resolveApiAttachment(req, id, attachmentId);
+    if (resolved instanceof NextResponse) return resolved;
+    const a = resolved.attachment;
+    try {
+      const data = await readFile(absPath(a.path));
+      return new Response(new Uint8Array(data), {
+        headers: {
+          "Content-Type": a.mime,
+          "Content-Disposition": contentDisposition(a.filename),
+          "Content-Length": String(data.length),
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch {
+      return apiError(404, "Datei nicht gefunden.");
+    }
+  }
   const r = await resolveApiCard(req, id, req.method === "POST");
   if (r instanceof NextResponse) return r;
   const visible = await getVisibleFieldKeys(r.board.id);
@@ -376,30 +409,6 @@ export async function attachmentsApi(
         409,
         "Upload konnte nicht gespeichert werden. Karte erneut laden.",
       );
-    }
-  }
-  if (attachmentId) {
-    const aid = parseApiId(attachmentId);
-    if (!aid) return apiError(404, "Anhang nicht gefunden.");
-    const [a] = await db
-      .select()
-      .from(attachments)
-      .where(and(eq(attachments.id, aid), eq(attachments.cardId, r.card.id)));
-    if (!a || !isCardAttachmentVisible(a, visible))
-      return apiError(404, "Anhang nicht gefunden.");
-    try {
-      const data = await readFile(absPath(a.path));
-      return new Response(new Uint8Array(data), {
-        headers: {
-          "Content-Type": a.mime,
-          "Content-Disposition": contentDisposition(a.filename),
-          "Content-Length": String(data.length),
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    } catch {
-      return apiError(404, "Datei nicht gefunden.");
     }
   }
   const p = pagination(req);

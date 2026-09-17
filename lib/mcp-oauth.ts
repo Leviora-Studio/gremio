@@ -283,11 +283,22 @@ export async function exchangeMcpToken(p: URLSearchParams) {
     return issueTokens(tx, grant.id);
   });
 }
+export type McpContext = ApiContext & {
+  accessTokenHash: string;
+  accessTokenExpiresAt: Date;
+};
+
 export async function authenticateMcp(
   header: string | null,
-): Promise<ApiContext | null> {
+): Promise<McpContext | null> {
   const raw = /^Bearer (gmcp_a_[A-Za-z0-9_-]+)$/i.exec(header ?? "")?.[1];
   if (!raw) return null;
+  return authenticateMcpTokenHash(tokenHash(raw));
+}
+
+/** Internal only: callers must first validate a signed, file-specific ticket. */
+export async function authenticateMcpTokenHash(hash: string): Promise<McpContext | null> {
+  if (!/^[a-f0-9]{64}$/.test(hash)) return null;
   // Grant, live scope and selected boards come from one SQL snapshot.
   const rows = await db
     .select({
@@ -300,7 +311,7 @@ export async function authenticateMcp(
     .innerJoin(mcpGrants, eq(mcpTokens.grantId, mcpGrants.id))
     .innerJoin(users, eq(mcpGrants.userId, users.id))
     .leftJoin(mcpGrantBoards, eq(mcpGrantBoards.grantId, mcpGrants.id))
-    .where(eq(mcpTokens.hash, tokenHash(raw)));
+    .where(eq(mcpTokens.hash, hash));
   const first = rows[0];
   if (
     !first ||
@@ -315,6 +326,8 @@ export async function authenticateMcp(
     .set({ lastUsedAt: new Date() })
     .where(eq(mcpGrants.id, first.grant.id));
   return {
+    accessTokenHash: hash,
+    accessTokenExpiresAt: first.token.expiresAt,
     user: first.user,
     scope: first.grant.scope,
     boardIds: first.grant.restricted

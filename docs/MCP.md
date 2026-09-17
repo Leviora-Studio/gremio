@@ -65,7 +65,7 @@ REST or bypass authorization by manufacturing HTTP headers.
 
 ## Tools and files
 
-All 21 business method/path combinations have a corresponding MCP tool, verified
+All 22 business method/path combinations have a corresponding MCP tool, verified
 by a contract test. This includes discovery, boards, catalogs, filtered/paginated
 card lists, card creation/update/deletion, comments, immutable activity and files.
 MCP lists always request pagination; use `pagination.hasMore` and increase `offset`.
@@ -76,11 +76,32 @@ workflows. Non-idempotent operations must not be blindly retried after timeouts.
 
 `upload_attachment` accepts one file as Base64 with filename, MIME and kind (up to
 25 MiB decoded). It does not accept arbitrary local paths or fetch remote URLs.
-`download_attachment` returns an embedded binary MCP resource with the original
-MIME type. A client must support binary resources and sufficiently large messages;
-Gremio does not parse/OCR documents or bypass client attachment limits. The protected
-REST download path in metadata is not a public download URL and does not accept
-MCP tokens. Use the download tool for MCP access.
+`download_attachment` returns a standard MCP `resource_link` plus structured
+metadata (`url`, `filename`, `mimeType`, `size`, `expiresAt`). Following the URL
+returns the original file bytes: PDFs use `application/pdf` and a download filename.
+No PDF Base64/blob is returned in tool results. The URL is a confidential,
+file-specific capability valid for at most five minutes and never longer than the
+issuing access token. Anyone holding it can fetch that one file while it is valid;
+it must not be shared or logged. No reusable OAuth token is placed in the URL.
+Each fetch checks the original access token, grant, user, board access and field
+visibility again. Revocation and permission changes therefore also apply to
+already issued links. Responses use no-store and no-referrer.
+
+`read_attachment_text` reads PDF text and saved AcroForm values on the server,
+without Python or changing the file. The same operation is available through
+`GET /api/v1/cards/{id}/attachments/{attachmentId}/text`. Results contain `text`,
+`pages` (including `formFields`), `totalPages`, `nextPage`, `truncated` and `warnings`.
+Use `startPage` (one-based, default 1) and `pageLimit` (default 10, maximum 20) and
+follow `nextPage`. Form values retain their PDF export values (for example `Yes`
+and `Off` for checkboxes). Extraction runs in a bounded Node worker using PDF.js:
+15-second limit, two concurrent jobs per process, 30 calls/user/minute, at most
+200,000 extracted characters and 500 fields per page. Limits are reported explicitly.
+No OCR: image-only pages can have no text; warnings make this visible. XFA forms
+are not supported. Password protection and malformed PDFs produce explicit errors.
+The client still decides how to display a resource link or use extracted text.
+
+The protected REST `downloadPath` in attachment metadata remains a REST API URL;
+it does not accept MCP tokens. Use `download_attachment` to obtain a usable link.
 
 Tool annotations identify reads and potentially destructive writes. They are
 hints for the host application's UI, not permission enforcement or a guarantee
@@ -100,7 +121,10 @@ Allow at least 36 MiB JSON request bodies at the reverse proxy for the maximum
 Base64 file upload; Gremio additionally bounds the body while reading. Normal REST
 multipart uploads require 25 MiB plus envelope overhead. Configure suitable proxy
 timeouts for existing archive-triggered operations. Avoid logging authorization
-headers, form bodies, authorization codes or complete OAuth callback query strings.
+headers, form bodies, authorization codes, download tickets or complete OAuth callback query strings.
+The proxy must also expose `/api/mcp/attachments/*`; download query strings must
+be omitted from access logs. The standalone build traces the PDF text worker and
+its PDF.js/CMap/font/native dependencies; no Python runtime is required.
 
 Current interoperability target: desktop/server-side MCP clients using DCR and
 PKCE. Client metadata documents, confidential client secrets, legacy SSE and

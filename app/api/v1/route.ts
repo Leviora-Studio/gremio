@@ -35,6 +35,7 @@ export async function GET(req: Request) {
       "GET /api/v1/cards/{id}/activity": "Unveränderlichen Verlauf lesen",
       "GET /api/v1/cards/{id}/attachments": "Sichtbare Anhänge auflisten",
       "GET /api/v1/cards/{id}/attachments/{attachmentId}": "Sichtbaren Anhang herunterladen",
+      "GET /api/v1/cards/{id}/attachments/{attachmentId}/text": "PDF-Text und ausgefüllte Formularfelder lesen",
       "POST /api/v1/cards/{id}/attachments": "Anhang hochladen",
       "GET /api/v1/boards": "Zugängliche Boards auflisten",
       "GET /api/v1/boards/{id}": "Board mit Spalten & sichtbaren Feldern",

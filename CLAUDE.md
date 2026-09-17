@@ -762,7 +762,7 @@ verwenden dieselben Größen-/MIME-/Sichtbarkeitsregeln und sperren die Karte be
 Dateizuordnung/Slotersatz; Dateisystemoperationen laufen außerhalb der Transaktion.
 Die API-Kartenlöschung sperrt ebenfalls die Karte gegen parallele Uploads.
 
-`/api/mcp` bildet alle 21 internen API-Methoden auf Werkzeuge ab (Vertragstest).
+`/api/mcp` bildet alle 22 internen API-Methoden auf Werkzeuge ab (Vertragstest).
 Der MCP-Server verwendet dieselben Handler über einen nicht über HTTP setzbaren
 Request-Kontext. OAuth-Zugangstokens sind ausschließlich für MCP gültig; REST
 behält persönliche API-Tokens. Beide prüfen die aktuellen Boardrechte und
@@ -801,3 +801,15 @@ Nextcloud-Dateien und lokale Logo-Reste werden nicht gelöscht. Veraltete
 `protocols`-Einträge in persönlichen Startseiten-Einstellungen werden von
 `normalizeHomePref` ignoriert, die übrige Reihenfolge und Sichtbarkeit bleibt erhalten.
 Die Nextcloud-Archivierung von Karten und der PDF-Editor für Anhänge bleiben bestehen.
+
+## MCP-Dateidownload und PDF-Textextraktion
+
+`download_attachment` liefert einen `resource_link` auf die unveränderte Datei,
+keinen Base64-Blob. Signierte, an Anhang/Karte und ursprünglichen Zugriffstoken
+gebundene Tickets gelten höchstens fünf Minuten. Der Download unter
+`/api/mcp/attachments/{cardId}/{attachmentId}` prüft Tokenablauf, Widerruf,
+Nutzer, Boardrechte und Anhangsichtbarkeit erneut. Tickets nicht protokollieren.
+`read_attachment_text` und die entsprechende interne REST-Route `/text` lesen
+Seitentext und gespeicherte Formularwerte mit PDF.js in einem begrenzten
+Node-Worker. Keine Python-Laufzeit, keine OCR, keine Änderung der Originaldatei.
+Seitenauswahl und Grenzen sowie Fehlerverhalten stehen in `docs/MCP.md`.

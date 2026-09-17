@@ -116,6 +116,24 @@ const body = (schema: object) => ({
   content: { "application/json": { schema } },
 });
 export const extraSchemas = {
+  AttachmentText: {
+    type: "object",
+    required: ["attachmentId", "filename", "totalPages", "pages", "text", "nextPage", "truncated", "warnings"],
+    properties: {
+      attachmentId: integerId, filename: { type: "string" }, totalPages: { type: "integer" },
+      text: { type: "string", description: "Selected page text plus saved form-field names and values." },
+      nextPage: { type: ["integer", "null"] }, truncated: { type: "boolean" },
+      warnings: { type: "array", items: { type: "string" } },
+      pages: { type: "array", items: {
+        type: "object", required: ["page", "text", "formFields", "hasText"],
+        properties: {
+          page: { type: "integer", minimum: 1 }, text: { type: "string" }, hasText: { type: "boolean" },
+          formFields: { type: "array", items: { type: "object", required: ["name", "type", "value"],
+            properties: { name: { type: "string" }, type: { type: "string", enum: ["text", "choice", "radio", "checkbox"] }, value: { type: "string" } } } },
+        },
+      } },
+    },
+  },
   Pagination: paginationSchema,
   Comment: {
     type: "object",
@@ -380,6 +398,14 @@ export const extraPaths = {
         401: error,
         404: error,
       },
+    },
+  },
+  "/api/v1/cards/{id}/attachments/{attachmentId}/text": {
+    get: {
+      tags: ["Anhänge"], operationId: "readCardAttachmentText", summary: "PDF-Text einschließlich Formularwerten lesen",
+      description: "Reads stored PDF bytes locally without modifying the file. No OCR. Default 10, maximum 20 pages; follow nextPage. At most 200,000 extracted characters and 500 fields per page; truncation is explicit. Password-protected, pure XFA or unreadable PDFs return 422. Processing is limited to 15 seconds, two concurrent extractions per process and 30 requests per user per minute.",
+      parameters: [pathId(), pathId("attachmentId"), query("startPage", { type: "integer", minimum: 1, maximum: 1000000, default: 1 }), query("pageLimit", { type: "integer", minimum: 1, maximum: 20, default: 10 })],
+      responses: { ...responses(ref("AttachmentText")), 413: error, 415: error, 422: error, 429: error },
     },
   },
 } as const;

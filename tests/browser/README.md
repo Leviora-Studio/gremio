@@ -56,7 +56,10 @@ esbuild and Tailwind tools. Production tests require a separate production build
 `mcp-production.cjs` starts a real production server with an isolated database
 (`gremio_workflows_test_*`) and a local mock OIDC issuer. It checks signed OIDC
 login, return to OAuth consent, board/read-write selection, actual SDK MCP calls,
-live grant edits, revocation and denial. Screenshots cover desktop, mobile and
+live grant edits, revocation and denial, original PDF downloads, and PDF text
+including filled form fields. Set `GREMIO_TEST_STANDALONE_DIR` to an assembled
+standalone directory (with `.next/static`, `public`, and `drizzle`) to check the
+packaged server and PDF worker instead of `next start`. Screenshots cover desktop, mobile and
 200% text. Use the same `PLAYWRIGHT_MODULE` and `CHROME_PATH` variables. All
 credentials and users are synthetic; uploads and screenshots use a temporary
 folder. No external identity provider or Nextcloud is used.

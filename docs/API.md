@@ -342,3 +342,21 @@ Inventar-Systemboards bleiben auch für Kommentare und Anhänge gesperrt (409).
 Kommentare sind interne Diskussionen, keine öffentlichen Antragstellerhinweise.
 Die API bietet keine freie Bearbeitung der Aktivitätshistorie und keine
 PDF-Bearbeitung, digitale Signatur oder externe Datei-URL-Importe.
+
+### PDF-Inhalt als Text
+
+`GET /api/v1/cards/{id}/attachments/{attachmentId}/text` benötigt Leserechte auf
+das Board und einen sichtbaren PDF-Anhang. `startPage` beginnt bei 1 (Standard 1);
+`pageLimit` ist 1–20 (Standard 10). Die Antwort enthält `attachmentId`, `filename`,
+`totalPages`, `pages` mit Seitentext und `formFields` (`name`, `type`, `value`),
+zusammengefassten `text`, `nextPage`, `truncated` und `warnings`. Formularwerte
+entsprechen den gespeicherten PDF-Werten, z. B. `Yes`/`Off` bei Checkboxen.
+
+Keine OCR oder Veränderung der Datei. Bildseiten ohne Textebene werden durch
+Warnungen gekennzeichnet; Signaturgültigkeit wird nicht geprüft. Pro Aufruf
+höchstens 200.000 Zeichen, 500 Formularfelder je Seite und 15 Sekunden; maximal
+zwei parallele Extraktionen pro Prozess und 30 Anfragen pro Nutzer/Minute.
+Nicht-PDF: 415; Datei über 25 MiB: 413; Passwortschutz, reine XFA-Formulare oder
+unlesbares PDF: 422; ungültige Seitenauswahl: 400; Auslastung/Rate-Limit: 429.
+Bei `nextPage` weitere Seiten abrufen, `truncated` niemals als vollständige
+Extraktion interpretieren. Vertrauliche Antworten verwenden `Cache-Control: no-store`.
