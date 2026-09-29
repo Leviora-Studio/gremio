@@ -57,6 +57,10 @@ test("upgrade preserves data through workflow migrations and removes only the re
         assert.equal((await pool.query("select tablename from pg_tables where schemaname='public' and tablename like 'protocol\\_%' escape '\\'")).rowCount, 0);
       }
     }
+    const organizedFile = (await pool.query("select * from attachments where id=$1", [file.id])).rows[0];
+    assert.equal(organizedFile.folder_id, null, "legacy attachments start at the ticket root");
+    assert.equal(organizedFile.filename, file.filename);
+    assert.equal(organizedFile.path, file.path);
     await pool.query("insert into board_instruction_forms(board_id,enabled,filename,path,size,uploaded_by) values ($1,true,'Template.pdf','test-only-template',1,$2)", [board, owner]);
     const instruction = (await pool.query("select * from board_instruction_forms where board_id=$1", [board])).rows[0];
     assert.equal(instruction.filename, "Template.pdf");

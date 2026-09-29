@@ -63,3 +63,10 @@ packaged server and PDF worker instead of `next start`. Screenshots cover deskto
 200% text. Use the same `PLAYWRIGHT_MODULE` and `CHROME_PATH` variables. All
 credentials and users are synthetic; uploads and screenshots use a temporary
 folder. No external identity provider or Nextcloud is used.
+
+The production workflow also creates internal attachment folders, rejects duplicate
+folder names, renames/moves a PDF through real Server Actions, checks unchanged
+file bytes and ZIP subfolders, and verifies that public pages and the public API
+expose no folder controls or metadata. `attachment-folders-db.test.ts` verifies
+board membership, hidden attachments, cross-ticket boundaries and cascade cleanup
+against an isolated `gremio_workflows_test_*` database.

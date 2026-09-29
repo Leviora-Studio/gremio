@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, pool } from "@/lib/db";
 import {
   attachments,
+  attachmentFolders,
   boardArchive,
   boardStatuses,
   cards,
@@ -161,6 +162,8 @@ async function archiveLocked(cardId: number): Promise<void> {
     .from(attachments)
     .where(eq(attachments.cardId, cardId));
 
+  const folders = await db.select().from(attachmentFolders).where(eq(attachmentFolders.cardId, cardId));
+
   const now = new Date();
   try {
     const password = decryptSecret(archive.ncPasswordEnc);
@@ -175,7 +178,8 @@ async function archiveLocked(cardId: number): Promise<void> {
       creds: { url: archive.ncUrl, username: archive.ncUsername, password },
       targetFolder: archive.targetFolder,
       subfolder,
-      files: files.map((f) => ({ relPath: f.path, filename: f.filename })),
+      folders,
+      files: files.map((f) => ({ id: f.id, relPath: f.path, filename: f.filename, folderId: f.folderId })),
     });
     await db
       .update(cards)

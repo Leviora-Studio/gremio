@@ -101,6 +101,40 @@ function readZipEntries(buffer) {
     assert.equal(zipEntries.has('Hidden-student-card.pdf'),false,'hidden attachment must not be bundled');
     assert.deepEqual(zipEntries.get('Anweisung 1.pdf'),instructionBytes,'generated instruction must remain bundled');
     await page.goto(`${base}/intern/card/${card.id}`);
+    for (const name of ['Belege', 'Leer']) {
+      await page.getByRole('textbox', {name:'Neuer Ordnername'}).fill(name);
+      await page.getByRole('button', {name:'Ordner erstellen',exact:true}).click();
+      for(let i=0;i<40;i++){if((await query('select id from attachment_folders where card_id=$1 and name=$2',[card.id,name])).rowCount)break;await new Promise(resolve=>setTimeout(resolve,100));}
+      await page.reload();
+    }
+    const folderRows=(await query('select * from attachment_folders where card_id=$1 order by id',[card.id])).rows;
+    assert.equal(folderRows.length,2,'real folder actions create both folders');
+    await page.getByRole('textbox', {name:'Neuer Ordnername'}).fill('belege');
+    await page.getByRole('button', {name:'Ordner erstellen',exact:true}).click();
+    await page.getByRole('alert').filter({hasText:'existiert bereits'}).waitFor();
+    const editor = page.locator('details').filter({has:page.locator('input[name=filename]')}).first();
+    await editor.locator('summary').click();
+    await editor.getByRole('textbox',{name:'Dateiname',exact:true}).fill('Anweisung neu.pdf');
+    await editor.getByRole('combobox',{name:'Zielordner',exact:true}).selectOption(String(folderRows[0].id));
+    await editor.getByRole('button',{name:'Speichern',exact:true}).click();
+    for(let i=0;i<40;i++){if((await query('select folder_id from attachments where id=$1',[instructionAttachment.id])).rows[0].folder_id===folderRows[0].id)break;await new Promise(resolve=>setTimeout(resolve,100));}
+    const organized=(await query('select * from attachments where id=$1',[instructionAttachment.id])).rows[0];
+    assert.equal(organized.filename,'Anweisung neu.pdf'); assert.equal(organized.folder_id,folderRows[0].id);
+    assert.equal(organized.path,instructionPath,'organization preserves storage path');
+    const organizedDownload=await page.request.get(`${base}/api/attachment/${instructionAttachment.id}`);
+    assert.deepEqual(Buffer.from(await organizedDownload.body()),instructionBytes,'renaming preserves bytes');
+    const organizedZip=readZipEntries(Buffer.from(await (await page.request.get(`${base}/api/card/${card.id}/zip`)).body()));
+    assert.deepEqual(organizedZip.get('Belege/Anweisung neu.pdf'),instructionBytes,'ZIP preserves subfolder');
+    assert.equal([...organizedZip.keys()].some(name=>name.includes('Hidden-student-card')),false);
+    await page.reload();
+    await page.setViewportSize({width:390,height:1000});
+    const attachmentSection=page.locator('section').filter({has:page.getByRole('heading',{name:'Anhänge',exact:true})});
+    const mobileEditor=attachmentSection.locator('details').filter({has:page.locator('input[name=filename]')}).last();
+    await mobileEditor.locator('summary').click();
+    assert.equal(await mobileEditor.getByRole('textbox',{name:'Dateiname',exact:true}).isVisible(),true);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'folder controls must fit mobile width');
+    await attachmentSection.screenshot({path:join(output,'attachments-mobile.png')});
+    await page.setViewportSize({width:1400,height:1000});
     await page.getByRole('button',{name:'Weiteren Haushaltstitel hinzufügen',exact:true}).click();
     const first=page.getByRole('group',{name:'Position 1',exact:true}), second=page.getByRole('group',{name:'Position 2',exact:true});
     await first.getByLabel('Bezeichnung',{exact:true}).fill('Gegenstand A');
@@ -117,7 +151,10 @@ function readZipEntries(buffer) {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'real card editor must not overflow on mobile');
     await page.screenshot({path:join(output,'card-mobile.png'),fullPage:true});
     const publicPage=await browser.newPage({viewport:{width:390,height:1000}});
-    await publicPage.goto(`${base}/status/${token}`); await publicPage.getByText('350,00 €',{exact:true}).waitFor();
+    await publicPage.goto(`${base}/status/${token}`);
+    assert.equal(await publicPage.getByRole('button',{name:'Ordner erstellen',exact:true}).count(),0);
+    assert.equal(await publicPage.getByRole('textbox',{name:'Dateiname',exact:true}).count(),0);
+    await publicPage.getByText('350,00 €',{exact:true}).waitFor();
     const statusApi = (statusUrl=`${base}/status/${token}`) => fetch(base+'/api/public/v1/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({statusUrl})});
     const overlapping = await statusApi();
     assert.equal(overlapping.status,200);
@@ -152,9 +189,11 @@ function readZipEntries(buffer) {
     assert.equal(response.status,200,'public status API should accept the generated test status link');
     const json=await response.json(); assert.equal(json.application.approvedAmountCents,35000); assert.equal(JSON.stringify(json).includes('accountId'),false); assert.equal(JSON.stringify(json).includes('budgetPositions'),false);
     assert.deepEqual(json.availableActions,{canResubmit:false,canReceipt:false,canUploadDocuments:true,submitMode:null});
+    assert.equal(JSON.stringify(json).includes('folderId'),false,'public API keeps folder metadata internal');
+    assert.equal(JSON.stringify(json).includes('Belege'),false,'public API keeps folder names internal');
     assert.equal(json.documents.length,6,'public workflow files and the generated instruction appear in the existing status contract');
     assert.equal(json.documents.filter(d=>d.filename.startsWith('TEST_1_Q')).length,3);
-    assert.equal(json.documents.some(d=>d.filename==='Anweisung 1.pdf'),true);
+    assert.equal(json.documents.some(d=>d.filename==='Anweisung neu.pdf'),true);
     assert.equal(json.documents.some(d=>d.filename==='Hidden-student-card.pdf'),false);
     await query('update board_statuses set is_archive_trigger=true,is_receipt_trigger=true where id=$1',[statuses[1].id]);
     const archived=await (await statusApi()).json();

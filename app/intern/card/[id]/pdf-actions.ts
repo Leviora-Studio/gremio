@@ -282,7 +282,7 @@ export async function savePdfEditsAction(
           .where(eq(cards.id, card.id))
           .for("update");
         const [current] = await tx
-          .select({ path: attachments.path })
+          .select({ path: attachments.path, folderId: attachments.folderId })
           .from(attachments)
           .where(
             and(
@@ -342,7 +342,7 @@ export async function savePdfEditsAction(
         .where(eq(cards.id, card.id))
         .for("update");
       const [current] = await tx
-        .select({ path: attachments.path })
+        .select({ path: attachments.path, folderId: attachments.folderId })
         .from(attachments)
         .where(
           and(eq(attachments.id, att.id), eq(attachments.cardId, card.id)),
@@ -357,6 +357,7 @@ export async function savePdfEditsAction(
           cardId: card.id,
           kind: "other",
           filename: newName,
+          folderId: current.folderId,
           path: saved.relPath,
           mime: "application/pdf",
           size: saved.size,

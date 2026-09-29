@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import {
   cards,
   attachments,
+  attachmentFolders,
   boardCardFields,
   boardInstructionForms,
   boardStatuses,
@@ -30,7 +31,7 @@ import { loadBudgetSnapshot } from "@/lib/card-budget-db";
 import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
-import { AttachmentSlot, WeitereAttachments } from "@/components/antrag/Attachments";
+import { AttachmentSlot, WeitereAttachments, AttachmentFolders } from "@/components/antrag/Attachments";
 import { CreateInstructionButton } from "@/components/antrag/CreateInstructionButton";
 import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
@@ -100,9 +101,11 @@ export default async function AntragDetailPage({
   const visibleAtts = atts.filter((attachment) =>
     isCardAttachmentVisible(attachment, visibleSet),
   );
+  const folders = await db.select({ id: attachmentFolders.id, name: attachmentFolders.name })
+    .from(attachmentFolders).where(eq(attachmentFolders.cardId, card.id)).orderBy(asc(attachmentFolders.name));
   const slot = (k: AttachmentKind) => {
     const a = visibleAtts.find((x) => x.kind === k);
-    return a ? { id: a.id, filename: a.filename, mime: a.mime } : null;
+    return a ? { id: a.id, filename: a.filename, mime: a.mime, folderId: a.folderId } : null;
   };
   const otherVisible = visibleAtts
     .filter((a) => a.kind === "other")
@@ -111,6 +114,7 @@ export default async function AntragDetailPage({
       filename: a.filename,
       mime: a.mime,
       uploadPurpose: a.uploadPurpose,
+      folderId: a.folderId,
     }));
   // Hat der eingeloggte Nutzer ein Signatur-Zertifikat? (für den Signieren-Button)
   const hasCert = !!user.certP12Enc;
@@ -323,6 +327,7 @@ export default async function AntragDetailPage({
             </a>
           )}
         </div>
+        <AttachmentFolders cardId={card.id} folders={folders} />
         {visible.includes("finance_request") && (
           <AttachmentSlot
             cardId={card.id}
@@ -331,6 +336,7 @@ export default async function AntragDetailPage({
             accept="application/pdf,.pdf"
             current={slot("finance_request")}
             hasCert={hasCert}
+            folders={folders}
           />
         )}
         {visible.includes("student_card") && (
@@ -341,6 +347,7 @@ export default async function AntragDetailPage({
             accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
             current={slot("student_card")}
             hasCert={hasCert}
+            folders={folders}
           />
         )}
         {visible.includes("annex_a") && (
@@ -351,6 +358,7 @@ export default async function AntragDetailPage({
             accept="application/pdf,.pdf"
             current={slot("annex_a")}
             hasCert={hasCert}
+            folders={folders}
           />
         )}
         {visible.includes("annex_b") && (
@@ -361,6 +369,7 @@ export default async function AntragDetailPage({
             accept="application/pdf,.pdf"
             current={slot("annex_b")}
             hasCert={hasCert}
+            folders={folders}
           />
         )}
         {(visible.includes("other_pdfs") ||
@@ -370,6 +379,7 @@ export default async function AntragDetailPage({
             cardId={card.id}
             items={otherVisible}
             hasCert={hasCert}
+            folders={folders}
             allowUpload={visible.includes("other_pdfs")}
           />
         )}

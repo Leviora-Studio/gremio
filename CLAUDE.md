@@ -390,6 +390,17 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 
 - **Nutzer-Auswahl (Ersteller / Zugewiesen zu):** Tippen liefert Vorschläge aus den Nutzern, die Zugriff auf das jeweilige Board haben (Eigentümer + direkte Freigaben + Gruppen + Admins). Dafür ein gefilterter Such-Endpoint.
 - **Anhänge — einheitliches Modell:** Die benannten Slots sind Anhänge mit festem `kind` (je max. 1, ersetzbar), „Weitere PDFs" sind `kind='other'` und **unbegrenzt**.
+- **Interne Dateiordner:** Board-Mitglieder können direkt am Ticket Ordner erstellen,
+  sichtbare Anhänge umbenennen (Dateiendung bleibt erhalten) und zwischen diesen
+  Ordnern und dem Ticket-Hauptordner verschieben. Eine Ebene von Unterordnern;
+  die Dokument-Slots und ihre Sichtbarkeitsregeln bleiben erhalten. Die Zuordnung
+  ist DB-Metadatum, der lokale Speicherpfad bleibt unverändert. Slotersatz und
+  PDF-Kopien übernehmen die Ordnerzuordnung. Öffentliche Antragsteller und
+  Bearer-/MCP-APIs erhalten keine Ordnerverwaltung oder Ordner-Metadaten.
+  Nextcloud archiviert die Struktur einschließlich leerer Ordner; das interne
+  ZIP enthält die Ordner der sichtbaren Dateien. Kollisionen von Archivnamen
+  erhalten deterministische ID-Suffixe, damit keine Datei überschrieben wird.
+  Bereits erfolgte Nextcloud-Archivierungen bleiben Momentaufnahmen.
 - **Ausgeblendete Anhangfelder sind eine serverseitige Grenze:** Die interne
   Download-/Formularfeld-Route, das Karten-ZIP sowie Bearbeiten und Löschen
   liefern bzw. verändern nur aktuell sichtbare Anhänge. Automatisch erstellte
@@ -407,7 +418,10 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 ```sql
 attachments       (id, card_id FK→cards ON DELETE CASCADE,
                    kind TEXT,   -- finance_request|annex_a|annex_b|student_card|other
+                   folder_id NULL, -- composite FK (card_id, folder_id) → attachment_folders
                    filename, path, mime, size, uploaded_at, uploaded_by FK→users NULL)
+attachment_folders (id, card_id FK→cards ON DELETE CASCADE, name,
+                    UNIQUE(card_id, name), UNIQUE(card_id, id))
 -- benannte Slots: max. 1 je (card_id, kind); 'other': beliebig viele
 
 board_card_fields (board_id FK→boards ON DELETE CASCADE, field_key TEXT,

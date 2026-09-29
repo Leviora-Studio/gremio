@@ -274,13 +274,15 @@ export async function storeApiAttachment(
         .where(eq(cards.id, cardId))
         .for("update");
       if (!card) throw new Error("Card removed");
+      let folderId: number | null = null;
       if (kind !== "other") {
         const old = await tx
           .delete(attachments)
           .where(
             and(eq(attachments.cardId, cardId), eq(attachments.kind, kind)),
           )
-          .returning({ path: attachments.path });
+          .returning({ path: attachments.path, folderId: attachments.folderId });
+        folderId = old[0]?.folderId ?? null;
         oldPaths.push(...old.map((a) => a.path));
       }
       const [att] = await tx
@@ -289,6 +291,7 @@ export async function storeApiAttachment(
           cardId,
           kind,
           filename: saved.filename,
+          folderId,
           path: saved.relPath,
           mime: saved.mime,
           size: saved.size,

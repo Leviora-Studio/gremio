@@ -1,5 +1,20 @@
 # Gremio
 
+### 4.2.0: Interne Dateiordner am Ticket
+
+Board-Mitglieder können im Anhangbereich Ordner erstellen, Dateien umbenennen
+und zwischen dem Ticket-Hauptordner und selbst erstellten Unterordnern verschieben.
+Die Dateiendung bleibt erhalten; Dokument-Slots und Sichtbarkeitsregeln gelten
+weiterhin. Antragsteller erhalten keine Ordnerverwaltung.
+
+Die Nextcloud-Archivierung übernimmt auch leere Unterordner; das interne ZIP
+erhält die Ordnerstruktur der sichtbaren Dateien. Bestehende Cloud-Archive bleiben
+Momentaufnahmen. Migration `0067_attachment_folders.sql` ergänzt ausschließlich
+Ordner und eine optionale Anhangzuordnung; vorhandene Anhänge liegen zunächst
+im Ticket-Hauptordner. Beim Start des aktualisierten Docker-Images wird die
+Migration automatisch angewendet. Für lokale Entwicklungsinstanzen gilt
+`npm run db:migrate`. Keine neuen Abhängigkeiten oder Umgebungsvariablen.
+
 ### Entfernung des Protokoll-Features
 
 Sitzungs- und Ergebnisprotokolle, der zugehörige Markdown-Editor, Protokollvorlagen

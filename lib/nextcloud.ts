@@ -11,6 +11,7 @@ import {
   type WebDAVClient,
 } from "webdav";
 import { fetch as nodeFetch } from "@buttercup/fetch";
+import { attachmentArchiveLayout, sanitizeSegment, type AttachmentFolder } from "@/lib/attachment-organization";
 import { absPath } from "@/lib/attachments";
 import { isSafeExternalUrl, isPublicHost } from "@/lib/url-guard";
 
@@ -96,17 +97,7 @@ function client(creds: NcCredentials): WebDAVClient {
   });
 }
 
-/** Dateinamen/Pfadteile für WebDAV säubern (inkl. Path-Traversal-Schutz). */
-export function sanitizeSegment(s: string): string {
-  const cleaned = s
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/\.{2,}/g, "_") // ".." / "..." → kein Verzeichnis-Ausbruch
-    .replace(/^\.+/, "") // führende Punkte (versteckte Pfade) entfernen
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120);
-  return cleaned || "ordner";
-}
+export { sanitizeSegment } from "@/lib/attachment-organization";
 
 function normalizeBase(folder: string): string {
   let f = folder.trim();
@@ -143,7 +134,8 @@ export async function uploadAntragArchive(opts: {
   creds: NcCredentials;
   targetFolder: string;
   subfolder: string;
-  files: { relPath: string; filename: string }[];
+  folders: AttachmentFolder[];
+  files: { id: number; relPath: string; filename: string; folderId: number | null }[];
 }): Promise<string> {
   assertSafeNcUrl(opts.creds.url);
   const c = client(opts.creds);
@@ -152,9 +144,13 @@ export async function uploadAntragArchive(opts: {
   const folder = `${base}/${sanitizeSegment(opts.subfolder)}`;
   await ensureDir(c, folder);
 
-  for (const f of opts.files) {
-    const buf = await readFile(absPath(f.relPath));
-    await c.putFileContents(`${folder}/${sanitizeSegment(f.filename)}`, buf, {
+  const layout = attachmentArchiveLayout(opts.folders, opts.files);
+  for (const directory of layout.directories) {
+    await ensureDir(c, `${folder}/${directory}`);
+  }
+  for (const f of layout.files) {
+    const buf = await readFile(absPath(f.attachment.relPath));
+    await c.putFileContents(`${folder}/${f.name}`, buf, {
       overwrite: true,
     });
   }

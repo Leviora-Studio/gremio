@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   integer,
   index,
   jsonb,
@@ -372,6 +373,15 @@ export const cardAssignees = pgTable(
 // ---------------------------------------------------------------------------
 // attachments — benannte Slots (je max. 1) + "other" (unbegrenzt)
 // ---------------------------------------------------------------------------
+export const attachmentFolders = pgTable("attachment_folders", {
+  id: serial("id").primaryKey(),
+  cardId: integer("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+}, (t) => ({
+  cardNameUnique: uniqueIndex("attachment_folders_card_name_uq").on(t.cardId, t.name),
+  cardIdUnique: uniqueIndex("attachment_folders_card_id_uq").on(t.cardId, t.id),
+}));
+
 export const attachments = pgTable(
   "attachments",
   {
@@ -389,6 +399,7 @@ export const attachments = pgTable(
       ],
     }).notNull(),
     uploadPurpose: text("upload_purpose"), // null = legacy/internal; never infer from filename
+    folderId: integer("folder_id"), // null = ticket root; internal organization only
     filename: text("filename").notNull(),
     path: text("path").notNull(),
     mime: text("mime").notNull(),
@@ -404,6 +415,11 @@ export const attachments = pgTable(
     slotUnique: uniqueIndex("attachments_slot_uq")
       .on(t.cardId, t.kind)
       .where(sql`${t.kind} <> 'other'`),
+    folderCard: foreignKey({
+      columns: [t.cardId, t.folderId],
+      foreignColumns: [attachmentFolders.cardId, attachmentFolders.id],
+      name: "attachments_folder_card_fk",
+    }),
   }),
 );
 

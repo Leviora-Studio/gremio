@@ -11,6 +11,8 @@ export type ActivityType =
   | "deadline"
   | "attachment_added"
   | "attachment_removed"
+  | "attachment_folder_created"
+  | "attachment_organized"
   | "archive"
   | "archive_failed";
 

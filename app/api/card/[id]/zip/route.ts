@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { attachments, cards } from "@/lib/db/schema";
+import { attachmentFolders, attachments, cards } from "@/lib/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { absPath, contentDisposition } from "@/lib/attachments";
@@ -12,34 +12,11 @@ import { ZIP_MAX_TOTAL_BYTES } from "@/lib/constants";
 import { zip } from "@/lib/zip";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
+import { attachmentArchiveLayout } from "@/lib/attachment-organization";
 import { parseApiId } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-/** Eindeutiger Eintragsname im ZIP (Duplikate → „name (2).ext"). */
-function uniqueName(name: string, used: Set<string>): string {
-  if (!used.has(name)) {
-    used.add(name);
-    return name;
-  }
-  const dot = name.lastIndexOf(".");
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : "";
-  let i = 2;
-  let cand = "";
-  do {
-    cand = `${base} (${i++})${ext}`;
-  } while (used.has(cand));
-  used.add(cand);
-  return cand;
-}
-
-const safeName = (name: string) =>
-  (name || "datei")
-    .replace(/[\\/\r\n]+/g, "_")
-    .replace(/^\.+/, "")
-    .slice(0, 150) || "datei";
 
 /** Alle Anhänge einer Karte als ZIP (Dateiname = Antragsnummer, sonst Titel). */
 export async function GET(
@@ -74,10 +51,13 @@ export async function GET(
     .orderBy(asc(attachments.uploadedAt))
   ).filter((attachment) => isCardAttachmentVisible(attachment, visible));
 
-  const used = new Set<string>();
+  const folders = await db.select().from(attachmentFolders).where(eq(attachmentFolders.cardId, cardId));
+  // Only include folders containing visible attachments; hidden fields stay hidden.
+  const visibleFolders = folders.filter((folder) => atts.some((a) => a.folderId === folder.id));
+  const layout = attachmentArchiveLayout(visibleFolders, atts);
   const files: { name: string; data: Buffer }[] = [];
   let total = 0;
-  for (const a of atts) {
+  for (const { attachment: a, name } of layout.files) {
     try {
       const data = await readFile(absPath(a.path));
       total += data.length;
@@ -88,7 +68,7 @@ export async function GET(
           { status: 413 },
         );
       }
-      files.push({ name: uniqueName(safeName(a.filename), used), data });
+      files.push({ name, data });
     } catch {
       // Datei fehlt physisch — überspringen
     }

@@ -448,12 +448,14 @@ export async function uploadAttachmentAction(
         .from(cards)
         .where(eq(cards.id, card.id))
         .for("update");
+      let folderId: number | null = null;
       if (kind !== "other") {
         const existing = await tx
           .select()
           .from(attachments)
           .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, kind)));
         for (const ex of existing) {
+          folderId = ex.folderId;
           oldPaths.push(ex.path);
           await tx.delete(attachments).where(eq(attachments.id, ex.id));
         }
@@ -462,6 +464,7 @@ export async function uploadAttachmentAction(
         cardId: card.id,
         kind,
         filename: saved.filename,
+        folderId,
         path: saved.relPath,
         mime: saved.mime,
         size: saved.size,
