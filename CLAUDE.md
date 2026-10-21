@@ -117,8 +117,11 @@ board_instruction_forms (board_id PK FK→boards ON DELETE CASCADE,
 -- Board-Eigentümer/Admin hinterlegen genau eine PDF-Vorlage. Aktivierung ist
 -- nur mit einer unverschlüsselten, lesbaren Vorlage mit mindestens einer Seite
 -- möglich. Board-Mitglieder erstellen daraus im Karten-PDF-Editor neue Anhänge:
--- Anweisung 1.pdf, Anweisung 2.pdf, ... . Die nächste Nummer folgt auch auf
--- passend benannte, manuell hochgeladene PDFs. Ersetzen/Deaktivieren/Löschen
+-- <Antragsnummer>_Anweisung1.pdf, <Antragsnummer>_Anweisung2.pdf, ... .
+-- Die aktuelle Antragsnummer wird unter Kartensperre übernommen; ohne Nummer
+-- heißen die Dateien Anweisung1.pdf usw. Die nächste Nummer folgt auch auf
+-- passend benannte manuelle Uploads und alte Namen wie Anweisung 1.pdf,
+-- auch nach Änderung der Antragsnummer. Ersetzen/Deaktivieren/Löschen
 -- wird gegen parallele Erstellung versioniert und unter Board-Sperre gespeichert.
 
 -- Karte gehört zu genau einem Board und steht in einer Status-Spalte dieses Boards:
@@ -282,7 +285,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /login                   → Login-Seite (SSO)
 /finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
-/finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich; optionaler Teilmengen-Override für die Ausgaben-Berechnung Live/Tatsächlich), Quell-Boards, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
+/finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich; optionaler Teilmengen-Override für die Ausgaben-Berechnung Live/Tatsächlich), Quell-Boards mit optionaler Verfallen-Spalte je Quelle, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
 /finanzen/{id}/export    → XLSX/CSV-Export der Finanzübersicht
 /intern                  → Startseite: Dashboard + Navigations-Buttons zu den Bereichen
 /intern/boards           → Alle zugänglichen Kanban-Boards (persönlich sortierbar)
@@ -466,6 +469,15 @@ Positionen gespeicherte Gesamtsummen. Es gibt keine zweite Kontozuordnung.
 Je Betragsart gilt: ausschließlich vorhandene Werte summieren, alle leer → NULL,
 echte Null → 0; Positionswerte und Gesamtsummen maximal 2.000.000.000 Cent.
 Die Live-Ausgabe verwendet je Position tatsächlich, sonst genehmigt, sonst 0.
+Pro Finanzübersicht und Quell-Board kann optional eine **Spalte für Verfallen**
+(`finance_board_sources.expired_status_id`) gewählt werden. Karten, die aktuell
+in dieser Spalte stehen, werden vollständig aus den Live-Ausgaben ausgeschlossen
+(Einzelbetrag und Budgetpositionen, einschließlich Export). Antragsübersicht und
+tatsächliche Ausgaben bleiben unverändert. Ohne Auswahl gilt die normale
+Berechnung; beim Verlassen der Spalte zählt die Karte wieder. Die Spalte muss
+zum Quell-Board gehören. Eigentümer/Admin der Finanzübersicht verwalten diese
+Einstellung; Quell-Boards ohne aktuellen Zugriff des Finanzboard-Eigentümers
+bleiben ausgeblendet. Beim Löschen der Spalte wird die Auswahl zurückgesetzt.
 Kartenbeträge, Positionszeilen und Budgetrevision werden beim Öffnen des Editors
 und beim Start einer Mehrfachzuordnung aus demselben Datenbanksnapshot gelesen.
 

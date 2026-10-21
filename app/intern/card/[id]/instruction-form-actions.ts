@@ -104,7 +104,7 @@ export async function createInstructionPdfAction(
       // Serialisiert Erstellungen und normale Uploads auf derselben Karte,
       // damit die sichtbare Nummer auch bei parallelen Klicks eindeutig bleibt.
       const [locked] = await tx
-        .select({ id: cards.id })
+        .select({ id: cards.id, number: cards.number })
         .from(cards)
         .where(eq(cards.id, card.id))
         .for("update");
@@ -130,7 +130,10 @@ export async function createInstructionPdfAction(
         .select({ filename: attachments.filename })
         .from(attachments)
         .where(eq(attachments.cardId, card.id));
-      const nextName = nextInstructionFilename(existing.map((row) => row.filename));
+      const nextName = nextInstructionFilename(
+        existing.map((row) => row.filename),
+        locked.number,
+      );
       const [row] = await tx
         .insert(attachments)
         .values({

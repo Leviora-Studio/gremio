@@ -23,11 +23,16 @@ import { canAccessBoard, getUserGroupIds } from "@/lib/authz";
  * Daten zugänglicher Quell-Boards; auf nicht-zugängliche wird hingewiesen.
  */
 export async function resolveSourceBoards(fb: FinanceBoard): Promise<{
-  accessible: { id: number; name: string }[];
+  accessible: { id: number; name: string; expiredStatusId: number | null }[];
   inaccessible: { id: number; name: string }[];
 }> {
   const rows = await db
-    .select({ id: boards.id, name: boards.name, ownerId: boards.ownerId })
+    .select({
+      id: boards.id,
+      name: boards.name,
+      ownerId: boards.ownerId,
+      expiredStatusId: financeBoardSources.expiredStatusId,
+    })
     .from(financeBoardSources)
     .innerJoin(boards, eq(boards.id, financeBoardSources.boardId))
     .where(eq(financeBoardSources.financeBoardId, fb.id))
@@ -39,12 +44,12 @@ export async function resolveSourceBoards(fb: FinanceBoard): Promise<{
     .where(eq(users.id, fb.ownerId))
     .limit(1);
 
-  const accessible: { id: number; name: string }[] = [];
+  const accessible: { id: number; name: string; expiredStatusId: number | null }[] = [];
   const inaccessible: { id: number; name: string }[] = [];
   for (const r of rows) {
     const board = { id: r.id, ownerId: r.ownerId } as unknown as Board;
     if (ownerUser && (await canAccessBoard(ownerUser, board))) {
-      accessible.push({ id: r.id, name: r.name });
+      accessible.push({ id: r.id, name: r.name, expiredStatusId: r.expiredStatusId });
     } else {
       inaccessible.push({ id: r.id, name: r.name });
     }

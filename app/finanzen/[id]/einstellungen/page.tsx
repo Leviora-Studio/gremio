@@ -2,10 +2,11 @@
 // Copyright (C) 2026 Leviora Studio
 
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accounts as accountsTable,
+  boardStatuses,
   financeBoardAccess,
   financeBoardAccounts,
   financeBoardExpenseAccounts,
@@ -23,6 +24,7 @@ import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import { RenameFinanceForm } from "@/components/finance/RenameFinanceForm";
+import { SourceExpiredStatusForm } from "@/components/finance/SourceExpiredStatusForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { PlanItemRow } from "@/components/finance/PlanItemRow";
 import {
@@ -87,9 +89,15 @@ export default async function FinanceSettingsPage({
 
   // Quell-Boards: Owner-Live-Zugriff bestimmt, was rot markiert wird.
   const { accessible, inaccessible } = await resolveSourceBoards(fb);
+  const sourceStatuses = accessible.length
+    ? await db.select({ id: boardStatuses.id, name: boardStatuses.name, boardId: boardStatuses.boardId })
+        .from(boardStatuses)
+        .where(inArray(boardStatuses.boardId, accessible.map((s) => s.id)))
+        .orderBy(asc(boardStatuses.position), asc(boardStatuses.id))
+    : [];
   const sourceList = [
     ...accessible.map((s) => ({ ...s, ok: true })),
-    ...inaccessible.map((s) => ({ ...s, ok: false })),
+    ...inaccessible.map((s) => ({ ...s, ok: false, expiredStatusId: null })),
   ];
   const sourceIds = new Set(sourceList.map((s) => s.id));
   const accessibleBoards = (await getAccessibleBoards(user)).filter(
@@ -290,6 +298,11 @@ export default async function FinanceSettingsPage({
 
       {/* Quell-Boards */}
       <CollapsibleSection title="Quell-Boards">
+        <p className="mb-3 text-sm text-slate-500">
+          Optional kann pro Quell-Board eine Spalte für „Verfallen“ gewählt werden.
+          Karten in dieser Spalte zählen nicht zu den Live-Ausgaben. Sie bleiben
+          in der Antragsübersicht sichtbar; tatsächliche Ausgaben werden unverändert berechnet.
+        </p>
         <div className="space-y-2">
           {sourceList.length === 0 && (
             <p className="text-sm text-slate-500">Noch keine Quell-Boards.</p>
@@ -297,19 +310,29 @@ export default async function FinanceSettingsPage({
           {sourceList.map((s) => (
             <div
               key={s.id}
-              className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
+              className={`space-y-3 rounded border px-3 py-2 text-sm ${
                 s.ok ? "border-slate-200" : "border-red-300 bg-red-50"
               }`}
             >
-              <span className={s.ok ? "" : "text-red-700"}>
-                {s.name}
-                {!s.ok && " — kein Zugriff des Eigentümers (Daten ausgeblendet)"}
-              </span>
-              <form action={removeFinanceSourceAction.bind(null, fbId, s.id)}>
-                <SubmitButton className="btn-secondary btn-sm">
-                  Entfernen
-                </SubmitButton>
-              </form>
+              <div className="flex items-center justify-between gap-2">
+                <span className={s.ok ? "" : "text-red-700"}>
+                  {s.name}
+                  {!s.ok && " — kein Zugriff des Eigentümers (Daten ausgeblendet)"}
+                </span>
+                <form action={removeFinanceSourceAction.bind(null, fbId, s.id)}>
+                  <SubmitButton className="btn-secondary btn-sm">
+                    Entfernen
+                  </SubmitButton>
+                </form>
+              </div>
+              {s.ok && (
+                <SourceExpiredStatusForm
+                  financeBoardId={fbId}
+                  boardId={s.id}
+                  expiredStatusId={s.expiredStatusId}
+                  statuses={sourceStatuses.filter((status) => status.boardId === s.id)}
+                />
+              )}
             </div>
           ))}
         </div>

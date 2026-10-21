@@ -9,6 +9,7 @@ import { and, asc, eq, max } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accounts,
+  boardStatuses,
   financeBoards,
   financeBoardAccess,
   financeBoardAccounts,
@@ -25,6 +26,7 @@ import { canAccessBoard, getBoardById } from "@/lib/authz";
 import {
   getAccessibleFinanceBoards,
   requireFinanceManage,
+  resolveSourceBoards,
 } from "@/lib/finance";
 import { parseEuroToCents } from "@/lib/money";
 
@@ -304,6 +306,43 @@ export async function removeFinanceSourceAction(
       ),
     );
   rev(id);
+}
+
+export async function setFinanceSourceExpiredStatusAction(
+  id: number,
+  boardId: number,
+  _prev: State,
+  formData: FormData,
+): Promise<State> {
+  const { fb } = await requireFinanceManage(id);
+  const raw = formData.get("expiredStatusId");
+  if (typeof raw !== "string") return { error: "Ungültige Spalte." };
+  const statusId = raw === "" ? null : Number(raw);
+  if (
+    statusId !== null &&
+    (!Number.isSafeInteger(statusId) || statusId < 1 || statusId > 2_147_483_647)
+  ) {
+    return { error: "Ungültige Spalte." };
+  }
+  const { accessible } = await resolveSourceBoards(fb);
+  if (!accessible.some((source) => source.id === boardId)) {
+    return { error: "Das Quell-Board ist nicht verfügbar." };
+  }
+  if (statusId !== null) {
+    const [status] = await db
+      .select({ id: boardStatuses.id })
+      .from(boardStatuses)
+      .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
+    if (!status) return { error: "Die Spalte gehört nicht zu diesem Quell-Board." };
+  }
+  await db
+    .update(financeBoardSources)
+    .set({ expiredStatusId: statusId })
+    .where(
+      and(eq(financeBoardSources.financeBoardId, id), eq(financeBoardSources.boardId, boardId)),
+    );
+  rev(id);
+  return { success: "Verfallen-Spalte gespeichert." };
 }
 
 // --- Freigaben ----------------------------------------------------------

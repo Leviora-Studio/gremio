@@ -610,6 +610,11 @@ export const financeBoardSources = pgTable(
     boardId: integer("board_id")
       .notNull()
       .references(() => boards.id, { onDelete: "cascade" }),
+    // Cards in this source column are excluded only from live expenses.
+    expiredStatusId: integer("expired_status_id").references(
+      () => boardStatuses.id,
+      { onDelete: "set null" },
+    ),
   },
   (t) => ({ pk: primaryKey({ columns: [t.financeBoardId, t.boardId] }) }),
 );

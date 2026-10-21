@@ -137,6 +137,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
 
   const { accessible, inaccessible } = await resolveSourceBoards(fb);
   const accessibleIds = accessible.map((s) => s.id);
+  const expiredStatuses = new Map(accessible.map((s) => [s.id, s.expiredStatusId]));
 
   const items = await db
     .select()
@@ -153,6 +154,8 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
       ? await db
           .select({
             id: cards.id,
+            boardId: cards.boardId,
+            statusId: cards.statusId,
             budgetMode: cards.budgetMode,
             number: cards.number,
             budgetTitle: cards.budgetTitle,
@@ -185,14 +188,20 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
 
   const liveByTitle = new Map<string, number>();
   const actualByTitle = new Map<string, number>();
-  const expenseRows = sourceCards.flatMap<Pick<AntragRow, "budgetTitle" | "accountId" | "approvedAmount" | "actualAmount">>((c) => c.budgetMode === "positions" ? byCard.get(c.id) ?? [] : [c]);
+  const expenseRows = sourceCards.flatMap((c) => {
+    const expired = expiredStatuses.get(c.boardId) === c.statusId;
+    const rows = c.budgetMode === "positions" ? byCard.get(c.id) ?? [] : [c];
+    return rows.map((row) => ({ ...row, expired }));
+  });
   for (const c of expenseRows) {
     const t = c.budgetTitle ?? "";
     if (!t) continue;
     // Ausgaben-Berechnung nur für die (ggf. eingeschränkten) Ausgaben-Konten.
     if (c.accountId == null || !expenseSet.has(c.accountId)) continue;
-    const live = c.actualAmount ?? c.approvedAmount ?? 0;
-    liveByTitle.set(t, (liveByTitle.get(t) ?? 0) + live);
+    if (!c.expired) {
+      const live = c.actualAmount ?? c.approvedAmount ?? 0;
+      liveByTitle.set(t, (liveByTitle.get(t) ?? 0) + live);
+    }
     if (c.actualAmount != null) {
       actualByTitle.set(t, (actualByTitle.get(t) ?? 0) + c.actualAmount);
     }

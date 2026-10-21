@@ -1,0 +1,2 @@
+ALTER TABLE "finance_board_sources" ADD COLUMN "expired_status_id" integer;--> statement-breakpoint
+ALTER TABLE "finance_board_sources" ADD CONSTRAINT "finance_board_sources_expired_status_id_board_statuses_id_fk" FOREIGN KEY ("expired_status_id") REFERENCES "public"."board_statuses"("id") ON DELETE set null ON UPDATE no action;

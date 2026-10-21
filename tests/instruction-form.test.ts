@@ -12,17 +12,20 @@ import {
 import { PDFDocument } from "pdf-lib";
 
 test("Anweisungen beginnen bei 1 und laufen ab der höchsten Nummer weiter", () => {
-  assert.equal(nextInstructionFilename([]), "Anweisung 1.pdf");
+  assert.equal(nextInstructionFilename([], "2026_42"), "2026_42_Anweisung1.pdf");
   assert.equal(
-    nextInstructionFilename([
-      "Anweisung 1.pdf",
-      "Anweisung 2.pdf", // darf auch ein normaler manueller Upload sein
-    ]),
-    "Anweisung 3.pdf",
+    nextInstructionFilename(
+      [
+        "Anweisung 1.pdf",
+        "Anweisung 2.pdf", // darf auch ein normaler manueller Upload sein
+      ],
+      "2026_42",
+    ),
+    "2026_42_Anweisung3.pdf",
   );
   assert.equal(
-    nextInstructionFilename(["Anweisung 1.pdf", "Anweisung 3.pdf"]),
-    "Anweisung 4.pdf",
+    nextInstructionFilename(["Anweisung 1.pdf", "Anweisung 3.pdf"], "2026_42"),
+    "2026_42_Anweisung4.pdf",
     "gelöschte Lücken werden nicht wiederverwendet",
   );
 });
@@ -66,11 +69,33 @@ test("nur exakte PDF-Namen des Anweisungsschemas beeinflussen die Nummer", () =>
   assert.equal(instructionNumber("Meine Anweisung 12.pdf"), null);
   assert.equal(instructionNumber("Anweisung 9.docx"), null);
   assert.equal(
-    nextInstructionFilename([
-      "Anweisung.pdf",
-      "anweisung 7.PDF",
-      "Meine Anweisung 99.pdf",
-    ]),
-    "Anweisung 8.pdf",
+    nextInstructionFilename(
+      ["Anweisung.pdf", "anweisung 7.PDF", "Meine Anweisung 99.pdf"],
+      "2026_42",
+    ),
+    "2026_42_Anweisung8.pdf",
   );
+});
+
+test("instruction filenames use the current card number and retain the sequence", () => {
+  assert.equal(nextInstructionFilename([], null), "Anweisung1.pdf");
+  assert.equal(nextInstructionFilename([], "  "), "Anweisung1.pdf");
+  assert.equal(
+    nextInstructionFilename(
+      [
+        "2025_12_Anweisung1.pdf",
+        "2026_42_Anweisung3.pdf",
+        "Anweisung 2.pdf",
+      ],
+      "2026_43",
+    ),
+    "2026_43_Anweisung4.pdf",
+  );
+  assert.equal(
+    nextInstructionFilename(["Anweisung1.pdf"], "2026_42"),
+    "2026_42_Anweisung2.pdf",
+  );
+  assert.equal(instructionNumber("2026_42_Anweisung7.pdf"), 7);
+  assert.equal(instructionNumber("2026_42_Anweisung0.pdf"), null);
+  assert.equal(instructionNumber("2026_42_Anweisung7.docx"), null);
 });

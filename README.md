@@ -1,5 +1,17 @@
 # Gremio
 
+### 4.3.0: Verfallene Anträge und Anweisungsdateinamen
+
+Finanzübersichten können pro Quell-Board eine „Spalte für Verfallen“ auswählen.
+Karten darin zählen nicht zu den Live-Ausgaben; Antragsübersicht und tatsächliche
+Ausgaben bleiben unverändert. Dies gilt auch für Budgetpositionen und Exporte.
+Migration `0068_finance_source_expired_status.sql` ergänzt die optionale Auswahl;
+bestehende Quellen behalten ohne Auswahl ihre bisherige Berechnung.
+
+Direkt erstellte Anweisungen übernehmen die aktuelle Antragsnummer der Karte:
+`<Antragsnummer>_Anweisung1.pdf`, `…_Anweisung2.pdf` usw. Ohne Antragsnummer
+heißen sie `Anweisung1.pdf` usw.; bestehende Dateinamen zählen weiter mit.
+
 ### 4.2.0: Interne Dateiordner am Ticket
 
 Board-Mitglieder können im Anhangbereich Ordner erstellen, Dateien umbenennen
@@ -39,6 +51,14 @@ bestehen. Reverse-Proxy-Anforderungen, Client-Kompatibilität und Token-Lebenszy
 [docs/MCP.md](docs/MCP.md). Die interne REST-API erhält Auswahlkataloge, Suche,
 Kommentare, lesbaren Verlauf und Anhangzugriff; andere Bereiche bleiben bewusst
 ausgeschlossen.
+
+### Migration: Verfallen-Spalte für Live-Ausgaben
+
+`0068_finance_source_expired_status.sql` ergänzt die optionale Spaltenauswahl
+pro Quell-Board einer Finanzübersicht. Bestehende Quellen haben keine Auswahl;
+ihre Berechnung bleibt unverändert. Vor dem Update wie üblich ein
+Datenbankbackup anlegen und `npm run db:migrate` ausführen; der Containerstart
+verwendet den bestehenden Migrationsablauf. Keine neuen Umgebungsvariablen.
 
 ### Migration: Anweisungsformular pro Board
 
@@ -134,7 +154,10 @@ Apps, interaktiv unter `/api/public/docs`).
 - **Standort-Routing**: pro Standort legt der Admin Ziel-Board + Ziel-Spalte fest;
   nur Standorte mit Ziel sind aktivierbar.
 - **Finanzübersichten** mit Haushaltsplan (Einnahmen/Ausgaben), Live-/Ist-Ausgaben
-  und Antragsübersicht; **XLSX-Export**.
+  und Antragsübersicht; **XLSX-Export**. Unter „Quell-Boards“ lässt sich pro Board
+  optional eine „Spalte für Verfallen“ auswählen: Karten darin werden nur aus
+  den Live-Ausgaben ausgeschlossen, bleiben aber in der Antragsübersicht und
+  bei den tatsächlichen Ausgaben erhalten. Die Regel gilt auch im Export.
 - **Inventar & Ausleihe** (`/intern/inventar`): eigenes Modul mit eigenen Listen
   und Feldern, aber demselben Zugriffsmodell wie Boards. Gegenstände mit
   Stückzahlen, Obergruppen, Mängelhistorie, Belegen und Inventarnummern; defekte
@@ -151,8 +174,11 @@ Apps, interaktiv unter `/api/public/docs`).
 - **Anweisungsformular pro Board**: Eigentümer/Admin hinterlegen in den
   Board-Einstellungen eine PDF-Vorlage und aktivieren die Funktion. Mitglieder
   öffnen sie auf einer Karte direkt im PDF-Editor; beim Speichern entsteht ein
-  normaler Kartenanhang `Anweisung 1.pdf`, `Anweisung 2.pdf` usw. Auch manuell
-  hochgeladene Dateien dieses Namens werden für die nächste Nummer berücksichtigt.
+  normaler Kartenanhang `<Antragsnummer>_Anweisung1.pdf`,
+  `<Antragsnummer>_Anweisung2.pdf` usw. Die Antragsnummer wird beim Speichern
+  von der Karte übernommen; fehlt sie, lautet der Name `Anweisung1.pdf` usw.
+  Auch manuell hochgeladene Dateien dieses Namens und bisherige Namen wie
+  `Anweisung 1.pdf` werden für die nächste Nummer berücksichtigt.
 - **Meine Aufgaben** (`/intern/aufgaben`): board-übergreifende Liste der eigenen
   und zugewiesenen Karten, pro Board konfigurierbar.
 - **Board-Statistik** (`/intern/board/{id}/statistik`) und **Board-Archiv** für

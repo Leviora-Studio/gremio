@@ -37,7 +37,7 @@ export async function isUsableInstructionTemplatePdf(
  * Uploads. Ein historisches, unnummeriertes `Anweisung.pdf` zählt als 1.
  */
 export function instructionNumber(filename: string): number | null {
-  const match = /^Anweisung(?:\s+(\d+))?\.pdf$/i.exec(filename.trim());
+  const match = /^(?:.+_)?Anweisung\s*(\d+)?\.pdf$/i.exec(filename.trim());
   if (!match) return null;
   if (!match[1]) return 1;
   const value = Number(match[1]);
@@ -48,11 +48,15 @@ export function instructionNumber(filename: string): number | null {
  * Fortlaufend ab dem höchsten vorhandenen Namen (nicht erste Lücke). Dadurch
  * folgt auf einen manuell hochgeladenen `Anweisung 2.pdf` sicher Nummer 3.
  */
-export function nextInstructionFilename(existingFilenames: string[]): string {
+export function nextInstructionFilename(
+  existingFilenames: string[],
+  cardNumber: string | null,
+): string {
   let highest = 0;
   for (const filename of existingFilenames) {
     const number = instructionNumber(filename);
     if (number != null) highest = Math.max(highest, number);
   }
-  return `Anweisung ${highest + 1}.pdf`;
+  const prefix = cardNumber?.trim();
+  return `${prefix ? `${prefix}_` : ""}Anweisung${highest + 1}.pdf`;
 }

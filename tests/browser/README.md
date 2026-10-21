@@ -70,3 +70,9 @@ file bytes and ZIP subfolders, and verifies that public pages and the public API
 expose no folder controls or metadata. `attachment-folders-db.test.ts` verifies
 board membership, hidden attachments, cross-ticket boundaries and cascade cleanup
 against an isolated `gremio_workflows_test_*` database.
+
+`finance-expired-status-db.test.ts` also requires an isolated
+`gremio_workflows_test_*` database. It checks per-source expired columns with real
+finance actions and queries: single and position budgets, unchanged actual costs
+and application rows, account overrides, exports, leaving the column, clearing
+the selection, column deletion and management/source-access permissions.
