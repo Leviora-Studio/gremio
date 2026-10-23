@@ -52,6 +52,14 @@ bestehen. Reverse-Proxy-Anforderungen, Client-Kompatibilität und Token-Lebenszy
 Kommentare, lesbaren Verlauf und Anhangzugriff; andere Bereiche bleiben bewusst
 ausgeschlossen.
 
+### Migration: Trigger-Zuweisungen
+
+`0069_trigger_assignments.sql` legt `board_trigger_assignments` und
+`board_trigger_assignees` an. Jeder Board-Trigger kann damit beim Auslösen alle
+Zuweisungen entfernen und/oder Nutzer zusätzlich zuweisen; Änderungen erscheinen
+im Aktivitätsverlauf der Karte. Bestehende Boards haben keine Aktionen
+hinterlegt, ihr Verhalten bleibt unverändert. Keine neuen Umgebungsvariablen.
+
 ### Migration: Verfallen-Spalte für Live-Ausgaben
 
 `0068_finance_source_expired_status.sql` ergänzt die optionale Spaltenauswahl

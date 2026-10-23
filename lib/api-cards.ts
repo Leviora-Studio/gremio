@@ -28,6 +28,7 @@ import {
 import { setCardAssignees } from "@/lib/assignees";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { assignCardNumber } from "@/lib/numbering";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
@@ -494,6 +495,8 @@ export async function updateCardViaApi(
       `${oldStatusName} → ${moveTo.name}`,
     );
     await maybeSetTriggerDates(card.id, moveTo.id);
+    // Vor explizit übergebenen assigneeUserIds (unten): die Anfrage hat Vorrang.
+    await applyStatusTriggerAssignments(card.id, moveTo.id);
     // Nur auf System-/Leihboards den verknüpften Vorgang ableiten.
     if (board.inventoryBoardId != null) {
       await syncLoanFromCard(card.id, moveTo.id);

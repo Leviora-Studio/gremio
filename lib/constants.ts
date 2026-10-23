@@ -232,3 +232,25 @@ export const ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024; // 200 MB unkomprimiert
 export const TOKEN_LENGTH = 30;
 export const TOKEN_ALPHABET =
   "0123456789abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+
+// Board-Trigger mit optionalen Zuweisungs-Aktionen (board_trigger_assignments).
+// Reihenfolge = Ausführungsreihenfolge, falls mehrere gleichzeitig auslösen:
+// erst das öffentliche Ereignis, dann die Trigger der erreichten Spalte.
+export const TRIGGER_KINDS = [
+  "resubmit",
+  "receipt",
+  "instruction",
+  "transfer",
+  "archive",
+  "done",
+] as const;
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+
+export const TRIGGER_LABELS: Record<TriggerKind, string> = {
+  resubmit: "Nachreichung",
+  receipt: "Rückmeldung",
+  instruction: "Anweisungsdatum",
+  transfer: "Überweisungsdatum",
+  archive: "Nextcloud-Archiv",
+  done: "Done-Spalte",
+};

@@ -484,6 +484,13 @@
       "when": 1792581630889,
       "tag": "0068_finance_source_expired_status",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792789192685,
+      "tag": "0069_trigger_assignments",
+      "breakpoints": true
     }
   ]
 }

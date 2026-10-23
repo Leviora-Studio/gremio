@@ -198,6 +198,30 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 > 5. **Quittungs-Gate** — erst beim abschließenden öffentlichen Einreichen wandert die Karte aus einer aktuell ausgewählten Quellspalte in die gemeinsame Zielspalte. Beliebig viele Quellen, keine historische Freigabe.
 > 6. **Antragsnummer** — wird bei aktiver Board-Nummerierung automatisch vergeben.
 > 7. **Leihvorgang-Sync** (Inventar) — die Spalte der Leihkarte setzt den Vorgangsstatus (siehe „Inventar- & Entleihsystem").
+> 8. **Trigger-Zuweisungen** — jeder Board-Trigger (Anweisungsdatum, Überweisungsdatum, Nachreichung, Rückmeldung, Done-Spalte, Nextcloud-Archiv) kann beim Auslösen optional **alle Zuweisungen entfernen** und/oder **zusätzlich Nutzer zuweisen** (siehe „Trigger-Zuweisungen").
+
+### Trigger-Zuweisungen
+In den Board-Einstellungen hat jeder Trigger zwei optionale Zuweisungs-Aktionen:
+**„Alle Zuweisungen entfernen"** (Haken) und **„Zusätzlich zuweisen zu"**
+(Nutzer mit Board-Zugriff; leer = niemand zusätzlich). Reihenfolge: erst
+entfernen, dann zuweisen. Ausgelöst wird
+- bei **Anweisungsdatum, Überweisungsdatum, Done-Spalte, Nextcloud-Archiv** durch
+  das **Erreichen** der jeweiligen Spalte per Verschieben (Board, Kartendetail,
+  REST/MCP, öffentliche Rückmeldung) — Nextcloud auch bei deaktivierter
+  Archivierung, Done nicht erst beim Sweep. Neu angelegte Karten lösen nicht aus.
+- bei **Nachreichung** durch das öffentliche Einreichen der Nachreichung,
+- bei **Rückmeldung** durch das abschließende öffentliche Einreichen; danach
+  folgen die Trigger der erreichten Zielspalte.
+
+Lösen mehrere Trigger gleichzeitig aus, laufen sie in der Reihenfolge von
+`TRIGGER_KINDS` (`lib/constants.ts`). Nutzer, die inzwischen keinen
+Board-Zugriff mehr haben, werden übersprungen. Ist „Zugewiesen zu" am Board
+ausgeblendet, passiert nichts. Jede tatsächliche Änderung erscheint als
+Aktivität „Automatisch (Trigger „…")" ohne Nutzer (System). Bei einem
+REST-PATCH mit Spaltenwechsel **und** `assigneeUserIds` gilt die explizite Liste.
+Logik: `lib/trigger-assignments.ts`; Daten: `board_trigger_assignments`
+(`board_id`, `trigger`, `clear_assignees`) + `board_trigger_assignees`
+(`board_id`, `trigger`, `user_id` FK→users CASCADE), Migration 0069.
 
 ### 1. Eingegangen
 - Studierender reicht Formular ein (inkl. Pflichtfeld **Standort**)

@@ -6,6 +6,7 @@ import { validateUpload } from "@/lib/attachments";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import { applyStatusTriggerAssignments, applyTriggerAssignments } from "@/lib/trigger-assignments";
 import { allowFormRequest } from "@/lib/rate-limit";
 import { resolveApplicationCardId } from "@/lib/public-status";
 import { storePublicAttachment, submitPublicWorkflow, PublicWorkflowError } from "@/lib/public-workflow";
@@ -44,7 +45,10 @@ export async function submitPublicAction(token: string, _prev: PublicUploadState
     await logActivity(cardId, null, "status", purpose === "receipt" ? "Quittung eingereicht (öffentlich)" : "Nachreichung eingereicht (öffentlich)");
     if (result.target != null) {
       await maybeSetTriggerDates(cardId, result.target);
+      await applyStatusTriggerAssignments(cardId, result.target, ["receipt"]);
       await maybeArchive(cardId);
+    } else {
+      await applyTriggerAssignments(cardId, ["resubmit"]);
     }
     revalidatePath(`/status/${token}`);
     revalidatePath(`/intern/board/${result.boardId}`);

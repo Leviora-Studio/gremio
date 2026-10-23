@@ -244,6 +244,49 @@ export const boardInstructionForms = pgTable("board_instruction_forms", {
 });
 
 // ---------------------------------------------------------------------------
+// board_trigger_assignments — Zuweisungs-Aktionen je Board-Trigger. Löst der
+// Trigger aus, werden optional alle Zuweisungen entfernt und danach die
+// hinterlegten Nutzer (board_trigger_assignees) zusätzlich zugewiesen. Keine
+// Zeile = keine Aktion. trigger ∈ TRIGGER_KINDS (lib/constants.ts).
+// ---------------------------------------------------------------------------
+export const boardTriggerAssignments = pgTable(
+  "board_trigger_assignments",
+  {
+    boardId: integer("board_id")
+      .notNull()
+      .references(() => boards.id, { onDelete: "cascade" }),
+    trigger: text("trigger").notNull(),
+    clearAssignees: boolean("clear_assignees").notNull().default(false),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.boardId, t.trigger] }),
+    triggerKind: check(
+      "board_trigger_assignments_trigger",
+      sql`${t.trigger} in ('instruction','transfer','resubmit','receipt','done','archive')`,
+    ),
+  }),
+);
+
+export const boardTriggerAssignees = pgTable(
+  "board_trigger_assignees",
+  {
+    boardId: integer("board_id").notNull(),
+    trigger: text("trigger").notNull(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.boardId, t.trigger, t.userId] }),
+    config: foreignKey({
+      columns: [t.boardId, t.trigger],
+      foreignColumns: [boardTriggerAssignments.boardId, boardTriggerAssignments.trigger],
+      name: "board_trigger_assignees_config_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // locations — Standorte & Formular-Routing (target_* NICHT cascade)
 // ---------------------------------------------------------------------------
 export const locations = pgTable("locations", {

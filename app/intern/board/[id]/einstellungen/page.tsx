@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   boardAccess,
@@ -17,7 +17,8 @@ import {
 } from "@/lib/db/schema";
 import { requireBoardManage } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
-import { EDITABLE_FIELD_KEYS } from "@/lib/constants";
+import { EDITABLE_FIELD_KEYS, type TriggerKind } from "@/lib/constants";
+import { getTriggerAssignmentConfigs } from "@/lib/trigger-assignments";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { Select } from "@/components/Select";
@@ -32,6 +33,7 @@ import { SelectSaveForm } from "@/components/SelectSaveForm";
 import { ArchiveSettings } from "@/components/board/ArchiveSettings";
 import { ArchiveTriggerForm } from "@/components/board/ArchiveTriggerForm";
 import { DoneColumnForm } from "@/components/board/DoneColumnForm";
+import { TriggerAssignmentForm } from "@/components/board/TriggerAssignmentForm";
 import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import {
   addAccessGroupAction,
@@ -42,6 +44,7 @@ import {
   setArchiveTriggerAction,
   setInstructionTriggerAction,
   setTransferTriggerAction,
+  setTriggerAssignmentAction,
   setResubmitStatusAction,
   setReceiptFromStatusAction,
   setReceiptToStatusAction,
@@ -146,6 +149,29 @@ export default async function BoardSettingsPage({
     .from(boardInstructionForms)
     .where(eq(boardInstructionForms.boardId, boardId))
     .limit(1);
+
+  const triggerConfigs = await getTriggerAssignmentConfigs(boardId);
+  const triggerUserIds = [...new Set([...triggerConfigs.values()].flatMap((c) => c.userIds))];
+  const triggerUsers = triggerUserIds.length
+    ? await db
+        .select({ id: users.id, username: users.username, name: users.name, avatarPath: users.avatarPath })
+        .from(users)
+        .where(inArray(users.id, triggerUserIds))
+        .orderBy(users.username)
+    : [];
+  const assignmentForm = (trigger: TriggerKind, when: string) => {
+    const cfg = triggerConfigs.get(trigger);
+    return (
+      <TriggerAssignmentForm
+        action={setTriggerAssignmentAction.bind(null, boardId, trigger)}
+        boardId={boardId}
+        when={when}
+        initialClear={cfg?.clearAssignees ?? false}
+        initialUsers={triggerUsers.filter((u) => cfg?.userIds.includes(u.id))}
+        assigneeVisible={visibility.assignee ?? false}
+      />
+    );
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 py-2">
@@ -332,6 +358,7 @@ export default async function BoardSettingsPage({
               ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
             ]}
           />
+          {assignmentForm("instruction", "Wird ausgeführt, sobald eine Karte die auslösende Spalte erreicht.")}
         </div>
 
         {/* Überweisungsdatum */}
@@ -354,6 +381,7 @@ export default async function BoardSettingsPage({
               ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
             ]}
           />
+          {assignmentForm("transfer", "Wird ausgeführt, sobald eine Karte die auslösende Spalte erreicht.")}
         </div>
 
         {/* Nachreichung */}
@@ -377,6 +405,7 @@ export default async function BoardSettingsPage({
               ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
             ]}
           />
+          {assignmentForm("resubmit", "Wird ausgeführt, sobald ein Antragsteller über den Status-Link eine Nachreichung einreicht.")}
         </div>
 
         {/* Rückmeldung → Karte automatisch weiterschieben (früher „Quittung") */}
@@ -407,6 +436,7 @@ export default async function BoardSettingsPage({
               ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
             ]}
           />
+          {assignmentForm("receipt", "Wird ausgeführt, sobald eine Rückmeldung abschließend eingereicht und die Karte in die Zielspalte verschoben wird.")}
         </div>
 
         {/* Done-Spalte */}
@@ -422,6 +452,7 @@ export default async function BoardSettingsPage({
               doneSweepTime: board.doneSweepTime,
             }}
           />
+          {assignmentForm("done", "Wird ausgeführt, sobald eine Karte die Done-Spalte erreicht (nicht erst beim täglichen Archivieren).")}
         </div>
       </CollapsibleSection>
 
@@ -460,6 +491,7 @@ export default async function BoardSettingsPage({
             statuses={statuses.map((s) => ({ id: s.id, name: s.name }))}
             initial={archiveTriggerIds}
           />
+          {assignmentForm("archive", "Wird ausgeführt, sobald eine Karte eine der Nextcloud-Trigger-Spalten erreicht — auch wenn die Archivierung unten deaktiviert ist.")}
         </div>
         <ArchiveSettings
           boardId={boardId}

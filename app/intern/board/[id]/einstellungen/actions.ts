@@ -3,6 +3,7 @@
 
 "use server";
 import { setBoardTriggerSources } from "@/lib/board-triggers";
+import { isTriggerKind, setTriggerAssignmentConfig } from "@/lib/trigger-assignments";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -279,6 +280,26 @@ export async function setTransferTriggerAction(
   });
   rev(boardId);
   return { success: "Überweisungsdatum-Trigger gespeichert." };
+}
+
+/** Zuweisungs-Aktionen eines Triggers: alle entfernen und/oder zusätzlich zuweisen. */
+export async function setTriggerAssignmentAction(
+  boardId: number,
+  trigger: string,
+  _prev: State,
+  formData: FormData,
+): Promise<State> {
+  await requireBoardManage(boardId);
+  if (!isTriggerKind(trigger)) return { error: "Unbekannter Trigger." };
+  const result = await setTriggerAssignmentConfig(
+    boardId,
+    trigger,
+    formData.get("clearAssignees") === "on",
+    formData.getAll("userIds"),
+  );
+  if (result.error) return result;
+  rev(boardId);
+  return result;
 }
 
 // --- Öffentliches Einreichen (Gates) -----------------------------------

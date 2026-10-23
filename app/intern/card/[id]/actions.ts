@@ -42,6 +42,7 @@ import {
 import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import {
   CARD_ATTACHMENT_FIELD,
   isCardAttachmentVisible,
@@ -398,6 +399,7 @@ export async function setCardStatusAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(card.id, statusId);
+    await applyStatusTriggerAssignments(card.id, statusId);
     // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
     // der Kartenspalte ableiten (wie moveCardAction) — spart auf normalen Boards
     // die Transaktion/Advisory-Lock/Query.

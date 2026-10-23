@@ -17,6 +17,7 @@ import { maybeArchive } from "@/lib/archive";
 import { logActivity } from "@/lib/activity";
 import { assignCardNumber } from "@/lib/numbering";
 import { maybeSetTriggerDates } from "@/lib/instruction";
+import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { doneSinceForStatus } from "@/lib/done-archive";
 
@@ -123,6 +124,7 @@ export async function moveCardAction(
       `${old?.name ?? "?"} → ${target.name}`,
     );
     await maybeSetTriggerDates(cardId, statusId);
+    await applyStatusTriggerAssignments(cardId, statusId);
     // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
     // der Kartenspalte ableiten — spart auf normalen Boards Tx/Lock/Query.
     if (board.inventoryBoardId != null) {

@@ -236,7 +236,10 @@ Felder ändern und/oder Karte **verschieben**. Alle Felder optional; nur
 
 - **Spalte wechseln:** `statusId` setzen → Karte landet am Ende der Zielspalte,
   Aktivität wird protokolliert, Trigger (Anweisungsdatum, Überweisungsdatum,
-  Nextcloud-Archiv) greifen wie in der UI. Nachreichungsmarkierung und
+  Nextcloud-Archiv) greifen wie in der UI — einschließlich der in den
+  Board-Einstellungen hinterlegten Trigger-Zuweisungen (Zuweisungen entfernen
+  und/oder Nutzer zuweisen). Wird im selben Request `assigneeUserIds`
+  übergeben, gilt diese Liste. Nachreichungsmarkierung und
   Done-Archivierungsfrist werden entsprechend aktualisiert.
 - **Innerhalb/zwischen Spalten einsortieren:** zusätzlich `position` (0-basiert).
 
