@@ -3,8 +3,8 @@
 
 // Gemeinsamer Kern für „PDF im Viewer bearbeiten + optional signieren":
 // nimmt PDF-Bytes + die Editor-Eingaben entgegen und liefert das fertige PDF.
-// Wird vom Inventar-Speicherpfad genutzt (der Karten-Pfad hat seine eigene,
-// historisch gewachsene Variante).
+// Wird von allen Editor-Speicherpfaden genutzt (Kartenanhang, Inventar,
+// Anweisungsvorlage), damit Korrekturen überall gleich greifen.
 
 import { applyPdfEdits, type FieldEdit, type TextEdit } from "@/lib/pdf-edit";
 import { decryptUserCert, inspectP12 } from "@/lib/cert";

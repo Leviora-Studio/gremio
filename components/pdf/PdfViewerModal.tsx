@@ -3,8 +3,9 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { PdfEditorProps } from "./PdfEditor";
 
 const PdfEditor = dynamic(() => import("./PdfEditor"), {
@@ -45,10 +46,26 @@ export function PdfViewerModal({
   saveButtonLabel,
   saveButtonTitle,
 }: PdfViewerModalProps) {
+  // Ungespeicherte Editor-Änderungen nicht per Esc/Klick daneben verwerfen.
+  const dirtyRef = useRef(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const onDirtyChange = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+  }, []);
+  const requestClose = useCallback(() => {
+    if (dirtyRef.current) setConfirmClose(true);
+    else onClose();
+  }, [onClose]);
+  const discardAndClose = () => {
+    dirtyRef.current = false;
+    setConfirmClose(false);
+    onClose();
+  };
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !confirmClose) requestClose();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -57,7 +74,15 @@ export function PdfViewerModal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open, requestClose, confirmClose]);
+
+  // Beim erneuten Öffnen ohne alte Markierung starten.
+  useEffect(() => {
+    if (!open) {
+      dirtyRef.current = false;
+      setConfirmClose(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -68,7 +93,7 @@ export function PdfViewerModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
       <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
@@ -79,7 +104,8 @@ export function PdfViewerModal({
             attachmentId={attachmentId}
             editable={editable}
             hasCert={hasCert}
-            onClose={onClose}
+            onClose={requestClose}
+            onDirtyChange={onDirtyChange}
             fieldsUrl={fieldsUrl}
             saveAction={saveAction}
             sourceVersion={sourceVersion}
@@ -122,6 +148,14 @@ export function PdfViewerModal({
           </>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmClose}
+        title="Änderungen verwerfen?"
+        message="Im PDF gibt es ungespeicherte Änderungen. Beim Schließen gehen sie verloren."
+        confirmLabel="Verwerfen"
+        onClose={() => setConfirmClose(false)}
+        onConfirm={discardAndClose}
+      />
     </div>
   );
 }

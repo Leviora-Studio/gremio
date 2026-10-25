@@ -16,10 +16,7 @@ import {
   saveAntragBuffer,
 } from "@/lib/attachments";
 import { allowRequest } from "@/lib/rate-limit";
-import { applyPdfEdits, type FieldEdit, type TextEdit } from "@/lib/pdf-edit";
-import { decryptUserCert, inspectP12 } from "@/lib/cert";
-import { readSignature } from "@/lib/signature";
-import { signPdf, type SignPlacement } from "@/lib/sign";
+import { applyEditsAndSign, type EditSignInput } from "@/lib/pdf-apply";
 import { MAX_UPLOAD_BYTES } from "@/lib/constants";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
@@ -29,65 +26,11 @@ export type SavePdfInput = {
   mode: "new" | "replace";
   /** Optionaler Versionsanker für Quellen, die kein normaler Anhang sind. */
   sourceVersion?: string;
-  edits: { texts?: TextEdit[]; fields?: FieldEdit[] };
-  signature?: { placement: SignPlacement; reason?: string; location?: string };
-};
+} & EditSignInput;
 
 export type SavePdfResult =
   | { ok: true; attachmentId: number; signed: boolean; warning?: string }
   | { ok: false; error: string };
-
-const clamp01 = (n: unknown): number =>
-  typeof n === "number" && Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0;
-
-/** Eingaben defensiv begrenzen (manipuliertes RPC darf nicht 500en). */
-function sanitizeEdits(raw: SavePdfInput["edits"]): {
-  texts: TextEdit[];
-  fields: FieldEdit[];
-} {
-  const texts: TextEdit[] = Array.isArray(raw?.texts)
-    ? raw.texts.slice(0, 200).flatMap((t) => {
-        const text = typeof t?.text === "string" ? t.text.slice(0, 2000) : "";
-        const name =
-          typeof t?.name === "string" && t.name ? t.name.slice(0, 200) : undefined;
-        // Neue, leere Texte ignorieren; bestehende (mit name) auch leer zulassen
-        // (→ Inhalt löschen).
-        if (!name && !text.trim()) return [];
-        const page = Number.isInteger(t?.page) ? (t.page as number) : 0;
-        return [
-          {
-            name,
-            page: Math.max(0, page),
-            xRatio: clamp01(t?.xRatio),
-            yRatio: clamp01(t?.yRatio),
-            text,
-            sizeRatio: t?.sizeRatio ? clamp01(t.sizeRatio) : undefined,
-          },
-        ];
-      })
-    : [];
-  const fields: FieldEdit[] = Array.isArray(raw?.fields)
-    ? raw.fields.slice(0, 500).flatMap((f) => {
-        if (typeof f?.name !== "string" || !f.name) return [];
-        const value =
-          typeof f.value === "boolean"
-            ? f.value
-            : String(f.value ?? "").slice(0, 5000);
-        return [{ name: f.name.slice(0, 500), value }];
-      })
-    : [];
-  return { texts, fields };
-}
-
-function sanitizePlacement(p: SignPlacement): SignPlacement {
-  return {
-    page: Number.isInteger(p?.page) ? Math.max(0, p.page) : 0,
-    xRatio: clamp01(p?.xRatio),
-    yRatio: clamp01(p?.yRatio),
-    wRatio: Math.max(0.05, clamp01(p?.wRatio)),
-    hRatio: Math.max(0.02, clamp01(p?.hRatio)),
-  };
-}
 
 /** Fügt vor der .pdf-Endung ein Suffix ein (z. B. „antrag_signiert.pdf"). */
 function withSuffix(filename: string, suffix: string): string {
@@ -158,103 +101,11 @@ export async function savePdfEditsAction(
     return { ok: false, error: "Originaldatei nicht lesbar." };
   }
 
-  const edits = sanitizeEdits(input.edits);
-  const hasEdits = edits.texts.length > 0 || edits.fields.length > 0;
-  let failedFields: string[] = [];
-  if (hasEdits) {
-    try {
-      const res = await applyPdfEdits(pdf, edits);
-      pdf = res.pdf;
-      failedFields = res.failed;
-    } catch (e) {
-      console.error("[pdf-edit] applyPdfEdits failed:", e);
-      return { ok: false, error: "Die Bearbeitung konnte nicht angewendet werden." };
-    }
-  }
-
-  let signed = false;
-  if (input.signature) {
-    // Entschlüsseln kann werfen (z. B. beschädigter/leerer Geheimwert) → abfangen
-    // und freundlich melden statt 500.
-    let cert: { p12: Buffer; passphrase: string } | null;
-    try {
-      cert = decryptUserCert(user);
-    } catch (e) {
-      console.error("[pdf-sign] cert decrypt failed:", e);
-      return {
-        ok: false,
-        error:
-          "Signatur-Zertifikat konnte nicht entschlüsselt werden — bitte in den Konto-Einstellungen neu hinterlegen.",
-      };
-    }
-    if (!cert) {
-      return {
-        ok: false,
-        error:
-          "Kein Signatur-Zertifikat hinterlegt — bitte zuerst in den Konto-Einstellungen hinzufügen.",
-      };
-    }
-    // Gültigkeit FRISCH aus dem Zertifikat prüfen (notBefore UND notAfter, nicht
-    // nur die gespeicherte Spalte); validiert nebenbei die Passphrase.
-    try {
-      const info = inspectP12(cert.p12, cert.passphrase);
-      const now = new Date();
-      if (info.notBefore > now) {
-        return { ok: false, error: "Dein Signatur-Zertifikat ist noch nicht gültig." };
-      }
-      if (info.notAfter <= now) {
-        return { ok: false, error: "Dein Signatur-Zertifikat ist abgelaufen." };
-      }
-    } catch (e) {
-      console.error("[pdf-sign] cert inspect failed:", e);
-      return {
-        ok: false,
-        error:
-          "Signatur-Zertifikat oder Passwort ungültig — bitte in den Konto-Einstellungen prüfen.",
-      };
-    }
-    const dateLabel =
-      new Date().toLocaleString("de-DE", {
-        timeZone: "Europe/Berlin",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }) + " Uhr";
-    // Optionales Unterschriftsbild (rein optisch) laden, falls hinterlegt.
-    const signatureImage = user.signaturePath
-      ? ((await readSignature(user.signaturePath)) ?? undefined)
-      : undefined;
-    try {
-      pdf = await signPdf(pdf, {
-        p12: cert.p12,
-        passphrase: cert.passphrase,
-        // Auf dem PDF erscheint der Name AUS DEM ZERTIFIKAT (Subject/CN), nicht
-        // der Gremio-Benutzername. Fallback nur, falls kein CN gelesen wurde.
-        signerName: user.certSubject?.trim() || user.name || user.username,
-        dateLabel,
-        signatureImage,
-        reason:
-          typeof input.signature.reason === "string"
-            ? input.signature.reason.slice(0, 120)
-            : undefined,
-        location:
-          typeof input.signature.location === "string"
-            ? input.signature.location.slice(0, 120)
-            : undefined,
-        placement: sanitizePlacement(input.signature.placement),
-      });
-      signed = true;
-    } catch (e) {
-      console.error("[pdf-sign] signPdf failed:", e);
-      return {
-        ok: false,
-        error: "Signieren fehlgeschlagen — Zertifikat oder Passwort prüfen.",
-      };
-    }
-  }
-
-  if (!hasEdits && !signed) {
-    return { ok: false, error: "Keine Änderungen zum Speichern." };
-  }
+  // Gemeinsamer Kern mit Inventar und Anweisungsvorlage (Bearbeiten + Signieren).
+  const result = await applyEditsAndSign(user, input, pdf);
+  if (!result.ok) return result;
+  const { signed, warning } = result;
+  pdf = result.pdf;
   if (pdf.length > MAX_UPLOAD_BYTES) {
     return {
       ok: false,
@@ -263,13 +114,6 @@ export async function savePdfEditsAction(
   }
 
   const noun = signed ? "signiert" : "bearbeitet";
-  // Teil-Erfolg sichtbar machen: gespeichert, aber einzelne Felder gingen nicht.
-  const warning =
-    failedFields.length > 0
-      ? `Gespeichert, aber diese Formularfelder konnten nicht gesetzt werden: ${[
-          ...new Set(failedFields),
-        ].join(", ")}`
-      : undefined;
 
   if (mode === "replace") {
     const saved = await saveAntragBuffer(card.id, att.filename, pdf, "application/pdf");

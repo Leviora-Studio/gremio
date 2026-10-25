@@ -766,6 +766,16 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
   ausdrücklichen Bearbeiten werden Werte und Appearances eindeutig zugeordneter
   Seitenkopien synchronisiert. Alte Radiogruppen ohne Radio-Flag werden an ihren
   unterschiedlichen Widget-On-Zuständen erkannt; wiederholte Checkboxen bleiben Checkboxen.
+- **Text & Zeichensatz:** Werte laufen durch `sanitizeWinAnsi` (Helvetica/WinAnsi).
+  Zeilenumbrüche bleiben in Freitext und mehrzeiligen Feldern erhalten; in
+  einzeiligen Feldern werden sie zu Leerzeichen (der Editor verhindert Enter dort).
+  Zerlegte Umlaute werden zusammengesetzt, typografische WinAnsi-Zeichen
+  (`„" – … • ™ €`) bleiben, Zeichen ohne Glyphe werden auf den Grundbuchstaben
+  zurückgeführt (`Ł`→`L`); nur der Rest (z. B. Emoji) wird zu „?". Freitext-Boxen
+  werden mit der echten Schrift vermessen; geleerte/entfernte Freitexte löschen
+  ihr Feld samt Widget. Der Editor sendet nur neue, geänderte und entfernte
+  Freitexte und fragt vor dem Verwerfen ungespeicherter Änderungen nach. Alle
+  Speicherpfade (Karte, Inventar, Anweisungsvorlage) nutzen `applyEditsAndSign`.
 - **Signieren:** sichtbare Signatur-Box platzieren → serverseitige **PAdES-Signatur** mit dem persönlichen `.p12` des Nutzers (`lib/sign.ts`, `@signpdf`). Verlangt ein in den Konto-Einstellungen hinterlegtes Zertifikat (`lib/cert.ts`, `inspectP12`).
 - **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Zugriff erforderlich, Aktivitätseintrag.
 - **Feld-Metadaten:** `GET /api/attachment/{id}/fields` liefert die ausfüllbaren Felder fürs Seitenpanel.

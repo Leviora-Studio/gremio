@@ -12,6 +12,7 @@ import {
   PDFOptionList,
   PDFPage,
   PDFRadioGroup,
+  PDFRef,
   PDFSignature,
   PDFTextField,
   StandardFonts,
@@ -36,6 +37,38 @@ function isGremioText(field: PDFField): boolean {
   } catch {
     return false;
   }
+}
+
+function isMultilineField(field: PDFTextField): boolean {
+  try {
+    return field.isMultiline();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Entfernt ein eigenes Freitextfeld samt Seiten-Widgets. pdf-lib 1.17
+ * `form.removeField` sucht die Widget-Referenz über das Appearance-Objekt und
+ * lässt das Widget dadurch als verwaiste Annotation auf der Seite stehen.
+ */
+function removeFreeTextField(doc: PDFDocument, field: PDFTextField): void {
+  const widgetDicts = new Set<unknown>(field.acroField.getWidgets().map((w) => w.dict));
+  widgetDicts.add(field.acroField.dict);
+  for (const page of doc.getPages()) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      if (widgetDicts.has(annots.lookup(i))) annots.remove(i);
+    }
+  }
+  doc.getForm().acroForm.removeField(field.acroField);
+  const kids = field.acroField.normalizedEntries().Kids;
+  for (let i = 0; i < kids.size(); i++) {
+    const kid = kids.get(i);
+    if (kid instanceof PDFRef) doc.context.delete(kid);
+  }
+  doc.context.delete(field.ref);
 }
 
 // ── Seitengeometrie: MediaBox-Ursprung + Seitenrotation berücksichtigen ───────
@@ -143,11 +176,20 @@ export type TextEdit = {
   sizeRatio?: number;
 };
 
-/** Box-Maße eines Freitextfelds aus Inhalt + Schriftgröße ableiten (Client & Server gleich). */
-function deriveBox(value: string, size: number, pageWidth: number) {
-  const lines = value.split(/\r?\n/);
-  const maxLen = Math.max(1, ...lines.map((l) => l.length));
-  const boxW = Math.min(pageWidth - 4, Math.max(40, maxLen * size * 0.55 + 10));
+/**
+ * Box-Maße eines Freitextfelds aus Inhalt + Schriftgröße ableiten. Die Breite
+ * wird mit der echten Schrift gemessen (eine Zeichenzahl-Schätzung war für
+ * breite Zeichen wie „W" oder „M" zu knapp → abgeschnittener Text).
+ */
+function deriveBox(
+  value: string,
+  size: number,
+  pageWidth: number,
+  measure: (line: string) => number,
+) {
+  const lines = value.split("\n");
+  const textW = Math.max(0, ...lines.map(measure));
+  const boxW = Math.min(pageWidth - 4, Math.max(40, textW + 10));
   const boxH = Math.max(size * 1.5, lines.length * size * 1.32 + 6);
   return { boxW, boxH };
 }
@@ -155,15 +197,58 @@ function deriveBox(value: string, size: number, pageWidth: number) {
 export type FieldEdit = { name: string; value: string | boolean };
 export type PdfEdits = { texts?: TextEdit[]; fields?: FieldEdit[] };
 
-/** Helvetica = WinAnsi/Latin-1: nicht darstellbare Zeichen → "?". */
-export function sanitizeWinAnsi(s: string): string {
-  return s
-    .replace(/[‘’‚]/g, "'")
-    .replace(/[“”„]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/…/g, "...")
-    .replace(/ /g, " ")
-    .replace(/[^ -~ -ÿ€]/g, "?");
+// Helvetica (Standard-14-Schrift, WinAnsi) kann druckbares ASCII, Latin-1 und
+// genau diese Zeichen aus dem Bereich 0x80–0x9F darstellen.
+const WIN_ANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
+
+function isWinAnsi(ch: string): boolean {
+  const c = ch.codePointAt(0) ?? 0;
+  return (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || WIN_ANSI_EXTRA.has(ch);
+}
+
+// Ersatz für häufige Zeichen ohne WinAnsi-Glyphe, die sich nicht per
+// Unicode-Zerlegung auf einen Grundbuchstaben zurückführen lassen.
+const WIN_ANSI_FALLBACK: Record<string, string> = {
+  "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2015": "-", "\u2212": "-",
+  "\u201b": "'", "\u2032": "'", "\u201f": '"', "\u2033": '"',
+  "\u2190": "<-", "\u2192": "->", "\u2264": "<=", "\u2265": ">=", "\u2248": "~",
+  "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ħ": "h", "Ħ": "H", "ı": "i",
+  "ŀ": "l", "Ŀ": "L", "ẞ": "SS",
+};
+
+function winAnsiChar(ch: string, multiline: boolean): string {
+  if (ch === "\n") return multiline ? "\n" : " ";
+  if (isWinAnsi(ch) && ch !== "\u00ad") return ch;
+  const c = ch.codePointAt(0) ?? 0;
+  // Steuerzeichen, Nullbreiten-/Richtungszeichen und weiche Trennstriche sind
+  // unsichtbar gemeint und würden sonst als „?" bzw. „-" mitten im Wort landen.
+  if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/.test(ch)) return "";
+  if (/[\u2000-\u200a\u202f\u205f\u3000]/.test(ch)) return " ";
+  if (WIN_ANSI_FALLBACK[ch]) return WIN_ANSI_FALLBACK[ch];
+  if (/\p{M}/u.test(ch)) return ""; // verwaiste Akzentzeichen
+  // č → c, ő → o, ﬁ → fi, ℃ → °C …
+  const base = ch.normalize("NFKD").replace(/\p{M}/gu, "");
+  if (base && [...base].every(isWinAnsi)) return base;
+  return "?";
+}
+
+/**
+ * Text für Helvetica/WinAnsi aufbereiten (pdf-lib wirft sonst beim Speichern).
+ * Zerlegte Umlaute aus Copy & Paste (u + ¨) werden zusammengesetzt, Zeilenenden
+ * vereinheitlicht und bei `multiline` als „\n" erhalten, sonst durch ein
+ * Leerzeichen ersetzt. Nur wirklich nicht darstellbare Zeichen werden zu „?".
+ */
+export function sanitizeWinAnsi(
+  s: string,
+  opts: { multiline?: boolean } = {},
+): string {
+  const text = (s ?? "")
+    .normalize("NFC")
+    .replace(/\r\n?|[\u0085\u2028\u2029\v\f]/g, "\n")
+    .replace(/\t/g, " ");
+  let out = "";
+  for (const ch of text) out += winAnsiChar(ch, !!opts.multiline);
+  return out;
 }
 
 /**
@@ -209,11 +294,12 @@ export async function applyPdfEdits(
           field = form.getField(fe.name);
         }
         if (field instanceof PDFTextField) {
+          const multiline = isMultilineField(field);
           // Mehrzeilen-Felder mit Auto-/absurd großer Schrift auf eine
           // vernünftige feste Größe setzen — sonst bäckt pdf-lib beim Speichern
           // eine riesige Größe ein (Fließtext-Felder sind dann unbrauchbar groß).
           try {
-            if (field.isMultiline()) {
+            if (multiline) {
               const da = field.acroField.getDefaultAppearance() ?? "";
               const mm = /(\d+(?:\.\d+)?)\s+Tf/.exec(da);
               const cur = mm ? parseFloat(mm[1]) : 0;
@@ -223,8 +309,9 @@ export async function applyPdfEdits(
             /* ignore */
           }
           // WinAnsi-sicher, sonst scheitert die Appearance-Erzeugung beim Speichern.
+          // Zeilenumbrüche bleiben nur in mehrzeiligen Feldern erhalten.
           field.setText(
-            sanitizeWinAnsi(typeof fe.value === "string" ? fe.value : ""),
+            sanitizeWinAnsi(typeof fe.value === "string" ? fe.value : "", { multiline }),
           );
         } else if (field instanceof PDFCheckBox) {
           if (fe.value) field.check();
@@ -278,11 +365,12 @@ export async function applyPdfEdits(
       if (!page) continue;
       const g = pageGeom(page);
       const size = Math.max(6, Math.min(64, (t.sizeRatio ?? 0.02) * g.vh));
-      const value = sanitizeWinAnsi(t.text ?? "");
+      // Freitext darf mehrzeilig sein; leere Randzeilen tragen keinen Inhalt.
+      const value = sanitizeWinAnsi(t.text ?? "", { multiline: true }).replace(/^\n+|\n+$/g, "");
       const multiline = value.includes("\n");
       // Box-Maße in SICHTBAREN Punkten ableiten, dann ins (ggf. rotierte/
       // versetzte) PDF-Koordinatensystem abbilden.
-      const { boxW, boxH } = deriveBox(value, size, g.vw);
+      const { boxW, boxH } = deriveBox(value, size, g.vw, (line) => font.widthOfTextAtSize(line, size));
       const vx = Math.max(0, Math.min(g.vw - 12, t.xRatio * g.vw));
       const vy = Math.max(0, Math.min(Math.max(0, g.vh - boxH), t.yRatio * g.vh));
       const c1 = pointViewToPdf(g, vx, vy);
@@ -303,6 +391,13 @@ export async function applyPdfEdits(
             "[pdf-edit] Freitext-Update auf fremdes Feld ignoriert:",
             t.name,
           );
+          continue;
+        }
+        if (!value.trim()) {
+          // Geleerter oder im Editor entfernter Freitext: Feld ganz entfernen
+          // statt eines leeren, unsichtbaren Feldes im PDF.
+          removeFreeTextField(doc, existing);
+          byName.delete(existing.getName());
           continue;
         }
         if (multiline) existing.enableMultiline();
@@ -369,6 +464,9 @@ export type FieldMeta = {
   sizeRatio?: number;
   // true = von uns angelegter Freitext (frei verschieb-/skalierbar).
   gremioText?: boolean;
+  // Textfelder: mehrzeilig (Zeilenumbrüche erlaubt) und ggf. Zeichenlimit.
+  multiline?: boolean;
+  maxLength?: number;
   // Radio-Buttons: pro Option ein Widget (eigene Seite/Position + Export-Wert).
   optionWidgets?: { value: string; page: number; rect: FieldRect }[];
   // Alle Widgets eines Feldes (Text/Checkbox können MEHRERE haben, z. B. zwei
@@ -457,26 +555,44 @@ export async function readPdfFields(pdf: Buffer): Promise<FieldMeta[]> {
 
   const out: FieldMeta[] = [];
   for (const f of fields) {
-    const name = f.getName();
-    const readOnly = f.isReadOnly();
+    // Ein einzelnes defektes Feld darf nicht alle anderen unbearbeitbar machen.
+    let name: string;
+    let readOnly: boolean;
+    try {
+      name = f.getName();
+      readOnly = f.isReadOnly();
+    } catch {
+      continue;
+    }
     if (f instanceof PDFSignature) continue; // Signaturfelder nicht ausfüllbar
     if (f instanceof PDFTextField) {
       // Ausschließlich am Marker erkennen — KEIN Namensmuster wie „Text 1", das
       // auch echte Formularfelder fälschlich als verschiebbaren Freitext einstufte.
       const gremioText = isGremioText(f);
-      let multiline = false;
+      const multiline = isMultilineField(f);
+      let value = "";
       try {
-        multiline = f.isMultiline();
+        value = f.getText() ?? "";
+      } catch {
+        /* leeres Rich-Text-Feld: pdf-lib wirft statt "" zu liefern */
+      }
+      let maxLength: number | undefined;
+      try {
+        maxLength = f.getMaxLength() ?? undefined;
       } catch {
         /* ignore */
       }
       out.push({
         name,
         type: "text",
-        value: f.getText() ?? "",
+        value,
         readOnly,
         gremioText,
-        ...placement(f, multiline),
+        multiline,
+        maxLength,
+        // Eigene Freitexte behalten ihre Größe (der ≤12-pt-Deckel gilt nur für
+        // fremde Fließtextfelder) — sonst schrumpften sie bei jedem Speichern.
+        ...placement(f, multiline && !gremioText),
         widgets: widgetRects(f),
       });
     } else if (isLegacyRadioGroup(f)) {

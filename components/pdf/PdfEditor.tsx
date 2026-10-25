@@ -54,6 +54,8 @@ type FieldMeta = {
   rect?: { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
   sizeRatio?: number;
   gremioText?: boolean;
+  multiline?: boolean;
+  maxLength?: number;
   optionWidgets?: {
     value: string;
     page: number;
@@ -66,6 +68,14 @@ type FieldMeta = {
 };
 
 type Rect = { xRatio: number; yRatio: number; wRatio: number; hRatio: number };
+type TextWidget = {
+  name: string;
+  page: number;
+  rect: Rect;
+  sizeRatio: number;
+  multiline?: boolean;
+  maxLength?: number;
+};
 type Control =
   | { kind: "checkbox"; name: string; page: number; rect: Rect }
   | { kind: "select"; name: string; page: number; rect: Rect; options: string[] }
@@ -84,10 +94,34 @@ export type PdfEditorProps = {
   sourceVersion?: string;
   saveButtonLabel?: string;
   saveButtonTitle?: string;
+  /** Meldet ungespeicherte Änderungen (für die Rückfrage beim Schließen). */
+  onDirtyChange?: (dirty: boolean) => void;
 };
+
+// Obergrenzen wie serverseitig (pdf-actions/pdf-apply), damit nichts still
+// abgeschnitten wird.
+const MAX_FREE_TEXT = 2000;
+const MAX_FIELD_TEXT = 5000;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 let nextId = 1;
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+/** Breite einer Textzeile in px (Arial/Helvetica, wie im PDF); Schätzung als Fallback. */
+function textWidthPx(line: string, fontPx: number): number {
+  if (measureCtx === undefined) {
+    measureCtx = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
+  }
+  if (!measureCtx) return line.length * fontPx * 0.55;
+  measureCtx.font = `${fontPx}px Helvetica, Arial, sans-serif`;
+  return measureCtx.measureText(line).width;
+}
+
+/** Einzeilige Felder können keinen Zeilenumbruch speichern → Leerzeichen. */
+function fieldText(value: string, field: { multiline?: boolean; maxLength?: number }): string {
+  const v = field.multiline ? value : value.replace(/\r\n?|\n/g, " ");
+  return v.slice(0, Math.min(field.maxLength ?? MAX_FIELD_TEXT, MAX_FIELD_TEXT));
+}
 
 // Normalisierte Form eines Textes für den „dirty"-Vergleich (gerundet, ohne id).
 function normText(t: TextItem) {
@@ -113,10 +147,16 @@ export default function PdfEditor({
   sourceVersion,
   saveButtonLabel = "Speichern",
   saveButtonTitle = "Speichert die Änderungen ins Original",
+  onDirtyChange,
 }: PdfEditorProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const initialTextsRef = useRef<string>("[]");
+  // Gespeicherte Freitexte beim Laden (für „nur Geänderte senden" und Löschen).
+  const initialTextItemsRef = useRef<TextItem[]>([]);
+  // Erhöht sich nach einem Teil-Erfolg: PDF + Felder neu vom Server laden.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [fieldsError, setFieldsError] = useState(false);
   const [numPages, setNumPages] = useState(0);
   const [baseWidth, setBaseWidth] = useState(800);
   const [zoom, setZoom] = useState(1);
@@ -151,10 +191,14 @@ export default function PdfEditor({
   useEffect(() => {
     if (!editable) return;
     let active = true;
-    fetch(fieldsUrl ?? `/api/attachment/${attachmentId}/fields`)
-      .then((r) => (r.ok ? r.json() : { fields: [] }))
+    fetch(fieldsUrl ?? `/api/attachment/${attachmentId}/fields`, { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then((d: { fields?: FieldMeta[] }) => {
         if (!active) return;
+        setFieldsError(false);
         const fs = d.fields ?? [];
         setFields(fs);
         // Unsere Freitextfelder als verschieb-/skalierbare Texte übernehmen.
@@ -177,6 +221,7 @@ export default function PdfEditor({
             sizeRatio: f.sizeRatio ?? 0.02,
           }));
         setTexts(seeded);
+        initialTextItemsRef.current = seeded;
         initialTextsRef.current = JSON.stringify(seeded.map(normText));
         // Restliche Felder fürs Panel / feste Overlays.
         const init: Record<string, string | boolean> = {};
@@ -187,11 +232,14 @@ export default function PdfEditor({
         }
         setFieldValues(init);
       })
-      .catch(() => {});
+      .catch(() => {
+        // Nicht still schlucken: sonst wirkt das PDF einfach „ohne Felder".
+        if (active) setFieldsError(true);
+      });
     return () => {
       active = false;
     };
-  }, [attachmentId, editable, fieldsUrl]);
+  }, [attachmentId, editable, fieldsUrl, reloadKey]);
 
   const addText = useCallback(
     (page: number, xRatio: number, yRatio: number, pageHeightPx: number) => {
@@ -234,11 +282,32 @@ export default function PdfEditor({
     return out;
   }
 
+  // Nur neue, geänderte und entfernte Freitexte senden — unveränderte würden
+  // sonst bei jedem Speichern (auch beim reinen Signieren) neu geschrieben.
+  function changedTexts() {
+    const initial = new Map(
+      initialTextItemsRef.current.map((t) => [t.fieldName, JSON.stringify(normText(t))]),
+    );
+    const keep = new Set(texts.map((t) => t.fieldName).filter(Boolean));
+    const changed = texts.filter(
+      (t) => !t.fieldName || initial.get(t.fieldName) !== JSON.stringify(normText(t)),
+    );
+    // Entfernte gespeicherte Freitexte: leerer Text = Feld löschen.
+    const removed = initialTextItemsRef.current
+      .filter((t) => !keep.has(t.fieldName))
+      .map((t) => ({ ...t, text: "" }));
+    return [...changed, ...removed];
+  }
+
   const textsJson = JSON.stringify(texts.map(normText));
   const dirty =
     textsJson !== initialTextsRef.current ||
     !!sign ||
     changedFields().length > 0;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   async function handleSave() {
     setError(null);
@@ -258,7 +327,7 @@ export default function PdfEditor({
       mode: "replace", // immer das Original überschreiben
       sourceVersion,
       edits: {
-        texts: texts.map((t) => ({
+        texts: changedTexts().map((t) => ({
           name: t.fieldName,
           page: t.page,
           xRatio: t.xRatio,
@@ -278,10 +347,16 @@ export default function PdfEditor({
       if (res.ok) {
         if (res.warning) {
           // Teil-Erfolg: gespeichert, aber einzelne Felder gingen nicht — anzeigen
-          // und Modal offen lassen, damit der Nutzer es bemerkt.
+          // und Modal offen lassen, damit der Nutzer es bemerkt. Den Editor auf
+          // den gespeicherten Stand bringen, sonst legte ein erneutes Speichern
+          // die neuen Freitexte doppelt an.
           setError(res.warning);
+          setSign(null);
+          setSigReason("");
+          setReloadKey((k) => k + 1);
           router.refresh();
         } else {
+          onDirtyChange?.(false);
           router.refresh();
           onClose();
         }
@@ -308,8 +383,7 @@ export default function PdfEditor({
         ? [{ page: f.page, rect: f.rect }]
         : [];
 
-  const textWidgets: { name: string; page: number; rect: Rect; sizeRatio: number }[] =
-    [];
+  const textWidgets: TextWidget[] = [];
   const controls: Control[] = [];
   if (editable) {
     for (const f of fields) {
@@ -321,6 +395,8 @@ export default function PdfEditor({
             page: w.page,
             rect: w.rect,
             sizeRatio: f.sizeRatio ?? 0.02,
+            multiline: f.multiline,
+            maxLength: f.maxLength,
           });
         }
       } else if (f.type === "checkbox") {
@@ -465,6 +541,12 @@ export default function PdfEditor({
           {error}
         </div>
       )}
+      {editable && fieldsError && (
+        <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+          Die Formularfelder dieses PDFs konnten nicht gelesen werden. Freitext und
+          Signatur sind weiterhin möglich.
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* Seiten */}
@@ -478,7 +560,9 @@ export default function PdfEditor({
             </p>
           ) : (
             <Document
-              file={src}
+              // Nach einem Teil-Erfolg die gespeicherte Fassung neu laden.
+              key={reloadKey}
+              file={reloadKey ? `${src}${src.includes("?") ? "&" : "?"}v=${reloadKey}` : src}
               onLoadSuccess={({ numPages: n }) => setNumPages(n)}
               onLoadError={() => setLoadError(true)}
               loading={<p className="p-6 text-sm text-slate-500">PDF wird geladen…</p>}
@@ -617,17 +701,30 @@ function FieldInput({
     );
   }
   if (field.type === "other") return null;
+  const text = typeof value === "string" ? value : "";
+  const maxLength = Math.min(field.maxLength ?? MAX_FIELD_TEXT, MAX_FIELD_TEXT);
   return (
     <div>
       <label className="label truncate" title={field.name}>
         {field.name}
       </label>
-      <input
-        className="input"
-        value={typeof value === "string" ? value : ""}
-        disabled={field.readOnly}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      {field.multiline ? (
+        <textarea
+          className="input min-h-20"
+          value={text}
+          disabled={field.readOnly}
+          maxLength={maxLength}
+          onChange={(e) => onChange(fieldText(e.target.value, field))}
+        />
+      ) : (
+        <input
+          className="input"
+          value={text}
+          disabled={field.readOnly}
+          maxLength={maxLength}
+          onChange={(e) => onChange(fieldText(e.target.value, field))}
+        />
+      )}
     </div>
   );
 }
@@ -654,7 +751,7 @@ function PageLayer({
   width: number;
   tool: Tool;
   texts: TextItem[];
-  textWidgets: { name: string; page: number; rect: Rect; sizeRatio: number }[];
+  textWidgets: TextWidget[];
   controls: Control[];
   fieldValues: Record<string, string | boolean>;
   onChangeField: (name: string, value: string | boolean) => void;
@@ -834,7 +931,12 @@ function PageLayer({
             >
               <textarea
                 value={typeof v === "string" ? v : ""}
-                onChange={(e) => onChangeField(tw.name, e.target.value)}
+                onChange={(e) => onChangeField(tw.name, fieldText(e.target.value, tw))}
+                onKeyDown={(e) => {
+                  // Einzeilige PDF-Felder können keinen Umbruch speichern.
+                  if (e.key === "Enter" && !tw.multiline) e.preventDefault();
+                }}
+                maxLength={Math.min(tw.maxLength ?? MAX_FIELD_TEXT, MAX_FIELD_TEXT)}
                 className="resize-none bg-transparent px-1 py-0 leading-none outline-none"
                 style={
                   k < 1
@@ -936,8 +1038,9 @@ function PageLayer({
         {texts.map((t) => {
           const fontPx = Math.max(8, t.sizeRatio * h);
           const lines = (t.text || "").split("\n");
-          const maxLen = Math.max(1, ...lines.map((l) => l.length));
-          const boxW = Math.max(40, maxLen * fontPx * 0.55 + 10);
+          // Wie serverseitig mit der Schrift gemessen (+ Innenabstand/Rahmen).
+          const textW = Math.max(0, ...lines.map((l) => textWidthPx(l, fontPx)));
+          const boxW = Math.max(40, textW + 14);
           const boxH = Math.max(fontPx * 1.5, lines.length * fontPx * 1.32 + 6);
           return (
             <div
@@ -957,7 +1060,10 @@ function PageLayer({
               <textarea
                 value={t.text}
                 onChange={(e) => onChangeText(t.id, e.target.value)}
-                className="block resize-none overflow-hidden rounded-sm border border-brand-300 bg-white/70 px-1 leading-tight outline-none"
+                maxLength={MAX_FREE_TEXT}
+                // Kein weicher Umbruch: im PDF bricht nur ein echtes Enter um.
+                wrap="off"
+                className="block resize-none overflow-hidden whitespace-pre rounded-sm border border-brand-300 bg-white/70 px-1 leading-tight outline-none"
                 style={{
                   width: boxW,
                   height: boxH,
@@ -965,16 +1071,14 @@ function PageLayer({
                   fontFamily: "Helvetica, Arial, sans-serif",
                 }}
               />
-              {!t.fieldName && (
-                <button
-                  type="button"
-                  onClick={() => onRemoveText(t.id)}
-                  className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
-                  title="Text entfernen"
-                >
-                  ×
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => onRemoveText(t.id)}
+                className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
+                title="Text entfernen"
+              >
+                ×
+              </button>
             </div>
           );
         })}
