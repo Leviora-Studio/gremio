@@ -776,6 +776,15 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
   ihr Feld samt Widget. Der Editor sendet nur neue, geänderte und entfernte
   Freitexte und fragt vor dem Verwerfen ungespeicherter Änderungen nach. Alle
   Speicherpfade (Karte, Inventar, Anweisungsvorlage) nutzen `applyEditsAndSign`.
+- **Freitext setzen:** Klick setzt einen leeren, fokussierten Text (12 pt,
+  unabhängig vom Zoom; A−/A+ ändert die Größe, 6–64 pt). Leer gelassen
+  verschwindet er wieder. Die Vorschau folgt dem pdf-lib-Layout (Maße,
+  Zeilenabstand, Grundlinie), die Box bleibt vollständig auf der Seite.
+  Positionen beziehen sich wie in pdf.js auf die **CropBox** (auch die Signatur).
+- **Signatur-Box auf gedrehten Seiten:** `placeVisibleBox` (`lib/pdf-edit.ts`)
+  bildet die im Browser aufgezogene Box über Seitenrotation und CropBox ins PDF
+  ab; `drawSignatureBox` (`lib/sign.ts`) zeichnet Rahmen, Bild, Name und Datum in
+  einem lokalen, aufrechten Koordinatensystem. Die Box bleibt auf der Seite.
 - **Signieren:** sichtbare Signatur-Box platzieren → serverseitige **PAdES-Signatur** mit dem persönlichen `.p12` des Nutzers (`lib/sign.ts`, `@signpdf`). Verlangt ein in den Konto-Einstellungen hinterlegtes Zertifikat (`lib/cert.ts`, `inspectP12`).
 - **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Zugriff erforderlich, Aktivitätseintrag.
 - **Feld-Metadaten:** `GET /api/attachment/{id}/fields` liefert die ausfüllbaren Felder fürs Seitenpanel.

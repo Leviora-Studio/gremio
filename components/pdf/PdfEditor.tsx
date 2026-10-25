@@ -102,6 +102,15 @@ export type PdfEditorProps = {
 // abgeschnitten wird.
 const MAX_FREE_TEXT = 2000;
 const MAX_FIELD_TEXT = 5000;
+// Freitext-Schriftgröße in pt: Standard und Grenzen wie serverseitig (pdf-edit).
+const DEFAULT_TEXT_PT = 12;
+const MIN_TEXT_PT = 6;
+const MAX_TEXT_PT = 64;
+// pdf-lib-Layout (Helvetica): Zeilenabstand 1.2 × Schrifthöhe (0.925 em),
+// Versalhöhe 0.718 em; die CSS-Grundlinie von Arial liegt bei ~0.9 em.
+const PDF_LINE = 1.11;
+const PDF_CAP = 0.718;
+const CSS_BASELINE = 0.9;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 let nextId = 1;
@@ -241,23 +250,22 @@ export default function PdfEditor({
     };
   }, [attachmentId, editable, fieldsUrl, reloadKey]);
 
+  // Neuer Text startet leer und fokussiert (kein Platzhalter, der erst
+  // markiert und gelöscht werden muss); bleibt er leer, verschwindet er wieder.
+  const [focusTextId, setFocusTextId] = useState<number | null>(null);
   const addText = useCallback(
-    (page: number, xRatio: number, yRatio: number, pageHeightPx: number) => {
-      setTexts((prev) => [
-        ...prev,
-        {
-          id: nextId++,
-          page,
-          xRatio,
-          yRatio,
-          text: "Text",
-          sizeRatio: 16 / Math.max(1, pageHeightPx),
-        },
-      ]);
+    (page: number, xRatio: number, yRatio: number, sizeRatio: number) => {
+      const id = nextId++;
+      setTexts((prev) => [...prev, { id, page, xRatio, yRatio, text: "", sizeRatio }]);
+      setFocusTextId(id);
       setTool("none");
     },
     [],
   );
+
+  const resizeText = useCallback((id: number, sizeRatio: number) => {
+    setTexts((prev) => prev.map((t) => (t.id === id ? { ...t, sizeRatio } : t)));
+  }, []);
 
   const moveText = useCallback((id: number, xRatio: number, yRatio: number) => {
     setTexts((prev) =>
@@ -299,7 +307,10 @@ export default function PdfEditor({
     return [...changed, ...removed];
   }
 
-  const textsJson = JSON.stringify(texts.map(normText));
+  // Ein frisch gesetzter, noch leerer Text ist (noch) keine Änderung.
+  const textsJson = JSON.stringify(
+    texts.filter((t) => t.fieldName || t.text.trim()).map(normText),
+  );
   const dirty =
     textsJson !== initialTextsRef.current ||
     !!sign ||
@@ -583,6 +594,9 @@ export default function PdfEditor({
                   editable={editable}
                   onAddText={addText}
                   onMoveText={moveText}
+                  onResizeText={resizeText}
+                  focusTextId={focusTextId}
+                  onFocusedText={() => setFocusTextId(null)}
                   onChangeText={(id, value) =>
                     setTexts((prev) =>
                       prev.map((t) => (t.id === id ? { ...t, text: value } : t)),
@@ -742,6 +756,9 @@ function PageLayer({
   editable,
   onAddText,
   onMoveText,
+  onResizeText,
+  focusTextId,
+  onFocusedText,
   onChangeText,
   onRemoveText,
   onDrawSign,
@@ -757,8 +774,11 @@ function PageLayer({
   onChangeField: (name: string, value: string | boolean) => void;
   sign: SignItem | null;
   editable: boolean;
-  onAddText: (page: number, x: number, y: number, hPx: number) => void;
+  onAddText: (page: number, x: number, y: number, sizeRatio: number) => void;
   onMoveText: (id: number, x: number, y: number) => void;
+  onResizeText: (id: number, sizeRatio: number) => void;
+  focusTextId: number | null;
+  onFocusedText: () => void;
   onChangeText: (id: number, value: string) => void;
   onRemoveText: (id: number) => void;
   onDrawSign: (s: SignItem) => void;
@@ -766,6 +786,8 @@ function PageLayer({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [h, setH] = useState(0);
+  // Sichtbare Seitenhöhe in pt (pdf.js-Viewport bei Maßstab 1 = CropBox, rotiert).
+  const [ptH, setPtH] = useState(0);
   // Während des Aufziehens der Signatur-Box:
   const [draw, setDraw] = useState<{
     x0: number;
@@ -800,8 +822,12 @@ function PageLayer({
   // Text setzen (Klick).
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!editable || tool !== "text") return;
-    const { x, y, rect } = ratio(e);
-    onAddText(pageIndex, x, y, rect.height);
+    const { x, y } = ratio(e);
+    // Feste Größe in pt — früher 16 px, also je nach Zoom 5–25 pt.
+    const pageH = ptH || 842;
+    const sizeRatio = DEFAULT_TEXT_PT / pageH;
+    // Klickpunkt = Mitte der ersten Zeile, nicht obere linke Ecke der Box.
+    onAddText(pageIndex, x, Math.max(0, y - (sizeRatio * 1.5) / 2), sizeRatio);
   }
 
   // Signatur-Bereich aufziehen (Drag).
@@ -834,29 +860,6 @@ function PageLayer({
     onDrawSign({ page: pageIndex, xRatio: x, yRatio: y, wRatio: w, hRatio: hh });
   }
 
-  // Text-Box verschieben (Grip ziehen).
-  function startTextDrag(e: React.PointerEvent, id: number) {
-    e.stopPropagation();
-    e.preventDefault();
-    const move = (ev: PointerEvent) => {
-      // Rechteck bei JEDEM Move neu lesen → korrekt auch, wenn zwischendurch
-      // gescrollt/gezoomt wird (sonst landet der Text versetzt).
-      const rect = wrapRef.current?.getBoundingClientRect();
-      if (!rect || !rect.width || !rect.height) return;
-      onMoveText(
-        id,
-        clamp01((ev.clientX - rect.left) / rect.width),
-        clamp01((ev.clientY - rect.top) / rect.height),
-      );
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
-
   const drawing = draw
     ? {
         left: Math.min(draw.x0, draw.x1) * 100,
@@ -886,8 +889,9 @@ function PageLayer({
           onLoadSuccess={(p) => {
             // Höhe sofort aus dem Seitenverhältnis ableiten (vor dem Canvas-Paint)
             // → kein Springen der Overlays von der 8px-Untergrenze.
-            const pg = p as unknown as { width: number; height: number };
+            const pg = p as unknown as { width: number; height: number; originalHeight: number };
             if (pg.width > 0) setH(Math.round(width * (pg.height / pg.width)));
+            if (pg.originalHeight > 0) setPtH(pg.originalHeight);
           }}
           renderTextLayer={false}
           renderAnnotationLayer={false}
@@ -1035,53 +1039,23 @@ function PageLayer({
 
         {/* Freitext-Overlays: am Klickpunkt, verschiebbar (Griff), wachsen mit
             dem Inhalt mit; bleiben auch nach dem Speichern editierbar. */}
-        {texts.map((t) => {
-          const fontPx = Math.max(8, t.sizeRatio * h);
-          const lines = (t.text || "").split("\n");
-          // Wie serverseitig mit der Schrift gemessen (+ Innenabstand/Rahmen).
-          const textW = Math.max(0, ...lines.map((l) => textWidthPx(l, fontPx)));
-          const boxW = Math.max(40, textW + 14);
-          const boxH = Math.max(fontPx * 1.5, lines.length * fontPx * 1.32 + 6);
-          return (
-            <div
+        {h > 0 &&
+          texts.map((t) => (
+            <FreeTextBox
               key={t.id}
-              className="absolute z-10"
-              style={{ left: `${t.xRatio * 100}%`, top: `${t.yRatio * 100}%` }}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <span
-                onPointerDown={(e) => startTextDrag(e, t.id)}
-                className="absolute -left-3 top-0 flex h-4 w-3 cursor-move select-none items-center justify-center rounded-l bg-brand-200 text-[9px] text-brand-700"
-                title="Verschieben"
-              >
-                ⠿
-              </span>
-              <textarea
-                value={t.text}
-                onChange={(e) => onChangeText(t.id, e.target.value)}
-                maxLength={MAX_FREE_TEXT}
-                // Kein weicher Umbruch: im PDF bricht nur ein echtes Enter um.
-                wrap="off"
-                className="block resize-none overflow-hidden whitespace-pre rounded-sm border border-brand-300 bg-white/70 px-1 leading-tight outline-none"
-                style={{
-                  width: boxW,
-                  height: boxH,
-                  fontSize: fontPx,
-                  fontFamily: "Helvetica, Arial, sans-serif",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => onRemoveText(t.id)}
-                className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
-                title="Text entfernen"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
+              item={t}
+              pageW={width}
+              pageH={h}
+              pagePt={ptH || 842}
+              wrapRef={wrapRef}
+              autoFocus={t.id === focusTextId}
+              onFocused={onFocusedText}
+              onChange={(v) => onChangeText(t.id, v)}
+              onMove={(x, y) => onMoveText(t.id, x, y)}
+              onResize={(r) => onResizeText(t.id, r)}
+              onRemove={() => onRemoveText(t.id)}
+            />
+          ))}
 
         {/* Signatur-Bereich */}
         {sign && (
@@ -1108,6 +1082,175 @@ function PageLayer({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Freitext-Box. Maße, Position und Zeilenlage folgen dem Layout, das pdf-lib
+ * beim Speichern erzeugt (lib/pdf-edit.ts), damit der Text nach dem Speichern
+ * nicht springt oder abgeschnitten wird.
+ */
+function FreeTextBox({
+  item,
+  pageW,
+  pageH,
+  pagePt,
+  wrapRef,
+  autoFocus,
+  onFocused,
+  onChange,
+  onMove,
+  onResize,
+  onRemove,
+}: {
+  item: TextItem;
+  pageW: number;
+  pageH: number;
+  pagePt: number;
+  wrapRef: React.RefObject<HTMLDivElement | null>;
+  autoFocus: boolean;
+  onFocused: () => void;
+  onChange: (value: string) => void;
+  onMove: (xRatio: number, yRatio: number) => void;
+  onResize: (sizeRatio: number) => void;
+  onRemove: () => void;
+}) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const pt = pageH / pagePt; // px je pt beim aktuellen Zoom
+  const fontPx = Math.max(1, item.sizeRatio * pageH);
+  const sizePt = Math.round(item.sizeRatio * pagePt);
+  const lines = item.text.split("\n");
+  const multiline = lines.length > 1;
+  const textW = Math.max(0, ...lines.map((l) => textWidthPx(l, fontPx)));
+  const boxW = Math.min(pageW, Math.max(40 * pt, textW + 10 * pt));
+  const boxH = Math.max(fontPx * 1.5, lines.length * fontPx * 1.32 + 6 * pt);
+  // Wie serverseitig: die ganze Box bleibt auf der Seite.
+  const left = Math.max(0, Math.min(item.xRatio, 1 - boxW / pageW));
+  const top = Math.max(0, Math.min(item.yRatio, 1 - boxH / pageH));
+  // Grundlinie wie pdf-lib: einzeilig vertikal zentriert, mehrzeilig ab oben.
+  const baseline = multiline ? pt + PDF_LINE * fontPx : boxH / 2 + (PDF_CAP / 2) * fontPx;
+  const padTop = Math.max(0, baseline - CSS_BASELINE * fontPx);
+  // iOS vergrößert Eingaben unter 16 px → logisch mit 16 px rendern, skalieren.
+  const k = fontPx < 16 ? fontPx / 16 : 1;
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    taRef.current?.focus();
+    onFocused();
+  }, [autoFocus, onFocused]);
+
+  function startDrag(e: React.PointerEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const r0 = wrapRef.current?.getBoundingClientRect();
+    if (!r0 || !r0.width || !r0.height) return;
+    // Greifpunkt merken, damit die Box nicht unter den Zeiger springt.
+    const offX = (e.clientX - r0.left) / r0.width - left;
+    const offY = (e.clientY - r0.top) / r0.height - top;
+    const maxX = Math.max(0, 1 - boxW / pageW);
+    const maxY = Math.max(0, 1 - boxH / pageH);
+    const move = (ev: PointerEvent) => {
+      // Rechteck bei JEDEM Move neu lesen → korrekt auch beim Scrollen.
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (!r || !r.width || !r.height) return;
+      onMove(
+        Math.min(maxX, Math.max(0, (ev.clientX - r.left) / r.width - offX)),
+        Math.min(maxY, Math.max(0, (ev.clientY - r.top) / r.height - offY)),
+      );
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
+  const setSize = (next: number) =>
+    onResize(Math.min(MAX_TEXT_PT, Math.max(MIN_TEXT_PT, next)) / pagePt);
+  // Buttons dürfen den Fokus nicht aus dem Textfeld nehmen.
+  const keepFocus = (e: React.SyntheticEvent) => e.preventDefault();
+
+  return (
+    <div
+      className="group absolute z-10"
+      style={{ left: `${left * 100}%`, top: `${top * 100}%`, width: boxW, height: boxH }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <span
+        onPointerDown={startDrag}
+        className="absolute -left-4 top-0 flex h-5 w-4 cursor-move select-none items-center justify-center rounded-l bg-brand-200 text-[10px] text-brand-700"
+        style={{ touchAction: "none" }}
+        title="Verschieben"
+      >
+        ⠿
+      </span>
+      <textarea
+        ref={taRef}
+        value={item.text}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => {
+          // Leer gelassener neuer Text verschwindet wieder.
+          if (!item.fieldName && !item.text.trim()) onRemove();
+        }}
+        maxLength={MAX_FREE_TEXT}
+        // Kein weicher Umbruch: im PDF bricht nur ein echtes Enter um.
+        wrap="off"
+        placeholder="Text"
+        className="block resize-none overflow-hidden whitespace-pre rounded-sm border border-brand-300 bg-white/70 outline-none placeholder:text-slate-400"
+        style={{
+          fontFamily: "Helvetica, Arial, sans-serif",
+          fontSize: `${fontPx / k}px`,
+          lineHeight: `${(PDF_LINE * fontPx) / k}px`,
+          paddingTop: `${padTop / k}px`,
+          paddingBottom: 0,
+          paddingLeft: `${pt / k}px`,
+          paddingRight: 0,
+          width: `${boxW / k}px`,
+          height: `${boxH / k}px`,
+          transform: k < 1 ? `scale(${k})` : undefined,
+          transformOrigin: "top left",
+        }}
+      />
+      <div className="absolute -top-6 right-0 hidden items-center gap-0.5 rounded bg-white px-0.5 text-[10px] shadow ring-1 ring-slate-200 group-focus-within:flex">
+        <button
+          type="button"
+          onPointerDown={keepFocus}
+          onMouseDown={keepFocus}
+          onClick={() => setSize(sizePt - 1)}
+          className="px-1 text-slate-600 hover:text-slate-900"
+          title="Schrift kleiner"
+          aria-label="Schrift kleiner"
+        >
+          A−
+        </button>
+        <span className="tabular-nums text-slate-500">{sizePt} pt</span>
+        <button
+          type="button"
+          onPointerDown={keepFocus}
+          onMouseDown={keepFocus}
+          onClick={() => setSize(sizePt + 1)}
+          className="px-1 text-slate-600 hover:text-slate-900"
+          title="Schrift größer"
+          aria-label="Schrift größer"
+        >
+          A+
+        </button>
+      </div>
+      <button
+        type="button"
+        onPointerDown={keepFocus}
+        onMouseDown={keepFocus}
+        onClick={onRemove}
+        className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-600 text-[10px] leading-4 text-white"
+        title="Text entfernen"
+      >
+        ×
+      </button>
     </div>
   );
 }

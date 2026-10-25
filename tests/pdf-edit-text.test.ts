@@ -109,3 +109,28 @@ test("free text cannot hijack or delete a real form field", async () => {
   });
   assert.ok((await readPdfFields(pdf)).some((f) => f.name === "single"));
 });
+
+test("free text uses the visible CropBox and stays fully on the page", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([600, 800]);
+  // pdf.js zeigt nur die CropBox; Ratios vom Client beziehen sich darauf.
+  page.setCropBox(100, 50, 400, 600);
+  const base = Buffer.from(await doc.save());
+  const sizeRatio = 12 / 600;
+  const { pdf } = await applyPdfEdits(base, {
+    texts: [
+      { page: 0, xRatio: 0, yRatio: 0, text: "Oben links", sizeRatio },
+      { page: 0, xRatio: 0.98, yRatio: 0.99, text: "Ganz rechts unten, ziemlich lang", sizeRatio },
+    ],
+  });
+  const saved = await PDFDocument.load(pdf);
+  const rects = saved.getForm().getFields().map((f) => f.acroField.getWidgets()[0].getRectangle());
+  const [topLeft, edge] = rects;
+  assert.equal(topLeft.x, 100, "left edge of the CropBox, not of the MediaBox");
+  assert.equal(topLeft.y + topLeft.height, 650, "top edge of the CropBox");
+  assert.ok(edge.x + edge.width <= 500 + 1e-6, "box must not run past the right edge");
+  assert.ok(edge.y >= 50 - 1e-6, "box must not run past the bottom edge");
+  const fields = await readPdfFields(pdf);
+  assert.ok(fields.every((f) => f.rect!.xRatio >= 0 && f.rect!.xRatio + f.rect!.wRatio <= 1 + 1e-6));
+  assert.ok(Math.abs(fields[0].rect!.xRatio) < 1e-6 && Math.abs(fields[0].rect!.yRatio) < 1e-6, "round trip keeps the visible position");
+});

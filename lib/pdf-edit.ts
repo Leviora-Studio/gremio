@@ -71,12 +71,15 @@ function removeFreeTextField(doc: PDFDocument, field: PDFTextField): void {
   doc.context.delete(field.ref);
 }
 
-// ── Seitengeometrie: MediaBox-Ursprung + Seitenrotation berücksichtigen ───────
+// ── Seitengeometrie: CropBox-Ursprung + Seitenrotation berücksichtigen ────────
 // Der Browser (pdf.js) rendert Seiten bereits ROTIERT, mit Ursprung oben-links
 // der sichtbaren Fläche; Ratios vom Client beziehen sich also auf die SICHTBARE
-// Seite. PDF-Nutzerkoordinaten haben dagegen ihren Ursprung unten-links der
-// unrotierten MediaBox (ggf. mit Offset). Diese Helfer rechnen exakt zwischen
-// beiden Welten um — bei rot=0 und Ursprung (0,0) sind sie die Identität.
+// Seite. Sichtbar ist dabei die CropBox (pdf.js schneidet darauf zu), nicht die
+// MediaBox — bei zugeschnittenen/gescannten PDFs unterscheiden sich beide, und
+// Text bzw. Signatur landeten sonst versetzt. PDF-Nutzerkoordinaten haben ihren
+// Ursprung unten-links der unrotierten Seite (ggf. mit Offset). Diese Helfer
+// rechnen exakt zwischen beiden Welten um — bei rot=0 und Ursprung (0,0) sind
+// sie die Identität.
 type PageGeom = {
   ox: number;
   oy: number;
@@ -88,7 +91,7 @@ type PageGeom = {
 };
 
 function pageGeom(page: PDFPage): PageGeom {
-  const mb = page.getMediaBox();
+  const mb = page.getCropBox();
   const raw = page.getRotation().angle || 0;
   const rot = (((((Math.round(raw / 90) * 90) % 360) + 360) % 360) || 0) as
     | 0
@@ -162,6 +165,46 @@ function pointViewToPdf(
 ): { x: number; y: number } {
   const { u, v } = fromView(vpx / g.vw, vpy / g.vh, g.rot);
   return { x: g.ox + u * g.mw, y: g.oy + v * g.mh };
+}
+
+/**
+ * Platziert ein aufrechtes Rechteck der SICHTBAREN Seite (Ratios von oben-links,
+ * Mindestmaße in pt) im PDF. Liefert das Annotations-Rechteck in
+ * Nutzerkoordinaten und eine Transformationsmatrix, in der (0,0)–(width,height)
+ * die Box unten-links → oben-rechts beschreibt, wie man sie sieht — auf
+ * gedrehten Seiten erscheint darin Gezeichnetes damit aufrecht.
+ */
+export function placeVisibleBox(
+  page: PDFPage,
+  box: { xRatio: number; yRatio: number; wRatio: number; hRatio: number },
+  min: { width: number; height: number },
+): {
+  width: number;
+  height: number;
+  rect: { x: number; y: number; width: number; height: number };
+  matrix: [number, number, number, number, number, number];
+} {
+  const g = pageGeom(page);
+  const width = Math.min(g.vw, Math.max(min.width, box.wRatio * g.vw));
+  const height = Math.min(g.vh, Math.max(min.height, box.hRatio * g.vh));
+  // Ganze Box auf der sichtbaren Seite halten.
+  const left = Math.max(0, Math.min(g.vw - width, box.xRatio * g.vw));
+  const top = Math.max(0, Math.min(g.vh - height, box.yRatio * g.vh));
+  const o = pointViewToPdf(g, left, top + height);
+  const ex = pointViewToPdf(g, left + 1, top + height);
+  const ey = pointViewToPdf(g, left, top + height - 1);
+  const far = pointViewToPdf(g, left + width, top);
+  return {
+    width,
+    height,
+    rect: {
+      x: Math.min(o.x, far.x),
+      y: Math.min(o.y, far.y),
+      width: Math.abs(far.x - o.x),
+      height: Math.abs(far.y - o.y),
+    },
+    matrix: [ex.x - o.x, ex.y - o.y, ey.x - o.x, ey.y - o.y, o.x, o.y],
+  };
 }
 
 // Freitext: Position als Anteil der Seitenmaße von OBEN-LINKS (wie der
@@ -371,7 +414,8 @@ export async function applyPdfEdits(
       // Box-Maße in SICHTBAREN Punkten ableiten, dann ins (ggf. rotierte/
       // versetzte) PDF-Koordinatensystem abbilden.
       const { boxW, boxH } = deriveBox(value, size, g.vw, (line) => font.widthOfTextAtSize(line, size));
-      const vx = Math.max(0, Math.min(g.vw - 12, t.xRatio * g.vw));
+      // Ganze Box auf der Seite halten (sonst wird Text am Rand abgeschnitten).
+      const vx = Math.max(0, Math.min(Math.max(0, g.vw - boxW), t.xRatio * g.vw));
       const vy = Math.max(0, Math.min(Math.max(0, g.vh - boxH), t.yRatio * g.vh));
       const c1 = pointViewToPdf(g, vx, vy);
       const c2 = pointViewToPdf(g, vx + boxW, vy + boxH);
