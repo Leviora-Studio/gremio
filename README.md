@@ -1,5 +1,20 @@
 # Gremio
 
+### 4.4.0: Trigger-Zuweisungen und PDF-Editor-Korrekturen
+
+Jeder Board-Trigger (Anweisungsdatum, Überweisungsdatum, Nachreichung,
+Rückmeldung, Done-Spalte, Nextcloud-Archiv) kann beim Auslösen optional alle
+Zuweisungen entfernen und/oder Nutzer zusätzlich zuweisen. Änderungen erscheinen
+im Aktivitätsverlauf der Karte. Migration `0069_trigger_assignments.sql` legt
+die Tabellen an; bestehende Boards verhalten sich unverändert.
+
+Im PDF-Editor bleiben Zeilenumbrüche erhalten, und „?" erscheint nur noch für
+Zeichen ohne Glyphe (z. B. Emoji). Freitext wird zoomunabhängig mit 12 pt gesetzt,
+ist in der Größe änderbar, landet auch bei zugeschnittenen PDFs an der richtigen
+Stelle und springt nach dem Speichern nicht mehr. Die Signatur-Box sitzt auch auf
+gedrehten Seiten korrekt und aufrecht. Ungespeicherte Änderungen werden vor dem
+Schließen abgefragt.
+
 ### 4.3.0: Verfallene Anträge und Anweisungsdateinamen
 
 Finanzübersichten können pro Quell-Board eine „Spalte für Verfallen“ auswählen.
