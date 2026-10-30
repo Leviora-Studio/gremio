@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -31,6 +32,7 @@ import {
   addInventoryAccessUserAction,
   deleteInventoryBoardConfirmedAction,
   removeInventoryAccessAction,
+  updateInventoryAccessLevelAction,
   renameInventoryBoardAction,
   transferInventoryOwnerAction,
   updateInventoryFieldsAction,
@@ -52,6 +54,7 @@ export default async function InventoryBoardSettingsPage({
       db
         .select({
           id: inventoryBoardAccess.id,
+      accessLevel: inventoryBoardAccess.accessLevel,
           userId: inventoryBoardAccess.userId,
           groupId: inventoryBoardAccess.groupId,
           userName: users.username,
@@ -85,7 +88,7 @@ export default async function InventoryBoardSettingsPage({
   const loanBoard = loanBoardRow[0] ?? null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 py-2">
+    <div className="mx-auto max-w-5xl space-y-8 py-2">
       <div>
         <Link
           href={`/intern/inventar/${board.id}`}
@@ -136,10 +139,11 @@ export default async function InventoryBoardSettingsPage({
           Lege fest, welche Nutzer und Gruppen dieses Inventar sehen und
           bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
         </p>
+        <p className="mb-3 text-sm text-slate-500">Bei mehreren direkten oder Gruppenfreigaben gelten die höchsten Rechte. Eigentümer und Admins behalten volle Rechte.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form
             action={addInventoryAccessUserAction.bind(null, board.id)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Nutzer freigeben</label>
@@ -154,12 +158,16 @@ export default async function InventoryBoardSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
 
           <form
             action={addInventoryAccessGroupAction.bind(null, board.id)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Gruppe freigeben</label>
@@ -174,6 +182,10 @@ export default async function InventoryBoardSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
         </div>
@@ -187,7 +199,7 @@ export default async function InventoryBoardSettingsPage({
           {access.map((a) => (
             <div
               key={a.id}
-              className="flex items-center justify-between rounded border border-slate-200 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2"
             >
               <span className="inline-flex items-center gap-2 text-sm">
                 {a.userId ? (
@@ -203,6 +215,10 @@ export default async function InventoryBoardSettingsPage({
                   <>👥 {a.groupName} (Gruppe)</>
                 )}
               </span>
+              <form action={updateInventoryAccessLevelAction.bind(null, board.id, a.id)} className="flex flex-wrap items-center gap-2">
+                <div className="w-56"><Select name="accessLevel" key={`${a.id}-${a.accessLevel}`} ariaLabel={`Zugriff für ${a.userName ?? a.groupName ?? "Freigabe"}`} defaultValue={a.accessLevel} options={ACCESS_LEVEL_OPTIONS} /></div>
+                <SubmitButton className="btn-secondary btn-sm">Speichern</SubmitButton>
+              </form>
               <form
                 action={removeInventoryAccessAction.bind(null, board.id, a.id)}
               >

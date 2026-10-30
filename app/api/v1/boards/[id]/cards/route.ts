@@ -4,7 +4,7 @@
 import { resolveApiBoard } from "@/lib/api-access";
 import { queryApiCards } from "@/lib/api-query";
 import { NextResponse } from "next/server";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
+import { canEditBoard, canAccessBoard, getBoardById } from "@/lib/authz";
 import {
   apiError,
   authApi,
@@ -47,6 +47,7 @@ export async function POST(
     !(await canAccessBoard(ctx.user, board))
   )
     return apiError(404, "Board nicht gefunden.");
+  if (!(await canEditBoard(ctx.user, board))) return apiError(403, "Nur lesender Board-Zugriff.");
   // Leihvorgang-System-Boards werden ausschließlich über das Inventar verwaltet
   // (die Web-UI leitet Karten dort in die Leih-Ansicht) → API nur lesend.
   if (board.inventoryBoardId != null) {

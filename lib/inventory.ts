@@ -17,14 +17,15 @@ import { getUserGroupIds } from "@/lib/authz";
 import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
 
 // Zugriffsmodell der Inventar-Boards = identisch zu den Kanban-Boards:
-// admin ODER Eigentümer ODER Freigabe an Nutzer/Gruppe (binär, kein Lese-/
-// Schreib-Unterschied). Verwalten (Struktur/Freigaben/löschen) = admin ODER
+// admin ODER Eigentümer ODER passende Freigabe an Nutzer/Gruppe (read/write).
+// Die höchste Freigabe gewinnt. Verwalten (Struktur/Freigaben/löschen) = admin ODER
 // Eigentümer.
 
-/** Sehen + bearbeiten eines Inventar-Boards. */
+/** Lesen oder explizit angeforderter Schreibzugriff auf ein Inventar-Board. */
 export async function canAccessInventoryBoard(
   user: User,
   board: InventoryBoard,
+  access: "read" | "write" = "read",
 ): Promise<boolean> {
   if (user.role === "admin") return true;
   if (board.ownerId === user.id) return true;
@@ -35,6 +36,7 @@ export async function canAccessInventoryBoard(
     .where(
       and(
         eq(inventoryBoardAccess.boardId, board.id),
+        access === "write" ? eq(inventoryBoardAccess.accessLevel, "write") : undefined,
         or(
           eq(inventoryBoardAccess.userId, user.id),
           groupIds.length
@@ -146,4 +148,9 @@ export async function createInventoryBoard(
     await tx.insert(inventoryNumbering).values({ boardId: board.id });
     return board.id;
   });
+}
+
+/** Effective write access: owner/admin or any matching write grant. */
+export async function canEditInventoryBoard(user: User, board: InventoryBoard): Promise<boolean> {
+  return canAccessInventoryBoard(user, board, "write");
 }

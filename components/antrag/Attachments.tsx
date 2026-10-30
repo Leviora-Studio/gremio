@@ -20,7 +20,7 @@ import type { AttachmentFolder } from "@/lib/attachment-organization";
 
 type Att = { id: number; filename: string; mime: string; folderId?: number | null };
 
-export function AttachmentFolders({ cardId, folders }: { cardId: number; folders: AttachmentFolder[] }) {
+export function AttachmentFolders({ cardId, folders, canEdit = true }: { cardId: number; folders: AttachmentFolder[]; canEdit?: boolean }) {
   const [state, action, pending] = useActionState(createAttachmentFolderAction.bind(null, cardId), {} as State);
   return (
     <div className="space-y-2 rounded border border-slate-200 p-3">
@@ -28,10 +28,10 @@ export function AttachmentFolders({ cardId, folders }: { cardId: number; folders
       {folders.length > 0 && <div className="flex flex-wrap gap-2">{folders.map((folder) => (
         <span key={folder.id} className="max-w-full break-words rounded bg-slate-100 px-2 py-1 text-sm">📁 {folder.name}</span>
       ))}</div>}
-      <form action={action} className="flex flex-wrap items-center gap-2">
+      {canEdit && <form action={action} className="flex flex-wrap items-center gap-2">
         <input aria-label="Neuer Ordnername" name="name" required maxLength={120} placeholder="Neuer Ordnername" className="input min-w-0 flex-1" disabled={pending} />
         <button className="btn-secondary btn-sm" disabled={pending}>{pending ? "Wird erstellt …" : "Ordner erstellen"}</button>
-      </form>
+      </form>}
       {state.error && <p role="alert" className="text-sm text-red-600">{state.error}</p>}
       {state.success && <p role="status" className="text-sm text-green-700">{state.success}</p>}
     </div>
@@ -118,7 +118,9 @@ function FileLine({
   att,
   hasCert = false,
   folders,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   cardId: number;
   att: Att;
   folders: AttachmentFolder[];
@@ -132,11 +134,11 @@ function FileLine({
           filename={att.filename}
           mime={att.mime}
           src={`/api/attachment/${att.id}`}
-          editable
+          editable={canEdit}
           hasCert={hasCert}
           className="min-w-0 truncate text-sm text-brand-600 hover:underline"
         />
-        <DeleteConfirm
+        {canEdit && <DeleteConfirm
           action={deleteAttachmentAction.bind(null, cardId, att.id)}
           requireWord={false}
           compact
@@ -144,9 +146,9 @@ function FileLine({
           buttonClassName="text-xs text-red-600 hover:underline"
           title={`Datei „${att.filename}" löschen`}
           message="Die Datei wird vom Antrag entfernt."
-        />
+        />}
       </div>
-      <FileOrganization cardId={cardId} att={att} folders={folders} />
+      {canEdit && <FileOrganization cardId={cardId} att={att} folders={folders} />}
     </div>
   );
 }
@@ -159,7 +161,9 @@ export function AttachmentSlot({
   current,
   hasCert,
   folders = [],
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   cardId: number;
   kind: AttachmentKind;
   label: string;
@@ -179,11 +183,11 @@ export function AttachmentSlot({
               filename={current.filename}
               mime={current.mime}
               src={`/api/attachment/${current.id}`}
-              editable
+              editable={canEdit}
               hasCert={hasCert}
               className="min-w-0 truncate text-sm text-brand-600 hover:underline"
             />
-            <div className="flex shrink-0 items-center gap-3 leading-none">
+            {canEdit && <div className="flex shrink-0 items-center gap-3 leading-none">
               <UploadForm
                 cardId={cardId}
                 kind={kind}
@@ -201,18 +205,18 @@ export function AttachmentSlot({
                 title={`Datei „${current.filename}" löschen`}
                 message="Die Datei wird vom Antrag entfernt."
               />
-            </div>
+            </div>}
           </div>
-          <FileOrganization cardId={cardId} att={current} folders={folders} />
+          {canEdit && <FileOrganization cardId={cardId} att={current} folders={folders} />}
         </div>
-      ) : (
+      ) : canEdit ? (
         <UploadForm
           cardId={cardId}
           kind={kind}
           accept={accept}
           label="Datei auswählen"
         />
-      )}
+      ) : <p className="text-sm text-slate-500">Keine Datei.</p>}
     </div>
   );
 }
@@ -223,7 +227,9 @@ export function WeitereAttachments({
   hasCert = false,
   allowUpload = true,
   folders = [],
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   cardId: number;
   items: Att[];
   hasCert?: boolean;
@@ -234,20 +240,20 @@ export function WeitereAttachments({
     <div className="space-y-2">
       <div className="text-sm font-medium text-slate-700">Dateien (PDF)</div>
       {items.filter((a) => a.folderId == null).map((a) => (
-        <FileLine key={a.id} cardId={cardId} att={a} hasCert={hasCert} folders={folders} />
+        <FileLine canEdit={canEdit} key={a.id} cardId={cardId} att={a} hasCert={hasCert} folders={folders} />
       ))}
       {folders.map((folder) => (
         <details key={folder.id} open className="rounded border border-slate-200 p-3">
           <summary className="cursor-pointer break-words font-medium text-slate-700">📁 {folder.name}</summary>
           <div className="mt-2 space-y-2">
             {items.filter((a) => a.folderId === folder.id).map((a) => (
-              <FileLine key={a.id} cardId={cardId} att={a} hasCert={hasCert} folders={folders} />
+              <FileLine canEdit={canEdit} key={a.id} cardId={cardId} att={a} hasCert={hasCert} folders={folders} />
             ))}
             {!items.some((a) => a.folderId === folder.id) && <p className="text-sm text-slate-500">Keine weiteren PDFs in diesem Ordner.</p>}
           </div>
         </details>
       ))}
-      {allowUpload && (
+      {canEdit && allowUpload && (
         <UploadQueue upload={(file) => { const data = new FormData(); data.set("file", file); return uploadAttachmentAction(cardId, "other", {}, data); }} />
       )}
     </div>

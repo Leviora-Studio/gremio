@@ -33,7 +33,9 @@ export function LoanQuantityEditor({
   confirmedLabel,
   items,
   addable,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   loanId: number;
   requested: number;
   confirmed: number;
@@ -83,7 +85,7 @@ export function LoanQuantityEditor({
                   </span>
                 )}
               </Link>
-              <form action={removeLoanItemAction}>
+              <>{canEdit && <form action={removeLoanItemAction}>
                 <input type="hidden" name="loanId" value={loanId} />
                 <input type="hidden" name="itemId" value={it.id} />
                 <SubmitButton
@@ -92,14 +94,14 @@ export function LoanQuantityEditor({
                 >
                   {it.quantity > 1 ? "Eine weniger" : "Entfernen"}
                 </SubmitButton>
-              </form>
+              </form>}</>
             </li>
           ))}
         </ul>
       </div>
 
       {addable.length > 0 ? (
-        <form
+        <>{canEdit && <form
           action={addLoanItemAction}
           className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3"
         >
@@ -130,7 +132,7 @@ export function LoanQuantityEditor({
           >
             Hinzufügen
           </SubmitButton>
-        </form>
+        </form>}</>
       ) : (
         <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">
           Aktuell sind keine weiteren Einheiten dieser Obergruppe verfügbar.

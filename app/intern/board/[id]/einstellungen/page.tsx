@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   boardAccess,
+  boardOfficeRoles,
+  boardOfficeStatuses,
   boardArchive,
   boardCardFields,
   boardInstructionForms,
@@ -15,7 +18,7 @@ import {
   groups,
   users,
 } from "@/lib/db/schema";
-import { requireBoardManage } from "@/lib/authz";
+import { getBoardMemberUsers, requireBoardManage } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
 import { EDITABLE_FIELD_KEYS, type TriggerKind } from "@/lib/constants";
 import { getTriggerAssignmentConfigs } from "@/lib/trigger-assignments";
@@ -25,6 +28,7 @@ import { Select } from "@/components/Select";
 import { Avatar } from "@/components/Avatar";
 import { RenameBoardForm } from "@/components/board/RenameBoardForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
+import { OfficeRoleForm } from "@/components/board/OfficeRoleForm";
 import { StatusList } from "@/components/board/StatusList";
 import { CardFieldsForm } from "@/components/board/CardFieldsForm";
 import { BoardNumberingForm } from "@/components/board/BoardNumberingForm";
@@ -41,6 +45,7 @@ import {
   addStatusAction,
   deleteBoardConfirmedAction,
   removeAccessAction,
+  updateAccessLevelAction,
   setArchiveTriggerAction,
   setInstructionTriggerAction,
   setTransferTriggerAction,
@@ -72,6 +77,9 @@ export default async function BoardSettingsPage({
     .from(boardStatuses)
     .where(eq(boardStatuses.boardId, boardId))
     .orderBy(asc(boardStatuses.position));
+  const people = await getBoardMemberUsers(board);
+  const [officeRole] = await db.select().from(boardOfficeRoles).where(eq(boardOfficeRoles.boardId, boardId));
+  const officeStatuses = await db.select().from(boardOfficeStatuses).where(eq(boardOfficeStatuses.boardId, boardId));
   const accounts = await getAccounts();
 
   const fieldRows = await db
@@ -109,6 +117,7 @@ export default async function BoardSettingsPage({
   const access = await db
     .select({
       id: boardAccess.id,
+      accessLevel: boardAccess.accessLevel,
       userId: boardAccess.userId,
       groupId: boardAccess.groupId,
       userName: users.username,
@@ -191,16 +200,22 @@ export default async function BoardSettingsPage({
         />
       </CollapsibleSection>
 
+      <CollapsibleSection title="Bürokraft aktivieren">
+        <OfficeRoleForm boardId={boardId} people={people} statuses={statuses} initial={{ enabled: officeRole?.enabled ?? false, userId: officeRole?.userId ?? null,
+          sourceStatusIds: officeStatuses.filter(row => row.direction === "source").map(row => row.statusId),
+          targetStatusIds: officeStatuses.filter(row => row.direction === "target").map(row => row.statusId) }} />
+      </CollapsibleSection>
+
       {/* 2. Freigaben */}
       <CollapsibleSection title="Freigaben">
         <p className="mb-3 text-sm text-slate-500">
-          Lege fest, welche Nutzer und Gruppen dieses Board sehen und Karten
-          bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
+          Lege fest, welche Nutzer und Gruppen dieses Board lesen oder lesen und bearbeiten dürfen. Eigentümer und Admins haben immer Zugriff.
         </p>
+        <p className="mb-3 text-sm text-slate-500">Bei mehreren direkten oder Gruppenfreigaben gelten die höchsten Rechte. Eigentümer und Admins behalten volle Rechte.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form
             action={addAccessUserAction.bind(null, boardId)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Nutzer freigeben</label>
@@ -215,12 +230,16 @@ export default async function BoardSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
 
           <form
             action={addAccessGroupAction.bind(null, boardId)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Gruppe freigeben</label>
@@ -235,6 +254,10 @@ export default async function BoardSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
         </div>
@@ -248,7 +271,7 @@ export default async function BoardSettingsPage({
           {access.map((a) => (
             <div
               key={a.id}
-              className="flex items-center justify-between rounded border border-slate-200 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2"
             >
               <span className="inline-flex items-center gap-2 text-sm">
                 {a.userId ? (
@@ -264,6 +287,10 @@ export default async function BoardSettingsPage({
                   <>👥 {a.groupName} (Gruppe)</>
                 )}
               </span>
+              <form action={updateAccessLevelAction.bind(null, boardId, a.id)} className="flex flex-wrap items-center gap-2">
+                <div className="w-56"><Select name="accessLevel" key={`${a.id}-${a.accessLevel}`} ariaLabel={`Zugriff für ${a.userName ?? a.groupName ?? "Freigabe"}`} defaultValue={a.accessLevel} options={ACCESS_LEVEL_OPTIONS} /></div>
+                <SubmitButton className="btn-secondary btn-sm">Speichern</SubmitButton>
+              </form>
               <form action={removeAccessAction.bind(null, boardId, a.id)}>
                 <SubmitButton className="btn-secondary px-2 py-1">
                   Entfernen

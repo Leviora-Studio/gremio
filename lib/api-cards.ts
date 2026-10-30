@@ -17,6 +17,8 @@ import {
 } from "@/lib/db/schema";
 import {
   canAccessBoard,
+  canEditBoard,
+  canMoveBoardCard,
   getBoardById,
   getBoardMemberUsers,
 } from "@/lib/authz";
@@ -396,7 +398,7 @@ export async function createCardViaApi(
       });
       break;
     } catch (e) {
-      if (e instanceof BudgetValidationError) return fail(400, e.message);
+    if (e instanceof BudgetValidationError) return fail(400, e.message);
       if (isTokenConflict(e) && attempt < 5) continue;
       throw e;
     }
@@ -418,6 +420,9 @@ export async function updateCardViaApi(
   card: Card,
   input: CardWriteInput,
 ): Promise<ApiResult<Card>> {
+  const fullWrite = await canEditBoard(user, board);
+  const statusOnly = Object.keys(input).length === 1 && typeof input.statusId === "number";
+  if (!fullWrite && (!statusOnly || !(await canMoveBoardCard(user, board, card, input.statusId!)))) return fail(403, "Nur ausdrücklich erlaubte Statuswechsel sind zulässig.");
   if ("title" in input && (!input.title || !input.title.trim()))
     return fail(400, "Feld 'title' darf nicht leer sein.");
   if (input.budgetPositions && ["budgetTitle", "accountId", "requestedAmountCents", "approvedAmountCents", "actualAmountCents"].some((k) => k in input)) return fail(400, "Haushaltspositionen und direkte Kartenbeträge/Kontozuordnung dürfen nicht gemeinsam geändert werden.");
@@ -475,6 +480,7 @@ export async function updateCardViaApi(
   const visible = input.budgetPositions ? await getVisibleFieldKeys(board.id) : null;
   try { await db.transaction(async (tx) => {
     const fresh = await guardBudgetCardUpdate(tx, card.id, update);
+    if (!fullWrite && (!(await canMoveBoardCard(user, board, fresh, input.statusId!, tx)) || fresh.statusId !== card.statusId)) throw new OfficeMoveDenied();
     if (input.budgetPositions) await writeBudgetPositions(tx, fresh, input.budgetPositions, input.budgetRevision!, visible!);
     if (Object.keys(update).length > 0) {
       await tx.update(cards).set(update).where(eq(cards.id, card.id));
@@ -483,6 +489,7 @@ export async function updateCardViaApi(
       await repositionCard(tx, board.id, targetStatusId, card.id, input.position);
     }
   }); } catch (e) {
+    if (e instanceof OfficeMoveDenied) return fail(403, "Dieser Statuswechsel ist nicht mehr erlaubt. Bitte neu laden.");
     if (e instanceof BudgetValidationError) return fail(400, e.message);
     throw e;
   }
@@ -521,3 +528,5 @@ export async function updateCardViaApi(
 
   return { ok: true, value: await freshCard(card.id) };
 }
+
+class OfficeMoveDenied extends Error {}

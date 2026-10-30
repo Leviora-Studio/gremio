@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   requireInventoryBoardAccess,
   canManageInventoryBoard,
+  canEditInventoryBoard,
 } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
 import {
@@ -37,6 +38,7 @@ export default async function InventoryBoardPage({
 }) {
   const { id } = await params;
   const { user, board } = await requireInventoryBoardAccess(Number(id));
+  const canEdit = await canEditInventoryBoard(user, board);
   const manage = canManageInventoryBoard(user, board);
 
   const [visible, options, numbering, items, archived, loanCards, untracked] =
@@ -188,6 +190,7 @@ export default async function InventoryBoardPage({
       )}
 
       <InventoryBoardView
+        canEdit={canEdit}
         boardId={board.id}
         visibleFields={Array.from(visible)}
         numberingEnabled={numbering?.enabled ?? false}

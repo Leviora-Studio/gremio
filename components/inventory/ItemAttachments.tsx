@@ -35,16 +35,19 @@ export function ItemAttachments({
   itemId,
   attachments,
   hasCert = false,
+  canEdit = true,
 }: {
   itemId: number;
   attachments: Record<InventoryAttachmentKind, InventoryAttachment[]>;
   hasCert?: boolean;
+  canEdit?: boolean;
 }) {
   return (
     <section className="card space-y-5 p-5">
       <h2 className="font-semibold">Kaufbelege</h2>
       {SHOWN_KINDS.map((kind) => (
         <AttachmentKindSection
+          canEdit={canEdit}
           key={kind}
           itemId={itemId}
           kind={kind}
@@ -63,12 +66,14 @@ function AttachmentKindSection({
   label,
   files,
   hasCert,
+  canEdit,
 }: {
   itemId: number;
   kind: InventoryAttachmentKind;
   label: string;
   files: InventoryAttachment[];
   hasCert: boolean;
+  canEdit: boolean;
 }) {
   const [state, action] = useActionState(
     uploadInventoryAttachmentAction,
@@ -101,7 +106,7 @@ function AttachmentKindSection({
                 filename={f.filename}
                 mime={f.mime}
                 src={`/api/inventory/attachment/${f.id}`}
-                editable
+                editable={canEdit}
                 hasCert={hasCert}
                 fieldsUrl={`/api/inventory/attachment/${f.id}/fields`}
                 saveAction={saveInventoryPdfEditsAction}
@@ -109,12 +114,12 @@ function AttachmentKindSection({
               />
               <span className="flex shrink-0 items-center gap-3 text-xs text-slate-400">
                 {fmt(f.uploadedAt)}
-                <form action={deleteInventoryAttachmentAction}>
+                {canEdit && <form action={deleteInventoryAttachmentAction}>
                   <input type="hidden" name="attId" value={f.id} />
                   <SubmitButton className="text-slate-400 hover:text-red-600">
                     löschen
                   </SubmitButton>
-                </form>
+                </form>}
               </span>
             </li>
           ))}
@@ -123,7 +128,7 @@ function AttachmentKindSection({
         <p className="mb-2 text-sm text-slate-400">Noch keine Dateien.</p>
       )}
 
-      <form
+      {canEdit && <form
         ref={formRef}
         action={action}
         className="flex flex-wrap items-center gap-2"
@@ -134,7 +139,7 @@ function AttachmentKindSection({
         <SubmitButton className="btn-secondary shrink-0">
           Hochladen
         </SubmitButton>
-      </form>
+      </form>}
       {state.error && (
         <p className="mt-1 text-xs text-red-600">{state.error}</p>
       )}

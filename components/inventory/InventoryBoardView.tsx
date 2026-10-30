@@ -48,7 +48,9 @@ export function InventoryBoardView({
   initialOptions,
   groupNames,
   items,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   boardId: number;
   visibleFields: string[];
   numberingEnabled: boolean;
@@ -219,13 +221,13 @@ export function InventoryBoardView({
               </button>
             </div>
           )}
-          <button
+          {canEdit && <button
             type="button"
             onClick={() => setCreateOpen(true)}
             className="btn-primary"
           >
             + Neuer Gegenstand
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -350,7 +352,7 @@ export function InventoryBoardView({
         </div>
       )}
 
-      {createOpen && (
+      {canEdit && createOpen && (
         <ItemFormModal
           boardId={boardId}
           item={null}

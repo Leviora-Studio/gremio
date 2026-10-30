@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicBaseUrl } from "@/lib/public-api";
-import { requireInventoryBoardAccess } from "@/lib/inventory";
+import { canEditInventoryBoard, requireInventoryBoardAccess } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
 import {
   getAddableGroupUnits,
@@ -52,6 +52,7 @@ export default async function InventoryLoanPage({
   const item = await getInventoryItemById(loan.itemId);
   if (!item) notFound();
   const { user, board } = await requireInventoryBoardAccess(item.boardId);
+  const canEdit = await canEditInventoryBoard(user, board);
 
   const allDocs = await listLoanAttachments(loan.id);
   // Studierendenausweis (öffentliche Anfrage) getrennt ausweisen — er ist ein
@@ -132,7 +133,7 @@ export default async function InventoryLoanPage({
           ))}
         </dl>
 
-        {statusLink && (
+        {canEdit && statusLink && (
           <div className="mt-3 border-t border-slate-100 pt-3">
             <dt className="text-xs uppercase tracking-wide text-slate-400">
               Status-Link (öffentlich)
@@ -159,11 +160,11 @@ export default async function InventoryLoanPage({
                 Aktuelle Spalte
               </span>
               <div className="mt-1">
-                <LoanColumnSelect
+                {canEdit ? <LoanColumnSelect
                   cardId={loan.cardId}
                   columns={cardProgress.columns}
                   current={cardProgress.currentStatusId}
-                />
+                /> : <span>{cardProgress.columns.find(c => c.id === cardProgress.currentStatusId)?.name}</span>}
               </div>
             </div>
             <Link
@@ -177,7 +178,7 @@ export default async function InventoryLoanPage({
 
         {/* Aktionen je nach Status — nur ohne Aufgabentracking (sonst Board) */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-          {!cardProgress && pending && (
+          {canEdit && !cardProgress && pending && (
             <>
               {loan.status === "contract_signed" ? (
                 <form action={approveLoanAction}>
@@ -198,7 +199,7 @@ export default async function InventoryLoanPage({
               </form>
             </>
           )}
-          {!cardProgress && loan.status === "active" && (
+          {canEdit && !cardProgress && loan.status === "active" && (
             <form action={returnLoanAction}>
               <input type="hidden" name="loanId" value={loan.id} />
               <SubmitButton className="btn-secondary">
@@ -206,18 +207,19 @@ export default async function InventoryLoanPage({
               </SubmitButton>
             </form>
           )}
-          <form action={deleteLoanAction} className="ml-auto">
+          {canEdit && <form action={deleteLoanAction} className="ml-auto">
             <input type="hidden" name="loanId" value={loan.id} />
             <SubmitButton className="text-sm text-slate-400 hover:text-red-600">
               Vorgang löschen
             </SubmitButton>
-          </form>
+          </form>}
         </div>
       </div>
 
       {/* Stückzahl-Vorgang: angefragte vs. bestätigte Menge + Anpassung */}
       {isGroupLoan && (
         <LoanQuantityEditor
+            canEdit={canEdit}
           loanId={loan.id}
           requested={loan.requestedQuantity}
           confirmed={confirmedQty}
@@ -254,7 +256,7 @@ export default async function InventoryLoanPage({
       )}
 
       {/* Hinweise für den Entleiher (über den Status-Link sichtbar) */}
-      <BorrowerNoteForm loanId={loan.id} initial={loan.borrowerNote ?? ""} />
+      {canEdit ? <BorrowerNoteForm loanId={loan.id} initial={loan.borrowerNote ?? ""} /> : <section className="card p-5"><h2 className="font-semibold">Hinweise für den Entleiher</h2><p className="whitespace-pre-wrap text-sm">{loan.borrowerNote || "—"}</p></section>}
 
       {/* Dokumente des Vorgangs (Leihvertrag/-antrag) */}
       <div className="card p-5">
@@ -264,6 +266,7 @@ export default async function InventoryLoanPage({
           erscheint auf der öffentlichen Statusseite zum Unterschreiben.
         </p>
         <LoanContractUpload
+          canEdit={canEdit}
           loanId={loan.id}
           docs={docs}
           hasCert={!!user.certSubject}

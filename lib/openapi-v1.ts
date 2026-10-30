@@ -77,10 +77,10 @@ const notFoundCard = {
   },
 } as const;
 
-/** 403 — Token nur lesend. */
+/** 403 — Token or live board grant is read-only. */
 const forbiddenWrite = {
   description:
-    "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`).",
+    "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`) oder dem Nutzer fehlt live das Board-Schreibrecht.",
   content: {
     "application/json": {
       schema: { $ref: "#/components/schemas/ErrorResponse" },
@@ -321,7 +321,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "createCard",
         summary: "Karte auf einem Board anlegen",
         description:
-          "Legt eine Karte an. Pflichtfeld ist `title`. Ohne `statusId` landet sie in der **ersten** Spalte, ohne `position` am Ende der Spalte. Ist die Board-Nummerierung aktiv, wird automatisch eine Antragsnummer vergeben.\n\n**Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geschrieben werden. Am Board deaktivierte Felder werden abgelehnt.",
+          "Legt eine Karte an. Pflichtfeld ist `title`. Ohne `statusId` landet sie in der **ersten** Spalte, ohne `position` am Ende der Spalte. Ist die Board-Nummerierung aktiv, wird automatisch eine Antragsnummer vergeben.\n\n**Berechtigung:** Board-Schreibrecht **und** Token mit `scope=write`. Alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geschrieben werden. Am Board deaktivierte Felder werden abgelehnt.",
         requestBody: {
           required: true,
           content: {
@@ -424,7 +424,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "updateCard",
         summary: "Karte ändern oder verschieben",
         description:
-          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.",
+          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden. Alternativ erlaubt eine konfigurierte Bürokraft-Regel mit bestehendem Leserecht und `scope=write` ausschließlich einen Body mit genau `statusId`, wenn die aktive Karte aus einer erlaubten Ausgangsspalte in eine erlaubte andere Zielspalte wechselt. Schreibfreigaben haben Vorrang; Misch-Patches, Positionsänderungen und Wiederherstellungen sind für reine Bürokraft-Berechtigungen gesperrt.",
         parameters: [
           {
             name: "id",
@@ -478,7 +478,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "deleteCard",
         summary: "Karte löschen",
         description:
-          "Löscht die Karte und ihre Anhänge (Dateien inklusive). Unwiderruflich.\n\n**Berechtigung:** Board-Zugriff **und** `scope=write`. Das Zugriffsmodell ist binär — jedes Board-Mitglied darf löschen, ein gesondertes Löschrecht gibt es nicht.",
+          "Löscht die Karte und ihre Anhänge (Dateien inklusive). Unwiderruflich.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`. Jeder Nutzer mit Board-Schreibrecht darf löschen; reine Lesefreigaben erlauben keine Änderungen. Direkte und Gruppenfreigaben werden kombiniert, die höchste Stufe gilt.",
         parameters: [
           {
             name: "id",
@@ -812,7 +812,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           number: {
             type: ["string", "null"],
             maxLength: 100,
-            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
+            description: "Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           statusId: {
             type: "integer",
@@ -846,12 +846,12 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           instructionDate: {
             type: ["string", "null"],
             format: "date",
-            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
+            description: "Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           transferDate: {
             type: ["string", "null"],
             format: "date",
-            description: "Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.",
+            description: "Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert ist.",
           },
           requestedAmountCents: {
             type: ["integer", "null"],

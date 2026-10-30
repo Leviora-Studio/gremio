@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import {
-  canAccessInventoryBoard,
+  canEditInventoryBoard,
   getInventoryBoardById,
 } from "@/lib/inventory";
 import {
@@ -40,7 +40,7 @@ async function assertItemAccess(itemId: number): Promise<{
   const item = await getInventoryItemById(itemId);
   if (!item) throw new Error("Gegenstand nicht gefunden.");
   const board = await getInventoryBoardById(item.boardId);
-  if (!board || !(await canAccessInventoryBoard(user, board))) {
+  if (!board || !(await canEditInventoryBoard(user, board))) {
     throw new Error("Kein Zugriff.");
   }
   return { userId: user.id, item };

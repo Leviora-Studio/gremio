@@ -14,10 +14,14 @@
 
 - Reuse existing libraries, components, authorization and validation helpers.
   Ask before adding a production dependency.
-- Board access is binary: members can edit/delete cards and edit every enabled
-  card field, including number and transfer/instruction dates (since v2.7.9).
-  Board settings require owner/admin. API token scope and board restrictions
-  can only narrow the user's live permissions; hidden fields must not leak.
+- Board, finance and inventory grants have read or write access. Any matching
+  direct/group write grant wins; owner/admin retain full permissions. Readers
+  cannot mutate content, comments, attachments or loans. The optional office
+  role adds only configured source-to-target status moves for an existing reader;
+  any direct/group write grant still wins. Writers may edit/delete
+  content and every enabled card field, including number and trigger dates.
+  Settings and sharing still require owner/admin. Finance writers can edit plans.
+  API token scope and board restrictions can only narrow the user's live permissions; hidden fields must not leak.
 - Keep the external API scope unchanged unless explicitly asked to expand it.
   Session-bound editor/file endpoints and Server Actions are not bearer APIs.
 - Use the shared budget writer for position changes. Preserve hidden values,

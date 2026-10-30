@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 
@@ -30,7 +30,8 @@ export function PlanItemRow({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
   const saving = useRef(false);
-  const errRef = useRef<HTMLSpanElement>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState("");
 
   const flush = useCallback(async () => {
     if (timer.current) {
@@ -42,20 +43,35 @@ export function PlanItemRow({
     if (!form) return;
     saving.current = true;
     dirty.current = false;
+    setSaveStatus("saving");
+    setError("");
+    let failed = false;
     try {
       const res = await editAction({}, new FormData(form));
-      if (errRef.current) errRef.current.textContent = res?.error ?? "";
+      if (res?.error) {
+        failed = true;
+        dirty.current = true;
+        setSaveStatus("error");
+        setError(res.error);
+      } else setSaveStatus(dirty.current ? "pending" : "saved");
       // Server recomputes Summen-Warnungen → Seite aktualisieren.
       if (!res?.error) router.refresh();
+    } catch {
+      failed = true;
+      dirty.current = true;
+      setSaveStatus("error");
+      setError("Speichern fehlgeschlagen. Deine Eingabe bleibt erhalten.");
     } finally {
       saving.current = false;
       // Falls während des Speicherns weitere Änderungen kamen.
-      if (dirty.current) void flush();
+      if (dirty.current && !failed) void flush();
     }
   }, [editAction, router]);
 
   const schedule = useCallback(() => {
     dirty.current = true;
+    setSaveStatus("pending");
+    setError("");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flush(), 700);
   }, [flush]);
@@ -99,7 +115,13 @@ export function PlanItemRow({
             onBlur={() => void flush()}
           />
         </div>
-        <span ref={errRef} className="text-sm text-red-600" />
+        <div className="w-full text-xs" aria-live="polite" role="status">
+          {saveStatus === "idle" && <span className="text-slate-500">Automatisches Speichern aktiv</span>}
+          {saveStatus === "pending" && <span className="text-slate-500">Änderungen werden automatisch gespeichert …</span>}
+          {saveStatus === "saving" && <span className="text-slate-500">Wird gespeichert …</span>}
+          {saveStatus === "saved" && <span className="text-green-700">✓ Automatisch gespeichert</span>}
+          {saveStatus === "error" && <><span className="text-red-700">{error}</span> <button type="button" className="text-brand-700 underline" onClick={() => void flush()}>Erneut versuchen</button></>}
+        </div>
       </form>
       <DeleteConfirm
         action={deleteAction}

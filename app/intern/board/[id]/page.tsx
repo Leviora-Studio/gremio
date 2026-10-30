@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { cards, boardCardFields, boardStatuses } from "@/lib/db/schema";
 import {
   canManageBoard,
+  canEditBoard,
+  getOfficeMoveRules,
   getBoardMemberUsers,
   requireBoardAccess,
 } from "@/lib/authz";
@@ -28,6 +30,8 @@ export default async function BoardPage({
   const { id } = await params;
   const boardId = Number(id);
   const { user, board } = await requireBoardAccess(boardId);
+  const canEdit = await canEditBoard(user, board);
+  const officeMoveRules = canEdit ? null : await getOfficeMoveRules(user, board);
   const manage = canManageBoard(user, board);
 
   const statuses = await db
@@ -48,6 +52,8 @@ export default async function BoardPage({
       statusId: cards.statusId,
       title: cards.title,
       number: cards.number,
+      requestedAmount: cards.requestedAmount,
+      decisionRef: cards.decisionRef,
       applicant: cards.applicant,
       priorityId: cards.priorityId,
       resubmittedAt: cards.resubmittedAt,
@@ -93,6 +99,7 @@ export default async function BoardPage({
       r.applicant,
       visibleSet.has("budget_title") ? budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle : null,
       r.notes,
+      r.decisionRef,
       r.deadline,
       r.meeting,
       r.instructionDate,
@@ -101,6 +108,7 @@ export default async function BoardPage({
       r.priorityId != null ? priorityLabel.get(r.priorityId) : null,
       visibleSet.has("account") ? budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) : null) : null,
       statusLabel.get(r.statusId),
+      r.requestedAmount != null ? formatCents(r.requestedAmount) : null,
       r.approvedAmount != null ? formatCents(r.approvedAmount) : null,
       r.actualAmount != null ? formatCents(r.actualAmount) : null,
     ]
@@ -118,6 +126,16 @@ export default async function BoardPage({
       deadline: r.deadline,
       meeting: r.meeting,
       assignees,
+      fields: {
+        budget_title: visibleSet.has("budget_title") ? budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle : null,
+        account: visibleSet.has("account") ? budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) ?? null : null) : null,
+        requested_amount: r.requestedAmount,
+        approved_amount: r.approvedAmount,
+        actual_amount: r.actualAmount,
+        instruction_date: r.instructionDate,
+        transfer_date: r.transferDate,
+        decision_ref: r.decisionRef,
+      },
       searchText,
     };
   });
@@ -145,7 +163,7 @@ export default async function BoardPage({
           )}
         </div>
         <div className="flex w-full items-center gap-1.5 overflow-x-auto sm:w-auto sm:flex-wrap sm:gap-2 sm:overflow-visible">
-          <NewCardButton
+          {canEdit && <NewCardButton
             boardId={boardId}
             visible={visible}
             priorities={priorities}
@@ -157,7 +175,7 @@ export default async function BoardPage({
               name: user.name,
               avatarPath: user.avatarPath,
             }}
-          />
+          />}
           {board.doneStatusId != null && (
             <Link
               href={`/intern/board/${boardId}/archiv`}
@@ -203,6 +221,9 @@ export default async function BoardPage({
             name: s.name,
             isArchiveTrigger: s.isArchiveTrigger,
           }))}
+          officeMoveRules={officeMoveRules}
+          canEdit={canEdit}
+          preferenceKey={`gremio:board:${boardId}:user:${user.id}`}
           cards={kanbanCards}
           visible={visible}
           priorities={priorities}

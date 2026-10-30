@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { notFound } from "next/navigation";
-import { requireInventoryBoardAccess } from "@/lib/inventory";
+import { canEditInventoryBoard, requireInventoryBoardAccess } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
 import {
   getInventoryItemById,
@@ -26,6 +26,7 @@ export default async function InventoryItemPage({
   const item = await getInventoryItemById(id);
   if (!item) notFound();
   const { user, board } = await requireInventoryBoardAccess(item.boardId);
+  const canEdit = await canEditInventoryBoard(user, board);
 
   const [
     view,
@@ -55,6 +56,7 @@ export default async function InventoryItemPage({
     <>
       <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
       <ItemDetail
+        canEdit={canEdit}
         item={view}
       boardName={board.name}
       visibleFields={Array.from(visible)}
@@ -65,7 +67,7 @@ export default async function InventoryItemPage({
       }}
         groupNames={groupNames}
         numberingEnabled={numbering?.enabled ?? false}
-        loans={loans}
+        loans={canEdit ? loans : loans.map(loan => ({ ...loan, token: null }))}
         defects={defects}
         attachments={attachments}
         hasCert={!!user.certSubject}

@@ -25,7 +25,9 @@ export function LoanContractUpload({
   loanId,
   docs,
   hasCert = false,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   loanId: number;
   docs: InventoryAttachment[];
   hasCert?: boolean;
@@ -60,7 +62,7 @@ export function LoanContractUpload({
                 filename={d.filename}
                 mime={d.mime}
                 src={`/api/inventory/attachment/${d.id}`}
-                editable
+                editable={canEdit}
                 hasCert={hasCert}
                 fieldsUrl={`/api/inventory/attachment/${d.id}/fields`}
                 saveAction={saveInventoryPdfEditsAction}
@@ -69,18 +71,18 @@ export function LoanContractUpload({
               />
               <span className="flex shrink-0 items-center gap-2 text-xs text-slate-400">
                 {d.uploadedBy == null ? "vom Entleiher" : "bereitgestellt"}
-                <form action={deleteInventoryAttachmentAction}>
+                {canEdit && <form action={deleteInventoryAttachmentAction}>
                   <input type="hidden" name="attId" value={d.id} />
                   <SubmitButton className="hover:text-red-600">
                     löschen
                   </SubmitButton>
-                </form>
+                </form>}
               </span>
             </li>
           ))}
         </ul>
       )}
-      <form
+      {canEdit && <form
         ref={formRef}
         action={action}
         className="flex flex-wrap items-center gap-2"
@@ -99,7 +101,7 @@ export function LoanContractUpload({
         <SubmitButton className="btn-secondary shrink-0">
           Hochladen
         </SubmitButton>
-      </form>
+      </form>}
       {state.error && <p className="mt-1 text-xs text-red-600">{state.error}</p>}
     </div>
   );

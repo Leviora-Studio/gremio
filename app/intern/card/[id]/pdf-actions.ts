@@ -9,7 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, cardActivity, cards } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
+import { canEditBoard, getBoardById } from "@/lib/authz";
 import {
   absPath,
   deleteStoredFile,
@@ -80,7 +80,7 @@ export async function savePdfEditsAction(
     .limit(1);
   if (!card) return { ok: false, error: "Karte nicht gefunden." };
   const board = await getBoardById(card.boardId);
-  if (!board || !(await canAccessBoard(user, board))) {
+  if (!board || !(await canEditBoard(user, board))) {
     return { ok: false, error: "Kein Zugriff auf dieses Board." };
   }
   const visible = await getVisibleFieldKeys(board.id);

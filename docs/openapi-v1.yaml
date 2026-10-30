@@ -897,7 +897,7 @@ paths:
         automatisch eine Antragsnummer vergeben.
 
 
-        **Berechtigung:** Board-Zugriff **und** Token mit `scope=write`. Alle aktivierten
+        **Berechtigung:** Board-Schreibrecht **und** Token mit `scope=write`. Alle aktivierten
         Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen
         geschrieben werden. Am Board deaktivierte Felder werden abgelehnt.
       requestBody:
@@ -950,7 +950,8 @@ paths:
         "400": *a20
         "401": *a7
         "403": &a23
-          description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`)."
+          description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`) oder dem
+            Nutzer fehlt live das Board-Schreibrecht."
           content:
             application/json:
               schema:
@@ -1095,8 +1096,13 @@ paths:
         wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.
 
 
-        **Berechtigung:** Board-Zugriff **und** `scope=write`; alle aktivierten Kartenfelder
+        **Berechtigung:** Board-Schreibrecht **und** `scope=write`; alle aktivierten Kartenfelder
         einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden.
+        Alternativ erlaubt eine konfigurierte Bürokraft-Regel mit bestehendem Leserecht und
+        `scope=write` ausschließlich einen Body mit genau `statusId`, wenn die aktive Karte aus
+        einer erlaubten Ausgangsspalte in eine erlaubte andere Zielspalte wechselt. Schreibfreigaben
+        haben Vorrang; Misch-Patches, Positionsänderungen und Wiederherstellungen sind für reine
+        Bürokraft-Berechtigungen gesperrt.
       parameters:
         - name: id
           in: path
@@ -1150,8 +1156,9 @@ paths:
         Löscht die Karte und ihre Anhänge (Dateien inklusive). Unwiderruflich.
 
 
-        **Berechtigung:** Board-Zugriff **und** `scope=write`. Das Zugriffsmodell ist binär — jedes
-        Board-Mitglied darf löschen, ein gesondertes Löschrecht gibt es nicht.
+        **Berechtigung:** Board-Schreibrecht **und** `scope=write`. Jeder Nutzer mit
+        Board-Schreibrecht darf löschen; reine Lesefreigaben erlauben keine Änderungen. Direkte und
+        Gruppenfreigaben werden kombiniert, die höchste Stufe gilt.
       parameters:
         - name: id
           in: path
@@ -1884,7 +1891,8 @@ components:
             - string
             - "null"
           maxLength: 100
-          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
+          description: Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert
+            ist.
         statusId:
           type: integer
           format: int32
@@ -1942,13 +1950,15 @@ components:
             - string
             - "null"
           format: date
-          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
+          description: Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert
+            ist.
         transferDate:
           type:
             - string
             - "null"
           format: date
-          description: Für jedes Board-Mitglied schreibbar, sofern das Feld am Board aktiviert ist.
+          description: Für jeden Nutzer mit Board-Schreibrecht schreibbar, sofern das Feld am Board aktiviert
+            ist.
         requestedAmountCents:
           type:
             - integer

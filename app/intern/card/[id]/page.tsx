@@ -18,8 +18,9 @@ import {
   locations,
   users,
 } from "@/lib/db/schema";
+import { officeCanMove } from "@/lib/board-move-policy";
 import { requireUser } from "@/lib/auth";
-import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
+import { getOfficeMoveRules, canEditBoard, canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { getPriorities } from "@/lib/priorities";
 import { getAccounts } from "@/lib/accounts";
 import { getCardAssignees } from "@/lib/assignees";
@@ -69,6 +70,8 @@ export default async function AntragDetailPage({
 
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) notFound();
+  const canEdit = await canEditBoard(user, board);
+  const officeMoveRules = canEdit || card.archivedAt != null ? null : await getOfficeMoveRules(user, board);
   const budget = await loadBudgetSnapshot(card.id);
   card = budget.card;
 
@@ -250,7 +253,7 @@ export default async function AntragDetailPage({
             </div>
           </>
         )}
-        {statusLink && (
+        {canEdit && statusLink && (
           <div className="sm:col-span-2">
             <span className="text-slate-500">Status-Link:</span>{" "}
             <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
@@ -261,11 +264,11 @@ export default async function AntragDetailPage({
         <div className="sm:col-span-2">
           <label className="label">Status</label>
           <div>
-            <StatusSelect
+            {canEdit || statuses.some(status => officeCanMove(officeMoveRules, card.statusId, status.id)) ? <StatusSelect
               cardId={card.id}
-              statuses={statuses.map((s) => ({ id: s.id, name: s.name }))}
+              statuses={statuses.filter(status => canEdit || status.id === card.statusId || officeCanMove(officeMoveRules, card.statusId, status.id)).map((s) => ({ id: s.id, name: s.name }))}
               current={card.statusId}
-            />
+            /> : <span className="text-sm">{statuses.find(s => s.id === card.statusId)?.name}</span>}
           </div>
         </div>
       </section>
@@ -273,7 +276,9 @@ export default async function AntragDetailPage({
       {/* Felder (Auto-Speichern) */}
       <section className="card p-5">
         <h2 className="mb-2 text-lg font-semibold">Felder</h2>
+        <fieldset disabled={!canEdit} className="min-w-0">
         <CardEditor
+          readOnly={!canEdit}
           budgetPositions={budget.rows.map((row) => ({ ...row,
             budgetTitle: visible.includes("budget_title") ? row.budgetTitle : null,
             description: visible.includes("budget_title") ? row.description : null,
@@ -311,6 +316,7 @@ export default async function AntragDetailPage({
           accounts={accounts}
           applicantLabel={feedback ? "Einreicher" : "Antragsteller"}
         />
+        </fieldset>
       </section>
 
       {/* Anhänge */}
@@ -327,9 +333,10 @@ export default async function AntragDetailPage({
             </a>
           )}
         </div>
-        <AttachmentFolders cardId={card.id} folders={folders} />
+        <AttachmentFolders canEdit={canEdit} cardId={card.id} folders={folders} />
         {visible.includes("finance_request") && (
           <AttachmentSlot
+            canEdit={canEdit}
             cardId={card.id}
             kind="finance_request"
             label="Finanzantrag (PDF)"
@@ -341,6 +348,7 @@ export default async function AntragDetailPage({
         )}
         {visible.includes("student_card") && (
           <AttachmentSlot
+            canEdit={canEdit}
             cardId={card.id}
             kind="student_card"
             label="Studierendenausweis (PDF/PNG/JPG)"
@@ -352,6 +360,7 @@ export default async function AntragDetailPage({
         )}
         {visible.includes("annex_a") && (
           <AttachmentSlot
+            canEdit={canEdit}
             cardId={card.id}
             kind="annex_a"
             label="Anlage A (PDF)"
@@ -363,6 +372,7 @@ export default async function AntragDetailPage({
         )}
         {visible.includes("annex_b") && (
           <AttachmentSlot
+            canEdit={canEdit}
             cardId={card.id}
             kind="annex_b"
             label="Anlage B (PDF)"
@@ -376,6 +386,7 @@ export default async function AntragDetailPage({
           instructionForm?.enabled ||
           otherVisible.length > 0) && (
           <WeitereAttachments
+            canEdit={canEdit}
             cardId={card.id}
             items={otherVisible}
             hasCert={hasCert}
@@ -383,7 +394,7 @@ export default async function AntragDetailPage({
             allowUpload={visible.includes("other_pdfs")}
           />
         )}
-        {instructionForm?.enabled && (
+        {canEdit && instructionForm?.enabled && (
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <CreateInstructionButton
               cardId={card.id}
@@ -398,7 +409,7 @@ export default async function AntragDetailPage({
       {/* Kommentare */}
       <section className="card space-y-4 p-5">
         <h2 className="text-lg font-semibold">Kommentare</h2>
-        <CommentForm cardId={card.id} />
+        {canEdit && <CommentForm cardId={card.id} />}
         <div className="space-y-3">
           {comments.length === 0 && (
             <p className="text-sm text-slate-500">Noch keine Kommentare.</p>
@@ -414,7 +425,7 @@ export default async function AntragDetailPage({
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{c.username ?? "Unbekannt"}</span>
                   <span className="text-slate-400">{fmt(c.createdAt)}</span>
-                  {(manage || c.userId === user.id) && (
+                  {canEdit && (manage || c.userId === user.id) && (
                     <div className="ml-auto">
                       <DeleteConfirm
                         action={deleteCommentAction.bind(null, card.id, c.id)}
@@ -471,7 +482,7 @@ export default async function AntragDetailPage({
       </section>
 
       {/* Löschen */}
-      <section className="card border-red-200 p-4">
+      {canEdit && <section className="card border-red-200 p-4">
         <DeleteConfirm
           action={deleteCardAction.bind(null, card.id)}
           requireWord={false}
@@ -480,7 +491,7 @@ export default async function AntragDetailPage({
           title="Karte löschen"
           message="Die Karte wird inklusive aller Anhänge unwiderruflich gelöscht."
         />
-      </section>
+      </section>}
     </div>
   );
 }

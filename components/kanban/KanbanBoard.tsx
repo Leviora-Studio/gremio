@@ -3,6 +3,7 @@
 
 "use client";
 
+import { officeCanMove, type OfficeMoveRules } from "@/lib/board-move-policy";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -35,6 +36,7 @@ import { todayInBerlin } from "@/lib/dates";
 import type { PriorityOption } from "@/lib/priorities";
 import { Avatar } from "@/components/Avatar";
 import { Select } from "@/components/Select";
+import { BoardViews, type BoardView } from "./BoardViews";
 
 type PriorityMap = Record<number, { label: string; color: string }>;
 
@@ -49,6 +51,7 @@ export type KanbanCard = {
   deadline: string | null;
   meeting: string | null;
   assignees: { id: number; name: string; avatarPath: string | null }[];
+  fields?: Record<string, string | number | null>;
   searchText: string; // serverseitig: alle durchsuchbaren Felder, lowercase
 };
 
@@ -76,14 +79,32 @@ export function KanbanBoard({
   visible,
   priorities,
   members,
+  preferenceKey,
+  canEdit = true,
+  officeMoveRules,
 }: {
   statuses: StatusCol[];
   cards: KanbanCard[];
   visible: string[];
   priorities: PriorityOption[];
   members: Member[];
+  preferenceKey?: string;
+  canEdit?: boolean;
+  officeMoveRules?: OfficeMoveRules | null;
 }) {
   const router = useRouter();
+  const [view, setView] = useState<BoardView>("kanban");
+  useEffect(() => {
+    setView("kanban");
+    try {
+      const saved = preferenceKey ? localStorage.getItem(`${preferenceKey}:view`) : null;
+      if (saved === "list" || saved === "table" || saved === "calendar") setView(saved);
+    } catch { /* Storage may be unavailable in private browsing. */ }
+  }, [preferenceKey]);
+  function changeView(next: BoardView) {
+    setView(next);
+    try { if (preferenceKey) localStorage.setItem(`${preferenceKey}:view`, next); } catch { /* Optional preference. */ }
+  }
   const priorityMap: PriorityMap = Object.fromEntries(
     priorities.map((p) => [p.id, { label: p.label, color: p.color }]),
   );
@@ -97,6 +118,12 @@ export function KanbanBoard({
   const [activeId, setActiveId] = useState<number | null>(null);
   const justDragged = useRef(false);
   const dragging = useRef(false);
+  const [moveError, setMoveError] = useState("");
+  const canMoveCard = (card: KanbanCard, target: number) => canEdit || officeCanMove(officeMoveRules, card.statusId, target);
+  function restoreCards() {
+    setCardById(new Map(cards.map(card => [card.id, card])));
+    setCols(buildCols(statuses, cards));
+  }
 
   // Filter (rein clientseitig)
   const [q, setQ] = useState("");
@@ -144,6 +171,21 @@ export function KanbanBoard({
     return true;
   }
 
+  const resultFocusKey = filtersActive ? JSON.stringify([q.trim().toLowerCase(), fPriority, fAssignee, fOverdue]) : "";
+  const kanbanViewport = useRef<HTMLDivElement>(null);
+  const firstMatchingStatus = statuses.find(st => (cols[st.id] ?? []).some(id => {
+    const card = cardById.get(id);
+    return card && matches(card);
+  }))?.id;
+  useEffect(() => {
+    if (!resultFocusKey || view !== "kanban") return;
+    const viewport = kanbanViewport.current;
+    const column = viewport?.querySelector<HTMLElement>(`[data-status-id="${firstMatchingStatus}"]`);
+    if (viewport && column) {
+      viewport.scrollLeft += column.getBoundingClientRect().left - viewport.getBoundingClientRect().left;
+    }
+  }, [resultFocusKey, view, firstMatchingStatus]);
+
   // Eigene Kollisionserkennung: zuerst pointer-basiert (was liegt direkt unter
   // dem Cursor?). Das macht auch LEERE, hohe Spalten zuverlässig als Ziel
   // erkennbar — closestCorners verfehlte sie, weil ihre Ecken weit vom Cursor
@@ -179,6 +221,9 @@ export function KanbanBoard({
   }
 
   function onDragStart(e: DragStartEvent) {
+    const card = cardById.get(Number(e.active.id));
+    if (!card || !statuses.some(status => canMoveCard(card, status.id))) return;
+    setMoveError("");
     justDragged.current = true;
     dragging.current = true;
     setActiveId(Number(e.active.id));
@@ -194,6 +239,8 @@ export function KanbanBoard({
     const from = containerOfCard(aId);
     const to = containerOf(over.id);
     if (from == null || to == null) return;
+    const card = cardById.get(aId);
+    if (!card || !canMoveCard(card, to)) return;
 
     setCols((prev) => {
       const fromItems = prev[from] ?? [];
@@ -223,7 +270,7 @@ export function KanbanBoard({
   }
 
   function onDragEnd(e: DragEndEvent) {
-    const { active } = e;
+    const { active, over } = e;
     dragging.current = false;
     setActiveId(null);
     setTimeout(() => {
@@ -232,16 +279,20 @@ export function KanbanBoard({
     const aId = Number(active.id);
     // onDragOver hat bereits live umsortiert → aktuelle Spalte/Reihenfolge übernehmen.
     const to = containerOfCard(aId);
-    if (to == null) return;
-
     const card = cardById.get(aId);
+    const dropTarget = over ? containerOf(over.id) : null;
+    if (to == null || !card || dropTarget == null || !canMoveCard(card, dropTarget) || !canMoveCard(card, to)) { restoreCards(); return; }
     if (card && card.statusId !== to) {
       const next = new Map(cardById);
       next.set(aId, { ...card, statusId: to });
       setCardById(next);
     }
 
-    void moveCardAction(aId, to, cols[to] ?? []);
+    void moveCardAction(aId, to, cols[to] ?? []).catch(() => {
+      setMoveError("Der Statuswechsel ist nicht erlaubt oder konnte nicht gespeichert werden. Bitte erneut laden.");
+      restoreCards();
+      router.refresh();
+    });
   }
 
   function openCard(id: number) {
@@ -253,6 +304,12 @@ export function KanbanBoard({
 
   return (
     <div>
+      <div className="mb-4 flex flex-wrap gap-1" role="group" aria-label="Board-Ansicht">
+        {([["kanban", "Kanban"], ["list", "Liste"], ["table", "Tabelle"], ["calendar", "Kalender"]] as const).map(([key, label]) => (
+          <button key={key} type="button" aria-pressed={view === key}
+            className={view === key ? "btn-primary" : "btn-secondary"} onClick={() => changeView(key)}>{label}</button>
+        ))}
+      </div>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <div className="w-full sm:w-56">
           <label className="label">Suche</label>
@@ -329,7 +386,20 @@ export function KanbanBoard({
         )}
       </div>
 
-      <DndContext
+      {moveError && <p role="alert" className="mb-3 text-sm text-red-700">{moveError}</p>}
+      {view === "kanban" && filtersActive && firstMatchingStatus == null && <p role="status" className="mb-3 text-sm text-slate-500">Keine Karten für die aktuelle Auswahl.</p>}
+      {view !== "kanban" ? (
+        <BoardViews officeMoveRules={officeMoveRules} canEdit={canEdit} resultFocusKey={resultFocusKey} view={view} cards={statuses.flatMap(st => (cols[st.id] ?? []).flatMap(id => {
+          const card = cardById.get(id);
+          return card && matches(card) ? [card] : [];
+        }))} statuses={statuses} visible={visible} priorities={priorities} preferenceKey={preferenceKey}
+          onMove={async (cardId, statusId) => {
+            const card = cardById.get(cardId);
+            if (!card || !canMoveCard(card, statusId)) return;
+            await moveCardAction(cardId, statusId, [...(cols[statusId] ?? []).filter(id => id !== cardId), cardId]);
+            router.refresh();
+          }} />
+      ) : <DndContext
         id="dnd-kanban"
         sensors={sensors}
         collisionDetection={collisionDetection}
@@ -339,9 +409,11 @@ export function KanbanBoard({
         onDragCancel={() => {
           dragging.current = false;
           setActiveId(null);
+          restoreCards();
+          justDragged.current = false;
         }}
       >
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div ref={kanbanViewport} className="flex gap-4 overflow-x-auto pb-4" aria-label="Kanban-Spalten">
           {statuses.map((st) => {
             const ids = (cols[st.id] ?? []).filter((id) => {
               const c = cardById.get(id);
@@ -350,6 +422,8 @@ export function KanbanBoard({
             return (
               <Column
                 key={st.id}
+                officeMoveRules={officeMoveRules}
+                canEdit={canEdit}
                 status={st}
                 cardIds={ids}
                 cardById={cardById}
@@ -370,7 +444,7 @@ export function KanbanBoard({
             />
           ) : null}
         </DragOverlay>
-      </DndContext>
+      </DndContext>}
     </div>
   );
 }
@@ -379,10 +453,14 @@ function Column({
   status,
   cardIds,
   cardById,
+  canEdit,
+  officeMoveRules,
   visibleSet,
   priorityMap,
   onOpen,
 }: {
+  canEdit: boolean;
+  officeMoveRules?: OfficeMoveRules | null;
   status: StatusCol;
   cardIds: number[];
   cardById: Map<number, KanbanCard>;
@@ -394,6 +472,7 @@ function Column({
   return (
     <div
       ref={setNodeRef}
+      data-status-id={status.id}
       className={clsx(
         "flex w-80 shrink-0 flex-col rounded-lg border bg-slate-100/60 p-2",
         isOver ? "border-brand-400 bg-brand-50" : "border-slate-200",
@@ -412,6 +491,7 @@ function Column({
             return c ? (
               <SortableCard
                 key={id}
+                canEdit={canEdit || !!officeMoveRules?.targetStatusIds.some(target => officeCanMove(officeMoveRules, c.statusId, target))}
                 card={c}
                 visibleSet={visibleSet}
                 priorityMap={priorityMap}
@@ -427,10 +507,12 @@ function Column({
 
 function SortableCard({
   card,
+  canEdit,
   visibleSet,
   priorityMap,
   onOpen,
 }: {
+  canEdit: boolean;
   card: KanbanCard;
   visibleSet: Set<string>;
   priorityMap: PriorityMap;
@@ -443,7 +525,7 @@ function SortableCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id });
+  } = useSortable({ id: card.id, disabled: !canEdit });
   return (
     <div
       ref={setNodeRef}
@@ -452,7 +534,8 @@ function SortableCard({
       {...listeners}
       onClick={() => onOpen(card.id)}
       className={clsx(
-        "cursor-grab touch-none rounded-md border p-3 shadow-sm active:cursor-grabbing",
+        "rounded-md border p-3 shadow-sm",
+        canEdit ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer",
         card.resubmitted
           ? "border-amber-400 bg-amber-50 hover:border-amber-500"
           : "border-slate-200 bg-white hover:border-brand-300",

@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { AUSWEIS_MIME, PDF_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
 import {
-  canAccessInventoryBoard,
+  canEditInventoryBoard,
   getInventoryBoardById,
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
@@ -34,7 +34,7 @@ async function assertItemAccess(
   const item = await getInventoryItemById(itemId);
   if (!item) throw new Error("Gegenstand nicht gefunden.");
   const board = await getInventoryBoardById(item.boardId);
-  if (!board || !(await canAccessInventoryBoard(user, board))) {
+  if (!board || !(await canEditInventoryBoard(user, board))) {
     throw new Error("Kein Zugriff.");
   }
   return { userId: user.id, item };

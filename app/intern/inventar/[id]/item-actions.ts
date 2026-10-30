@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import {
-  canAccessInventoryBoard,
+  canEditInventoryBoard,
   getInventoryBoardById,
 } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
@@ -98,7 +98,7 @@ function readFields(formData: FormData, visible: Set<string>) {
 async function requireAccess(boardId: number) {
   const user = await requireUser();
   const board = await getInventoryBoardById(boardId);
-  if (!board || !(await canAccessInventoryBoard(user, board))) {
+  if (!board || !(await canEditInventoryBoard(user, board))) {
     throw new Error("Kein Zugriff.");
   }
   return { user, board };

@@ -77,7 +77,9 @@ export function ItemDetail({
   defects,
   attachments,
   hasCert,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   item: InventoryItemView;
   boardName: string;
   visibleFields: string[];
@@ -203,13 +205,13 @@ export function ItemDetail({
             <p className="text-sm text-slate-500">{item.number}</p>
           )}
         </div>
-        <button
+        {canEdit && <button
           type="button"
           onClick={() => setEditing(true)}
           className="btn-secondary"
         >
           Bearbeiten
-        </button>
+        </button>}
       </div>
 
       {/* Stammdaten */}
@@ -241,7 +243,7 @@ export function ItemDetail({
       {/* Mängel — bewusst über den Vorgängen */}
       <section className="card p-5">
         <h2 className="mb-3 font-semibold">Mängel</h2>
-        <form action={createDefectAction} className="mb-4 flex items-end gap-2">
+        {canEdit && <form action={createDefectAction} className="mb-4 flex items-end gap-2">
           <input type="hidden" name="itemId" value={item.id} />
           <div className="flex-1">
             <label className="label">Mangel melden</label>
@@ -253,7 +255,7 @@ export function ItemDetail({
             />
           </div>
           <SubmitButton className="btn-primary">Melden</SubmitButton>
-        </form>
+        </form>}
 
         {defects.length === 0 ? (
           <p className="text-sm text-slate-500">Keine Mängel erfasst.</p>
@@ -283,18 +285,18 @@ export function ItemDetail({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <form action={toggleDefectAction}>
+                  {canEdit && <form action={toggleDefectAction}>
                     <input type="hidden" name="defectId" value={d.id} />
                     <SubmitButton className="text-xs text-brand-600 hover:underline">
                       {d.resolvedAt ? "wieder öffnen" : "behoben"}
                     </SubmitButton>
-                  </form>
-                  <form action={deleteDefectAction}>
+                  </form>}
+                  {canEdit && <form action={deleteDefectAction}>
                     <input type="hidden" name="defectId" value={d.id} />
                     <SubmitButton className="text-xs text-slate-400 hover:text-red-600">
                       löschen
                     </SubmitButton>
-                  </form>
+                  </form>}
                 </span>
               </li>
             ))}
@@ -344,7 +346,7 @@ export function ItemDetail({
           <p className="text-sm text-slate-500">Noch keine Vorgänge.</p>
         )}
 
-        <form
+        {canEdit && <form
           action={createLoanAction}
           className="mt-4 space-y-3 rounded-lg border border-slate-200 p-3"
         >
@@ -395,17 +397,18 @@ export function ItemDetail({
           >
             Entleihen
           </SubmitButton>
-        </form>
+        </form>}
       </section>
 
       {/* Kaufbelege */}
       <ItemAttachments
+        canEdit={canEdit}
         itemId={item.id}
         attachments={attachments}
         hasCert={hasCert}
       />
 
-      {editing && (
+      {canEdit && editing && (
         <ItemFormModal
           boardId={item.boardId}
           item={item}

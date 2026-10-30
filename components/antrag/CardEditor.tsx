@@ -44,7 +44,9 @@ export function CardEditor({
   budgetRevision = 0,
   budgetMode = "single",
   onDirtyChange,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   cardId: number;
   boardId: number;
   visible: string[];
@@ -381,7 +383,7 @@ export function CardEditor({
       <div className="relative sm:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <label className="label">Titel *</label>
-          <SaveIndicator status={status} errorMsg={errorMsg} />
+          {readOnly ? <span className="text-xs text-slate-500">Lesender Zugriff</span> : <SaveIndicator status={status} errorMsg={errorMsg} />}
         </div>
         <input
           defaultValue={valuesRef.current.title}

@@ -29,7 +29,7 @@ heißen sie `Anweisung1.pdf` usw.; bestehende Dateinamen zählen weiter mit.
 
 ### 4.2.0: Interne Dateiordner am Ticket
 
-Board-Mitglieder können im Anhangbereich Ordner erstellen, Dateien umbenennen
+Board-Nutzer mit Schreibrecht können im Anhangbereich Ordner erstellen, Dateien umbenennen
 und zwischen dem Ticket-Hauptordner und selbst erstellten Unterordnern verschieben.
 Die Dateiendung bleibt erhalten; Dokument-Slots und Sichtbarkeitsregeln gelten
 weiterhin. Antragsteller erhalten keine Ordnerverwaltung.
@@ -223,8 +223,8 @@ Apps, interaktiv unter `/api/public/docs`).
   unter `/api/public/docs`.
 
 **Rollen:** `admin` (alles, inkl. Admin-Panel), `template_manager` (zusätzlich
-Vorlagen), `user` (eigene Boards + Freigaben). Board-Zugriff ist binär; Verwalten
-bleibt Eigentümer/Admin vorbehalten.
+Vorlagen), `user` (eigene Boards + Freigaben). Freigaben erlauben Lesen oder Lesen und Schreiben; die höchste passende
+Personen-/Gruppenfreigabe gilt. Verwalten bleibt Eigentümer/Admin vorbehalten.
 
 ---
 
@@ -421,3 +421,26 @@ Affero General Public License, Version 3, wie von der Free Software Foundation
 veröffentlicht, weitergeben und/oder modifizieren.
 Es wird ohne jede Gewährleistung bereitgestellt; siehe die Lizenz für Details.
 ```
+
+### Freigaben mit Lese- und Schreibrechten
+
+Migration `0070_board_access_levels` ergänzt Kanban-, Finanz- und
+Inventarfreigaben um `access_level`. **Alle bestehenden Personen- und
+Gruppenfreigaben erhalten automatisch `write` (Lesend und schreibend).** Die
+Migration vor Start der neuen App-Version mit dem regulären Migrationsablauf
+anwenden; es ist keine manuelle Neuerfassung bestehender Freigaben erforderlich.
+Neue Freigaben können in den Einstellungen als Lesend oder Lesend und schreibend
+angelegt und später geändert werden. Die höchste passende direkte oder
+Gruppenfreigabe gilt. Einstellungen/Freigaben bleiben Eigentümern und Admins
+vorbehalten; Finanz-Schreiber bearbeiten den Haushaltsplan über „Haushaltsplan
+bearbeiten“.
+
+### Bürokraft auf einem Board
+
+Unter Board-Einstellungen → **Bürokraft aktivieren** kann ein bereits lesend
+berechtigter, aktiver Nutzer ausgewählt werden. Erlaubte Ausgangs- und Zielspalten
+werden getrennt festgelegt. Ohne normales Schreibrecht sind ausschließlich diese
+Statuswechsel erlaubt; Karteninhalte bleiben schreibgeschützt. Direkte oder
+Gruppen-Schreibrechte haben Vorrang. Die Funktion erteilt keine Board-Freigabe.
+Migration `0071_board_office_role` ergänzt die standardmäßig inaktive
+Konfiguration; beim Update entstehen keine zusätzlichen Rechte.

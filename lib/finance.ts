@@ -73,6 +73,7 @@ export async function getFinanceBoardById(
 export async function canAccessFinanceBoard(
   user: User,
   fb: FinanceBoard,
+  access: "read" | "write" = "read",
 ): Promise<boolean> {
   if (user.role === "admin") return true;
   if (fb.ownerId === user.id) return true;
@@ -83,6 +84,7 @@ export async function canAccessFinanceBoard(
     .where(
       and(
         eq(financeBoardAccess.financeBoardId, fb.id),
+        access === "write" ? eq(financeBoardAccess.accessLevel, "write") : undefined,
         or(
           eq(financeBoardAccess.userId, user.id),
           groupIds.length
@@ -147,5 +149,17 @@ export async function requireFinanceManage(
   const user = await requireUser();
   const fb = await getFinanceBoardById(id);
   if (!fb || !canManageFinanceBoard(user, fb)) notFound();
+  return { user, fb };
+}
+
+/** Effective write access: owner/admin or any matching write grant. */
+export async function canEditFinanceBoard(user: User, fb: FinanceBoard): Promise<boolean> {
+  return canAccessFinanceBoard(user, fb, "write");
+}
+
+export async function requireFinanceWrite(id: number): Promise<{ user: User; fb: FinanceBoard }> {
+  const user = await requireUser();
+  const fb = await getFinanceBoardById(id);
+  if (!fb || !(await canEditFinanceBoard(user, fb))) notFound();
   return { user, fb };
 }

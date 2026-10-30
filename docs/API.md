@@ -262,8 +262,8 @@ PATCH mit ausschließlich diesem Feld), `creatorUserId`, `deadline`,
 `archived` (nur `false` = wiederherstellen; `true`/manuelles Archivieren wird
 mit 400 abgelehnt, da es im Web ebenfalls keine manuelle Archivierung gibt).
 `number`, `instructionDate` und `transferDate` dürfen — wie im Web — von jedem
-Nutzer mit Board-Zugriff geändert werden. Wiederherstellen (`archived: false`)
-darf ebenfalls jedes Board-Mitglied.
+Nutzer mit Board-Schreibrecht geändert werden. Wiederherstellen (`archived: false`)
+erfordert ebenfalls Board-Schreibrecht.
 Deaktivierte Board-Felder werden mit 400 abgelehnt.
 
 Referenzen werden geprüft: `statusId` muss zum Board gehören; `priorityId`/
@@ -281,7 +281,7 @@ Karte und ihre Anhänge löschen. → `200 { "ok": true }`
 | 201  | Karte erstellt |
 | 400  | Ungültige Eingabe |
 | 401  | Token fehlt/ungültig |
-| 403  | Token hat nur Lese-Rechte (`scope=read`) bei Schreibzugriff |
+| 403  | Token hat nur Lese-Rechte (`scope=read`) oder der Nutzer hat nur lesenden Board-Zugriff |
 | 404  | Board/Karte nicht gefunden **oder** kein Zugriff (auch Board-Scope) |
 | 409  | Leihvorgang-Board: Karten dort sind über die API nur lesbar (Anlegen/Ändern/Löschen läuft übers Inventar) |
 
@@ -363,3 +363,27 @@ Nicht-PDF: 415; Datei über 25 MiB: 413; Passwortschutz, reine XFA-Formulare ode
 unlesbares PDF: 422; ungültige Seitenauswahl: 400; Auslastung/Rate-Limit: 429.
 Bei `nextPage` weitere Seiten abrufen, `truncated` niemals als vollständige
 Extraktion interpretieren. Vertrauliche Antworten verwenden `Cache-Control: no-store`.
+
+### Live read/write grants
+
+Board, finance and inventory sharing supports `read` and `write` grants for
+individual users and groups. Any matching write grant wins; owners and admins
+retain full access. Existing grants are migrated to `write` by migration 0070.
+All internal REST/MCP mutations require both live board write access and token
+`scope=write`. A read-only board grant returns HTTP 403 for writes, even with a
+write-scoped token. Reading and downloads remain available. Sharing/settings
+remain owner/admin-only; this change adds no external sharing endpoints.
+
+### Restricted office status moves
+
+An optional office assignment on a normal board supplements an existing reader's
+permissions with explicitly configured source-to-target status changes. It never
+grants board read access. A direct or group write grant always takes precedence.
+Without full write access, the only additional REST/MCP operation is
+`PATCH /cards/{id}` with exactly `{ "statusId": targetId }`, a write-scoped token,
+an active card and an allowed current source and target. Other fields (including
+`position` or `archived`), mixed payloads and every other mutation remain denied.
+The current source is rechecked under the card lock. Restricted moves append to
+the target column, run normal status triggers and never reorder other cards.
+Office configuration is owner/admin-only in Board settings; no sharing endpoint
+is added. Revoked read access also revokes the supplemental movement permission.

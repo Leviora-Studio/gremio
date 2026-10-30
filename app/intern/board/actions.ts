@@ -10,7 +10,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { cards, cardActivity, boardStatuses } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
+import { canMoveBoardCard, canEditBoard, getBoardById } from "@/lib/authz";
 import { createBoardFromTemplate } from "@/lib/boards";
 import { generateToken, isTokenConflict } from "@/lib/token";
 import { maybeArchive } from "@/lib/archive";
@@ -65,7 +65,7 @@ export async function moveCardAction(
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) return;
   const board = await getBoardById(card.boardId);
-  if (!board || !(await canAccessBoard(user, board))) return;
+  if (!board || !(await canMoveBoardCard(user, board, card, statusId))) throw new Error("Dieser Statuswechsel ist nicht erlaubt.");
 
   // Zielspalte muss zum selben Board gehören.
   const [target] = await db
@@ -75,9 +75,14 @@ export async function moveCardAction(
     .limit(1);
   if (!target) return;
 
+  let fullWrite = await canEditBoard(user, board);
   const statusChanged = card.statusId !== statusId;
 
   await db.transaction(async (tx) => {
+    const [fresh] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
+    if (!fresh || !(await canMoveBoardCard(user, board, fresh, statusId, tx))) throw new Error("Dieser Statuswechsel ist nicht mehr erlaubt. Bitte neu laden.");
+    fullWrite = await canEditBoard(user, board);
+    if (!fullWrite && fresh.statusId !== card.statusId) throw new Error("Die Karte wurde zwischenzeitlich verschoben. Bitte neu laden.");
     if (statusChanged) {
       await tx
         .update(cards)
@@ -103,7 +108,8 @@ export async function moveCardAction(
       )
       .orderBy(asc(cards.position), asc(cards.id));
     const colSet = new Set(inCol.map((r) => r.id));
-    const ordered = orderedIds.filter((id) => colSet.has(id));
+    const requestedOrder = fullWrite ? orderedIds : [...inCol.filter(row => row.id !== cardId).map(row => row.id), cardId];
+    const ordered = requestedOrder.filter((id) => colSet.has(id));
     const seen = new Set(ordered);
     for (const r of inCol) if (!seen.has(r.id)) ordered.push(r.id);
     for (let i = 0; i < ordered.length; i++) {
@@ -141,7 +147,7 @@ export async function createBlankCardAction(
 ): Promise<{ id?: number; error?: string }> {
   const user = await requireUser();
   const board = await getBoardById(boardId);
-  if (!board || !(await canAccessBoard(user, board))) {
+  if (!board || !(await canEditBoard(user, board))) {
     return { error: "Kein Zugriff auf dieses Board." };
   }
   const [firstStatus] = await db
@@ -210,7 +216,7 @@ export async function finalizeNewCardAction(cardId: number): Promise<void> {
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) return;
   const board = await getBoardById(card.boardId);
-  if (!board || !(await canAccessBoard(user, board))) return;
+  if (!board || !(await canEditBoard(user, board))) return;
   await assignCardNumber(card.boardId, cardId);
   revalidatePath(`/intern/board/${card.boardId}`);
   revalidatePath(`/intern/card/${cardId}`);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -17,7 +18,6 @@ import {
 import { requireFinanceManage, resolveSourceBoards } from "@/lib/finance";
 import { getAccessibleBoards } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
-import { centsToInput, formatCents } from "@/lib/money";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Avatar } from "@/components/Avatar";
@@ -26,18 +26,16 @@ import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
 import { RenameFinanceForm } from "@/components/finance/RenameFinanceForm";
 import { SourceExpiredStatusForm } from "@/components/finance/SourceExpiredStatusForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
-import { PlanItemRow } from "@/components/finance/PlanItemRow";
+import { FinancePlanEditor } from "@/components/finance/FinancePlanEditor";
 import {
   addFinanceAccessGroupAction,
   addFinanceAccessUserAction,
   addFinanceAccountAction,
   addFinanceExpenseAccountAction,
   addFinanceSourceAction,
-  addPlanItemAction,
-  editPlanItemAction,
-  deletePlanItemAction,
   deleteFinanceBoardAction,
   removeFinanceAccessAction,
+  updateFinanceAccessLevelAction,
   removeFinanceAccountAction,
   removeFinanceExpenseAccountAction,
   removeFinanceSourceAction,
@@ -107,6 +105,7 @@ export default async function FinanceSettingsPage({
   const access = await db
     .select({
       id: financeBoardAccess.id,
+      accessLevel: financeBoardAccess.accessLevel,
       userId: financeBoardAccess.userId,
       username: users.username,
       avatarPath: users.avatarPath,
@@ -122,61 +121,6 @@ export default async function FinanceSettingsPage({
     .from(financePlanItems)
     .where(eq(financePlanItems.financeBoardId, fbId))
     .orderBy(asc(financePlanItems.position));
-  const tops = items.filter((i) => i.parentId == null);
-  const childrenOf = (pid: number) => items.filter((i) => i.parentId === pid);
-  const incomeTops = tops.filter((t) => t.kind === "income");
-  const expenseTops = tops.filter((t) => t.kind === "expense");
-
-  const renderTop = (top: (typeof tops)[number]) => {
-    const kids = childrenOf(top.id);
-    const childSum = kids.reduce((s, k) => s + (k.plannedAmount ?? 0), 0);
-    const mismatch =
-      kids.length > 0 &&
-      top.plannedAmount != null &&
-      childSum !== top.plannedAmount;
-    return (
-      <div key={top.id} className="space-y-2 rounded-md border border-slate-200 p-3">
-        <PlanItemRow
-          item={{
-            id: top.id,
-            haushaltstitel: top.haushaltstitel,
-            title: top.title,
-            plannedAmount: centsToInput(top.plannedAmount),
-          }}
-          editAction={editPlanItemAction.bind(null, top.id)}
-          deleteAction={deletePlanItemAction.bind(null, top.id)}
-        />
-        {mismatch && (
-          <p className="ml-1 text-sm text-amber-700">
-            ⚠ Summe der Unterpunkte ({formatCents(childSum)}) weicht vom
-            Oberpunkt ({formatCents(top.plannedAmount)}) ab.
-          </p>
-        )}
-        {kids.map((k) => (
-          <PlanItemRow
-            key={k.id}
-            child
-            item={{
-              id: k.id,
-              haushaltstitel: k.haushaltstitel,
-              title: k.title,
-              plannedAmount: centsToInput(k.plannedAmount),
-            }}
-            editAction={editPlanItemAction.bind(null, k.id)}
-            deleteAction={deletePlanItemAction.bind(null, k.id)}
-          />
-        ))}
-        <form
-          action={addPlanItemAction.bind(null, fbId, top.id, top.kind)}
-          className="ml-6"
-        >
-          <SubmitButton className="btn-secondary btn-sm">
-            + Unterpunkt
-          </SubmitButton>
-        </form>
-      </div>
-    );
-  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -359,10 +303,11 @@ export default async function FinanceSettingsPage({
 
       {/* Freigaben */}
       <CollapsibleSection title="Freigaben">
+        <p className="mb-3 text-sm text-slate-500">Bei mehreren direkten oder Gruppenfreigaben gelten die höchsten Rechte. Eigentümer und Admins behalten volle Rechte.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form
             action={addFinanceAccessUserAction.bind(null, fbId)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Nutzer freigeben</label>
@@ -377,12 +322,16 @@ export default async function FinanceSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
 
           <form
             action={addFinanceAccessGroupAction.bind(null, fbId)}
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <div className="flex-1">
               <label className="label">Gruppe freigeben</label>
@@ -397,6 +346,10 @@ export default async function FinanceSettingsPage({
                 }))}
               />
             </div>
+            <div className="w-full sm:w-56">
+              <label className="label">Zugriff</label>
+              <Select name="accessLevel" ariaLabel="Zugriff für neue Freigabe" defaultValue="read" options={ACCESS_LEVEL_OPTIONS} />
+            </div>
             <SubmitButton className="btn-primary">+</SubmitButton>
           </form>
         </div>
@@ -410,7 +363,7 @@ export default async function FinanceSettingsPage({
           {access.map((a) => (
             <div
               key={a.id}
-              className="flex items-center justify-between rounded border border-slate-200 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2"
             >
               <span className="inline-flex items-center gap-2 text-sm">
                 {a.userId ? (
@@ -426,6 +379,10 @@ export default async function FinanceSettingsPage({
                   <>👥 {a.groupName} (Gruppe)</>
                 )}
               </span>
+              <form action={updateFinanceAccessLevelAction.bind(null, fbId, a.id)} className="flex flex-wrap items-center gap-2">
+                <div className="w-56"><Select name="accessLevel" key={`${a.id}-${a.accessLevel}`} ariaLabel={`Zugriff für ${a.username ?? a.groupName ?? "Freigabe"}`} defaultValue={a.accessLevel} options={ACCESS_LEVEL_OPTIONS} /></div>
+                <SubmitButton className="btn-secondary btn-sm">Speichern</SubmitButton>
+              </form>
               <form action={removeFinanceAccessAction.bind(null, fbId, a.id)}>
                 <SubmitButton className="btn-secondary px-2 py-1">
                   Entfernen
@@ -445,31 +402,7 @@ export default async function FinanceSettingsPage({
           Ausgaben-Auswertungen ein.
         </p>
 
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-green-700">Einnahmen</h3>
-          {incomeTops.length === 0 && (
-            <p className="text-xs text-slate-400">Noch keine Einnahmen.</p>
-          )}
-          {incomeTops.map(renderTop)}
-          <form action={addPlanItemAction.bind(null, fbId, null, "income")}>
-            <SubmitButton className="btn-secondary btn-sm">
-              + Einnahme (Oberpunkt)
-            </SubmitButton>
-          </form>
-        </div>
-
-        <div className="space-y-3 border-t border-slate-100 pt-4">
-          <h3 className="text-sm font-semibold text-slate-700">Ausgaben</h3>
-          {expenseTops.length === 0 && (
-            <p className="text-xs text-slate-400">Noch keine Ausgaben.</p>
-          )}
-          {expenseTops.map(renderTop)}
-          <form action={addPlanItemAction.bind(null, fbId, null, "expense")}>
-            <SubmitButton className="btn-secondary btn-sm">
-              + Ausgabe (Oberpunkt)
-            </SubmitButton>
-          </form>
-        </div>
+        <FinancePlanEditor fbId={fbId} items={items} />
       </CollapsibleSection>
 
       {/* Eigentum & Löschen */}

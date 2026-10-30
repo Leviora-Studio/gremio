@@ -45,7 +45,7 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 
 > **Rollenwechsel** macht nur der Admin (geschützt durch Tipp-Wörter: `ADMIN` zum Befördern zum Admin, `TEMPLATE` zum Template-Verwalter, `ENTZIEHEN` zum Herabstufen). Der letzte Admin und man selbst können nicht degradiert werden.
 2. **Board-Eigentümer** (`boards.owner_id`) — wer ein Board erstellt, ist Eigentümer und darf es verwalten (umbenennen, Stati konfigurieren, Freigaben verwalten, löschen). Admins dürfen jedes Board verwalten.
-3. **Board-Freigabe** (`board_access`) — Eigentümer/Admin geben ein Board frei, **an einen Nutzer oder eine Gruppe** (binär: sehen + Anträge bearbeiten, keine Rechtestufen). Das *Verwalten* des Boards bleibt Eigentümer/Admin vorbehalten.
+3. **Board-Freigabe** (`board_access`) — Eigentümer/Admin geben ein Board **an einen Nutzer oder eine Gruppe** mit **Lesend** (`read`) oder **Lesend und schreibend** (`write`) frei. Direkte und Gruppenfreigaben werden kombiniert; jede passende Schreibfreigabe hat Vorrang. Das *Verwalten* des Boards bleibt Eigentümer/Admin vorbehalten.
 
 > **Gruppen erstellen/verwalten darf nur der Admin.** User können vorhandene Gruppen nur zu ihren eigenen Boards einladen, aber keine Gruppen anlegen/ändern.
 
@@ -57,7 +57,7 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 - **Konten deaktivieren/löschen** passiert ebenfalls im SSO; `/admin/users` vergibt nur **Rollen**.
 - **Profilbild:** optional je Nutzer (Upload/Ersetzen/Entfernen unter `/intern/konto`). Ohne Bild → generierter Avatar aus den **Initialen des Benutzernamens** (z.B. deterministische Farbe). Bild wird quadratisch zugeschnitten/verkleinert gespeichert.
 - **Board-Stati:** pro Board konfigurierbar (siehe Workflow); Archiv-Trigger pro Board wählbar
-- **Board-Zugriff:** binär (nur Zugriff, keine Lesen/Bearbeiten/Verwalten-Stufen)
+- **Board-Zugriff:** Lesen oder Lesen und Schreiben; Verwalten bleibt Eigentümern/Admins vorbehalten
 - Ein Nutzer kann in **mehreren Gruppen** sein (n:m)
 - **Eigentum übertragbar:** Eigentümer **oder** Admin können ein Board an einen anderen Nutzer übergeben
 - **Eigentümer gelöscht/deaktiviert:** Board bleibt bestehen, Eigentum fällt automatisch an einen Admin (kein Datenverlust). → `boards.owner_id` daher **nicht** `ON DELETE CASCADE`, sondern beim Löschen umhängen
@@ -108,7 +108,7 @@ board_numbering (board_id PK FK→boards ON DELETE CASCADE,
 -- cards.number = vergebene Antragsnummer (Text, NULL = keine).
 --   Vergabe atomar (UPDATE … next=next+1 … RETURNING) beim Formular-Eingang und
 --   beim BEHALTEN einer manuellen Karte (Verwerfen verbraucht keine Nummer).
---   Bei aktiviertem Feld durch jedes Board-Mitglied editierbar; Zähler bleibt davon unberührt.
+--   Bei aktiviertem Feld durch jeden Board-Nutzer mit Schreibrecht editierbar; Zähler bleibt davon unberührt.
 --   Keine Eindeutigkeitsgarantie (Dubletten durch Reset/leere Blöcke bewusst erlaubt).
 
 board_instruction_forms (board_id PK FK→boards ON DELETE CASCADE,
@@ -116,7 +116,7 @@ board_instruction_forms (board_id PK FK→boards ON DELETE CASCADE,
                          filename, path, size, uploaded_at, uploaded_by NULL)
 -- Board-Eigentümer/Admin hinterlegen genau eine PDF-Vorlage. Aktivierung ist
 -- nur mit einer unverschlüsselten, lesbaren Vorlage mit mindestens einer Seite
--- möglich. Board-Mitglieder erstellen daraus im Karten-PDF-Editor neue Anhänge:
+-- möglich. Board-Nutzer mit Schreibrecht erstellen daraus im Karten-PDF-Editor neue Anhänge:
 -- <Antragsnummer>_Anweisung1.pdf, <Antragsnummer>_Anweisung2.pdf, ... .
 -- Die aktuelle Antragsnummer wird unter Kartensperre übernommen; ohne Nummer
 -- heißen die Dateien Anweisung1.pdf usw. Die nächste Nummer folgt auch auf
@@ -149,19 +149,31 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 ```
 
 ### Board-Ansicht
+- **Ansichten:** Kanban, gruppierte Liste, Tabelle und Kalender auf demselben Board. Suche und Filter bleiben beim Wechsel erhalten; alle Ansichten beachten die aktivierten Kartenfelder und zeigen nur nicht archivierte Karten.
+- **Liste:** Board-Spalten erscheinen in ihrer bestehenden Reihenfolge als aufklappbare Kategorien mit Trefferanzahl. Einzelne oder alle Kategorien auf-/zuklappen; unter „Gruppen auswählen“ persönlich ausblenden, unten im Bereich „Ausgeblendet“ mit Trefferanzahl wieder einblenden. Suche/Filter zeigen passende ausgeblendete Gruppen vorübergehend, ohne die gespeicherte Auswahl zu ändern; Karten öffnen und Status über die vorhandene Verschiebeaktion ändern (einschließlich Status-Triggern).
+- **Tabelle:** Titel und Status sowie auswählbare aktivierte Metadaten-/Betragsspalten; Sortierung über Spaltenüberschriften (Beträge numerisch, leere Werte zuletzt). Die Reihenfolge aller Tabellenspalten einschließlich Titel und Status ist per Drag-and-drop am Griff direkt in der Tabellenüberschrift oder in „Tabellenspalten auswählen“ persönlich änderbar und zurücksetzbar. Status direkt auswählbar. Anhänge und längere Notizfelder bleiben in der Kartendetailansicht.
+- **Kalender:** Monatsraster oder Terminliste nach Deadline bzw. Sitzung, nur wenn das jeweilige Feld aktiviert ist; Monatsnavigation, Heute und separater Bereich für Karten ohne Datum. Auf kleinen Bildschirmen wird die Terminliste angezeigt. Kalenderdaten werden nicht per Drag&Drop verändert.
+- **Suchnavigation:** Bei aktiver Suche oder Filtern scrollt Kanban horizontal zur ersten Treffer-Spalte; die Liste zeigt nur Treffergruppen und öffnet sie vorübergehend, ohne gespeicherte Klappzustände zu überschreiben. Die Tabelle setzt ihren horizontalen Ausschnitt auf den Titel zurück. Der Kalender behält einen Monat mit Treffern bei oder springt zum frühesten Treffer-Monat; reine Treffer ohne Datum erscheinen ohne leeres Monatsraster. Manuelle Monatsnavigation bleibt möglich, der Suchfokus bleibt erhalten.
+- **Persönliche Anzeige:** Gewählte Ansicht, eingeklappte Kategorien und Reihenfolge/Sichtbarkeit der Tabellenspalten werden lokal im Browser pro Nutzer und Board gespeichert. Keine zusätzlichen API-Endpunkte oder Datenbankmigrationen.
 - **Filter** (clientseitig): Textsuche (Titel/Antragsteller), Priorität, Zugewiesen, „nur überfällig" (Deadline < heute).
 - **Karten sortierbar** per Drag&Drop innerhalb/zwischen Spalten (`cards.position`); Reihenfolge wird persistiert.
 - **Kommentare** und **Aktivitäts-/Statushistorie** je Karte — nur in der internen Detailansicht, nicht auf der öffentlichen Statusseite.
 
 ### Zugriff & Verwaltung (Logik)
-- **Sehen/bearbeiten** (`canAccessBoard`): `role='admin'` **oder** Eigentümer **oder** `board_access` mit eigener `user_id` **oder** mit einer `group_id` aus seinen Gruppen.
+- **Sehen** (`canAccessBoard`): `role='admin'` **oder** Eigentümer **oder** `board_access` mit eigener `user_id` **oder** mit einer `group_id` aus seinen Gruppen.
 - **Verwalten** (`canManageBoard` — umbenennen, Stati, Freigaben, löschen): `role='admin'` **oder** Eigentümer.
 - **Guards** (Server-Funktionen, werfen `notFound()`/`redirect()` — in *jedem* Handler aufrufen, nie nur im UI ausblenden):
   - `requireUser` / `requireAdmin` / `requireTemplateManager` (`lib/auth`)
   - `requireBoardAccess` / `requireBoardManage` (`lib/authz`)
   - `requireFinanceAccess` / `requireFinanceManage` (`lib/finance`)
   - `requireInventoryBoardAccess` / `requireInventoryBoardManage` (`lib/inventory`)
-- Alle drei Board-Arten (Kanban, Finanzen, Inventar) benutzen **dasselbe Muster**: `canAccess*` (admin ∨ Eigentümer ∨ Freigabe) und `canManage*` (admin ∨ Eigentümer).
+- Alle drei Board-Arten (Kanban, Finanzen, Inventar) benutzen dasselbe Muster: `canAccess*` erlaubt Lesen über jede passende Freigabe; `canEdit*` verlangt mindestens eine passende direkte oder Gruppenfreigabe mit `access_level='write'`. Admin/Eigentümer haben volle Rechte. `canManage*` bleibt Admin/Eigentümer vorbehalten. Leihvorgangsboards spiegeln auch die Schreibrechte des Inventars.
+- **Bürokraft (normale Kanban-Boards):** In den Einstellungen einen bereits berechtigten aktiven Nutzer auswählen und Ausgangs-/Zielspalten getrennt freigeben. `board_office_roles` und `board_office_statuses` (Migration 0071) sind standardmäßig inaktiv und erteilen selbst keinerlei Leserecht. Direkte/Gruppen-Schreibrechte sowie Eigentümer/Admin-Rechte haben Vorrang und bleiben unverändert. Ohne Schreibrecht darf die Person ausschließlich aktive Karten von erlaubten Ausgangsspalten in erlaubte, andere Zielspalten bewegen; Karteninhalte, Kommentare, Anhänge, Anlage/Löschen, Wiederherstellung und reine Umsortierung bleiben gesperrt. Bewegte Karten werden ans Zielende angehängt. Normale Status-Automatismen laufen weiterhin. Entzogene Leserechte heben die Zusatzberechtigung sofort auf.
+- **Bürokraft-Durchsetzung:** Kanban, Liste/Tabelle und Kartendetail bieten nur passende Ziele; Server Actions prüfen die aktuellen Spalten unter Kartensperre erneut. Die DB erzwingt, dass konfigurierte Spalten zum Board gehören. REST/MCP erlauben alternativ zu vollem Schreibrecht ausschließlich `PATCH /cards/{id}` mit genau `statusId` bei passender Bürokraft-Regel und weiterhin erforderlichem `scope=write`; Misch-Patches und andere Schreibaktionen bleiben gesperrt. Keine zusätzlichen externen Endpunkte.
+- **Migration 0070:** Alle vorhandenen Personen- und Gruppenfreigaben in `board_access`, `finance_board_access` und `inventory_board_access` erhalten `access_level='write'` (`NOT NULL DEFAULT 'write'`, DB-Constraint für `read|write`). Neue UI-Freigaben starten mit Lesend; die Auswahl ist serverseitig validiert. Freigaben können geändert oder entfernt werden; die effektiven Rechte werden bei jedem Aufruf live geprüft.
+- **Nur lesend:** keine Kartenanlage/-änderung/-löschung, Statuswechsel, Wiederherstellung, Kommentare, Uploads, PDF-Bearbeitung/Signierung, Datei-/Ordnerorganisation, Inventaränderungen, Mängel- oder Leihaktionen. Lesen, Suche, Filter und Downloads bleiben möglich. Status-Links mit öffentlichen Bearbeitungsmöglichkeiten werden nur Schreibern angezeigt.
+- **Finanz-Schreibrecht:** Haushaltsplan über `/finanzen/{id}/plan` bearbeiten (Bestätigungsdialog vor Anzeige der Eingabefelder, auch bei Direktaufruf); Einstellungen, Konten/Quellen und Freigaben bleiben Eigentümer/Admin vorbehalten. Die Bearbeitung in den Einstellungen verwendet denselben Planeditor. Er weist auf automatisches Speichern hin; jede Position zeigt ausstehende Änderungen, laufendes Speichern, erfolgreichen Abschluss oder einen Fehler mit Wiederholungsmöglichkeit an. Fehler erhalten den Eingabeentwurf.
+- **API/MCP:** Schreiben benötigt zugleich live Schreibrecht am Board und Token-/Grant-`scope=write`; reine Lesefreigaben ergeben bei Schreibaufrufen `403`. Externe Endpunkte und öffentliche Token-Verträge bleiben unverändert.
 
 ### Bootstrap & Sicherheit
 - Erst-Admin via SSO: der in `.env` als `ADMIN_USER` gesetzte SSO-Benutzer wird beim **ersten Login** automatisch Admin (JIT-Provisioning; kein Passwort in dieser App, kein Admin-Seed)
@@ -417,7 +429,7 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 
 - **Nutzer-Auswahl (Ersteller / Zugewiesen zu):** Tippen liefert Vorschläge aus den Nutzern, die Zugriff auf das jeweilige Board haben (Eigentümer + direkte Freigaben + Gruppen + Admins). Dafür ein gefilterter Such-Endpoint.
 - **Anhänge — einheitliches Modell:** Die benannten Slots sind Anhänge mit festem `kind` (je max. 1, ersetzbar), „Weitere PDFs" sind `kind='other'` und **unbegrenzt**.
-- **Interne Dateiordner:** Board-Mitglieder können direkt am Ticket Ordner erstellen,
+- **Interne Dateiordner:** Board-Nutzer mit Schreibrecht können direkt am Ticket Ordner erstellen,
   sichtbare Anhänge umbenennen (Dateiendung bleibt erhalten) und zwischen diesen
   Ordnern und dem Ticket-Hauptordner verschieben. Eine Ebene von Unterordnern;
   die Dokument-Slots und ihre Sichtbarkeitsregeln bleiben erhalten. Die Zuordnung
@@ -565,7 +577,7 @@ Beispiel: "Grillabend am FB5"
 
 ## Inventar- & Entleihsystem
 
-Eigenständiges Modul (seit 2.0.0) zur Verwaltung von Gegenständen und deren Ausleihe. **Inventar-Boards sind keine Kanban-Boards** — eigene Tabellen, eigene Listenansicht. Sie teilen sich mit den Kanban-Boards nur Nutzer, Gruppen und das **identische Zugriffsmodell**: Zugriff = Admin ∨ Eigentümer ∨ Freigabe an Nutzer/Gruppe (binär); Verwalten = Admin ∨ Eigentümer (`lib/inventory.ts`, gleiche Struktur wie `lib/authz/index.ts`). Jeder eingeloggte Nutzer darf ein Inventar-Board erstellen und ist dann dessen Eigentümer.
+Eigenständiges Modul (seit 2.0.0) zur Verwaltung von Gegenständen und deren Ausleihe. **Inventar-Boards sind keine Kanban-Boards** — eigene Tabellen, eigene Listenansicht. Sie teilen sich mit den Kanban-Boards nur Nutzer, Gruppen und das **identische Zugriffsmodell**: Zugriff = Admin ∨ Eigentümer ∨ Freigabe an Nutzer/Gruppe (read/write, höchste Stufe gilt); Verwalten = Admin ∨ Eigentümer (`lib/inventory.ts`, gleiche Struktur wie `lib/authz/index.ts`). Jeder eingeloggte Nutzer darf ein Inventar-Board erstellen und ist dann dessen Eigentümer.
 
 Zwei Schalter bleiben **dem Admin vorbehalten**:
 - **Öffentlich** (`is_public`, `/admin/inventar`) — das Inventar erscheint unter `/inventar`
@@ -728,8 +740,8 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **Finanz-Sichtbarkeit am Eigentümer:** Welche Quell-Boards in eine Finanzübersicht einfließen, entscheidet der **Finanzboard-Eigentümer** (Spec „Freigabe wie Boards"). Wer eine Übersicht freigegeben bekommt, sieht damit Karten-Finanzdaten auch von Boards ohne eigenen Zugriff — bewusste Informations-Freigabe.
 - **Archivierte Karten zählen in der Finanzauswertung mit** (Done-Archiv blendet nur die Board-/Aufgaben-Ansicht aus). Für „tatsächliche Ausgaben" sollen abgeschlossene Anträge mitzählen.
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
-- **Binäres Board-Zugriffsmodell:** Jedes Board-Mitglied darf Karten/Anhänge bearbeiten **und löschen** (kein separates Lese-/Lösch-Recht). Seit v2.7.9 dürfen auch Antragsnummer, Anweisungsdatum und Überweisungsdatum von jedem Mitglied geändert werden, sofern am Board aktiviert (UI **und** REST-API). Board-Einstellungen bleiben Eigentümer/Admin vorbehalten. Beim Archiv-Status gilt: **manuelles Archivieren kann niemand** (nur der Done-Sweep archiviert), **Wiederherstellen darf jedes Board-Mitglied** — in Web und API identisch.
-- **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Zugriff via `canAccessBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
+- **Board-Zugriffsmodell:** Leser sehen Inhalte; Nutzer mit Schreibrecht dürfen Karten/Anhänge bearbeiten und löschen sowie aktivierte Nummern und Triggerdaten ändern. Einstellungen bleiben Eigentümer/Admin vorbehalten. Manuelles Archivieren bleibt ausgeschlossen; Wiederherstellen erfordert Schreibrecht.
+- **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Lese-/Schreibrecht via `canAccessBoard`/`canEditBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
 - **REST-Vertragsabgleich:** Die interne API umfasst Boards/Karten einschließlich Katalogen, Suche, Kommentaren, Verlauf und Anhängen (siehe `docs/API.md` und `docs/MCP.md`). Die öffentliche API bleibt auf Anträge/Feedback begrenzt. `POST` kann Haushaltspositionen atomar anlegen, `PATCH` ersetzt sie mit `budgetRevision`; `lib/api-card-response.ts` liest Summen/Revision/Positionen im selben Snapshot. Reine Zuständigen-PATCHes einschließlich `[]` werden gespeichert. Trigger-Metadaten für Quittungen/Überweisungen sind für Board-Verwalter vollständig; Listen liefern Summen, Details die Positionen. Siehe `docs/API_PARITY_AUDIT.md` für Abdeckung und bewusst nicht externe Web-Funktionen.
 - **Öffentliche allgemeine Uploads sind append-only**, unabhängig vom Quittungs-Gate (bis 30 PDFs je Karte) — gewollt; Archiv-Trigger sperren sie, gegen Missbrauch zusätzlich ratenbegrenzt.
 - **Öffentliches Inventar ist eine Whitelist, keine Blacklist:** `PUBLIC_INVENTORY_FIELD_KEYS` listet auf, was *nach außen darf* (Bezeichnung, Kategorie, Verfügbarkeit) — neue Item-Felder sind damit automatisch **nicht** öffentlich. Standort, Preis, Seriennummer, Belege und „aktuell bei" bleiben intern; öffentlich erscheint nur die Ausleihfrist ohne Person.
@@ -756,7 +768,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 
 Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der Viewer ist zugleich Editor:
 - **Anzeigen:** `react-pdf` (pdf.js) rendert PDF-Seiten; Bilder (Studierendenausweis) werden als `<img>` gezeigt. Auf der **öffentlichen Statusseite** ist der Viewer **read-only**.
-- **Bearbeiten (intern, Board-Mitglieder):** Freitext per Klick platzieren und vorhandene **AcroForm-Formularfelder** über ein Seitenpanel ausfüllen. Beim Speichern werden die Änderungen serverseitig mit `pdf-lib` ins PDF geschrieben (`lib/pdf-edit.ts`).
+- **Bearbeiten (intern, Board-Nutzer mit Schreibrecht):** Freitext per Klick platzieren und vorhandene **AcroForm-Formularfelder** über ein Seitenpanel ausfüllen. Beim Speichern werden die Änderungen serverseitig mit `pdf-lib` ins PDF geschrieben (`lib/pdf-edit.ts`).
 - **Alte Formularstruktur:** `lib/pdf-widget-compat.ts` ordnet getrennte Kopien in
   `AcroForm/Fields` und Seiten-`Annots` anhand vollständigem Feldnamen, Feldtyp,
   Wert, Rechteck und Optionszustand zu. Mehrfachplatzierungen werden zusätzlich
@@ -786,7 +798,7 @@ Anhänge werden **in-app** in einem Modal geöffnet (kein Browser-Tab). Der View
   ab; `drawSignatureBox` (`lib/sign.ts`) zeichnet Rahmen, Bild, Name und Datum in
   einem lokalen, aufrechten Koordinatensystem. Die Box bleibt auf der Seite.
 - **Signieren:** sichtbare Signatur-Box platzieren → serverseitige **PAdES-Signatur** mit dem persönlichen `.p12` des Nutzers (`lib/sign.ts`, `@signpdf`). Verlangt ein in den Konto-Einstellungen hinterlegtes Zertifikat (`lib/cert.ts`, `inspectP12`).
-- **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Zugriff erforderlich, Aktivitätseintrag.
+- **Speichern:** „neue Datei" (zusätzlicher `other`-Anhang, Original bleibt) **oder** „Original ersetzen" — Server-Action `savePdfEditsAction` (`app/intern/card/[id]/pdf-actions.ts`), Board-Schreibrecht erforderlich, Aktivitätseintrag.
 - **Feld-Metadaten:** `GET /api/attachment/{id}/fields` liefert die ausfüllbaren Felder fürs Seitenpanel.
 - **Zertifikatsverwaltung:** `/intern/konto` → Abschnitt „Signatur-Zertifikat" (`.p12` + Passwort hochladen/ersetzen/entfernen; Inhaber/Gültigkeit werden angezeigt). Spalten an `users`: `cert_p12_enc`, `cert_pass_enc`, `cert_subject`, `cert_not_after`, `cert_uploaded_at`.
 

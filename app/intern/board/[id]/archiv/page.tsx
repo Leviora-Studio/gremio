@@ -5,7 +5,7 @@ import Link from "next/link";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, cards } from "@/lib/db/schema";
-import { requireBoardAccess } from "@/lib/authz";
+import { canEditBoard, requireBoardAccess } from "@/lib/authz";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { restoreCardAction } from "./actions";
@@ -17,8 +17,9 @@ export default async function BoardArchivePage({
 }) {
   const { id } = await params;
   const boardId = Number(id);
-  const { board } = await requireBoardAccess(boardId);
+  const { user, board } = await requireBoardAccess(boardId);
 
+  const canEdit = await canEditBoard(user, board);
   const rows = await db
     .select({
       id: cards.id,
@@ -82,11 +83,11 @@ export default async function BoardArchivePage({
                     : ""}
                 </p>
               </div>
-              <form action={restoreCardAction.bind(null, boardId, c.id)}>
+              {canEdit && <form action={restoreCardAction.bind(null, boardId, c.id)}>
                 <SubmitButton className="btn-secondary btn-sm shrink-0">
                   ↩ Zurückholen
                 </SubmitButton>
-              </form>
+              </form>}
             </div>
           ))}
         </div>

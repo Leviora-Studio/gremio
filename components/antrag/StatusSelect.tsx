@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Select } from "@/components/Select";
 import { setCardStatusAction } from "@/app/intern/card/[id]/actions";
 
@@ -17,19 +17,25 @@ export function StatusSelect({
   current: number;
 }) {
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(String(current));
+  useEffect(() => setSelected(String(current)), [current]);
   return (
     <div className="flex items-center gap-2">
       <Select
         className="w-full sm:w-64"
-        defaultValue={String(current)}
+        value={selected}
         disabled={saving}
         options={statuses.map((s) => ({ value: String(s.id), label: s.name }))}
         onChange={async (v) => {
-          setSaving(true);
-          await setCardStatusAction(cardId, Number(v));
-          setSaving(false);
+          if (v === String(current)) return;
+          setSaving(true); setError("");
+          try { await setCardStatusAction(cardId, Number(v)); setSelected(v); }
+          catch { setError("Dieser Statuswechsel ist nicht erlaubt oder konnte nicht gespeichert werden."); }
+          finally { setSaving(false); }
         }}
       />
+      {error && <span role="alert" className="text-sm text-red-700">{error}</span>}
       {saving && <span className="text-xs text-slate-400">…</span>}
     </div>
   );

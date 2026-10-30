@@ -8,7 +8,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, cards } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
+import { canEditBoard, getBoardById } from "@/lib/authz";
 import { doneSinceForStatus } from "@/lib/done-archive";
 
 /** Holt eine archivierte Karte zurück aufs Board (erste Spalte, ans Ende). */
@@ -18,7 +18,7 @@ export async function restoreCardAction(
 ): Promise<void> {
   const user = await requireUser();
   const board = await getBoardById(boardId);
-  if (!board || !(await canAccessBoard(user, board))) return;
+  if (!board || !(await canEditBoard(user, board))) return;
 
   const [card] = await db
     .select({ id: cards.id })

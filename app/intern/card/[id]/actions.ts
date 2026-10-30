@@ -3,6 +3,7 @@
 
 "use server";
 
+import { moveCardAction } from "@/app/intern/board/actions";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
@@ -21,6 +22,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import {
   canAccessBoard,
+  canEditBoard,
   canManageBoard,
   getBoardById,
   getBoardMemberUsers,
@@ -54,7 +56,7 @@ import { AMOUNT_KEYS, BUDGET_FIELDS } from "@/lib/card-budget";
 
 export type State = { error?: string; success?: string };
 
-async function loadCard(cardId: number) {
+async function loadCard(cardId: number, write = true) {
   const user = await requireUser();
   // Manipulierte RPC-Argumente (z. B. String statt Int) dürfen keinen
   // pg-Fehler/500 auslösen — wie ein nicht gefundener Datensatz behandeln.
@@ -68,7 +70,7 @@ async function loadCard(cardId: number) {
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
   if (!card) notFound();
   const board = await getBoardById(card.boardId);
-  if (!board || !(await canAccessBoard(user, board))) notFound();
+  if (!board || !(await (write ? canEditBoard(user, board) : canAccessBoard(user, board)))) notFound();
   return { user, board, card };
 }
 
@@ -327,7 +329,7 @@ export async function saveBudgetPositionsAction(cardId: number, rows: unknown, r
 }
 
 export async function getBudgetSnapshotAction(cardId: number) {
-  const { board } = await loadCard(cardId);
+  const { board } = await loadCard(cardId, false);
   const visible = await visibleFields(board.id);
   if (!["budget_title", "account"].every((k) => visible.has(k))) notFound();
   const { card, rows } = await loadBudgetSnapshot(cardId);
@@ -340,7 +342,12 @@ export async function setCardStatusAction(
   statusId: number,
 ): Promise<void> {
   if (!Number.isInteger(statusId)) return;
-  const { user, board, card } = await loadCard(cardId);
+  const { user, board, card } = await loadCard(cardId, false);
+  if (!(await canEditBoard(user, board))) {
+    await moveCardAction(cardId, statusId, []);
+    revalidatePath(`/intern/card/${cardId}`);
+    return;
+  }
   const [target] = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)

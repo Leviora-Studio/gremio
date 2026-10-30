@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { attachmentFolders, attachments, boards, cards, cardActivity } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { canAccessBoard } from "@/lib/authz";
+import { canEditBoard } from "@/lib/authz";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
 import { organizationName } from "@/lib/attachment-organization";
@@ -25,7 +25,7 @@ async function access(cardId: number) {
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId));
   if (!card) notFound();
   const [board] = await db.select().from(boards).where(eq(boards.id, card.boardId));
-  if (!board || !await canAccessBoard(user, board)) notFound();
+  if (!board || !await canEditBoard(user, board)) notFound();
   return { user, card, visible: await getVisibleFieldKeys(board.id) };
 }
 

@@ -76,3 +76,43 @@ against an isolated `gremio_workflows_test_*` database.
 finance actions and queries: single and position budgets, unchanged actual costs
 and application rows, account overrides, exports, leaving the column, clearing
 the selection, column deletion and management/source-access permissions.
+
+`board-views.cjs` mounts the actual board with synthetic card data and local
+navigation/Server Action doubles. It checks Kanban/list/table/calendar switching,
+shared search, persisted view/category preferences, table columns and numeric
+amount sorting, status changes, calendar date selection/month navigation,
+undated cards, empty results, search navigation to offscreen columns/collapsed
+groups/other calendar months, restored collapse preferences and disabled-field handling at 1200 and 390 pixels.
+Run with the same `PLAYWRIGHT_MODULE` and `CHROME_PATH` variables above. It does
+not use a database or mutate real cards; real action/trigger integration requires
+an isolated application environment.
+
+`access-levels-production.cjs` starts the real production build with isolated
+PostgreSQL and sealed synthetic owner/reader/group-writer sessions. At desktop
+and mobile widths it checks all board views, disabled card editing, attachment
+downloads, hidden public mutation tokens, finance plan writes, inventory/loan
+controls, settings guards and real grant updates on all three sharing pages.
+Use the same environment as `workflows-production.cjs`; optionally set
+`GREMIO_TEST_BUILD_DIR` to the separately built checkout/copy. No real files,
+Nextcloud connections or OIDC services are used. `access-levels-db.test.ts`
+checks direct/group precedence and denied mutations; the separately invoked
+`access-levels-migration.test.ts` uses `TEST_ACCESS_MIGRATION_DATABASE_URL`
+(an empty `gremio_workflows_upgrade_test_*` database) to verify legacy grant upgrades.
+
+`finance-plan.cjs` mounts the actual confirmation and plan row components with
+local save/navigation doubles. It checks cancel/confirm, no editable fields
+before confirmation, pending/saving/saved indicators, failed saves with retained
+drafts and successful retries at desktop/mobile widths. Run with the existing
+`PLAYWRIGHT_MODULE` and `CHROME_PATH` options. `board-views.cjs` additionally
+checks table header drag-and-drop, keyboard sorting in column selection, matching body cells, reload persistence and reset.
+
+Office-role checks in `access-levels-db.test.ts` cover existing-read-access
+requirements, same-board constraints, allowed/forbidden/stale source moves,
+archived cards, unchanged content guards, strict status-only REST patches,
+append-only placement, revocation and write-grant precedence.
+`access-levels-production.cjs` additionally configures the office role through
+the actual settings form and exercises reader status moves and group-writer
+precedence on desktop/mobile against the isolated database.
+
+The board-view checks also verify hidden list groups, the bottom restore area,
+reload persistence and temporarily revealed search matches without changing preferences.

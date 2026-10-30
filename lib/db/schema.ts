@@ -139,6 +139,7 @@ export const boardAccess = pgTable(
   "board_access",
   {
     id: serial("id").primaryKey(),
+    accessLevel: text("access_level", { enum: ["read", "write"] }).notNull().default("write"),
     boardId: integer("board_id")
       .notNull()
       .references(() => boards.id, { onDelete: "cascade" }),
@@ -150,6 +151,7 @@ export const boardAccess = pgTable(
     }),
   },
   (t) => ({
+    validAccessLevel: check("board_access_access_level_check", sql`${t.accessLevel} in ('read', 'write')`),
     oneSubject: check(
       "board_access_one_subject",
       sql`(${t.userId} is null) <> (${t.groupId} is null)`,
@@ -158,6 +160,22 @@ export const boardAccess = pgTable(
     uqGroup: uniqueIndex("board_access_board_group_uq").on(t.boardId, t.groupId),
   }),
 );
+
+// Optional per-board office role; grants remain the source of read access.
+export const boardOfficeRoles = pgTable("board_office_roles", {
+  boardId: integer("board_id").primaryKey().references(() => boards.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+});
+export const boardOfficeStatuses = pgTable("board_office_statuses", {
+  boardId: integer("board_id").notNull().references(() => boardOfficeRoles.boardId, { onDelete: "cascade" }),
+  statusId: integer("status_id").notNull(),
+  direction: text("direction", { enum: ["source", "target"] }).notNull(),
+}, t => ({
+  pk: primaryKey({ columns: [t.boardId, t.statusId, t.direction] }),
+  directionCheck: check("board_office_statuses_direction_check", sql`${t.direction} in ('source', 'target')`),
+  statusBoard: foreignKey({ columns: [t.boardId, t.statusId], foreignColumns: [boardStatuses.boardId, boardStatuses.id], name: "board_office_statuses_same_board_fk" }).onDelete("cascade"),
+}));
 
 // ---------------------------------------------------------------------------
 // board_statuses — beliebig viele Archiv- und Quittungsquellen pro Board
@@ -182,6 +200,7 @@ export const boardStatuses = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    boardStatusIdentity: uniqueIndex("board_statuses_board_id_id_uq").on(t.boardId, t.id),
     // Archive and receipt sources intentionally have no uniqueness constraint.
     oneInstrTrigger: uniqueIndex("board_statuses_one_instr_trigger")
       .on(t.boardId)
@@ -619,6 +638,7 @@ export const financeBoardAccess = pgTable(
   "finance_board_access",
   {
     id: serial("id").primaryKey(),
+    accessLevel: text("access_level", { enum: ["read", "write"] }).notNull().default("write"),
     financeBoardId: integer("finance_board_id")
       .notNull()
       .references(() => financeBoards.id, { onDelete: "cascade" }),
@@ -628,6 +648,7 @@ export const financeBoardAccess = pgTable(
     }),
   },
   (t) => ({
+    validAccessLevel: check("finance_board_access_access_level_check", sql`${t.accessLevel} in ('read', 'write')`),
     oneSubject: check(
       "finance_board_access_one_subject",
       sql`(${t.userId} is null) <> (${t.groupId} is null)`,
@@ -936,11 +957,12 @@ export const inventoryOverviewConfig = pgTable("inventory_overview_config", {
   minPrice: integer("min_price").notNull().default(0),
 });
 
-// Freigabe eines Inventar-Boards an Nutzer ODER Gruppe (binär), wie board_access.
+// Freigabe eines Inventar-Boards an Nutzer ODER Gruppe (read/write), wie board_access.
 export const inventoryBoardAccess = pgTable(
   "inventory_board_access",
   {
     id: serial("id").primaryKey(),
+    accessLevel: text("access_level", { enum: ["read", "write"] }).notNull().default("write"),
     boardId: integer("board_id")
       .notNull()
       .references(() => inventoryBoards.id, { onDelete: "cascade" }),
@@ -952,6 +974,7 @@ export const inventoryBoardAccess = pgTable(
     }),
   },
   (t) => ({
+    validAccessLevel: check("inventory_board_access_access_level_check", sql`${t.accessLevel} in ('read', 'write')`),
     oneSubject: check(
       "inventory_board_access_one_subject",
       sql`(${t.userId} is null) <> (${t.groupId} is null)`,

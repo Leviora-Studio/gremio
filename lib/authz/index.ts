@@ -6,6 +6,10 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
   boardAccess,
+  boardOfficeRoles,
+  boardOfficeStatuses,
+  boardStatuses,
+  type Card,
   boards,
   inventoryBoardAccess,
   inventoryBoards,
@@ -33,6 +37,7 @@ export async function getUserGroupIds(userId: number): Promise<number[]> {
 async function canAccessInventoryBoardById(
   user: User,
   inventoryBoardId: number,
+  access: "read" | "write",
 ): Promise<boolean> {
   const [inv] = await db
     .select({ ownerId: inventoryBoards.ownerId })
@@ -48,6 +53,7 @@ async function canAccessInventoryBoardById(
     .where(
       and(
         eq(inventoryBoardAccess.boardId, inventoryBoardId),
+        access === "write" ? eq(inventoryBoardAccess.accessLevel, "write") : undefined,
         or(
           eq(inventoryBoardAccess.userId, user.id),
           groupIds.length
@@ -61,17 +67,18 @@ async function canAccessInventoryBoardById(
 }
 
 /**
- * Sehen + Karten bearbeiten:
+ * Lesen (Standard) oder Schreiben bei explizit angeforderter write-Freigabe:
  * admin ODER Eigentümer ODER Freigabe an Nutzer ODER an eine seiner Gruppen.
  */
 export async function canAccessBoard(
   user: User,
   board: Board,
+  access: "read" | "write" = "read",
 ): Promise<boolean> {
   if (user.role === "admin") return true;
   // System-Board (Leihvorgänge): Zugriff spiegelt das verknüpfte Inventar.
   if (board.inventoryBoardId != null) {
-    return canAccessInventoryBoardById(user, board.inventoryBoardId);
+    return canAccessInventoryBoardById(user, board.inventoryBoardId, access);
   }
   if (board.ownerId === user.id) return true;
 
@@ -82,6 +89,7 @@ export async function canAccessBoard(
     .where(
       and(
         eq(boardAccess.boardId, board.id),
+        access === "write" ? eq(boardAccess.accessLevel, "write") : undefined,
         or(
           eq(boardAccess.userId, user.id),
           groupIds.length ? inArray(boardAccess.groupId, groupIds) : undefined,
@@ -273,4 +281,31 @@ export async function requireBoardManage(
   // würde der Done-Sweep bzw. die Archivierung Leihkarten wegräumen).
   if (board.inventoryBoardId != null) notFound();
   return { user, board };
+}
+
+/** Effective write access: owner/admin or any matching write grant. */
+export async function canEditBoard(user: User, board: Board): Promise<boolean> {
+  return canAccessBoard(user, board, "write");
+}
+
+type MoveDb = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Office rules never grant read access and never restrict stronger write grants. */
+export async function getOfficeMoveRules(user: User, board: Board, connection: MoveDb = db): Promise<import("@/lib/board-move-policy").OfficeMoveRules | null> {
+  if (board.inventoryBoardId != null) return null;
+  const [role] = await connection.select().from(boardOfficeRoles).where(and(eq(boardOfficeRoles.boardId, board.id), eq(boardOfficeRoles.enabled, true), eq(boardOfficeRoles.userId, user.id))).limit(1);
+  if (!role) return null;
+  const rows = await connection.select().from(boardOfficeStatuses).where(eq(boardOfficeStatuses.boardId, board.id));
+  return { sourceStatusIds: rows.filter(row => row.direction === "source").map(row => row.statusId), targetStatusIds: rows.filter(row => row.direction === "target").map(row => row.statusId) };
+}
+
+/** Check the current source while holding the card lock for restricted moves. */
+export async function canMoveBoardCard(user: User, board: Board, card: Pick<Card, "boardId" | "statusId" | "archivedAt">, targetStatusId: number, connection: MoveDb = db): Promise<boolean> {
+  if (card.boardId !== board.id || !Number.isSafeInteger(targetStatusId)) return false;
+  if (await canEditBoard(user, board)) return true;
+  if (card.archivedAt != null || !(await canAccessBoard(user, board))) return false;
+  const rules = await getOfficeMoveRules(user, board, connection);
+  if (!rules || card.statusId === targetStatusId || !rules.sourceStatusIds.includes(card.statusId) || !rules.targetStatusIds.includes(targetStatusId)) return false;
+  const [target] = await connection.select({ id: boardStatuses.id }).from(boardStatuses).where(and(eq(boardStatuses.boardId, board.id), eq(boardStatuses.id, targetStatusId))).limit(1);
+  return !!target;
 }

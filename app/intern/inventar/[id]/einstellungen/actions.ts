@@ -3,6 +3,8 @@
 
 "use server";
 
+import { parseAccessLevel } from "@/lib/access-level";
+
 import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -289,8 +291,10 @@ export async function addInventoryAccessUserAction(
   formData: FormData,
 ): Promise<void> {
   await requireInventoryBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const userId = Number(formData.get("userId"));
-  if (!Number.isInteger(userId)) return;
+  if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647) return;
   const exists = await db
     .select({ id: users.id })
     .from(users)
@@ -299,8 +303,8 @@ export async function addInventoryAccessUserAction(
   if (!exists.length) return;
   await db
     .insert(inventoryBoardAccess)
-    .values({ boardId, userId })
-    .onConflictDoNothing();
+    .values({ boardId, userId, accessLevel })
+    .onConflictDoUpdate({ target: [inventoryBoardAccess.boardId, inventoryBoardAccess.userId], set: { accessLevel } });
   revAccess(boardId);
 }
 
@@ -310,8 +314,10 @@ export async function addInventoryAccessGroupAction(
   formData: FormData,
 ): Promise<void> {
   await requireInventoryBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const groupId = Number(formData.get("groupId"));
-  if (!Number.isInteger(groupId)) return;
+  if (!Number.isSafeInteger(groupId) || groupId < 1 || groupId > 2147483647) return;
   const exists = await db
     .select({ id: groups.id })
     .from(groups)
@@ -320,8 +326,8 @@ export async function addInventoryAccessGroupAction(
   if (!exists.length) return;
   await db
     .insert(inventoryBoardAccess)
-    .values({ boardId, groupId })
-    .onConflictDoNothing();
+    .values({ boardId, groupId, accessLevel })
+    .onConflictDoUpdate({ target: [inventoryBoardAccess.boardId, inventoryBoardAccess.groupId], set: { accessLevel } });
   revAccess(boardId);
 }
 
@@ -339,5 +345,13 @@ export async function removeInventoryAccessAction(
         eq(inventoryBoardAccess.boardId, boardId),
       ),
     );
+  revAccess(boardId);
+}
+
+export async function updateInventoryAccessLevelAction(boardId: number, accessId: number, formData: FormData): Promise<void> {
+  await requireInventoryBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel || !Number.isSafeInteger(accessId)) return;
+  await db.update(inventoryBoardAccess).set({ accessLevel }).where(and(eq(inventoryBoardAccess.id, accessId), eq(inventoryBoardAccess.boardId, boardId)));
   revAccess(boardId);
 }

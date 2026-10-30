@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   requireFinanceAccess,
   canManageFinanceBoard,
+  canEditFinanceBoard,
 } from "@/lib/finance";
 import { loadFinanceData, type PlanItem } from "@/lib/finance-data";
 import { formatCents } from "@/lib/money";
@@ -21,6 +22,7 @@ export default async function FinanceBoardPage({
   const { id } = await params;
   const fbId = Number(id);
   const { user, fb } = await requireFinanceAccess(fbId);
+  const canEdit = await canEditFinanceBoard(user, fb);
   const manage = canManageFinanceBoard(user, fb);
 
   const {
@@ -143,11 +145,14 @@ export default async function FinanceBoardPage({
             Quell-Boards: {accessibleCount}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {canEdit && <Link href={`/finanzen/${fbId}/plan`} className="btn-secondary">Haushaltsplan bearbeiten</Link>}
         {manage && (
           <Link href={`/finanzen/${fbId}/einstellungen`} className="btn-secondary">
             ⚙ Einstellungen
           </Link>
         )}
+        </div>
       </div>
 
       {accountNames.length === 0 && (

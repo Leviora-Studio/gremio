@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { inventoryAttachments } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
 import {
-  canAccessInventoryBoard,
+  canEditInventoryBoard,
   getInventoryBoardById,
 } from "@/lib/inventory";
 import { getInventoryItemById } from "@/lib/inventory-items";
@@ -57,7 +57,7 @@ export async function saveInventoryPdfEditsAction(
   const item = await getInventoryItemById(att.itemId);
   if (!item) return { ok: false, error: "Gegenstand nicht gefunden." };
   const board = await getInventoryBoardById(item.boardId);
-  if (!board || !(await canAccessInventoryBoard(user, board))) {
+  if (!board || !(await canEditInventoryBoard(user, board))) {
     return { ok: false, error: "Kein Zugriff." };
   }
 

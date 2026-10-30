@@ -3,6 +3,8 @@
 
 "use server";
 
+import { parseAccessLevel } from "@/lib/access-level";
+
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, max } from "drizzle-orm";
@@ -26,6 +28,7 @@ import { canAccessBoard, getBoardById } from "@/lib/authz";
 import {
   getAccessibleFinanceBoards,
   requireFinanceManage,
+  requireFinanceWrite,
   resolveSourceBoards,
 } from "@/lib/finance";
 import { parseEuroToCents } from "@/lib/money";
@@ -33,6 +36,7 @@ import { parseEuroToCents } from "@/lib/money";
 export type State = { error?: string; success?: string };
 
 function rev(id: number) {
+  revalidatePath(`/finanzen/${id}/plan`);
   revalidatePath(`/finanzen/${id}`);
   revalidatePath(`/finanzen/${id}/einstellungen`);
 }
@@ -351,27 +355,17 @@ export async function addFinanceAccessUserAction(
   formData: FormData,
 ): Promise<void> {
   await requireFinanceManage(id);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const userId = Number(formData.get("userId"));
-  if (!userId) return;
+  if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647) return;
   const [u] = await db
     .select({ id: users.id })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
   if (!u) return; // ungültige userId (manipuliert) → No-op statt FK-500
-  const exists = await db
-    .select({ id: financeBoardAccess.id })
-    .from(financeBoardAccess)
-    .where(
-      and(
-        eq(financeBoardAccess.financeBoardId, id),
-        eq(financeBoardAccess.userId, userId),
-      ),
-    )
-    .limit(1);
-  if (!exists.length) {
-    await db.insert(financeBoardAccess).values({ financeBoardId: id, userId });
-  }
+  await db.insert(financeBoardAccess).values({ financeBoardId: id, userId, accessLevel }).onConflictDoUpdate({ target: [financeBoardAccess.financeBoardId, financeBoardAccess.userId], set: { accessLevel } });
   rev(id);
 }
 
@@ -380,29 +374,17 @@ export async function addFinanceAccessGroupAction(
   formData: FormData,
 ): Promise<void> {
   await requireFinanceManage(id);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const groupId = Number(formData.get("groupId"));
-  if (!groupId) return;
+  if (!Number.isSafeInteger(groupId) || groupId < 1 || groupId > 2147483647) return;
   const [g] = await db
     .select({ id: groups.id })
     .from(groups)
     .where(eq(groups.id, groupId))
     .limit(1);
   if (!g) return; // ungültige groupId (manipuliert) → No-op statt FK-500
-  const exists = await db
-    .select({ id: financeBoardAccess.id })
-    .from(financeBoardAccess)
-    .where(
-      and(
-        eq(financeBoardAccess.financeBoardId, id),
-        eq(financeBoardAccess.groupId, groupId),
-      ),
-    )
-    .limit(1);
-  if (!exists.length) {
-    await db
-      .insert(financeBoardAccess)
-      .values({ financeBoardId: id, groupId });
-  }
+  await db.insert(financeBoardAccess).values({ financeBoardId: id, groupId, accessLevel }).onConflictDoUpdate({ target: [financeBoardAccess.financeBoardId, financeBoardAccess.groupId], set: { accessLevel } });
   rev(id);
 }
 
@@ -428,7 +410,7 @@ export async function addPlanItemAction(
   parentId: number | null,
   kind: "income" | "expense" = "expense",
 ): Promise<void> {
-  await requireFinanceManage(id);
+  await requireFinanceWrite(id);
   // Unterpunkte erben das Kind (Einnahme/Ausgabe) ihres Oberpunkts.
   let effectiveKind: "income" | "expense" = kind === "income" ? "income" : "expense";
   if (parentId) {
@@ -474,7 +456,7 @@ export async function editPlanItemAction(
 ): Promise<State> {
   const fbId = await planItemBoardId(itemId);
   if (!fbId) return { error: "Position nicht gefunden." };
-  await requireFinanceManage(fbId);
+  await requireFinanceWrite(fbId);
   const haushaltstitel = String(formData.get("haushaltstitel") ?? "").slice(0, 60);
   const title = String(formData.get("title") ?? "").slice(0, 200);
   const rawAmount = String(formData.get("plannedAmount") ?? "").trim();
@@ -494,7 +476,15 @@ export async function editPlanItemAction(
 export async function deletePlanItemAction(itemId: number): Promise<void> {
   const fbId = await planItemBoardId(itemId);
   if (!fbId) return;
-  await requireFinanceManage(fbId);
+  await requireFinanceWrite(fbId);
   await db.delete(financePlanItems).where(eq(financePlanItems.id, itemId));
   rev(fbId);
+}
+
+export async function updateFinanceAccessLevelAction(id: number, accessId: number, formData: FormData): Promise<void> {
+  await requireFinanceManage(id);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel || !Number.isSafeInteger(accessId)) return;
+  await db.update(financeBoardAccess).set({ accessLevel }).where(and(eq(financeBoardAccess.id, accessId), eq(financeBoardAccess.financeBoardId, id)));
+  rev(id);
 }

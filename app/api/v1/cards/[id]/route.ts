@@ -16,6 +16,7 @@ import {
   loadApiCard,
   updateCardViaApi,
 } from "@/lib/api-cards";
+import { getOfficeMoveRules, canMoveBoardCard, canEditBoard } from "@/lib/authz";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import type { Board, Card } from "@/lib/db/schema";
 import { serializeApiCardDetail } from "@/lib/api-card-response";
@@ -64,6 +65,8 @@ export async function PATCH(
   if (r instanceof NextResponse) return r;
   const denied = requireWriteScope(r.ctx);
   if (denied) return denied;
+  const fullWrite = await canEditBoard(r.ctx.user, r.board);
+  if (!fullWrite && !(await getOfficeMoveRules(r.ctx.user, r.board))) return apiError(403, "Nur lesender Board-Zugriff.");
   if (r.board.inventoryBoardId != null) {
     return apiError(
       409,
@@ -87,6 +90,8 @@ export async function PATCH(
     });
   }
 
+  const statusOnly = Object.keys(parsed.data).length === 1 && typeof parsed.data.statusId === "number";
+  if (!fullWrite && (!statusOnly || !(await canMoveBoardCard(r.ctx.user, r.board, r.card, parsed.data.statusId!)))) return apiError(403, "Nur ausdrücklich erlaubte Statuswechsel sind zulässig.");
   const result = await updateCardViaApi(r.ctx.user, r.board, r.card, parsed.data);
   if (!result.ok) return apiError(result.status, result.error);
   const visible = await getVisibleFieldKeys(r.board.id);
@@ -103,6 +108,7 @@ export async function DELETE(
   if (r instanceof NextResponse) return r;
   const denied = requireWriteScope(r.ctx);
   if (denied) return denied;
+  if (!(await canEditBoard(r.ctx.user, r.board))) return apiError(403, "Nur lesender Board-Zugriff.");
   if (r.board.inventoryBoardId != null) {
     return apiError(
       409,

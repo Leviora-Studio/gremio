@@ -9,7 +9,7 @@ import {
   requireWriteScope,
   tokenAllowsBoard,
 } from "@/lib/api";
-import { canAccessBoard, getBoardById } from "@/lib/authz";
+import { canEditBoard, canAccessBoard, getBoardById } from "@/lib/authz";
 import { loadApiCard } from "@/lib/api-cards";
 
 export async function resolveApiBoard(req: Request, id: string, write = false) {
@@ -26,6 +26,7 @@ export async function resolveApiBoard(req: Request, id: string, write = false) {
   if (write) {
     const denied = requireWriteScope(ctx);
     if (denied) return denied;
+    if (!(await canEditBoard(ctx.user, board))) return apiError(403, "Nur lesender Board-Zugriff.");
     if (board.inventoryBoardId != null)
       return apiError(409, "Leihvorgang-Board: API nur lesend.");
   }
@@ -43,6 +44,7 @@ export async function resolveApiCard(req: Request, id: string, write = false) {
   if (write) {
     const denied = requireWriteScope(ctx);
     if (denied) return denied;
+    if (!(await canEditBoard(ctx.user, loaded.value.board))) return apiError(403, "Nur lesender Board-Zugriff.");
     if (loaded.value.board.inventoryBoardId != null)
       return apiError(409, "Leihvorgang-Board: API nur lesend.");
   }

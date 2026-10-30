@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+
+import { parseAccessLevel } from "@/lib/access-level";
 import { setBoardTriggerSources } from "@/lib/board-triggers";
 import { isTriggerKind, setTriggerAssignmentConfig } from "@/lib/trigger-assignments";
 
@@ -13,6 +15,8 @@ import { db } from "@/lib/db";
 import {
   accounts,
   boardAccess,
+  boardOfficeRoles,
+  boardOfficeStatuses,
   boardArchive,
   boardCardFields,
   boardInstructionForms,
@@ -23,7 +27,7 @@ import {
   groups,
   users,
 } from "@/lib/db/schema";
-import { requireBoardManage } from "@/lib/authz";
+import { canAccessBoard, requireBoardManage } from "@/lib/authz";
 import { isForeignKeyViolation } from "@/lib/db-errors";
 import { BoardDeleteBlockedError, deleteBoardCascade } from "@/lib/boards";
 import {
@@ -453,15 +457,17 @@ export async function addAccessUserAction(
   formData: FormData,
 ): Promise<void> {
   await requireBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const userId = Number(formData.get("userId"));
-  if (!Number.isInteger(userId)) return;
+  if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647) return;
   const exists = await db
     .select({ id: users.id })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
   if (!exists.length) return;
-  await db.insert(boardAccess).values({ boardId, userId }).onConflictDoNothing();
+  await db.insert(boardAccess).values({ boardId, userId, accessLevel }).onConflictDoUpdate({ target: [boardAccess.boardId, boardAccess.userId], set: { accessLevel } });
   rev(boardId);
 }
 
@@ -470,15 +476,17 @@ export async function addAccessGroupAction(
   formData: FormData,
 ): Promise<void> {
   await requireBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel) return;
   const groupId = Number(formData.get("groupId"));
-  if (!Number.isInteger(groupId)) return;
+  if (!Number.isSafeInteger(groupId) || groupId < 1 || groupId > 2147483647) return;
   const exists = await db
     .select({ id: groups.id })
     .from(groups)
     .where(eq(groups.id, groupId))
     .limit(1);
   if (!exists.length) return;
-  await db.insert(boardAccess).values({ boardId, groupId }).onConflictDoNothing();
+  await db.insert(boardAccess).values({ boardId, groupId, accessLevel }).onConflictDoUpdate({ target: [boardAccess.boardId, boardAccess.groupId], set: { accessLevel } });
   rev(boardId);
 }
 
@@ -866,4 +874,35 @@ export async function deleteBoardConfirmedAction(
     throw err;
   }
   redirect("/intern");
+}
+
+export async function updateAccessLevelAction(boardId: number, accessId: number, formData: FormData): Promise<void> {
+  await requireBoardManage(boardId);
+  const accessLevel = parseAccessLevel(formData.get("accessLevel"));
+  if (!accessLevel || !Number.isSafeInteger(accessId)) return;
+  await db.update(boardAccess).set({ accessLevel }).where(and(eq(boardAccess.id, accessId), eq(boardAccess.boardId, boardId)));
+  rev(boardId);
+}
+
+export async function saveOfficeRoleAction(boardId: number, _previous: { error?: string; success?: string }, formData: FormData): Promise<{ error?: string; success?: string }> {
+  const { board } = await requireBoardManage(boardId);
+  const enabled = formData.get("enabled") === "on";
+  const userId = Number(formData.get("userId"));
+  const sourceIds = [...new Set(formData.getAll("sourceStatusIds").map(Number))];
+  const targetIds = [...new Set(formData.getAll("targetStatusIds").map(Number))];
+  if (enabled) {
+    if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647) return { error: "Bitte eine Person mit Board-Zugriff auswählen." };
+    const [person] = await db.select().from(users).where(and(eq(users.id, userId), eq(users.isActive, true))).limit(1);
+    if (!person || !(await canAccessBoard(person, board))) return { error: "Die Person benötigt bereits mindestens lesenden Zugriff auf dieses Board." };
+    const statuses = await db.select({ id: boardStatuses.id }).from(boardStatuses).where(eq(boardStatuses.boardId, boardId));
+    const valid = new Set(statuses.map(status => status.id));
+    if (!sourceIds.length || !targetIds.length || [...sourceIds, ...targetIds].some(id => !Number.isSafeInteger(id) || !valid.has(id))) return { error: "Bitte mindestens eine gültige Ausgangsspalte und Zielspalte dieses Boards auswählen." };
+  }
+  await db.transaction(async tx => {
+    await tx.insert(boardOfficeRoles).values({ boardId, enabled, userId: enabled ? userId : null }).onConflictDoUpdate({ target: boardOfficeRoles.boardId, set: { enabled, userId: enabled ? userId : null } });
+    await tx.delete(boardOfficeStatuses).where(eq(boardOfficeStatuses.boardId, boardId));
+    if (enabled) await tx.insert(boardOfficeStatuses).values([...sourceIds.map(statusId => ({ boardId, statusId, direction: "source" as const })), ...targetIds.map(statusId => ({ boardId, statusId, direction: "target" as const }))]);
+  });
+  rev(boardId);
+  return { success: "Bürokraft-Einstellung gespeichert." };
 }
