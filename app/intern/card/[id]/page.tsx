@@ -253,6 +253,7 @@ export default async function AntragDetailPage({
             </div>
           </>
         )}
+        {card.submitterEmail && <div><span className="text-slate-500">Kontakt-E-Mail:</span> <a className="text-brand-600" href={`mailto:${card.submitterEmail}`}>{card.submitterEmail}</a></div>}
         {canEdit && statusLink && (
           <div className="sm:col-span-2">
             <span className="text-slate-500">Status-Link:</span>{" "}

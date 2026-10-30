@@ -10,6 +10,7 @@ import {
   ensureCardChangeTrigger,
   ensureInventoryChangeTrigger,
 } from "@/lib/realtime";
+import { startEmailWorker } from "@/lib/email";
 import { startDoneArchiveScheduler } from "@/lib/done-archive";
 import { startArchiveRetryScheduler } from "@/lib/archive";
 import { startIdempotencySweeper } from "@/lib/public-api-idempotency";
@@ -93,6 +94,7 @@ export async function runStartupBootstrap(): Promise<void> {
   await ensureInventoryChangeTrigger();
   // Done-Spalten-Archivierung: Minuten-Scheduler starten.
   startDoneArchiveScheduler();
+  startEmailWorker();
   // Nextcloud-Archiv-Retry: fehlgeschlagene Uploads periodisch wiederholen.
   startArchiveRetryScheduler();
   // Idempotenz-Schlüssel der öffentlichen API nach Ablauf der Frist entfernen.

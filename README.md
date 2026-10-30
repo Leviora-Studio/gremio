@@ -1,5 +1,25 @@
 # Gremio
 
+### 4.5.0: Board-Ansichten, abgestufte Freigaben und System-E-Mails
+
+Boards bieten zusätzlich gruppierte Listen, Tabellen und Kalender; Suche und
+Drag-and-drop-Spaltenreihenfolge unterstützen die jeweilige Ansicht. Personen-
+und Gruppenfreigaben unterscheiden lesenden und schreibenden Zugriff. Bestehende
+Freigaben erhalten beim Update weiterhin Schreibrechte; das jeweils höhere Recht
+gewinnt. Die optionale Bürokraft-Rolle erlaubt bestehenden Lesern ausschließlich
+konfigurierte Statuswechsel. API und MCP beachten dieselben Berechtigungen.
+
+Admins konfigurieren instanzweites SMTP und aktivieren Empfangsbestätigungen je
+öffentlichem Finanzantrags-, Feedback- oder Inventarboard. Board-Verwaltungen
+können pro Spalte E-Mail-Empfänger festlegen. Bestätigungen enthalten den
+persönlichen Status-Link und das Eingangs-PDF; der Versand erfolgt über eine
+dauerhafte Warteschlange mit Wiederholungen. SMTP und Bestätigungen bleiben beim
+Update zunächst ausgeschaltet. Migrationen `0070` bis `0072` werden angewendet.
+
+**Öffentliche Clients anpassen:** Neue Antrags- und Feedback-Einreichungen
+benötigen jetzt `email`, auch wenn Bestätigungen ausgeschaltet sind. Die Adresse
+bleibt intern; bestehende Einreichungen und Status-Links bleiben erhalten.
+
 ### 4.4.0: Trigger-Zuweisungen und PDF-Editor-Korrekturen
 
 Jeder Board-Trigger (Anweisungsdatum, Überweisungsdatum, Nachreichung,
@@ -364,7 +384,7 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
   `X-Real-IP`. nginx **muss** fremde Host-Header abweisen (siehe Beispiel), sonst
   Host-Header-Injection.
 - **Volumes nie verlieren:** `./pgdata` und `./uploads` liegen außerhalb des Images.
-- **DSGVO:** Keine Antragsteller-E-Mail; Status nur per Token-Link; Roh-IPs werden
+- **DSGVO:** Pflicht-Kontaktadresse bei öffentlichen Einreichungen bleibt intern; Status per geheimem Token-Link; Roh-IPs werden
   nicht gespeichert (nur HMAC fürs Rate-Limit). Studierendenausweis ist nie
   öffentlich abrufbar.
 - **Skalierung:** Rate-Limiting läuft in-memory (eine Instanz). Bei horizontaler
@@ -444,3 +464,16 @@ Statuswechsel erlaubt; Karteninhalte bleiben schreibgeschützt. Direkte oder
 Gruppen-Schreibrechte haben Vorrang. Die Funktion erteilt keine Board-Freigabe.
 Migration `0071_board_office_role` ergänzt die standardmäßig inaktive
 Konfiguration; beim Update entstehen keine zusätzlichen Rechte.
+
+
+### System-E-Mails
+
+Admin-Dashboard → **E-Mail / SMTP** (`/admin/email`): Host, Port, TLS/STARTTLS, optional Anmeldung, Absender und Antwortadresse einstellen. SMTP-Passwörter werden mit dem vorhandenen `ENCRYPTION_KEY` verschlüsselt; diesen bei Updates unverändert sichern. „Verbindung prüfen“ prüft den gespeicherten Stand ohne Mailversand. Unverschlüsselter SMTP-Versand ist nur für interne Relays vorgesehen. Bei Updates sind Versand und sämtliche Bestätigungen zunächst ausgeschaltet; bestehende Anträge bleiben unverändert.
+
+Board-Einstellungen → **Email-Settings**: pro Spalte aktivieren und bis zu 50 Adressen eingeben (Zeilen, Komma oder Semikolon). Eigentümer/Admin verwalten diese Regeln. Neue Karten und tatsächliche Statuswechsel lösen die Zielspalten-Regel aus; Umsortieren innerhalb einer Spalte löst keine Mail aus. Inventar-Vorgangsboards haben dieselben Regeln in den Inventar-Einstellungen. Jede Adresse erhält eine eigene Mail mit Kartentitel, Board, Status und internem Kartenlink.
+
+Empfangsbestätigungen für öffentliche Finanzanträge, Feedback und Inventaranfragen aktiviert ausschließlich der Admin je Board und Einreichungsart. E-Mail ist unabhängig vom Haken ein Pflichtfeld. Bestätigungen enthalten den persönlichen Status-Link und das Eingangs-PDF; keine Ausweise oder anderen Uploads. Feedback ohne Namen bleibt möglich, die Kontaktadresse ist intern jedoch bekannt.
+
+Der Node-Server verarbeitet die PostgreSQL-Outbox alle 15 Sekunden, auch im lokalen Dev-Betrieb. Produktion benötigt einen dauerhaft laufenden Node-Prozess. Nach Fehlern erfolgen maximal fünf Versuche mit wachsender Wartezeit (2, 4, 8, 16 Minuten zwischen den Versuchen). Terminale Fehler sind im Admin-Bereich sichtbar und erneut anstoßbar. Globale Deaktivierung pausiert ausstehende Mails und verhindert neue Einträge. Nach erfolgreichem Versand werden Empfänger und Inhalt aus der Outbox entfernt; Versandmetadaten nach sieben Tagen. Fehlgeschlagene Inhalte bleiben für erneute Zustellung gespeichert. Bei einem Absturz nach SMTP-Annahme, aber vor Bestätigung in PostgreSQL, sind doppelte Zustellungen möglich; Wiederholungen verwenden dieselbe Message-ID.
+
+Lokale Regression: `tests/system-email-db.test.ts` benötigt eine isolierte, migrierte Datenbank `gremio_workflows_test_*`. Der Test startet einen SMTP-Empfänger ausschließlich auf Loopback und sendet nichts extern.

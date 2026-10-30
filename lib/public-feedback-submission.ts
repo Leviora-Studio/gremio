@@ -3,6 +3,8 @@
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { emailAddressSchema } from "@/lib/email-validation";
+import { queueConfirmation } from "@/lib/email";
 import { db } from "@/lib/db";
 import {
   boards,
@@ -53,6 +55,7 @@ export {
 };
 
 const schema = z.object({
+  email: emailAddressSchema,
   areaId: z.coerce.number().int().positive("Bitte einen Bereich wählen."),
   // OPTIONAL: Ohne Angabe wird „Anonym" gespeichert (siehe
   // normalizeSubmitterName). Deshalb kein min(1) — nur die Längenobergrenze,
@@ -99,6 +102,7 @@ export type FeedbackAborted<T> = { ok: false; reason: "aborted"; value: T };
  * wird ein logisch identischer Retry als Konflikt abgewiesen.
  */
 export type ValidatedFeedbackFields = {
+  email: string;
   areaId: number;
   submitterName: string;
   feedback: string;
@@ -136,11 +140,12 @@ export type FeedbackOptions<T> = {
  * eine Feedback-Karte ohne Snapshot noch ein Snapshot ohne Karte entstehen.
  */
 export async function submitPublicFeedback<T = never>(
-  raw: { areaId: unknown; submitterName: unknown; feedback: unknown },
+  raw: { email?: unknown; areaId: unknown; submitterName: unknown; feedback: unknown },
   opts: FeedbackOptions<T>,
 ): Promise<FeedbackSuccess | FeedbackFailure | FeedbackAborted<T>> {
   // --- 1. Felder ----------------------------------------------------------
   const parsed = schema.safeParse({
+    email: raw.email,
     areaId: raw.areaId,
     // Leer → „Anonym"; die Längenprüfung greift damit auf dem Wert, der
     // tatsächlich gespeichert wird.
@@ -236,6 +241,7 @@ export async function submitPublicFeedback<T = never>(
         await db.transaction(async (tx) => {
           if (opts.preflightTx) {
             const early = await opts.preflightTx(tx, {
+              email: parsed.data.email,
               areaId: parsed.data.areaId,
               submitterName,
               feedback: feedbackText,
@@ -257,6 +263,7 @@ export async function submitPublicFeedback<T = never>(
               applicant: submitterName,
               // Der VOLLSTÄNDIGE Text — der Titel oben ist nur die Kurzfassung.
               notes: feedbackText,
+              submitterEmail: parsed.data.email,
               token,
               creatorUserId: null,
               accountId: null,
@@ -286,6 +293,8 @@ export async function submitPublicFeedback<T = never>(
             targetBoardId,
             inserted.id,
           );
+
+          await queueConfirmation(tx, "feedback", targetBoardId, parsed.data.email, { title, applicant: submitterName, areaName: area.name, feedbackText, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
 
           if (opts.withinTx) {
             await opts.withinTx(tx, {

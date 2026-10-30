@@ -2,6 +2,10 @@
 // Copyright (C) 2026 Leviora Studio
 
 export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "development") {
+    const { startEmailWorker } = await import("./lib/email");
+    startEmailWorker();
+  }
   // Nur im Node-Runtime und in Produktion automatisch migrieren/seeden.
   if (
     process.env.NEXT_RUNTIME === "nodejs" &&

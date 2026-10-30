@@ -8,6 +8,7 @@ import type { PgTable } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
   cards,
+  emailOutbox,
   boards,
   groups,
   feedbackAreas,
@@ -26,6 +27,7 @@ export default async function AdminOverview() {
   await requireAdmin();
 
   const stats: { label: string; value: number; href?: string }[] = [
+    { label: "E-Mail / SMTP", value: await tally(emailOutbox), href: "/admin/email" },
     { label: "Nutzer", value: await tally(users), href: "/admin/users" },
     { label: "Gruppen", value: await tally(groups), href: "/admin/groups" },
     { label: "Boards", value: await tally(boards), href: "/admin/boards" },

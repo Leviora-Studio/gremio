@@ -60,6 +60,7 @@ export async function submitAntragAction(
       locationId: formData.get("locationId"),
       title: formData.get("title"),
       applicant: formData.get("applicant"),
+      email: formData.get("email"),
       files: {
         finance_request: formData.get("finance_request"),
         student_card: formData.get("student_card"),

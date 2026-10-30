@@ -4,6 +4,8 @@
 import { createHash } from "node:crypto";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { emailAddressSchema } from "@/lib/email-validation";
+import { queueConfirmation } from "@/lib/email";
 import { db } from "@/lib/db";
 import {
   attachments,
@@ -52,6 +54,7 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // Eingangsbestätigung. Die öffentliche API reicht sonst Rohstrings durch —
 // Zod prüft nur die Länge.
 const schema = z.object({
+  email: emailAddressSchema,
   locationId: z.coerce.number().int().positive("Bitte einen Standort wählen."),
   title: z
     .preprocess(sanitizeSingleLine, z.string())
@@ -127,6 +130,7 @@ export type SubmissionAborted<T> = { ok: false; reason: "aborted"; value: T };
  * 409 statt eines Replays.
  */
 export type ValidatedApplicationFields = {
+  email: string;
   locationId: number;
   title: string;
   applicant: string;
@@ -209,6 +213,7 @@ function fileOrNull(v: unknown): File | null {
  */
 export async function submitPublicApplication<T = never>(
   raw: {
+    email?: unknown;
     locationId: unknown;
     title: unknown;
     applicant: unknown;
@@ -218,6 +223,7 @@ export async function submitPublicApplication<T = never>(
 ): Promise<SubmissionSuccess | SubmissionFailure | SubmissionAborted<T>> {
   // --- 1. Textfelder -------------------------------------------------------
   const parsed = schema.safeParse({
+    email: raw.email,
     locationId: raw.locationId,
     title: raw.title,
     applicant: raw.applicant,
@@ -382,6 +388,7 @@ export async function submitPublicApplication<T = never>(
               locationId: parsed.data.locationId,
               title: parsed.data.title,
               applicant: parsed.data.applicant,
+              email: parsed.data.email,
             });
             if (early != null) {
               aborted = { value: early };
@@ -397,6 +404,7 @@ export async function submitPublicApplication<T = never>(
               locationId: location.id,
               title: parsed.data.title,
               applicant: parsed.data.applicant,
+              submitterEmail: parsed.data.email,
               token,
               accountId: board?.defaultAccountId ?? null,
               position,
@@ -436,6 +444,8 @@ export async function submitPublicApplication<T = never>(
               size: saved.size,
             });
           }
+
+          await queueConfirmation(tx, "application", targetBoardId, parsed.data.email, { title: parsed.data.title, applicant: parsed.data.applicant, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
 
           if (opts.withinTx) {
             await opts.withinTx(tx, {

@@ -57,6 +57,10 @@ test("upgrade preserves data through workflow migrations and removes only the re
         assert.equal((await pool.query("select tablename from pg_tables where schemaname='public' and tablename like 'protocol\\_%' escape '\\'")).rowCount, 0);
       }
     }
+    assert.equal((await pool.query("select submitter_email from cards where id=$1", [card.id])).rows[0].submitter_email, null, "legacy submissions need no invented email");
+    for (const table of ["smtp_settings", "email_confirmation_settings", "board_email_rules", "email_outbox"]) {
+      assert.equal((await pool.query(`select * from ${table}`)).rowCount, 0, "upgrade leaves email opt-in and never sends retrospectively");
+    }
     const organizedFile = (await pool.query("select * from attachments where id=$1", [file.id])).rows[0];
     assert.equal(organizedFile.folder_id, null, "legacy attachments start at the ticket root");
     assert.equal(organizedFile.filename, file.filename);

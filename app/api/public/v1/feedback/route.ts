@@ -95,7 +95,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
       : publicApiError(400, "Der Request-Body konnte nicht gelesen werden.");
   }
 
-  let body: { areaId?: unknown; submitterName?: unknown; feedback?: unknown };
+  let body: { email?: unknown; areaId?: unknown; submitterName?: unknown; feedback?: unknown };
   try {
     const parsed: unknown = JSON.parse(
       Buffer.from(rawBody.body).toString("utf8"),
@@ -111,7 +111,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
   // Unbekannte Felder ablehnen — gleiche Tippfehler-Konvention wie POST /status:
   // Ein vertipptes `submiterName` erzeugte sonst still eine „Anonym"-Einreichung,
   // ohne dass der Client je erfährt, dass sein Feld ins Leere ging.
-  const KNOWN_FIELDS = ["areaId", "submitterName", "feedback"];
+  const KNOWN_FIELDS = ["areaId", "submitterName", "feedback", "email"];
   const unknown = Object.keys(body).filter((k) => !KNOWN_FIELDS.includes(k));
   if (unknown.length) {
     return publicApiError(400, `Unbekanntes Feld: ${unknown.join(", ")}.`);
@@ -139,6 +139,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
   }
 
   const fields = {
+    email: body.email,
     areaId: body.areaId,
     submitterName: body.submitterName,
     feedback: body.feedback,

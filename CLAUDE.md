@@ -51,7 +51,7 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 
 ### Entscheidungen
 - **Login ausschließlich über SSO/OIDC.** Konten entstehen per **JIT-Provisioning** beim ersten Login; die App legt selbst keine Konten an und kennt keine Passwörter.
-- **Login-Kennung:** `preferred_username` aus dem SSO (kein E-Mail-Versand an Antragsteller, DSGVO-arm). Verknüpfung zum SSO-Konto über `users.sub` (OIDC-Subject).
+- **Login-Kennung:** `preferred_username` aus dem SSO (System-E-Mails über instanzweites SMTP). Verknüpfung zum SSO-Konto über `users.sub` (OIDC-Subject).
 - **Benutzername unveränderlich:** kommt vom SSO, in dieser App von niemandem änderbar
 - **Passwort/Anzeigename/E-Mail:** werden **zentral im SSO** gepflegt, nicht in Gremio. `/intern/konto` zeigt sie nur an und bietet „Profil neu abgleichen" (`resyncProfileAction`). Es gibt **keine** Passwort-Ändern- oder Passwort-Reset-Funktion.
 - **Konten deaktivieren/löschen** passiert ebenfalls im SSO; `/admin/users` vergibt nur **Rollen**.
@@ -830,7 +830,7 @@ nicht als sichtbares Formularelement gerendert würden; gespeicherte Werte bleib
 - Board-eigene Nextcloud-Zugangsdaten werden **verschlüsselt** in der DB gespeichert (AES-256-GCM, Schlüssel aus `.env`), nie im Klartext
 - Signatur-Zertifikate (`.p12` + Passphrase) werden ebenfalls **verschlüsselt** gespeichert (gleicher `ENCRYPTION_KEY`)
 - DSGVO: Token nur lokal anzeigen
-- Antragsteller-E-Mail wird nicht erfasst
+- Öffentliche Einreichungen benötigen eine interne Kontakt-E-Mail; Bestätigung optional pro Board/Art durch den Admin.
 
 
 ## Interne API-Erweiterungen und MCP
@@ -894,3 +894,14 @@ Nutzer, Boardrechte und Anhangsichtbarkeit erneut. Tickets nicht protokollieren.
 Seitentext und gespeicherte Formularwerte mit PDF.js in einem begrenzten
 Node-Worker. Keine Python-Laufzeit, keine OCR, keine Änderung der Originaldatei.
 Seitenauswahl und Grenzen sowie Fehlerverhalten stehen in `docs/MCP.md`.
+
+
+## System-E-Mails und öffentliche Kontaktadressen
+
+`lib/email.ts` verwendet Nodemailer, verschlüsselte `smtp_settings` und eine dauerhafte `email_outbox`. Der Worker startet nach Produktionsmigration bzw. in der Dev-Instrumentierung. SMTP bleibt initial deaktiviert. SMTP- und Bestätigungseinstellungen sind adminpflichtig, Spaltenregeln erfordern Board-/Inventarverwaltung. Keine neuen REST- oder MCP-Konfigurationsendpunkte.
+
+`board_email_rules` sind statusgebunden; ein transaktionaler PostgreSQL-Trigger auf Kartenanlage und echten `status_id`-Wechsel erfasst UI, Server Actions, REST und MCP. Er schreibt je Empfänger einen Outbox-Eintrag mit Titel, Board-/Spaltenname und interner Karten-ID; niemals Notizen, Budgets oder Anhänge. SMTP findet außerhalb von DB-Sperren statt; Claims verwenden `FOR UPDATE SKIP LOCKED`. Nach Absturz werden nach zehn Minuten verwaiste Claims wiederholt.
+
+`email_confirmation_settings` schaltet je normalem Board und Art (`application`/`feedback`) bzw. Inventarboard (`inventory`) Bestätigungen. Gemeinsame Einreichungsfunktionen validieren Pflicht-E-Mail, speichern `cards.submitter_email` bzw. die vorhandene Inventar-Kontaktadresse und schreiben Bestätigung plus Karte/Vorgang in derselben Transaktion. Replay/Rollback erzeugen keine zusätzliche Bestätigung. Die E-Mail gehört zum Idempotenz-Fingerprint. Legacy-Karten dürfen NULL behalten. Öffentliche Statusansichten und API-Serializer geben Kontaktadressen nicht aus. Feedback-Namen bleiben optional, vollständige Anonymität besteht wegen der Kontaktadresse nicht.
+
+Bestätigungen nutzen eingefrorene Einreichungsdaten und die vorhandenen PDF-Builder, `PUBLIC_BASE_URL` sowie den korrekten Token-Typ. Studierendenausweise und Uploads werden nie angehängt. Erfolgreiche Outbox-Inhalte werden gelöscht, nach sieben Tagen auch Metadaten. Terminal fehlgeschlagene Inhalte verbleiben für Admin-Retry. Zustellung ist mindestens einmal mit stabiler Message-ID; SMTP-Annahme und DB-Abschluss sind nicht atomar. Details und Betrieb: README, öffentlicher Vertrag: docs/PUBLIC_API.md.

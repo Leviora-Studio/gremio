@@ -3,7 +3,7 @@
 openapi: 3.1.0
 info:
   title: Gremio — Öffentliche API
-  version: 1.1.1
+  version: 1.2.0
   summary: Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.
   description: >-
     Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
@@ -17,8 +17,9 @@ info:
 
     **Status-Link:** Die Antwort enthält `statusUrl` — einen geheimen Link, der wie ein Bearer-Token
     wirkt. Wer ihn besitzt, sieht die zugehörige öffentliche Statusansicht. Die App muss ihn lokal
-    speichern und vertraulich behandeln (nicht loggen, nicht teilen). Er wird nicht per E-Mail
-    verschickt und lässt sich nicht wiederherstellen. Anträge und Feedback haben getrennte
+    speichern und vertraulich behandeln (nicht loggen, nicht teilen). Bei aktivierter
+    Empfangsbestätigung wird er an die Pflicht-Kontaktadresse geschickt; ohne diese Bestätigung
+    lässt sich ein verlorener Link nicht wiederherstellen. Anträge und Feedback haben getrennte
     Statusrouten (`/status/…` bzw. `/feedback/status/…`).
 
 
@@ -374,12 +375,14 @@ paths:
               standard:
                 summary: Mit Namen
                 value:
+                  email: person@example.org
                   areaId: 1
                   submitterName: Max Mustermann
                   feedback: Die Öffnungszeiten sollten verlängert werden.
               anonym:
                 summary: Ohne Namen (wird zu „Anonym")
                 value:
+                  email: person@example.org
                   areaId: 1
                   feedback: Die Öffnungszeiten sollten verlängert werden.
       responses:
@@ -941,10 +944,19 @@ components:
       required:
         - areaId
         - feedback
+        - email
       description: Unbekannte Felder werden mit `400` abgelehnt (Tippfehler-Schutz — ein vertipptes
-        `submiterName` erzeugte sonst still eine anonyme Einreichung).
+        `submiterName` erzeugte sonst still eine Einreichung ohne Namen).
       additionalProperties: false
       properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Pflichtfeld. Bleibt intern; bei aktivierter Bestätigung wird ein Status-Link mit PDF
+            versendet.
+          examples:
+            - person@example.org
         areaId:
           type: integer
           description: ID eines Bereichs aus `GET /api/public/v1/feedback-areas`.
@@ -954,8 +966,9 @@ components:
           type: string
           maxLength: 200
           description: OPTIONAL. Name des Einreichers (wird getrimmt). Fehlt das Feld oder ist es leer, wird
-            „Anonym" gespeichert — Feedback ist also auch anonym möglich. Für die Idempotenz sind
-            ein fehlender Name und „Anonym" derselbe Request (kein 409 beim Retry).
+            „Anonym" gespeichert — Der Name bleibt optional; die Pflicht-E-Mail ist intern bekannt.
+            Für die Idempotenz sind ein fehlender Name und „Anonym" derselbe Request (kein 409 beim
+            Retry).
           examples:
             - Max Mustermann
         feedback:
@@ -1000,9 +1013,18 @@ components:
         - locationId
         - title
         - applicant
+        - email
         - finance_request
         - student_card
       properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Pflichtfeld. Bleibt intern; bei aktivierter Bestätigung wird ein Status-Link mit PDF
+            versendet.
+          examples:
+            - person@example.org
         locationId:
           type: integer
           description: ID eines Standorts aus `GET /api/public/v1/locations`.

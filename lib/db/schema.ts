@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import type { EmailPayload } from "@/lib/email-validation";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -340,6 +341,7 @@ export const cards = pgTable(
     }),
     title: text("title").notNull(),
     applicant: text("applicant").notNull(),
+    submitterEmail: text("submitter_email"),
     budgetTitle: text("budget_title"), // optionaler "Haushaltstitel"
     budgetMode: text("budget_mode").notNull().default("single"),
     budgetRevision: integer("budget_revision").notNull().default(0),
@@ -1368,3 +1370,31 @@ export const mcpTokens = pgTable(
     expiryIdx: index("mcp_tokens_expiry_idx").on(t.expiresAt),
   }),
 );
+
+// Instance-wide mail transport. Credentials are encrypted and never serialized.
+export const smtpSettings = pgTable("smtp_settings", {
+  id: integer("id").primaryKey().default(1), enabled: boolean("enabled").notNull().default(false),
+  host: text("host").notNull(), port: integer("port").notNull().default(587),
+  security: text("security", { enum: ["starttls", "tls", "none"] }).notNull().default("starttls"),
+  username: text("username"), passwordEnc: text("password_enc"),
+  fromEmail: text("from_email").notNull(), fromName: text("from_name").notNull().default("Gremio"), replyTo: text("reply_to"),
+}, t => ({ singleton: check("smtp_settings_singleton", sql`${t.id} = 1`), securityCheck: check("smtp_settings_security_check", sql`${t.security} in ('starttls','tls','none')`), portCheck: check("smtp_settings_port_check", sql`${t.port} between 1 and 65535`) }));
+
+export const boardEmailRules = pgTable("board_email_rules", {
+  statusId: integer("status_id").primaryKey().references(() => boardStatuses.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false), recipients: text("recipients").array().notNull().default(sql`'{}'::text[]`),
+});
+export const emailConfirmationSettings = pgTable("email_confirmation_settings", {
+  id: serial("id").primaryKey(), kind: text("kind", { enum: ["application", "feedback", "inventory"] }).notNull(),
+  boardId: integer("board_id").references(() => boards.id, { onDelete: "cascade" }),
+  inventoryBoardId: integer("inventory_board_id").references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+}, t => ({ boardKind: uniqueIndex("email_confirmation_board_kind_uq").on(t.boardId, t.kind), inventory: uniqueIndex("email_confirmation_inventory_uq").on(t.inventoryBoardId),
+  subjectCheck: check("email_confirmation_subject_check", sql`(${t.kind} in ('application','feedback') and ${t.boardId} is not null and ${t.inventoryBoardId} is null) or (${t.kind} = 'inventory' and ${t.inventoryBoardId} is not null and ${t.boardId} is null)`) }));
+export const emailOutbox = pgTable("email_outbox", {
+  id: serial("id").primaryKey(), kind: text("kind", { enum: ["status", "application", "feedback", "inventory"] }).notNull(),
+  recipient: text("recipient").notNull(), payload: jsonb("payload").$type<EmailPayload>().notNull(),
+  state: text("state", { enum: ["pending", "sending", "sent", "failed"] }).notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0), nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }), sentAt: timestamp("sent_at", { withTimezone: true }), lastErrorCode: text("last_error_code"), createdAt: createdAt(),
+}, t => ({ due: index("email_outbox_due_idx").on(t.state, t.nextAttemptAt), stateCheck: check("email_outbox_state_check", sql`${t.state} in ('pending','sending','sent','failed')`), kindCheck: check("email_outbox_kind_check", sql`${t.kind} in ('status','application','feedback','inventory')`) }));

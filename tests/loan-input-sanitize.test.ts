@@ -72,14 +72,12 @@ test("öffentliche Leih-Anfrage bereinigt NUL/Steuerzeichen statt 500", async (t
     await db.delete(users).where(eq(users.id, user.id));
   };
 
-  // Genau die Werte, die ein manipulierter Client schicken kann: NUL im Namen,
-  // NUL in der E-Mail (das Regex-Muster der Action lässt NUL durch, weil NUL
-  // kein \s ist), TAB im Zweck.
+  // Namen und Zweck werden bereinigt; E-Mail-Adressen müssen gültig sein.
   const { id } = await createLoanRequest(
     [{ itemId: item.id, quantity: 1 }],
     {
       borrower: `Max${NUL} Mustermann`,
-      borrowerEmail: `max${NUL}@example.org`,
+      borrowerEmail: "max@example.org",
       purpose: `Grillabend${TAB}FB5`,
       startDate: null,
       endDate: null,

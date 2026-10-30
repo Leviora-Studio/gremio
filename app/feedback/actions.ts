@@ -15,6 +15,7 @@ import { submitPublicFeedback } from "@/lib/public-feedback-submission";
 import { publicBaseUrl } from "@/lib/public-api";
 
 export type FeedbackValues = {
+  email: string;
   areaId: string;
   submitterName: string;
   feedback: string;
@@ -43,6 +44,7 @@ export async function submitFeedbackAction(
   formData: FormData,
 ): Promise<FeedbackState> {
   const values: FeedbackValues = {
+    email: String(formData.get("email") ?? ""),
     areaId: String(formData.get("areaId") ?? ""),
     submitterName: String(formData.get("submitterName") ?? ""),
     feedback: String(formData.get("feedback") ?? ""),

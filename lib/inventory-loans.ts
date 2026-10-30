@@ -15,6 +15,8 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { emailAddressSchema } from "@/lib/email-validation";
+import { queueConfirmation } from "@/lib/email";
 import { db } from "@/lib/db";
 import {
   attachments,
@@ -662,6 +664,7 @@ export async function createLoanRequest(
   const leadItemId = units[0].itemId;
 
   try {
+    data.borrowerEmail = emailAddressSchema.parse(rawData.borrowerEmail);
     for (let attempt = 0; attempt < 5; attempt++) {
       const token = generateToken();
       try {
@@ -697,7 +700,7 @@ export async function createLoanRequest(
               requestedQuantity: totalQty,
               ...data,
             })
-            .returning({ id: inventoryLoans.id });
+            .returning({ id: inventoryLoans.id, createdAt: inventoryLoans.createdAt });
           await tx.insert(inventoryLoanItems).values(
             units.map((u) => ({
               loanId: row.id,
@@ -721,6 +724,8 @@ export async function createLoanRequest(
             borrower: data.borrower,
             purpose: data.purpose,
           });
+          const requestedItems = await tx.select({ name: inventoryItems.name, boardId: inventoryItems.boardId }).from(inventoryItems).where(inArray(inventoryItems.id, units.map(unit => unit.itemId)));
+          await queueConfirmation(tx, "inventory", requestedItems[0].boardId, data.borrowerEmail!, { title: `Ausleihanfrage: ${requestedItems.map(item => item.name).join(", ")} (${totalQty} Stück)`, applicant: data.borrower, receivedAt: row.createdAt.toISOString(), statusLink: token });
           return { id: row.id, token };
         });
       } catch (e) {

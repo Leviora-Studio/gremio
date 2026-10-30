@@ -4,6 +4,7 @@
 import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PDFDocument } from "pdf-lib";
 import {
   buildConfirmationPdf,
   buildFeedbackConfirmationPdf,
@@ -77,4 +78,10 @@ test("langer Feedbacktext mit Steuerzeichen erzeugt mehrseitiges PDF", async () 
     number: null,
   });
   assert.ok(pdf.length > 0);
+});
+
+
+test("inventory confirmation keeps many requested items on readable pages", async () => {
+  const pdf = await buildConfirmationPdf({ kind: "inventory", title: "Leihgegenstand mit ausführlichem Namen, ".repeat(250), applicant: "Testperson", eingang: new Date(), statusLink: "https://example.test/inventar/status/abc" });
+  assert.ok((await PDFDocument.load(pdf)).getPageCount() > 1);
 });

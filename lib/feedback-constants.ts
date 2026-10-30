@@ -18,7 +18,7 @@ export const ANONYMOUS_SUBMITTER = "Anonym";
 /**
  * Normalisiert den Namen des Einreichers für Speicherung UND Fingerprint
  * identisch: trimmen, und wenn nichts übrig bleibt, „Anonym" einsetzen. Der
- * Name ist optional — Feedback soll auch anonym möglich sein.
+ * Name ist optional; die Pflicht-Kontaktadresse bleibt dem Gremium intern bekannt.
  *
  * Bewusst dieselbe Funktion für beide Zwecke: Ein Retry, der einmal "" und
  * einmal "Anonym" schickt, ist logisch dieselbe Einreichung und darf deshalb

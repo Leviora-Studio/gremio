@@ -97,6 +97,7 @@ Dieselben Feldnamen wie im öffentlichen Formular:
 | `locationId` | Text/Zahl | ✅ | ID aus `GET /locations` |
 | `title` | Text | ✅ | max. 200 Zeichen |
 | `applicant` | Text | ✅ | max. 200 Zeichen |
+| `email` | Text | ✅ | gültige E-Mail-Adresse, max. 254 Zeichen; bleibt intern |
 | `finance_request` | Datei | ✅ | PDF |
 | `student_card` | Datei | ✅ | PDF, PNG, JPG |
 | `annex_a` | Datei | ❌ | PDF |
@@ -126,6 +127,7 @@ curl -X POST "https://gremio.example/api/public/v1/applications" \
   -F "locationId=1" \
   -F "title=Grillabend am FB5" \
   -F "applicant=Max Mustermann" \
+  -F "email=person@example.org" \
   -F "finance_request=@finanzantrag.pdf;type=application/pdf" \
   -F "student_card=@ausweis.jpg;type=image/jpeg"
 ```
@@ -207,10 +209,11 @@ Antrags-Endpunkt, der Dateien überträgt). Body-Grenze: **32 KiB**.
 | Feld | Typ | Pflicht | Regeln |
 |------|-----|---------|--------|
 | `areaId` | integer | ✅ | ID aus `GET /feedback-areas` |
+| `email` | string | ✅ | gültige E-Mail-Adresse, max. 254 Zeichen; bleibt intern |
 | `submitterName` | string | — | getrimmt, max. 200 Zeichen. **Optional:** fehlt das Feld oder ist es leer, wird `Anonym` gespeichert |
 | `feedback` | string | ✅ | getrimmt, 1–10.000 Zeichen |
 
-Feedback ist damit auch **anonym** möglich. Für die Idempotenz gelten ein
+Der Name bleibt optional. Die Pflicht-E-Mail ist dem zuständigen Gremium intern bekannt; die Einreichung ist deshalb nicht vollständig anonym. Für die Idempotenz gelten ein
 fehlender Name und ein explizites `"Anonym"` als **derselbe** Request — ein
 Retry, der das Feld einmal weglässt und einmal mitsendet, ergibt also einen
 Replay (`200`) und keinen Konflikt.
@@ -226,16 +229,16 @@ unverändert in der öffentlichen Statusansicht.
 curl -X POST "https://gremio.example/api/public/v1/feedback" \
   -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
   -H "Content-Type: application/json" \
-  -d '{"areaId":1,"submitterName":"Max Mustermann","feedback":"Die Öffnungszeiten sollten verlängert werden."}'
+  -d '{"email":"person@example.org","areaId":1,"submitterName":"Max Mustermann","feedback":"Die Öffnungszeiten sollten verlängert werden."}'
 ```
 
-Anonym — `submitterName` einfach weglassen:
+Ohne Namensangabe — `submitterName` einfach weglassen:
 
 ```bash
 curl -X POST "https://gremio.example/api/public/v1/feedback" \
   -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
   -H "Content-Type: application/json" \
-  -d '{"areaId":1,"feedback":"Die Öffnungszeiten sollten verlängert werden."}'
+  -d '{"email":"person@example.org","areaId":1,"feedback":"Die Öffnungszeiten sollten verlängert werden."}'
 ```
 
 ```json
@@ -552,8 +555,7 @@ Für die App bedeutet das:
 
 * Den Link **lokal und vertraulich** speichern.
 * **Nicht loggen**, nicht in Absturzberichte oder Analytics geben, nicht teilen.
-* Er ist der **einzige** Zugang zum Antrag — er wird nicht per E-Mail verschickt
-  und kann nicht wiederhergestellt werden.
+* Bei aktivierter Empfangsbestätigung wird der Link zusätzlich an die angegebene E-Mail-Adresse gesendet. Ohne diese Bestätigung kann ein verlorener Link nicht wiederhergestellt werden.
 
 Öffentlich abrufbar sind über den Token nur Finanzantrag, Anlage A/B und
 nachgereichte Dateien. Der **Studierendenausweis bleibt intern** und wird über
@@ -578,3 +580,10 @@ spielt das keine Rolle.
 
 **Migrationen:** Die Feedback-Tabellen kommen mit Migration `0054`; sie wird beim
 Containerstart automatisch angewendet und ist rein additiv.
+
+
+## E-Mail-Empfangsbestätigungen
+
+**Client-Anpassung erforderlich:** Neue Antrags- und Feedback-Einreichungen benötigen jetzt `email`, auch wenn Bestätigungen ausgeschaltet sind. Fehlende oder ungültige Adressen ergeben `400`. Die Adresse gehört zum Idempotenz-Fingerprint; eine geänderte Adresse mit demselben Schlüssel ergibt `409`. Bestehende Einreichungen behalten ihre Links und benötigen keine nachträgliche Adresse.
+
+Der Admin aktiviert Bestätigungen unter `/admin/email` je öffentlichem Ziel-Board und Einreichungsart (Finanzantrag, Feedback oder Inventaranfrage). SMTP muss ebenfalls aktiviert sein. Die Einreichungsantwort bleibt unverändert. Versand erfolgt nach dem Commit aus einer dauerhaften Warteschlange; SMTP-Ausfälle verhindern keine Einreichung. Die Mail enthält den persönlichen Status-Link und ausschließlich die erzeugte Eingangsbestätigung als PDF, keine hochgeladenen Dateien oder internen Notizen. Die Kontaktadresse erscheint in keiner öffentlichen Antwort. Ein E-Mail-Empfang beweist keine Berechtigung an anderen Anträgen.

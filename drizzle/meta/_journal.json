@@ -505,6 +505,13 @@
       "when": 1793359602423,
       "tag": "0071_board_office_role",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793361493290,
+      "tag": "0072_system_email",
+      "breakpoints": true
     }
   ]
 }

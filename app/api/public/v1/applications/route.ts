@@ -113,6 +113,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
     locationId: form.get("locationId"),
     title: form.get("title"),
     applicant: form.get("applicant"),
+    email: form.get("email"),
   };
 
   // Wird in preflightTx aus den bereits gelesenen Dateibytes berechnet und in

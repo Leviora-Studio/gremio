@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { BoardEmailSettings } from "@/components/board/BoardEmailSettings";
 import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
@@ -132,6 +133,8 @@ export default async function InventoryBoardSettingsPage({
           </button>
         </form>
       </CollapsibleSection>
+
+      {board.loanBoardId != null && <CollapsibleSection title="Email-Settings"><BoardEmailSettings boardId={board.loanBoardId} /></CollapsibleSection>}
 
       {/* Freigaben */}
       <CollapsibleSection title="Freigaben">

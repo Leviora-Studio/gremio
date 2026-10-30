@@ -387,3 +387,8 @@ The current source is rechecked under the card lock. Restricted moves append to
 the target column, run normal status triggers and never reorder other cards.
 Office configuration is owner/admin-only in Board settings; no sharing endpoint
 is added. Revoked read access also revokes the supplemental movement permission.
+
+
+### Spalten-E-Mails
+
+Instanzweites SMTP und Bestätigungen werden ausschließlich im Admin-Dashboard verwaltet. Board-Einstellungen erlauben Eigentümer/Admin Spaltenregeln mit Empfangsadressen. Neue Karten oder echte Statuswechsel über UI, REST oder MCP erzeugen atomar eine Nachricht pro Empfänger in der Outbox, sofern SMTP und die Zielspalten-Regel aktiviert sind. Positionsänderungen und No-op-Statusupdates senden nichts. Versand läuft nach dem Commit; API-Antworten und Berechtigungen bleiben unverändert. Es gibt keine neuen SMTP-Konfigurationsendpunkte und keine Kontaktadressen in öffentlichen Karten-/Statusantworten.

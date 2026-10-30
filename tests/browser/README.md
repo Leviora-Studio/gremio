@@ -116,3 +116,6 @@ precedence on desktop/mobile against the isolated database.
 
 The board-view checks also verify hidden list groups, the bottom restore area,
 reload persistence and temporarily revealed search matches without changing preferences.
+
+
+`system-email-production.cjs` checks real admin SMTP and board/inventory settings, encrypted credential persistence, desktop/mobile layout and mandatory public email validation against a separate production build. Use `GREMIO_TEST_BUILD_DIR`, `PLAYWRIGHT_MODULE` and `CHROME_PATH` as above and an isolated migrated `gremio_workflows_test_*` database. SMTP remains disabled throughout this browser test; no external messages are sent. `tests/system-email-db.test.ts` additionally captures actual SMTP messages on loopback, validates all three receipt/PDF types and checks status triggers, retries, rollback, privacy and management permissions.

@@ -38,6 +38,7 @@ export function PublicAntragForm({
     };
 
     const need: string[] = [];
+    if (!hasText("email")) need.push("E-Mail-Adresse");
     if (!hasText("locationId")) need.push("Standort");
     if (!hasText("title")) need.push("Antragsgegenstand");
     if (!hasText("applicant")) need.push("Antragsteller");
@@ -104,6 +105,12 @@ export function PublicAntragForm({
           className="input"
           placeholder="z. B. Grillabend am FB5"
         />
+      </div>
+
+      <div>
+        <label htmlFor="contact-email" className="label">E-Mail-Adresse *</label>
+        <input id="contact-email" name="email" type="email" required maxLength={254} autoComplete="email" className="input" />
+        <p className="mt-1 text-xs text-slate-500">Die Adresse bleibt intern. Wenn für diesen Bereich aktiviert, erhältst du eine Empfangsbestätigung mit Status-Link und PDF.</p>
       </div>
 
       <div>

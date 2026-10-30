@@ -26,6 +26,7 @@ import {
 import { saveNamedFile, validateUpload } from "@/lib/attachments";
 import { STUDENT_CARD_MIME } from "@/lib/inventory-attachment-kinds";
 import { sanitizeSingleLine } from "@/lib/text";
+import { emailAddressSchema } from "@/lib/email-validation";
 import { publicBaseUrl } from "@/lib/public-api";
 
 // Eingaben werden bei einem Fehler zurückgegeben, damit das Formular sie behält.
@@ -106,7 +107,7 @@ export async function createInventoryLoanRequestAction(
   const missing: string[] = [];
   if (!values.borrower) missing.push("Name");
   if (!values.email) missing.push("E-Mail");
-  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.email))
+  else if (!emailAddressSchema.safeParse(values.email).success)
     missing.push("gültige E-Mail-Adresse");
   if (!values.purpose) missing.push("Verwendungsort / Zweck");
   if (!isDateTime(values.startDate)) missing.push("Von (Datum + Uhrzeit)");

@@ -81,6 +81,7 @@ function wrapText(
 }
 
 export async function buildConfirmationPdf(data: {
+  kind?: "application" | "inventory";
   title: string;
   applicant: string;
   eingang: Date;
@@ -88,7 +89,7 @@ export async function buildConfirmationPdf(data: {
   number?: string | null;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const page = doc.addPage([595.28, 841.89]); // A4
+  let page = doc.addPage([595.28, 841.89]); // A4
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
@@ -110,6 +111,7 @@ export async function buildConfirmationPdf(data: {
     const color = opts.color ? rgb(...opts.color) : rgb(0.1, 0.1, 0.1);
     const lines = wrap(winAnsiSafe(text), f, size);
     for (let i = 0; i < lines.length; i++) {
+      if (y < 60 + size) { page = doc.addPage([595.28, 841.89]); y = 780; }
       page.drawText(lines[i], { x: left, y, size, font: f, color });
       y -= size + (i < lines.length - 1 ? 2 : (opts.gap ?? 8));
     }
@@ -119,7 +121,7 @@ export async function buildConfirmationPdf(data: {
 
   line("Eingangsbestätigung", { size: 22, bold: true, gap: 6 });
   // Untertitel — hier ggf. den eigenen Gremien-/Organisationsnamen eintragen.
-  line("Antragsverwaltung", {
+  line(data.kind === "inventory" ? "Inventarausleihe" : "Antragsverwaltung", {
     size: 11,
     color: [0.4, 0.4, 0.4],
     gap: 24,
@@ -130,10 +132,10 @@ export async function buildConfirmationPdf(data: {
     line(data.number, { size: 13, bold: true, gap: 16 });
   }
 
-  line("Antragsgegenstand", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
+  line(data.kind === "inventory" ? "Angefragte Gegenstände" : "Antragsgegenstand", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
   line(data.title, { size: 13, gap: 16 });
 
-  line("Antragsteller", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
+  line(data.kind === "inventory" ? "Ausleihende Person" : "Antragsteller", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
   line(data.applicant, { size: 13, gap: 16 });
 
   line("Eingangsdatum", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
@@ -143,7 +145,7 @@ export async function buildConfirmationPdf(data: {
   line(data.statusLink, { size: 11, color: [0.15, 0.3, 0.7], gap: 24 });
 
   line("Bitte speichere diesen Link.", { size: 12, bold: true, gap: 4 });
-  line("Über ihn kannst du jederzeit den aktuellen Status deines Antrags abrufen.", {
+  line(data.kind === "inventory" ? "Über ihn kannst du jederzeit den Status deiner Ausleihanfrage abrufen." : "Über ihn kannst du jederzeit den aktuellen Status deines Antrags abrufen.", {
     size: 11,
     color: [0.4, 0.4, 0.4],
   });

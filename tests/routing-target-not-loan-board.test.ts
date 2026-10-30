@@ -132,6 +132,7 @@ test("Leih-System-Board ist kein gültiges Routing-Ziel", async (t) => {
   const antrag = await submitPublicApplication(
     {
       locationId: loc.id,
+      email: "test@example.invalid",
       title: "Testantrag",
       applicant: "Testperson",
       files: {},
@@ -146,7 +147,7 @@ test("Leih-System-Board ist kein gültiges Routing-Ziel", async (t) => {
   );
 
   const feedback = await submitPublicFeedback(
-    { areaId: area.id, submitterName: "Testperson", feedback: "Testtext" },
+    { areaId: area.id, email: "test@example.invalid", submitterName: "Testperson", feedback: "Testtext" },
     { activityDetail: "Test" },
   );
   assert.equal(feedback.ok, false, "Feedback darf nicht durchgehen");

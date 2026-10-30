@@ -28,6 +28,7 @@ import { Select } from "@/components/Select";
 import { Avatar } from "@/components/Avatar";
 import { RenameBoardForm } from "@/components/board/RenameBoardForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
+import { BoardEmailSettings } from "@/components/board/BoardEmailSettings";
 import { OfficeRoleForm } from "@/components/board/OfficeRoleForm";
 import { StatusList } from "@/components/board/StatusList";
 import { CardFieldsForm } from "@/components/board/CardFieldsForm";
@@ -199,6 +200,8 @@ export default async function BoardSettingsPage({
           description={board.description}
         />
       </CollapsibleSection>
+
+      <CollapsibleSection title="Email-Settings"><BoardEmailSettings boardId={boardId} /></CollapsibleSection>
 
       <CollapsibleSection title="Bürokraft aktivieren">
         <OfficeRoleForm boardId={boardId} people={people} statuses={statuses} initial={{ enabled: officeRole?.enabled ?? false, userId: officeRole?.userId ?? null,

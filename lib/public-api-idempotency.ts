@@ -116,6 +116,7 @@ export function computeRequestFingerprint(
     `locationId:${fields.locationId}`,
     `title:${fields.title}`,
     `applicant:${fields.applicant}`,
+    `email:${fields.email}`,
   ];
   // Feste Slot-Reihenfolge → die Multipart-Reihenfolge ist irrelevant.
   for (const slot of APPLICATION_FILE_SLOTS) {
@@ -154,6 +155,7 @@ export function computeFeedbackFingerprint(
     "v1",
     `areaId:${fields.areaId}`,
     `submitterName:${fields.submitterName}`,
+    `email:${fields.email}`,
     `feedback:${fields.feedback}`,
   ];
   return sha256(lines.join("\n"));

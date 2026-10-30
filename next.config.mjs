@@ -7,6 +7,7 @@ const nextConfig = {
   // Pakete werden sie im Standalone-Server normal aus node_modules geladen.
   serverExternalPackages: [
     "pg",
+    "nodemailer",
     "node-forge",
     // pdf-lib MUSS extern sein: @signpdf/placeholder-pdf-lib nutzt sein eigenes
     // pdf-lib aus node_modules. Würde unser pdf-lib gebündelt, gäbe es ZWEI
