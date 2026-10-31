@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Leviora Studio
+"use client";
+import {useState,useTransition} from "react";
+import {useRouter} from "next/navigation";
+import {Modal} from "@/components/Modal";
+import {Select} from "@/components/Select";
+import {changeOwnerAction} from "@/app/intern/ownership-actions";
+import type {OwnershipKind} from "@/lib/board-ownership";
+type Person={id:number;username:string;name:string|null};
+export function OwnerSettingsClient({kind,id,owners,candidates,currentUserId,admin}:{kind:OwnershipKind;id:number;owners:(Person&{isActive:boolean})[];candidates:Person[];currentUserId:number;admin:boolean}){
+  const router=useRouter(),[selection,setSelection]=useState(""),[operation,setOperation]=useState<{type:"add"|"remove";person:Person}|null>(null),[typed,setTyped]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState(""),[pending,start]=useTransition();
+  const word=operation?.type==="add"?"ERNENNEN":"ENTZIEHEN";
+  function open(type:"add"|"remove",person:Person){setTyped("");setError("");setNotice("");setOperation({type,person});}
+  function confirm(){if(!operation)return;start(async()=>{try{const result=await changeOwnerAction(kind,id,operation.person.id,operation.type,typed);if(result.error){setError(result.error);return;}setNotice(operation.type==="add"?"Eigentümer ernannt.":"Eigentümerschaft entzogen.");setOperation(null);setSelection("");router.refresh();}catch(e){if(e instanceof Error&&e.message==="NEXT_REDIRECT")throw e;setError("Die Änderung konnte nicht gespeichert werden.");}});}
+  return <div className="space-y-4"><div><h3 className="font-semibold">Eigentümer</h3><p className="mt-1 text-sm text-slate-500">Alle Eigentümer haben die gleichen Verwaltungsrechte. Eigentümer können weitere Personen ernennen und selbst austreten. Anderen Personen kann nur ein Admin die Eigentümerschaft entziehen.</p></div>
+    <ul className="space-y-2">{owners.map(person=><li key={person.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"><span className="min-w-0 break-words text-sm"><strong>{person.name||person.username}</strong>{person.id===currentUserId&&" (du)"}{!person.isActive&&" · deaktiviert"}</span>{(admin||person.id===currentUserId)&&<button type="button" className="btn-secondary btn-sm" disabled={owners.length===1||pending} onClick={()=>open("remove",person)}>{person.id===currentUserId?"Eigentümerrolle abgeben":"Eigentümerschaft entziehen"}</button>}</li>)}</ul>
+    {owners.length===1&&<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Es gibt nur einen Eigentümer. Ernenne zuerst mindestens eine weitere Person, bevor diese Eigentümerrolle abgegeben oder entzogen werden kann. Das gilt auch für Admins.</p>}
+    {candidates.length>0&&<div className="flex flex-col gap-2 sm:flex-row sm:items-end"><div className="min-w-0 w-full sm:flex-1"><label className="label">Weitere Person zum Eigentümer ernennen</label><Select value={selection} onChange={setSelection} ariaLabel="Weitere Person zum Eigentümer ernennen" placeholder="Person auswählen …" options={candidates.map(p=>({value:String(p.id),label:p.name?`${p.name} (${p.username})`:p.username}))} searchable/></div><button type="button" disabled={!selection||pending} className="btn-secondary" onClick={()=>{const person=candidates.find(c=>String(c.id)===selection);if(person)open("add",person);}}>Zum Eigentümer ernennen</button></div>}
+    {notice&&<p role="status" className="text-sm text-green-700">{notice}</p>}
+    <Modal open={!!operation} onClose={()=>!pending&&setOperation(null)} title={operation?.type==="add"?"Eigentümer ernennen":"Eigentümerschaft entziehen"} manageFocus portal><p className="text-sm">{operation?.type==="add"?<><strong>{operation.person.name||operation.person.username}</strong> erhält dieselben Verwaltungsrechte wie alle bisherigen Eigentümer. Deine eigene Eigentümerschaft bleibt erhalten.</>:<><strong>{operation?.person.name||operation?.person.username}</strong> verliert die Eigentümerrechte. Zugriff kann über bestehende Freigaben oder die Adminrolle weiterhin bestehen.</>}</p><label className="label mt-4">Zur Bestätigung {word} eingeben<input className="input" autoComplete="off" value={typed} onChange={e=>setTyped(e.target.value)} disabled={pending}/></label>{error&&<p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button className="btn-secondary" disabled={pending} onClick={()=>setOperation(null)}>Abbrechen</button><button className="btn-primary" disabled={pending||typed.trim()!==word} onClick={confirm}>{pending?"Wird gespeichert …":"Bestätigen"}</button></div></Modal>
+  </div>;
+}

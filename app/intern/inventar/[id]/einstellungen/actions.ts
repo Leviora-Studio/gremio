@@ -198,27 +198,7 @@ export async function deactivateLoanTrackingAction(
 // --- Eigentum & Löschen (wie Kanban-Boards) -----------------------------
 
 /** Eigentum des Inventars an einen anderen (aktiven) Nutzer übertragen. */
-export async function transferInventoryOwnerAction(
-  boardId: number,
-  formData: FormData,
-): Promise<void> {
-  await requireInventoryBoardManage(boardId);
-  const newOwnerId = Number(formData.get("ownerId"));
-  if (!Number.isInteger(newOwnerId)) return;
-  const owner = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.id, newOwnerId), eq(users.isActive, true)))
-    .limit(1);
-  if (!owner.length) return; // nur aktive Nutzer dürfen Eigentümer werden
-  await db
-    .update(inventoryBoards)
-    .set({ ownerId: newOwnerId })
-    .where(eq(inventoryBoards.id, boardId));
-  revAccess(boardId);
-}
 
-/** Inventar (inkl. Gegenstände/Optionen/Felder) endgültig löschen. */
 export async function deleteInventoryBoardConfirmedAction(
   boardId: number,
 ): Promise<{ error?: string } | void> {

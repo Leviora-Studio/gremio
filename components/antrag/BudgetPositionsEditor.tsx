@@ -101,7 +101,7 @@ export function BudgetPositionsEditor({ cardId, initial, revision: initialRevisi
   let totals: ReturnType<typeof budgetTotals> | null = null;
   try { totals = budgetTotals(parse(rows)); } catch { /* incomplete draft */ }
   if (!active) return canEdit ? <div className="space-y-2 sm:col-span-2"><button type="button" disabled={starting} className="text-sm text-brand-700 hover:underline" onClick={() => void start()}>Weiteren Haushaltstitel hinzufügen</button>{error && <p className="text-sm text-red-600">{message}</p>}</div> : null;
-  return <details open className="collapsible min-w-0 sm:col-span-2">
+  return <details data-live-refresh-managed data-live-refresh-dirty={dirty.current} data-live-refresh-block={dirty.current||saving.current||starting} open className="collapsible min-w-0 sm:col-span-2">
     <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-3 hover:bg-slate-50">
       <span className="flex items-center gap-2 font-semibold">
         <svg className="chev h-5 w-5 shrink-0 text-slate-400 transition-transform" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>

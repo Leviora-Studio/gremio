@@ -18,7 +18,6 @@ import { getAssigneesForCards } from "@/lib/assignees";
 import { formatCents } from "@/lib/money";
 import { KanbanBoard, type KanbanCard } from "@/components/kanban/KanbanBoard";
 import { NewCardButton } from "@/components/kanban/NewCardButton";
-import { LiveRefresh } from "@/components/LiveRefresh";
 import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { budgetDisplayForCards } from "@/lib/card-budget-db";
 
@@ -32,7 +31,7 @@ export default async function BoardPage({
   const { user, board } = await requireBoardAccess(boardId);
   const canEdit = await canEditBoard(user, board);
   const officeMoveRules = canEdit ? null : await getOfficeMoveRules(user, board);
-  const manage = canManageBoard(user, board);
+  const manage = (await canManageBoard(user, board));
 
   const statuses = await db
     .select()
@@ -144,7 +143,6 @@ export default async function BoardPage({
 
   return (
     <div>
-      <LiveRefresh src={`/api/board/${boardId}/stream`} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/intern" className="text-sm text-brand-600">

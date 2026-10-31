@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import {ReceiptBrandingForm} from "@/components/admin/ReceiptBrandingForm";
+import {logoVersion} from "@/lib/receipt-branding";
 import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
@@ -75,6 +77,7 @@ export default async function UmfragenPage() {
             targetStatusId: area.targetStatusId,
           }}
           boards={boardsWithStatuses}
+          receiptSettings={<ReceiptBrandingForm scope={{kind:"feedback",id:area.id}} enabled={area.receiptBrandingEnabled} organization={area.receiptOrganization} hasLogo={!!area.receiptLogoPng} version={logoVersion(area.receiptLogoPng)} resourceName={area.name}/>}
         />
       ))}
     </div>

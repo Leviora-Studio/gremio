@@ -9,7 +9,7 @@ import { fetchPicture, type Claims } from "@/lib/oidc";
 import { deleteAvatarFile, processAndSaveAvatar } from "@/lib/avatar";
 
 type Result =
-  | { ok: true; userId: number }
+  | { ok: true; userId: number; sessionVersion: number }
   | { ok: false; error: string };
 
 /**
@@ -116,5 +116,5 @@ export async function provisionUser(claims: Claims): Promise<Result> {
   if (Object.keys(patch).length) {
     await db.update(users).set(patch).where(eq(users.id, user.id));
   }
-  return { ok: true, userId: user.id };
+  return { ok: true, userId: user.id, sessionVersion: user.sessionVersion };
 }

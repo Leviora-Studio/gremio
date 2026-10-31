@@ -61,6 +61,11 @@ test("upgrade preserves data through workflow migrations and removes only the re
     for (const table of ["smtp_settings", "email_confirmation_settings", "board_email_rules", "email_outbox"]) {
       assert.equal((await pool.query(`select * from ${table}`)).rowCount, 0, "upgrade leaves email opt-in and never sends retrospectively");
     }
+    for (const table of ["meetings", "meeting_areas", "meeting_area_access", "meeting_boards", "meeting_topics", "meeting_topic_cards", "meeting_documents"]) {
+      assert.equal((await pool.query(`select * from ${table}`)).rowCount, 0, "meetings migration creates no implicit shares or copied card contents");
+    }
+    for(const table of ["board_owners","finance_board_owners","inventory_board_owners","receipt_branding"]){assert.equal((await pool.query(`select * from ${table}`)).rowCount,0,"upgrade preserves existing owners without implicit extra owners or branding");}
+    assert.equal((await pool.query('select owner_id from boards where id=$1',[board])).rows[0].owner_id,owner);
     const organizedFile = (await pool.query("select * from attachments where id=$1", [file.id])).rows[0];
     assert.equal(organizedFile.folder_id, null, "legacy attachments start at the ticket root");
     assert.equal(organizedFile.filename, file.filename);

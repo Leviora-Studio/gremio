@@ -477,3 +477,109 @@ Empfangsbestätigungen für öffentliche Finanzanträge, Feedback und Inventaran
 Der Node-Server verarbeitet die PostgreSQL-Outbox alle 15 Sekunden, auch im lokalen Dev-Betrieb. Produktion benötigt einen dauerhaft laufenden Node-Prozess. Nach Fehlern erfolgen maximal fünf Versuche mit wachsender Wartezeit (2, 4, 8, 16 Minuten zwischen den Versuchen). Terminale Fehler sind im Admin-Bereich sichtbar und erneut anstoßbar. Globale Deaktivierung pausiert ausstehende Mails und verhindert neue Einträge. Nach erfolgreichem Versand werden Empfänger und Inhalt aus der Outbox entfernt; Versandmetadaten nach sieben Tagen. Fehlgeschlagene Inhalte bleiben für erneute Zustellung gespeichert. Bei einem Absturz nach SMTP-Annahme, aber vor Bestätigung in PostgreSQL, sind doppelte Zustellungen möglich; Wiederholungen verwenden dieselbe Message-ID.
 
 Lokale Regression: `tests/system-email-db.test.ts` benötigt eine isolierte, migrierte Datenbank `gremio_workflows_test_*`. Der Test startet einen SMTP-Empfänger ausschließlich auf Loopback und sendet nichts extern.
+
+
+### Sitzungen und Tagesordnungen
+
+Unter **Sitzungen** (`/intern/sitzungen`, mobil unter „Mehr“) zuerst einen **Sitzungsbereich** anlegen und Personen/Gruppen am Bereich lesend oder schreibend freigeben. Innerhalb des Bereichs Sitzungen mit Termin und Einreichungsfrist anlegen. Die Freigaben gelten automatisch für alle bestehenden und neuen Sitzungen. Der Bereichsname ersetzt das manuelle Feld „Gremium“ und erscheint automatisch in den Sitzungen und PDFs. Lesende Personen können bis zur Frist TOPs vorschlagen; Schreibende planen die Tagesordnung, sortieren per Drag-and-drop und halten behandelte, vertagte oder zurückgezogene Punkte fest. Eigentümer/Admin verwalten Einstellungen und vertrauliche TOPs. Abgeschlossene Sitzungen lassen sich zum Bearbeiten wieder öffnen. Termine verwenden Europe/Berlin.
+
+Im persönlichen Themenspeicher werden Themen ohne Zielauswahl angelegt und per „Zur Sitzung vorschlagen“ einer Sitzung vorgeschlagen. Der private Eintrag bleibt mit Sitzungsverlauf erhalten, und wird nach Behandlung unter „Vergangene Themen“ einsortiert. Der neue Teilnehmerkreis wird ausdrücklich bestätigt. Bei Übernahme eines eingeplanten TOPs verschwindet er aus der bisherigen Übersicht; andere Status bleiben dort nachvollziehbar. TOPs werden mit eigenständigen Dateikopien übernommen. Von einer Karte führt „Für eine Sitzung vorschlagen“ zu einem eigenen TOP mit geschützter Kartenreferenz. Es werden keine Kartentitel oder -inhalte automatisch als TOP-Inhalt übernommen.
+
+Boards können in den Sitzungs-Einstellungen angebunden werden, wenn dieselbe Person beide Seiten verwalten darf. Die Anbindung erleichtert die Kartenauswahl und vergibt **keine Board-Rechte**. Wer nur die Sitzung sehen darf, sieht TOP-Inhalt und ausdrücklich freigegebene Sitzungsunterlagen, keine geschützten Kartendetails. Dateikopien aus Karten müssen ausdrücklich freigegeben werden, erfordern Board-Schreibrechte und bleiben anschließend eigenständig; Studierendenausweise sind ausgeschlossen.
+
+„Tagesordnung als PDF“ exportiert die gemeinsame Teilnehmerfassung ohne vertrauliche TOPs und ohne geschützte Karteninhalte. Die normale Karten-/Anhangberechtigung gilt weiterhin. Das Modul benötigt keine neue Produktionsabhängigkeit. Migrationen `0073` und `0074` laufen beim Produktionsstart automatisch; im lokalen Dev-Betrieb vorher `npm run db:migrate` ausführen. SMTP-Einladungen, Kalenderdateien und ein Protokolleditor sind spätere Erweiterungen.
+
+Die Bereichsumstellung übernimmt bestehende Sitzungen jeweils in einen eigenen Bereich mit unveränderten Rechten. Gleichnamige Sitzungen werden aus Zugriffsschutzgründen nicht automatisch zusammengeführt. Dateien und Links bleiben erhalten. Kalender, Uhrzeitauswahl, Datei-Uploader, Freigabezeilen und Löschdialoge nutzen die vorhandenen App-Komponenten.
+
+PDF-Sitzungsunterlagen öffnen sich im vorhandenen In-App-PDF-Viewer (Leseansicht). Andere Dateitypen werden heruntergeladen. Beide Abrufwege prüfen weiterhin die aktuellen Bereichs-/TOP-Rechte.
+
+Unter-TOPs können durch Personen mit Schreibzugriff beim Einplanen zugeordnet oder direkt an einem eingeplanten Haupt-TOP angelegt werden. Vorschläge bleiben normale TOPs. Die Tagesordnung und ihr PDF nummerieren beispielsweise 2, 2.1 und 2.2. Haupt-TOPs lassen sich samt Unter-TOPs verschieben; innerhalb der Gruppe ist die Reihenfolge ebenfalls per Drag-and-drop änderbar. Zeiten werden addiert. Vertrauliche Haupt-TOPs schützen auch ihre Unterlagen und Unter-TOPs.
+
+### SSO-Sitzungen und lokale Nutzersperre
+
+Unter **Admin Panel → Nutzer** können Admins Nutzer **deaktivieren** und **reaktivieren**. Eine Deaktivierung sperrt weitere Anfragen sofort, macht alle bisherigen Browsersitzungen dauerhaft ungültig. Auch seine bestehenden API-/MCP-Tokens gewähren während der lokalen Sperre keinen Zugriff. Inhalte und Freigaben bleiben erhalten. Nach Reaktivierung ist eine neue Browser-Anmeldung erforderlich. Der eigene Zugang und der letzte aktive Admin sind geschützt. Am SSO-Konto wird nichts geändert.
+
+Browser-Anmeldungen werden beim Login und danach bei aktiver Nutzung spätestens alle fünf Minuten über den OAuth-Introspection-Endpunkt des SSO bestätigt. Innerhalb dieser Frist kann eine ausschließlich im SSO vorgenommene Sperrung noch unbemerkt bleiben. Nach Ablauf der Frist werden weitere Anfragen erst nach erfolgreicher Prüfung zugelassen. Bei SSO-Ausfall gibt es dann ebenfalls keinen weiteren Zugriff; eine Wiederholung ist nach Wiederherstellung möglich. Offene geschützte Live-Streams werden erneut geprüft und bei Ablehnung geschlossen. Bereits geladene Inhalte können nicht zurückgeholt werden.
+
+Browser-Anmeldungen gelten fest für **14 Tage**. Die Fünf-Minuten-Frist ist ausschließlich der Abstand der Statusprüfungen. Beim ersten Login nach diesem Update ist eine neue Anmeldung mit Zustimmung zu `offline_access` nötig. Das Refresh-Token wird ausschließlich im verschlüsselten Browser-Cookie gespeichert; Profilaktionen verlängern die ursprüngliche Gremio-Frist nicht. Ein normaler Logout auf der SSO-Webseite beendet diese Offline-Berechtigung nicht. Gremio-Logout widerruft dagegen sein Refresh-Token.
+
+**SSO-Konfiguration:** Der vertrauliche Client muss `offline_access` (inklusive Nutzerberechtigung, bei Keycloak Rolle/optionaler Client-Scope) sowie Refresh-Tokens erlauben. Die Offline-Leerlauf-/Maximalfristen müssen mindestens 14 Tage abdecken. Discovery muss `introspection_endpoint` unter derselben Origin wie der interne/öffentliche Issuer liefern. Introspection mit Client-ID/Secret muss `active`, `client_id` und gegebenenfalls `exp` liefern und bei Nutzersperre, Löschung oder Widerruf der Offline-Berechtigung ablehnen. Ein vorhandenes `sub` muss passen; fehlt es, wird die beim verifizierten Login versiegelte Identitätsbindung verwendet. Keycloaks Offline-`exp:0` wird unterstützt. Bei älteren Cookies ohne Bindung muss zusätzlich UserInfo die Identität bestätigen. Andere Provider müssen diese Semantik separat verifizieren. Fehlende Offline-Berechtigung führt zu einer verständlichen Login-Fehlermeldung; fehlende Prüfbarkeit sperrt den Zugriff.
+
+Die fünfminütige SSO-Prüfung gilt für Browser-Sitzungen. Separat ausgestellte API-/MCP-Tokens behalten ihren eigenen Lebenszyklus; ihre Nutzung wird weiterhin bei lokaler Deaktivierung gesperrt.
+
+### Eigentümer und Gestaltung von Empfangsbestätigungen
+
+Nach `npm run db:migrate` können normale Boards, Finanzboards und Inventarboards mehrere gleichberechtigte Eigentümer haben. Unter **Einstellungen → Eigentum & Löschen** werden weitere aktive Personen mit `ERNENNEN` bestätigt. Eigentümer können mit `ENTZIEHEN` selbst austreten; nur Admins dürfen anderen die Eigentümerschaft entziehen. Der letzte Eigentümer bleibt geschützt, auch gegenüber Admins. Ein Admin muss sich also ausdrücklich zusätzlich ernennen, bevor er alle anderen entfernt. Bisherige Eigentümer bleiben beim Update unverändert erhalten.
+
+Unter **Admin Panel → Empfangsbestätigungen** lassen sich Organisation und Logo (PNG/JPEG bis 2 MB) hinterlegen oder entfernen. Der gemeinsame Briefkopf erscheint auf den öffentlichen Antrags-/Feedback-PDFs und auf den PDF-Anhängen der Bestätigungs-E-Mails für Anträge, Feedback und Inventaranfragen. Die E-Mail enthält das Logo optional eingebettet, ohne externe Bildabrufe. Das neue Layout bestätigt ausschließlich den Eingang, keine Bewilligung. Versandaktivierung und SMTP bleiben in ihren bisherigen Einstellungen.
+
+### Live-Aktualisierung
+
+Nach `npm run db:migrate` aktualisieren sich die angemeldeten App-Bereiche einschließlich Sitzungen, Eigentümern/Freigaben, Finanzansichten, Vorlagen und Admin-Einstellungen automatisch. Pro Tab wird eine gemeinsame SSE-Verbindung verwendet. Der Reverse Proxy muss `/api/app/stream` wie die vorhandenen Board-Streams ungepuffert durchreichen und lange Verbindungen zulassen; die Antwort setzt `X-Accel-Buffering: no`. Es wird keine zusätzliche Infrastruktur benötigt. Technische Token-Nutzungszeitstempel sind bewusst von automatischen Neuabfragen ausgenommen.
+
+Offene Dialoge und ungespeicherte Eingaben werden nicht für externe Aktualisierungen geschlossen oder verworfen. Stattdessen erscheint gegebenenfalls ein Hinweis; nach Speichern, Zurücksetzen oder Schließen wird aktualisiert. Nach Offline-Zeiten oder der Rückkehr in den Tab wird der Stand nachgezogen. Öffentliche Statusseiten behalten ihre bisherigen tokengebundenen Live-Verbindungen.
+
+### Finanzanträge in Sitzungen einplanen
+
+Unter **Sitzungsbereich → Bereichseinstellungen → Finanzanträge** lässt sich ein
+Antragsboard mit angebotenen Quellspalten und einer Zielspalte verknüpfen.
+Anschließend einen eingeplanten Haupt-TOP der Sitzung öffnen und **Als
+Finanzanträge-TOP festlegen** wählen. Dort werden Karten direkt als Unter-TOPs
+eingeplant, in die Zielspalte verschoben und – sofern das Kartenfeld aktiv ist –
+mit dem Sitzungsdatum versehen. Erforderlich sind Schreibrechte für Sitzung und
+Antragsboard. Pro Sitzung ist genau ein Finanzanträge-TOP möglich.
+
+Die Tagesordnung und ihr PDF zeigen Antragsnummer, Kartentitel und Finanzangaben
+nur mit den jeweiligen Board- und Feldrechten; die PDF enthält zusätzlich den
+internen Kartenlink. Bereichsfreigaben geben keine Karten frei. Beim Entfernen
+eines Unter-TOPs bleiben die Karte, ihr Status und ihr Sitzungsdatum bestehen.
+
+Die Gestaltung von Empfangsbestätigungen lässt sich unter **Admin → Standorte**
+und **Admin → Umfragen** direkt beim jeweiligen Eintrag über
+**Empfangsbestätigung gestalten** aufklappen. Mit **Eigene Gestaltung verwenden**
+werden Gremienname und Logo nur für diese Formularquelle verwendet – auch wenn
+mehrere Standorte oder Umfragen dasselbe Ziel-Board haben. Ohne eigenes Logo
+erscheint diese Gestaltung ohne Logo. Ohne eigenen Namen gilt die Bezeichnung
+des Eintrags. Beim Ausschalten gilt wieder der instanzweite Standard; die eigenen
+Einstellungen bleiben gespeichert. PDFs und Bestätigungs-E-Mails verwenden die
+persönliche Du-Ansprache. Die SMTP- und Versandregeln bleiben separat.
+
+In der Sitzungsübersicht lässt sich der Status jedes bearbeitbaren TOPs direkt
+ändern. **Vertagt** und **Zurückgezogen** haben getrennte Reiter. Beim Übernehmen
+in eine andere Sitzung verschwinden bisher eingeplante TOPs aus der alten
+Übersicht; TOPs mit anderem Status bleiben dort mit Zielverweis sichtbar.
+Historische weitergegebene TOPs werden in der neuen Sitzung weiterbearbeitet.
+Im persönlichen Themenspeicher zeigen die Themen ihren Vorschlags-, Einplanungs-
+und Vertagungsverlauf. Nach **Behandelt** findest du sie unter **Vergangene Themen**.
+Der Sitzungsstatus **Abgeschlossen (Protokoll veröffentlicht)** sperrt weiterhin
+Änderungen; Übernahmen in offene Folgesitzungen bleiben möglich.
+
+Vertagte TOPs bleiben zusätzlich in der Tagesordnung an ihrer bisherigen Stelle
+mit roter Kennzeichnung **Vertagt** sichtbar – auch nach der Übernahme in eine
+andere Sitzung. Der Reiter **Vertagt** enthält dieselben Einträge weiterhin.
+Das Tagesordnungs-PDF bewahrt diese TOPs ebenfalls mit ihrem Status.
+
+Der Verlauf im persönlichen Themenspeicher protokolliert jeden Schritt mit
+Zeitpunkt und Sitzung einzeln: **Vorgeschlagen → Eingeplant → Vertagt → erneut
+vorgeschlagen**. Spätere Statusänderungen ersetzen frühere Aktivitäten nicht.
+Bei vorhandenen Themen ist nur der noch bekannte Altstand als solcher
+übernehmbar; früher bereits überschriebene Zwischenschritte sind nicht
+rückwirkend rekonstruierbar.
+
+Unter **Mein Themenspeicher → Vergangene Themen** findest du deine behandelten
+Themen weiterhin mit ihrem gesamten Aktivitätsverlauf. Sie werden nicht gelöscht.
+Wird die Behandlung zurückgenommen, erscheint das Thema wieder unter den
+aktuellen Themen.
+
+Auch **Zurückgezogen** bleibt rot in Tagesordnung und PDF sowie im eigenen Reiter
+sichtbar. Zurückgezogene TOPs werden nicht in Folgesitzungen übernommen.
+Die einreichende Person findet ihr Thema im Themenspeicher und kann es entweder
+als neuen Vorschlag einreichen oder **Als erledigt markieren**. Dann steht es
+unter **Vergangene Themen** als **Erledigt**, einschließlich Aktivitätsverlauf.
+Der ursprüngliche Sitzungs-TOP bleibt in beiden Fällen zurückgezogen. Das gilt
+auch für direkt in einer Sitzung eingereichte eigene Themen, sofern weiterhin
+Zugriff auf die Sitzung besteht.
+
+Im Themenspeicher steht **Thema anlegen** oben, gefolgt von aktuellen und
+vergangenen Themen. Jedes Thema lässt sich einzeln aufklappen; sein Verlauf
+ist standardmäßig eingeklappt.

@@ -22,7 +22,7 @@ import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
-import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { RenameFinanceForm } from "@/components/finance/RenameFinanceForm";
 import { SourceExpiredStatusForm } from "@/components/finance/SourceExpiredStatusForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
@@ -39,7 +39,6 @@ import {
   removeFinanceAccountAction,
   removeFinanceExpenseAccountAction,
   removeFinanceSourceAction,
-  transferFinanceOwnerAction,
 } from "../../actions";
 
 export default async function FinanceSettingsPage({
@@ -408,22 +407,8 @@ export default async function FinanceSettingsPage({
       {/* Eigentum & Löschen */}
       <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
         <div className="mb-4">
-          <label className="label">Eigentum übertragen an</label>
-          <p className="mb-2 text-xs text-slate-500">
-            Der neue Eigentümer entscheidet über Freigaben; sichtbar sind nur
-            Quell-Boards, auf die er Zugriff hat. Zum Schutz erst „ÜBERTRAGEN"
-            eingeben; danach bestätigen.
-          </p>
-          <TransferOwnerForm
-            action={transferFinanceOwnerAction.bind(null, fbId)}
-            options={activeUsers.map((u) => ({
-              value: String(u.id),
-              label: u.username,
-            }))}
-            currentOwnerId={String(fb.ownerId)}
-            entityLabel={`Finanzübersicht „${fb.name}"`}
-            requireTyped="ÜBERTRAGEN"
-          />
+
+          <OwnerSettings kind="finance" id={fbId}/>
         </div>
         <DeleteConfirm
           action={deleteFinanceBoardAction.bind(null, fbId)}

@@ -450,7 +450,7 @@ export default function PdfEditor({
     setFieldValues((prev) => ({ ...prev, [name]: value }));
 
   return (
-    <div className="flex h-full flex-col">
+    <div data-live-refresh-managed data-live-refresh-dirty={dirty} data-live-refresh-block={dirty||saving} className="flex h-full flex-col">
       {/* Toolbar */}
       <div className="grid grid-cols-3 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-sm sm:flex sm:flex-wrap">
         {/* Dateiname nur auf Desktop — auf Mobil ist der Platz für die

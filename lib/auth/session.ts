@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { getIronSession, type SessionOptions } from "iron-session";
+import { getIronSession, type SessionOptions, type IronSession } from "iron-session";
 import { cookies, headers } from "next/headers";
 import { env } from "@/lib/env";
+import { SESSION_TTL_SECONDS } from "./session-identity";
 
 export interface SessionData {
   userId?: number;
+  sessionVersion?: number;
+  authExpiresAt?: number;
+  ssoSubject?: string;
+  refreshTokenHash?: string;
   // OIDC id_token (für RP-initiated logout / end_session id_token_hint)
   idToken?: string;
-  // OIDC access_token (UserInfo-Resync) + refresh_token — beim Logout am SSO
-  // widerrufen (RFC 7009).
+  // Access token retained only for legacy sessions; new logins keep the offline
+  // refresh token, revoked at logout (RFC 7009).
   accessToken?: string;
   refreshToken?: string;
   // Transienter OIDC-Flow-State zwischen /login-Redirect und /callback
@@ -26,6 +31,7 @@ export interface SessionData {
 const sessionOptions: SessionOptions = {
   password: env.AUTH_SECRET,
   cookieName: "gremio_session",
+  ttl: SESSION_TTL_SECONDS,
   cookieOptions: {
     httpOnly: true,
     sameSite: "lax",
@@ -56,4 +62,16 @@ export async function getSession() {
     ...sessionOptions,
     cookieOptions: { ...sessionOptions.cookieOptions, secure },
   });
+}
+
+
+/** Preserve the original login deadline when other actions update the cookie. */
+export async function saveSession(session: IronSession<SessionData>): Promise<void> {
+  const ttl = session.oauth ? 10 * 60 : typeof session.authExpiresAt === "number"
+    ? Math.max(1, Math.ceil((session.authExpiresAt - Date.now()) / 1000)) : SESSION_TTL_SECONDS;
+  // The ID token is only a logout hint; reserve room for OAuth metadata.
+  // The stable refresh token and verified subject are sufficient for live SSO checks.
+  if (session.idToken && Buffer.byteLength(JSON.stringify(session), "utf8") > 2400) delete session.idToken;
+  session.updateConfig({...sessionOptions, ttl, cookieOptions:{...sessionOptions.cookieOptions, secure:await isHttps(), maxAge:ttl}});
+  await session.save();
 }

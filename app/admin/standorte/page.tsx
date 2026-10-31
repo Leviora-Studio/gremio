@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import {ReceiptBrandingForm} from "@/components/admin/ReceiptBrandingForm";
+import {logoVersion} from "@/lib/receipt-branding";
 import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
@@ -68,6 +70,7 @@ export default async function StandortePage() {
             targetStatusId: loc.targetStatusId,
           }}
           boards={boardsWithStatuses}
+          receiptSettings={<ReceiptBrandingForm scope={{kind:"location",id:loc.id}} enabled={loc.receiptBrandingEnabled} organization={loc.receiptOrganization} hasLogo={!!loc.receiptLogoPng} version={logoVersion(loc.receiptLogoPng)} resourceName={loc.name}/>}
         />
       ))}
     </div>

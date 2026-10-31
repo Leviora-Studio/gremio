@@ -280,7 +280,7 @@ function SortableColumnHeader({ columnKey, label, sortDirection, onSort }: {
   columnKey: string; label: string; sortDirection: "ascending" | "descending" | "none"; onSort: () => void;
 }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: columnKey });
-  return <th ref={setNodeRef} data-column-key={columnKey} scope="col" aria-label={label} aria-sort={sortDirection}
+  return <th data-live-refresh-block={isDragging} ref={setNodeRef} data-column-key={columnKey} scope="col" aria-label={label} aria-sort={sortDirection}
     style={{ transform: CSS.Translate.toString(transform), transition, position: "relative", zIndex: isDragging ? 1 : undefined }}
     className={`whitespace-nowrap p-3 ${isDragging ? "bg-brand-50 shadow-lg" : "bg-slate-100"}`}>
     <div className="flex items-center gap-2">
@@ -293,7 +293,7 @@ function SortableColumnHeader({ columnKey, label, sortDirection, onSort }: {
 
 function SortableColumnOption({ columnKey, label, children }: { columnKey: string; label: string; children: ReactNode }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: columnKey });
-  return <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, position: "relative", zIndex: isDragging ? 1 : undefined }}
+  return <li data-live-refresh-block={isDragging} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, position: "relative", zIndex: isDragging ? 1 : undefined }}
     className={`flex items-center gap-3 rounded border p-2 ${isDragging ? "border-brand-300 bg-brand-50 shadow-lg" : "border-slate-100 bg-white"}`}>
     <button type="button" {...attributes} {...listeners} aria-label={`${label} in Spaltenauswahl verschieben`} title="Spalte ziehen"
       className="cursor-grab touch-none rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"><svg aria-hidden="true" width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg></button>

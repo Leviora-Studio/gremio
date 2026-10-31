@@ -25,7 +25,7 @@ import { Avatar } from "@/components/Avatar";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
-import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { InventoryNumberingForm } from "@/components/inventory/InventoryNumberingForm";
 import {
@@ -35,7 +35,6 @@ import {
   removeInventoryAccessAction,
   updateInventoryAccessLevelAction,
   renameInventoryBoardAction,
-  transferInventoryOwnerAction,
   updateInventoryFieldsAction,
 } from "./actions";
 
@@ -294,20 +293,8 @@ export default async function InventoryBoardSettingsPage({
       {/* Eigentum & Löschen */}
       <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
         <div className="mb-4">
-          <label className="label">Eigentum übertragen an</label>
-          <p className="mb-2 text-xs text-slate-500">
-            Zum Schutz erst „ÜBERTRAGEN" eingeben; danach bestätigen.
-          </p>
-          <TransferOwnerForm
-            action={transferInventoryOwnerAction.bind(null, board.id)}
-            options={allUsers.map((u) => ({
-              value: String(u.id),
-              label: u.username,
-            }))}
-            currentOwnerId={String(board.ownerId)}
-            entityLabel={`Inventar „${board.name}"`}
-            requireTyped="ÜBERTRAGEN"
-          />
+
+          <OwnerSettings kind="inventory" id={board.id}/>
         </div>
         <DeleteConfirm
           action={deleteInventoryBoardConfirmedAction.bind(null, board.id)}

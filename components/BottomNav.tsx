@@ -109,12 +109,14 @@ export function BottomNav({
   }, [moreOpen]);
 
   const moreActive =
+    pathname.startsWith("/intern/sitzungen") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/vorlagen") ||
     pathname.startsWith("/intern/inventar") ||
     pathname.startsWith("/intern/konto");
 
   const moreLinks = [
+    { href: "/intern/sitzungen", label: "Sitzungen" },
     { href: "/intern/inventar", label: "Inventar" },
     ...(role === "admin" || role === "template_manager"
       ? [{ href: "/vorlagen", label: "Vorlagen" }]

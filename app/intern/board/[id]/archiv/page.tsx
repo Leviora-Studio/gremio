@@ -7,7 +7,6 @@ import { db } from "@/lib/db";
 import { boardStatuses, cards } from "@/lib/db/schema";
 import { canEditBoard, requireBoardAccess } from "@/lib/authz";
 import { SubmitButton } from "@/components/SubmitButton";
-import { LiveRefresh } from "@/components/LiveRefresh";
 import { restoreCardAction } from "./actions";
 
 export default async function BoardArchivePage({
@@ -36,7 +35,6 @@ export default async function BoardArchivePage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 py-2">
-      <LiveRefresh src={`/api/board/${boardId}/stream`} />
       <div>
         <Link href={`/intern/board/${boardId}`} className="text-sm text-brand-600">
           ← Zurück zum Board

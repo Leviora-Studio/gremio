@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { NextResponse, type NextRequest } from "next/server";
-import { getSession } from "@/lib/auth/session";
+import { getSession, saveSession } from "@/lib/auth/session";
 import { buildAuthorizeUrl, pkceChallenge, randomToken } from "@/lib/oidc";
 import { env } from "@/lib/env";
 import { allowRequest } from "@/lib/rate-limit";
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   const session = await getSession();
   session.oauth = { state, nonce, verifier, redirectUri, next };
-  await session.save();
+  await saveSession(session);
 
   return NextResponse.redirect(
     await buildAuthorizeUrl({ redirectUri, state, nonce, codeChallenge }),

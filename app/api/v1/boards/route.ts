@@ -15,6 +15,6 @@ export async function GET(req: Request) {
     tokenAllowsBoard(ctx, b.id),
   );
   return NextResponse.json({
-    boards: boards.map((b) => serializeBoard(b, ctx.user)),
+    boards: await Promise.all(boards.map((b) => serializeBoard(b, ctx.user))),
   });
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { additionalOwnedIds } from "@/lib/board-ownership";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleBoards } from "@/lib/authz";
@@ -12,6 +13,8 @@ export const metadata = { title: "Boards — Gremio" };
 
 export default async function BoardsPage() {
   const user = await requireUser();
+  const boardOwnerships=new Set((await additionalOwnedIds("board",user.id)).map(r=>r.id));
+
   const boards = await sortByUserBoardOrder(
     user.id,
     await getAccessibleBoards(user),
@@ -45,7 +48,7 @@ export default async function BoardsPage() {
               id: b.id,
               name: b.name,
               description: b.description,
-              isOwner: b.ownerId === user.id,
+              isOwner: b.ownerId === user.id || boardOwnerships.has(b.id),
               isSystemBoard: b.inventoryBoardId != null,
             }))}
           />

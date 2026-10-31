@@ -21,7 +21,6 @@ import {
 import { InventoryBoardView } from "@/components/inventory/InventoryBoardView";
 import { InventoryExport } from "@/components/inventory/InventoryExport";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
-import { LiveRefresh } from "@/components/LiveRefresh";
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
@@ -39,7 +38,7 @@ export default async function InventoryBoardPage({
   const { id } = await params;
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const canEdit = await canEditInventoryBoard(user, board);
-  const manage = canManageInventoryBoard(user, board);
+  const manage = (await canManageInventoryBoard(user, board));
 
   const [visible, options, numbering, items, archived, loanCards, untracked] =
     await Promise.all([
@@ -80,7 +79,6 @@ export default async function InventoryBoardPage({
 
   return (
     <div className="space-y-5">
-      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/intern/inventar" className="text-sm text-brand-600">

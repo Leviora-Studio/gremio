@@ -39,7 +39,7 @@ import { ArchiveSettings } from "@/components/board/ArchiveSettings";
 import { ArchiveTriggerForm } from "@/components/board/ArchiveTriggerForm";
 import { DoneColumnForm } from "@/components/board/DoneColumnForm";
 import { TriggerAssignmentForm } from "@/components/board/TriggerAssignmentForm";
-import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import {
   addAccessGroupAction,
   addAccessUserAction,
@@ -55,7 +55,6 @@ import {
   setReceiptFromStatusAction,
   setReceiptToStatusAction,
   setDefaultAccountAction,
-  transferOwnerAction,
 } from "./actions";
 
 export default async function BoardSettingsPage({
@@ -543,20 +542,8 @@ export default async function BoardSettingsPage({
       {/* 10. Eigentum & Löschen */}
       <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
         <div className="mb-4">
-          <label className="label">Eigentum übertragen an</label>
-          <p className="mb-2 text-xs text-slate-500">
-            Zum Schutz erst „ÜBERTRAGEN" eingeben; danach bestätigen.
-          </p>
-          <TransferOwnerForm
-            action={transferOwnerAction.bind(null, boardId)}
-            options={allUsers.map((u) => ({
-              value: String(u.id),
-              label: u.username,
-            }))}
-            currentOwnerId={String(board.ownerId)}
-            entityLabel={`Board „${board.name}"`}
-            requireTyped="ÜBERTRAGEN"
-          />
+
+          <OwnerSettings kind="board" id={boardId}/>
         </div>
         <DeleteConfirm
           action={deleteBoardConfirmedAction.bind(null, boardId)}

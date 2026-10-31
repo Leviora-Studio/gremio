@@ -4,6 +4,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { requestLiveRefresh } from "@/lib/live-refresh-client";
 import { useRouter } from "next/navigation";
 
 /**
@@ -21,7 +22,7 @@ export function LiveRefresh({ src }: { src: string }) {
     // zusammenfassen.
     const refresh = () => {
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => router.refresh(), 250);
+      timer.current = setTimeout(() => requestLiveRefresh(()=>router.refresh()), 250);
     };
 
     const es = new EventSource(src);

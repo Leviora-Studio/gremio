@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { canManageBoard } from "@/lib/authz";
+import { isResourceOwner } from "@/lib/board-ownership";
 import { internalApiContext } from "@/lib/api-context";
 import { NextResponse } from "next/server";
 import type { Board, BoardStatus, Card, User } from "@/lib/db/schema";
@@ -57,14 +59,15 @@ export function requireWriteScope(ctx: ApiContext): NextResponse | null {
 }
 
 /** Rolle des Nutzers bezogen auf ein Board. */
-export function boardRole(user: User, board: Board): "admin" | "owner" | "member" {
-  if (board.ownerId === user.id) return "owner";
+export async function boardRole(user: User, board: Board): Promise<"admin" | "owner" | "member"> {
+  if (await isResourceOwner("board",board,user.id)) return "owner";
   if (user.role === "admin") return "admin";
+  if(await canManageBoard(user,board))return "owner";
   return "member";
 }
 
-export function serializeBoard(board: Board, user: User) {
-  const role = boardRole(user, board);
+export async function serializeBoard(board: Board, user: User) {
+  const role = await boardRole(user, board);
   const canManage = role === "owner" || role === "admin";
   return {
     id: board.id,

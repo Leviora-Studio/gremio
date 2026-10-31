@@ -512,6 +512,104 @@
       "when": 1793361493290,
       "tag": "0072_system_email",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793372442555,
+      "tag": "0073_standalone_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793382410415,
+      "tag": "0074_meeting_areas",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793383688991,
+      "tag": "0075_meeting_subtopics",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793393690552,
+      "tag": "0076_sso_session_revocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793458277958,
+      "tag": "0077_board_owners_and_receipt_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793461331838,
+      "tag": "0078_app_live_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793461976288,
+      "tag": "0079_live_account_and_delivery_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793463243405,
+      "tag": "0080_meeting_finance_agenda",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793464046900,
+      "tag": "0081_scoped_receipt_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1793472798370,
+      "tag": "0082_topic_history_and_personal_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1793472900105,
+      "tag": "0083_active_financial_topic_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1793474768520,
+      "tag": "0084_personal_topic_activity_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1793476788488,
+      "tag": "0085_resolve_withdrawn_personal_topics",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793485967998,
+      "tag": "0086_preserve_topic_submitters",
+      "breakpoints": true
     }
   ]
 }

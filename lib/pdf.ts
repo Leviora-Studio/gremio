@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { receiptCopy } from "@/lib/receipt-copy";
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, PDFString } from "pdf-lib";
 import { formatDateTime } from "@/lib/dates";
 
 /**
@@ -47,7 +48,7 @@ export function winAnsiSafe(s: string, opts: { keepNewlines?: boolean } = {}): s
  * „Wörter" (URLs, zusammengeschriebene Ketten) hart auf Zeichenebene. Liefert
  * immer mindestens eine Zeile.
  */
-function wrapText(
+export function wrapText(
   s: string,
   f: PDFFont,
   size: number,
@@ -80,169 +81,56 @@ function wrapText(
   return out.length ? out : [""];
 }
 
-export async function buildConfirmationPdf(data: {
-  kind?: "application" | "inventory";
-  title: string;
-  applicant: string;
-  eingang: Date;
-  statusLink: string;
-  number?: string | null;
-}): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  let page = doc.addPage([595.28, 841.89]); // A4
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-
-  const left = 56;
-  const maxWidth = 595.28 - left - 40; // rechter Rand
-  let y = 780;
-
-  // Bricht Text auf die Seitenbreite um, damit lange Antragsgegenstände/
-  // Antragsteller/Status-Links nicht aus der A4-Seite herauslaufen.
-  const wrap = (s: string, f: PDFFont, size: number): string[] =>
-    wrapText(s, f, size, maxWidth);
-
-  const line = (
-    text: string,
-    opts: { size?: number; bold?: boolean; gap?: number; color?: [number, number, number] } = {},
-  ) => {
-    const size = opts.size ?? 11;
-    const f = opts.bold ? bold : font;
-    const color = opts.color ? rgb(...opts.color) : rgb(0.1, 0.1, 0.1);
-    const lines = wrap(winAnsiSafe(text), f, size);
-    for (let i = 0; i < lines.length; i++) {
-      if (y < 60 + size) { page = doc.addPage([595.28, 841.89]); y = 780; }
-      page.drawText(lines[i], { x: left, y, size, font: f, color });
-      y -= size + (i < lines.length - 1 ? 2 : (opts.gap ?? 8));
+export type ReceiptBranding = { organization:string; logoPng?:string|null };
+type ReceiptData={kind:"application"|"inventory"|"feedback";title:string;applicant:string;eingang:Date;statusLink:string;number?:string|null;feedbackText?:string;branding?:ReceiptBranding};
+/** Shared letter layout for downloaded receipts and system-mail attachments. */
+async function buildReceipt(data:ReceiptData):Promise<Uint8Array>{
+  const doc=await PDFDocument.create();const regular=await doc.embedFont(StandardFonts.Helvetica),bold=await doc.embedFont(StandardFonts.HelveticaBold);
+  const W=595.28,H=841.89,left=57,right=538,width=right-left,ink=rgb(.12,.15,.19),muted=rgb(.38,.42,.47),rule=rgb(.82,.85,.88);
+  const organization=winAnsiSafe(data.branding?.organization?.trim()||"Gremio");
+  let logo:PDFImage|undefined;
+  if(data.branding?.logoPng)logo=await doc.embedPng(Buffer.from(data.branding.logoPng,"base64"));
+  let page=doc.addPage([W,H]),y=0;
+  const header=(first:boolean)=>{
+    const nameLines=wrapText(organization,bold,12,logo?width-125:width);
+    let nameY=H-63;for(const line of nameLines){page.drawText(line,{x:left,y:nameY,size:12,font:bold,color:ink});nameY-=16;}
+    if(logo){const size=logo.scaleToFit(105,52);page.drawImage(logo,{x:right-size.width,y:H-54-size.height,width:size.width,height:size.height});}
+    const baseline=Math.min(H-119,nameY-17);page.drawLine({start:{x:left,y:baseline},end:{x:right,y:baseline},thickness:.7,color:rule});
+    y=baseline-24;
+    if(!first){page.drawText("Empfangsbestätigung - Fortsetzung",{x:left,y,size:9,font:regular,color:muted});y-=32;}
+  };
+  header(true);
+  const text=(raw:string,opts:{size?:number;bold?:boolean;color?:ReturnType<typeof rgb>;after?:number;link?:string}={})=>{
+    const size=opts.size??10.5,font=opts.bold?bold:regular;
+    for(const paragraph of winAnsiSafe(raw,{keepNewlines:true}).split("\n"))for(const line of wrapText(paragraph,font,size,width)){
+      if(y<82){page=doc.addPage([W,H]);header(false);}
+      page.drawText(line,{x:left,y,size,font,color:opts.color??ink});
+      if(opts.link&&line){const annotation=doc.context.obj({Type:"Annot",Subtype:"Link",Rect:[left,y-2,left+font.widthOfTextAtSize(line,size),y+size],Border:[0,0,0],A:{Type:"Action",S:"URI",URI:PDFString.of(opts.link)}});const ref=doc.context.register(annotation);page.node.addAnnot(ref);}
+      y-=size*1.45;
     }
+    y-=opts.after??9;
   };
-
-  const eingang = formatDateTime(data.eingang, "long");
-
-  line("Eingangsbestätigung", { size: 22, bold: true, gap: 6 });
-  // Untertitel — hier ggf. den eigenen Gremien-/Organisationsnamen eintragen.
-  line(data.kind === "inventory" ? "Inventarausleihe" : "Antragsverwaltung", {
-    size: 11,
-    color: [0.4, 0.4, 0.4],
-    gap: 24,
-  });
-
-  if (data.number) {
-    line("Antragsnummer", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-    line(data.number, { size: 13, bold: true, gap: 16 });
-  }
-
-  line(data.kind === "inventory" ? "Angefragte Gegenstände" : "Antragsgegenstand", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.title, { size: 13, gap: 16 });
-
-  line(data.kind === "inventory" ? "Ausleihende Person" : "Antragsteller", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.applicant, { size: 13, gap: 16 });
-
-  line("Eingangsdatum", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(eingang, { size: 13, gap: 24 });
-
-  line("Status-Link", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.statusLink, { size: 11, color: [0.15, 0.3, 0.7], gap: 24 });
-
-  line("Bitte speichere diesen Link.", { size: 12, bold: true, gap: 4 });
-  line(data.kind === "inventory" ? "Über ihn kannst du jederzeit den Status deiner Ausleihanfrage abrufen." : "Über ihn kannst du jederzeit den aktuellen Status deines Antrags abrufen.", {
-    size: 11,
-    color: [0.4, 0.4, 0.4],
-  });
-
-  return doc.save();
+  const field=(label:string,value:string)=>{if(y<120){page=doc.addPage([W,H]);header(false);}text(label,{size:8.5,bold:true,color:muted,after:2});text(value,{size:11,after:13});};
+  text("EMPFANGSBESTÄTIGUNG",{size:9,bold:true,color:muted,after:22});
+  field("Eingereicht von",data.applicant||"Ohne Namensangabe");
+  const copy=receiptCopy(data.kind);
+  text(copy.headline,{size:17,bold:true,after:13});
+  if(data.number)text(`Vorgangsnummer: ${data.number}`,{size:10,bold:true,after:5});
+  text(`Eingegangen am ${formatDateTime(data.eingang,"long")}`,{size:9.5,color:muted,after:22});
+  text(copy.greeting,{after:12});
+  text(copy.introduction,{after:18});
+  field(data.kind==="inventory"?"Angefragte Gegenstände":data.kind==="feedback"?"Feedback-Bereich":"Antragsgegenstand",data.title);
+  if(data.feedbackText){text("Eingereichtes Feedback",{size:9,bold:true,color:muted,after:6});text(data.feedbackText,{after:18});}
+  // Keep the status section and closing together instead of orphaning a private URL.
+  if(y<280){page=doc.addPage([W,H]);header(false);}
+  text(copy.statusHeading,{size:11,bold:true,after:6});
+  text(copy.statusText,{after:6});
+  text(data.statusLink,{size:9,color:rgb(.12,.28,.52),after:12,link:data.statusLink});
+  text(copy.privacyText,{size:9,color:muted,after:20});
+  text(copy.closing,{after:3});text(organization,{bold:true,after:20});
+  text(copy.disclaimer,{size:8.5,color:muted,after:0});
+  const pages=doc.getPages();for(let i=0;i<pages.length;i++){const p=pages[i];p.drawLine({start:{x:left,y:53},end:{x:right,y:53},thickness:.5,color:rule});p.drawText("Automatisch erstellte Empfangsbestätigung",{x:left,y:36,size:8,font:regular,color:muted});const label=`Seite ${i+1} von ${pages.length}`;p.drawText(label,{x:right-regular.widthOfTextAtSize(label,8),y:36,size:8,font:regular,color:muted});}
+  doc.setTitle("Empfangsbestätigung");doc.setAuthor(organization);return doc.save();
 }
-
-/**
- * Eingangsbestätigung für FEEDBACK.
- *
- * Anders als die Antragsbestätigung mehrseitig: Der Feedbacktext darf bis zu
- * 10.000 Zeichen lang sein. Der Schreiber unten legt bei Bedarf automatisch eine
- * neue Seite an, respektiert Absätze (`\n`) und bricht auch überlange Wörter
- * bzw. URLs sauber um. Nicht darstellbare Zeichen (Emoji, nicht-lateinische
- * Schriften) fängt `winAnsiSafe` ab — sonst würde pdf-lib werfen und der Abruf
- * 500 liefern.
- */
-export async function buildFeedbackConfirmationPdf(data: {
-  areaName: string;
-  submitterName: string;
-  feedbackText: string;
-  eingang: Date;
-  statusLink: string;
-  number?: string | null;
-}): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-
-  const PAGE: [number, number] = [595.28, 841.89]; // A4
-  const left = 56;
-  const top = 780;
-  const bottom = 60; // unterhalb davon wird umgebrochen
-  const maxWidth = PAGE[0] - left - 40;
-
-  let page = doc.addPage(PAGE);
-  let y = top;
-
-  const newPage = () => {
-    page = doc.addPage(PAGE);
-    y = top;
-  };
-
-  const line = (
-    text: string,
-    opts: {
-      size?: number;
-      bold?: boolean;
-      gap?: number;
-      color?: [number, number, number];
-    } = {},
-  ) => {
-    const size = opts.size ?? 11;
-    const f = opts.bold ? bold : font;
-    const color = opts.color ? rgb(...opts.color) : rgb(0.1, 0.1, 0.1);
-    // Absätze einzeln umbrechen, damit Leerzeilen erhalten bleiben. Dieser
-    // Builder teilt selbst an \n auf, darf die Umbrüche also behalten.
-    const paragraphs = winAnsiSafe(text, { keepNewlines: true }).split("\n");
-    for (let p = 0; p < paragraphs.length; p++) {
-      const lines = paragraphs[p] === "" ? [""] : wrapText(paragraphs[p], f, size, maxWidth);
-      for (let i = 0; i < lines.length; i++) {
-        if (y - size < bottom) newPage();
-        page.drawText(lines[i], { x: left, y, size, font: f, color });
-        const isLast = p === paragraphs.length - 1 && i === lines.length - 1;
-        y -= size + (isLast ? (opts.gap ?? 8) : 2);
-      }
-    }
-  };
-
-  line("Eingangsbestätigung", { size: 22, bold: true, gap: 6 });
-  line("Feedback", { size: 11, color: [0.4, 0.4, 0.4], gap: 24 });
-
-  if (data.number) {
-    line("Nummer", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-    line(data.number, { size: 13, bold: true, gap: 16 });
-  }
-
-  line("Bereich", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.areaName, { size: 13, gap: 16 });
-
-  line("Einreicher", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.submitterName, { size: 13, gap: 16 });
-
-  line("Eingangsdatum", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(formatDateTime(data.eingang, "long"), { size: 13, gap: 24 });
-
-  line("Dein Feedback", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 6 });
-  line(data.feedbackText, { size: 11, gap: 24 });
-
-  line("Status-Link", { size: 9, bold: true, color: [0.4, 0.4, 0.4], gap: 2 });
-  line(data.statusLink, { size: 11, color: [0.15, 0.3, 0.7], gap: 24 });
-
-  line("Bitte speichere diesen Link.", { size: 12, bold: true, gap: 4 });
-  line("Über ihn kannst du jederzeit den aktuellen Status deines Feedbacks abrufen.", {
-    size: 11,
-    color: [0.4, 0.4, 0.4],
-  });
-
-  return doc.save();
-}
+export async function buildConfirmationPdf(data:{kind?:"application"|"inventory";title:string;applicant:string;eingang:Date;statusLink:string;number?:string|null;branding?:ReceiptBranding}):Promise<Uint8Array>{return buildReceipt({...data,kind:data.kind??"application"});}
+export async function buildFeedbackConfirmationPdf(data:{areaName:string;submitterName:string;feedbackText:string;eingang:Date;statusLink:string;number?:string|null;branding?:ReceiptBranding}):Promise<Uint8Array>{return buildReceipt({...data,kind:"feedback",title:data.areaName,applicant:data.submitterName});}

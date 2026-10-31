@@ -97,6 +97,8 @@ test("durable private email delivery, all public receipts, rollback, status tran
     const confirmations = await jobs(); assert.equal(confirmations.length, 3);
     assert.deepEqual(new Set(confirmations.map(job => job.kind)), new Set(["feedback", "application", "inventory"]));
     for (const job of confirmations) {
+      if(job.kind === "application") assert.deepEqual(job.payload.receiptScope,{kind:"location",id:location.id},"receipt follows the selected location, not just its board");
+      if(job.kind === "feedback") assert.deepEqual(job.payload.receiptScope,{kind:"feedback",id:area.id},"receipt follows the selected survey");
       const rendered = await renderEmail(job);
       const prefix = job.kind === "feedback" ? "/feedback/status/" : job.kind === "inventory" ? "/inventar/status/" : "/status/";
       assert.ok(rendered.text.includes(`${process.env.PUBLIC_BASE_URL}${prefix}${job.kind === "inventory" ? loan.token : job.payload.statusLink}`));

@@ -157,7 +157,7 @@ export function InventoryBoardView({
   return (
     <div className="space-y-4">
       {/* Filterleiste */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-live-refresh-filter className="flex flex-wrap items-center gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}

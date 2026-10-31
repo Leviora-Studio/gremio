@@ -445,7 +445,7 @@ export async function submitPublicApplication<T = never>(
             });
           }
 
-          await queueConfirmation(tx, "application", targetBoardId, parsed.data.email, { title: parsed.data.title, applicant: parsed.data.applicant, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
+          await queueConfirmation(tx, "application", targetBoardId, parsed.data.email, { receiptScope:{kind:"location",id:parsed.data.locationId}, title: parsed.data.title, applicant: parsed.data.applicant, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
 
           if (opts.withinTx) {
             await opts.withinTx(tx, {

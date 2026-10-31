@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { isResourceOwner, additionalOwnedIds } from "@/lib/board-ownership";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -28,7 +29,7 @@ export async function canAccessInventoryBoard(
   access: "read" | "write" = "read",
 ): Promise<boolean> {
   if (user.role === "admin") return true;
-  if (board.ownerId === user.id) return true;
+  if (await isResourceOwner("inventory",board,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
   const rows = await db
     .select({ id: inventoryBoardAccess.id })
@@ -50,11 +51,11 @@ export async function canAccessInventoryBoard(
 }
 
 /** Verwalten (umbenennen, Felder/Nummerierung, Freigaben, löschen). */
-export function canManageInventoryBoard(
+export async function canManageInventoryBoard(
   user: User,
   board: InventoryBoard,
-): boolean {
-  return user.role === "admin" || board.ownerId === user.id;
+): Promise<boolean> {
+  return user.role === "admin" || await isResourceOwner("inventory",board,user.id);
 }
 
 /** Alle Inventar-Boards, die ein Nutzer sehen darf (Admin: alle). */
@@ -80,7 +81,7 @@ export async function getAccessibleInventoryBoards(
         .where(inArray(inventoryBoardAccess.groupId, groupIds))
     : [];
   const ids = Array.from(
-    new Set([...ownerRows, ...userRows, ...groupRows].map((r) => r.id)),
+    new Set([...ownerRows, ...await additionalOwnedIds("inventory",user.id), ...userRows, ...groupRows].map((r) => r.id)),
   );
   if (!ids.length) return [];
   return db
@@ -118,7 +119,7 @@ export async function requireInventoryBoardManage(
 ): Promise<{ user: User; board: InventoryBoard }> {
   const user = await requireUser();
   const board = await getInventoryBoardById(boardId);
-  if (!board || !canManageInventoryBoard(user, board)) notFound();
+  if (!board || !(await canManageInventoryBoard(user, board))) notFound();
   return { user, board };
 }
 

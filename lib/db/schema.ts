@@ -41,6 +41,7 @@ export const users = pgTable(
       .notNull()
       .default("user"),
     isActive: boolean("is_active").notNull().default(true),
+    sessionVersion: integer("session_version").notNull().default(0),
     avatarPath: text("avatar_path"),
     // Persönliches Signatur-Zertifikat (PKCS#12 / .p12) für die PDF-Signierung.
     // p12-Bytes (base64) UND Passphrase liegen AES-256-GCM-verschlüsselt
@@ -310,6 +311,9 @@ export const boardTriggerAssignees = pgTable(
 // locations — Standorte & Formular-Routing (target_* NICHT cascade)
 // ---------------------------------------------------------------------------
 export const locations = pgTable("locations", {
+  receiptBrandingEnabled: boolean("receipt_branding_enabled").notNull().default(false),
+  receiptOrganization: text("receipt_organization").notNull().default(""),
+  receiptLogoPng: text("receipt_logo_png"),
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   enabled: boolean("enabled").notNull().default(false),
@@ -875,6 +879,9 @@ export const apiIdempotencyKeys = pgTable(
 // Bereichslisten, und ein Standort soll nicht versehentlich im Feedback
 // auftauchen (oder umgekehrt).
 export const feedbackAreas = pgTable("feedback_areas", {
+  receiptBrandingEnabled: boolean("receipt_branding_enabled").notNull().default(false),
+  receiptOrganization: text("receipt_organization").notNull().default(""),
+  receiptLogoPng: text("receipt_logo_png"),
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   enabled: boolean("enabled").notNull().default(false),
@@ -1398,3 +1405,110 @@ export const emailOutbox = pgTable("email_outbox", {
   attempts: integer("attempts").notNull().default(0), nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }), sentAt: timestamp("sent_at", { withTimezone: true }), lastErrorCode: text("last_error_code"), createdAt: createdAt(),
 }, t => ({ due: index("email_outbox_due_idx").on(t.state, t.nextAttemptAt), stateCheck: check("email_outbox_state_check", sql`${t.state} in ('pending','sending','sent','failed')`), kindCheck: check("email_outbox_kind_check", sql`${t.kind} in ('status','application','feedback','inventory')`) }));
+
+// Meeting areas own permissions; meetings never grant source-board access.
+export const meetingAreas = pgTable("meeting_areas", {
+  id: serial("id").primaryKey(), name: text("name").notNull(), description: text("description").notNull().default(""),
+  financeBoardId: integer("finance_board_id").references(() => boards.id, { onDelete: "set null" }),
+  financeSourceStatusIds: integer("finance_source_status_ids").array().notNull().default(sql`'{}'::integer[]`),
+  financeTargetStatusId: integer("finance_target_status_id").references(() => boardStatuses.id, { onDelete: "set null" }),
+  ownerId: integer("owner_id").notNull().references(() => users.id), createdAt: createdAt(),
+});
+export const meetings = pgTable("meetings", {
+  id: serial("id").primaryKey(),
+  areaId: integer("area_id").notNull().references(() => meetingAreas.id),
+  ownerId: integer("owner_id").notNull().references(() => users.id),
+  title: text("title").notNull(), committee: text("committee").notNull().default(""),
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  location: text("location").notNull().default(""), chair: text("chair").notNull().default(""),
+  submissionDeadline: timestamp("submission_deadline", { withTimezone: true }),
+  state: text("state", { enum: ["planning", "invited", "held", "closed"] }).notNull().default("planning"),
+  revision: integer("revision").notNull().default(0), createdAt: createdAt(),
+}, t => ({ stateCheck: check("meetings_state_check", sql`${t.state} in ('planning','invited','held','closed')`) }));
+
+export const meetingAreaAccess = pgTable("meeting_area_access", {
+  id: serial("id").primaryKey(),
+  areaId: integer("area_id").notNull().references(() => meetingAreas.id, { onDelete: "cascade" }),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  groupId: integer("group_id").references(() => groups.id, { onDelete: "cascade" }),
+  accessLevel: text("access_level", { enum: ["read", "write"] }).notNull().default("read"),
+}, t => ({ subject: check("meeting_area_access_subject_check", sql`(${t.userId} is null) <> (${t.groupId} is null)`),
+  level: check("meeting_area_access_level_check", sql`${t.accessLevel} in ('read','write')`),
+  person: uniqueIndex("meeting_area_access_person_uq").on(t.areaId, t.userId),
+  group: uniqueIndex("meeting_area_access_group_uq").on(t.areaId, t.groupId) }));
+
+export const meetingBoards = pgTable("meeting_boards", {
+  meetingId: integer("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
+  boardId: integer("board_id").notNull().references(() => boards.id, { onDelete: "cascade" }),
+}, t => ({ pk: primaryKey({ columns: [t.meetingId, t.boardId] }) }));
+
+export const meetingTopics = pgTable("meeting_topics", {
+  id: serial("id").primaryKey(),
+  resolvedAt: timestamp("resolved_at",{withTimezone:true}),
+  originTopicId: integer("origin_topic_id").references((): AnyPgColumn => meetingTopics.id, {onDelete:"set null"}),
+  previousTopicId: integer("previous_topic_id").references((): AnyPgColumn => meetingTopics.id, {onDelete:"set null"}),
+  transferred: boolean("transferred").notNull().default(false),
+  hiddenAfterTransfer: boolean("hidden_after_transfer").notNull().default(false),
+  isFinanceTopic: boolean("is_finance_topic").notNull().default(false),
+  isFinanceItem: boolean("is_finance_item").notNull().default(false),
+  financeCardId: integer("finance_card_id").references(() => cards.id, { onDelete: "set null" }),
+  parentId: integer("parent_id").references((): AnyPgColumn => meetingTopics.id, { onDelete: "set null" }),
+  meetingId: integer("meeting_id").references(() => meetings.id, { onDelete: "cascade" }),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  title: text("title").notNull(), description: text("description").notNull().default(""),
+  motion: text("motion").notNull().default(""), presenter: text("presenter").notNull().default(""),
+  kind: text("kind", { enum: ["information", "discussion", "decision"] }).notNull().default("discussion"),
+  durationMinutes: integer("duration_minutes").notNull().default(10),
+  confidential: boolean("confidential").notNull().default(false),
+  state: text("state", { enum: ["proposed", "scheduled", "treated", "deferred", "withdrawn"] }).notNull().default("proposed"),
+  outcome: text("outcome").notNull().default(""), position: integer("position").notNull().default(0),
+  createdAt: createdAt(),
+}, t => ({ originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
+  financeRoot: uniqueIndex("meeting_topics_finance_root_uq").on(t.meetingId).where(sql`${t.isFinanceTopic} = true and ${t.transferred} = false`),
+  financeCard: uniqueIndex("meeting_topics_finance_card_uq").on(t.meetingId, t.financeCardId).where(sql`${t.transferred} = false`),
+  financeRootCheck: check("meeting_topics_finance_root_check", sql`not ${t.isFinanceTopic} or (${t.parentId} is null and ${t.meetingId} is not null and not ${t.isFinanceItem})`),
+  kindCheck: check("meeting_topics_kind_check", sql`${t.kind} in ('information','discussion','decision')`),
+  stateCheck: check("meeting_topics_state_check", sql`${t.state} in ('proposed','scheduled','treated','deferred','withdrawn')`),
+  durationCheck: check("meeting_topics_duration_check", sql`${t.durationMinutes} between 1 and 480`) }));
+
+// Append-only lifecycle events for proposals originating in a private topic.
+export const meetingTopicActivity = pgTable("meeting_topic_activity", {
+  id: serial("id").primaryKey(),
+  originTopicId: integer("origin_topic_id").notNull().references(() => meetingTopics.id, {onDelete:"cascade"}),
+  topicId: integer("topic_id").references(() => meetingTopics.id, {onDelete:"set null"}),
+  state: text("state", {enum:["proposed","scheduled","treated","deferred","withdrawn","resolved"]}).notNull(),
+  baseline: boolean("baseline").notNull().default(false),
+  occurredAt: timestamp("occurred_at",{withTimezone:true}).notNull().default(sql`clock_timestamp()`),
+},t=>({originOrder:index("meeting_topic_activity_origin_order_idx").on(t.originTopicId,t.occurredAt,t.id),stateCheck:check("meeting_topic_activity_state_check",sql`${t.state} in ('proposed','scheduled','treated','deferred','withdrawn','resolved')`)}));
+
+export const meetingTopicCards = pgTable("meeting_topic_cards", {
+  topicId: integer("topic_id").notNull().references(() => meetingTopics.id, { onDelete: "cascade" }),
+  cardId: integer("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),
+}, t => ({ pk: primaryKey({ columns: [t.topicId, t.cardId] }) }));
+
+export const meetingDocuments = pgTable("meeting_documents", {
+  id: serial("id").primaryKey(),
+  topicId: integer("topic_id").notNull().references(() => meetingTopics.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(), path: text("path").notNull(), mime: text("mime").notNull(),
+  size: integer("size").notNull(), uploadedBy: integer("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+});
+
+// Additional equal owners; owner_id remains one owner for existing integrations.
+export const boardOwners = pgTable("board_owners", {
+  boardId: integer("board_id").notNull().references(()=>boards.id,{onDelete:"cascade"}),
+  userId: integer("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
+},t=>({pk:primaryKey({columns:[t.boardId,t.userId]})}));
+export const financeBoardOwners = pgTable("finance_board_owners", {
+  boardId: integer("board_id").notNull().references(()=>financeBoards.id,{onDelete:"cascade"}),
+  userId: integer("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
+},t=>({pk:primaryKey({columns:[t.boardId,t.userId]})}));
+export const inventoryBoardOwners = pgTable("inventory_board_owners", {
+  boardId: integer("board_id").notNull().references(()=>inventoryBoards.id,{onDelete:"cascade"}),
+  userId: integer("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
+},t=>({pk:primaryKey({columns:[t.boardId,t.userId]})}));
+export const receiptBranding = pgTable("receipt_branding", {
+  id: integer("id").primaryKey().default(1),
+  organization: text("organization").notNull().default(""),
+  logoPng: text("logo_png"),
+},t=>({singleton:check("receipt_branding_singleton",sql`${t.id}=1`)}));

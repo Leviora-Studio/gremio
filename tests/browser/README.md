@@ -119,3 +119,118 @@ reload persistence and temporarily revealed search matches without changing pref
 
 
 `system-email-production.cjs` checks real admin SMTP and board/inventory settings, encrypted credential persistence, desktop/mobile layout and mandatory public email validation against a separate production build. Use `GREMIO_TEST_BUILD_DIR`, `PLAYWRIGHT_MODULE` and `CHROME_PATH` as above and an isolated migrated `gremio_workflows_test_*` database. SMTP remains disabled throughout this browser test; no external messages are sent. `tests/system-email-db.test.ts` additionally captures actual SMTP messages on loopback, validates all three receipt/PDF types and checks status triggers, retries, rollback, privacy and management permissions.
+
+
+`meetings-production.cjs` uses the same isolated PostgreSQL/production-build setup. It exercises real meeting and TOP creation, Berlin dates, card linking, explicit document copies, session-only access, confidential topics, live revocation, PDF download, keyboard drag-and-drop and desktop/mobile layouts. Set `GREMIO_TEST_BUILD_DIR`, `PLAYWRIGHT_MODULE` and `CHROME_PATH`; source documents and screenshots are synthetic temporary files. `meetings-db.test.ts` covers the direct/group access matrix, joint board-management requirement, hidden attachment fields, student-ID exclusion, copy independence, stale revisions, confidential-to-shared confirmation, closed sessions, later-session copies and privacy of actual extracted PDF text.
+
+The meetings browser workflow now creates an area, grants a reader through the actual board-style sharing UI, creates a meeting inside the area using the shared DatePicker, and uploads a document through FileInput. Access and revocation are tested at area level. `meeting-areas-migration.test.ts` requires an empty isolated `gremio_workflows_upgrade_test_*` database via `TEST_MEETING_AREA_MIGRATION_DATABASE_URL`; it proves that equal legacy committee names do not merge audiences and that TOPs/document paths survive.
+
+The meetings workflow also opens a PDF document in the actual in-app viewer and waits for a rendered page canvas, then verifies that an image document triggers a browser download instead of opening a viewer.
+
+The meetings workflow additionally verifies reader-only main TOP suggestions, planner assignment to a main TOP, subtopic creation, 1.1 numbering, sibling keyboard sorting and responsive hierarchy rendering. Database tests cover invalid/cyclic/cross-session/deeper parents, inherited privacy including parent deletion, group copies, structured reordering and actual PDF numbering.
+
+### SSO validity and local deactivation
+
+`tests/browser/sso-production.cjs` runs against the separate production build and an isolated migrated test database with a synthetic HTTP OIDC provider. It verifies introspection caching, rejected SSO sessions, fail-closed outages, the deactivate/reactivate admin UI, permanent rejection of old cookies and closure of an already open protected SSE connection. Run with the same test environment and build-directory settings as above. `meetings-production.cjs` uses `synthetic-sso.cjs` so its session fixtures also pass the real HTTP introspection guard.
+
+Unit/DB checks: `node --import tsx --test tests/sso-session.test.ts tests/user-deactivation-db.test.ts tests/sse-authorization.test.ts`. The fake clock checks the exact five-minute boundary without waiting or adding production bypasses.
+
+An optional real-provider check starts and removes a dedicated Keycloak container with only synthetic credentials: `GREMIO_KEYCLOAK_TEST_IMAGE=<local-image> node --import tsx tests/keycloak-session-check.cjs`. Supply the usual test-only application environment. It verifies the actual `lib/oidc.ts` Refresh-Token introspection against enabled, disabled and deleted users; no existing Keycloak or app data are changed.
+
+`tests/session-lifetime.test.ts` verifies the fixed 14-day cookie deadline, cookie-size fallback and that subsequent profile writes preserve the original expiry. `tests/sso-session.test.ts` covers bound offline tokens beyond five minutes, revocation and the absolute 14-day limit. `tests/keycloak-session-check.cjs` checks offline refresh-token introspection and disabled/deleted users against an isolated Keycloak.
+
+The meetings production workflow also checks the agenda/proposal tabs for readers and writers, mobile layouts for both roles, reader submission in a focused dialog, direct proposal scheduling with persisted state, content-first topic pages and explicit editing dialogs.
+
+`ownership-receipts-production.cjs` runs with the same isolated database and separate production build as the other workflows, using `node --import tsx`. It verifies typed appointments for all board kinds, new-owner management access, self-departure, admin-only removal, last-owner protection, admin logo upload, protected logo preview and branded public/email PDFs. It uses the original CC0 fixture logo and renders synthetic emails without sending. `tests/board-ownership-db.test.ts` also races simultaneous departures and checks inherited inventory-system permissions and API ownership roles.
+
+`app-live-production.cjs` runs against the isolated database and separate production build with synthetic SSO. It verifies live meeting proposals, board/finance/admin views, one stream across client navigation, dirty-form and dialog protection, offline catch-up and revoked area access. The explicit `tests/app-live-notifications-check.cjs` must run alone against a migrated `gremio_workflows_live_test_*` database; it checks commit-only payload-free notifications, rollback, zero-row writes, usage-only token writes and delivery updates.
+
+`meeting-finance-production.cjs` uses a separate production build and an isolated
+`gremio_workflows_test_*` database with synthetic SSO. It checks area-level board
+and source/target configuration through real UI actions, marking the financial
+TOP, source filtering, planning a card as a numbered sub-TOP, automatic status and
+meeting-date updates, PDF download, protected titles and live access changes.
+Screenshots cover desktop and mobile. Use `GREMIO_TEST_BUILD_DIR`,
+`PLAYWRIGHT_MODULE` and `CHROME_PATH` as above. `meeting-finance-db.test.ts`
+additionally covers revision rollback, duplicate/foreign cards, read/write
+permissions, disabled fields, existing status triggers, preserved budget values,
+multiple budget positions, card deletion and PDF link privacy. Set
+`GREMIO_FINANCE_PDF_OUTPUT` to an optional temporary PDF path for visual inspection.
+
+`scoped-receipts-production.cjs` checks collapsible per-location and per-survey
+receipt branding through real admin actions, separate identities for locations
+sharing one board, PNG upload/removal, private preview access, public PDF authors
+and embedded logos, global fallback, and desktop/mobile layout. It uses a separate
+production build with synthetic SSO and an isolated `gremio_workflows_test_*`
+database. SMTP is never enabled and no messages are sent. Use
+`GREMIO_TEST_BUILD_DIR`, `PLAYWRIGHT_MODULE` and `CHROME_PATH` as above.
+`scoped-receipt-branding.test.ts` also covers admin authorization, invalid images,
+retained settings when disabling overrides, empty-name fallback, consistent
+PDF/mail branding and friendly Du wording. `GREMIO_RECEIPT_OUTPUT_DIR` optionally
+writes synthetic PDFs to an existing temporary directory for visual inspection.
+
+`topic-history-production.cjs` uses two synthetic browser sessions against a
+separate production build and isolated `gremio_workflows_test_*` database. It
+checks direct private topic creation without a target selector, proposals from
+the personal overview, live proposed/scheduled/deferred history, quick status
+changes, source retention by status, separate withdrawn/deferred tabs, hiding
+completed private masters, the published-minutes closed label and desktop/mobile
+layout. `topic-history-db.test.ts` also checks permission revocation, duplicate
+active proposals, rollback on conflicting states, mixed parent/child retention,
+immutable forwarded records and permission-checked financial re-planning dates.
+Use `GREMIO_TEST_BUILD_DIR`, `PLAYWRIGHT_MODULE` and `CHROME_PATH` as above.
+
+The topic-history browser test additionally verifies that deferring a TOP keeps
+it on the agenda with a red label, and that it stays in both the agenda and the
+deferred tab after transfer. `agenda-deferred.test.ts` checks stable numbering
+and deferred children under withdrawn parents. `GREMIO_DEFERRED_PDF_OUTPUT` can
+write the synthetic retained-source PDF from the DB history test for visual QA.
+
+The personal history check now asserts four separate chronological events and
+timestamps (proposed, scheduled, deferred, proposed for the next meeting), not
+only the current state per meeting. The DB history test also checks repeated
+states, rollback without activity, treatment and later undo as separate events,
+and revocation filtering. `tests/topic-activity-migration.cjs` is an explicit
+empty-database upgrade check, using `TEST_ACTIVITY_MIGRATION_DATABASE_URL` with
+name prefix `gremio_workflows_upgrade_test_activity`. It verifies marked known
+baselines without fabricated history and transactional append-only status events.
+
+The topic-history browser check opens “Vergangene Themen” after treatment and
+verifies that the private topic remains available with all six chronological
+activities and no new-proposal button, at desktop and mobile widths. The DB test
+also checks privacy and the return from past to active after undoing treatment.
+
+The topic-history checks additionally cover withdrawn TOPs retained in agenda and
+withdrawn tab, editable status with blocked transfer while withdrawn, a fresh proposal
+by the original author, private resolution into past topics and the separate
+resolved activity while both session occurrences remain withdrawn. DB coverage
+includes ownership, idempotent resolution, active-proposal rejection, direct
+withdrawn submission adoption, baseline accuracy and omission of withdrawn
+children during a main-TOP transfer.
+
+The withdrawn status can be changed through both quick controls and the full
+editor. Reopening a privately resolved occurrence restores its private master
+to current topics; prior withdrawal and resolution activities remain recorded.
+
+The topic-history browser flow verifies creation before current/past topics,
+initially collapsed active and past items, and hiding/restoring the activity
+trail with each item's native details toggle.
+
+`live-refresh.cjs` mounts the actual app refresh coordinator, draft guard, meeting
+action form and controlled rename component without a database. It checks quiet
+deferral for clean focused fields/dialogs, silent focus catchups, genuine external
+changes during drafts, React action reset with disabled fieldsets, filters, saved
+controlled inputs and drafts inside collapsed sections. Run with the same
+`PLAYWRIGHT_MODULE` and `CHROME_PATH` settings above.
+
+`meeting-visibility.cjs` mounts the real meeting workspace, sortable agenda, status
+and transfer controls, creation/proposal dialogs, date/time fields, finance
+configuration and uploader with local action doubles. At 1440, 768, 390 and 320
+pixels it verifies menu bounds and actual hit testing of the last option, calendar
+accessibility in scrollable dialogs, keyboard Escape, reader/writer controls and
+long text/file-name wrapping (also at 200% text size). It writes screenshots to the printed temporary
+directory. The production meeting suite additionally verifies last-row status
+menus and long-name area grants against real pages at the same four widths.
+
+The meeting visibility check also measures adjacent status/action heights and
+compact grant form controls, including the enlarged-text layout.

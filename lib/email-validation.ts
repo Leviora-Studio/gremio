@@ -11,6 +11,7 @@ export function parseEmailRecipients(raw: string): string[] | null {
   return [...new Set(result.map(value => value.success ? value.data : ""))];
 }
 export type EmailPayload = {
+  receiptScope?: {kind:"location"|"feedback";id:number};
   title: string; applicant?: string; receivedAt?: string; statusLink?: string; number?: string | null;
   areaName?: string; feedbackText?: string; boardName?: string; statusName?: string; cardId?: number;
 };

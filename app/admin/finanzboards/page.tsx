@@ -7,11 +7,10 @@ import { db } from "@/lib/db";
 import { financeBoards, users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
-import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { FilterableList } from "@/components/FilterableList";
 import {
   deleteFinanceBoardAdminAction,
-  transferFinanceOwnerAction,
 } from "@/app/finanzen/actions";
 
 export default async function AdminFinanceBoardsPage() {
@@ -27,11 +26,6 @@ export default async function AdminFinanceBoardsPage() {
     .leftJoin(users, eq(users.id, financeBoards.ownerId))
     .orderBy(financeBoards.name);
 
-  const allUsers = await db
-    .select({ id: users.id, username: users.username })
-    .from(users)
-    .where(eq(users.isActive, true))
-    .orderBy(users.username);
 
   return (
     <div className="space-y-3">
@@ -56,19 +50,11 @@ export default async function AdminFinanceBoardsPage() {
                       {b.name}
                     </Link>
                     <span className="ml-2 text-sm text-slate-500">
-                      Eigentümer: {b.ownerName ?? "—"}
+                      Eigentümer siehe unten
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <TransferOwnerForm
-                      action={transferFinanceOwnerAction.bind(null, b.id)}
-                      options={allUsers.map((u) => ({
-                        value: String(u.id),
-                        label: u.username,
-                      }))}
-                      currentOwnerId={String(b.ownerId)}
-                      entityLabel={`Finanzboard „${b.name}"`}
-                    />
+                  <div className="w-full space-y-4 border-t border-slate-100 pt-4">
+                    <OwnerSettings kind="finance" id={b.id}/>
                     <DeleteConfirm
                       action={deleteFinanceBoardAdminAction.bind(null, b.id)}
                       buttonLabel="Löschen"

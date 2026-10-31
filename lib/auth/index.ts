@@ -6,14 +6,14 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, type User } from "@/lib/db/schema";
-import { getSession } from "./session";
+import { getSession, type SessionData } from "./session";
+import { checkSsoSession } from "./sso";
 
 /**
  * Aktuellen Nutzer aus der Session laden (oder null). Pro Request gecacht.
  * Prüft zusätzlich, ob der Account noch aktiv ist.
  */
-export const getCurrentUser = cache(async (): Promise<User | null> => {
-  const session = await getSession();
+export async function resolveSessionUser(session: SessionData): Promise<User | null> {
   if (!session.userId) return null;
   const rows = await db
     .select()
@@ -21,9 +21,14 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     .where(eq(users.id, session.userId))
     .limit(1);
   const user = rows[0];
-  if (!user || !user.isActive) return null;
-  return user;
-});
+  if (!user || !user.isActive || (session.sessionVersion ?? 0) !== user.sessionVersion) return null;
+  const status = await checkSsoSession(session, user.sub ?? "");
+  if (status !== "valid") return null;
+  // Recheck local state after network I/O so a concurrent local block cannot be bypassed.
+  const [current] = await db.select().from(users).where(eq(users.id,user.id)).limit(1);
+  return current?.isActive && current.sessionVersion === user.sessionVersion ? current : null;
+}
+export const getCurrentUser = cache(async (): Promise<User | null> => resolveSessionUser(await getSession()));
 
 /** Erzwingt eine Anmeldung; leitet sonst auf /login. */
 export async function requireUser(): Promise<User> {

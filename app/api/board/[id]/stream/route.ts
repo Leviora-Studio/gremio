@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, resolveSessionUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
 import { cardChangeSSE } from "@/lib/sse";
+
+import { getSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,5 +25,9 @@ export async function GET(
     return new Response("Forbidden", { status: 403 });
   }
 
-  return cardChangeSSE(request.signal, (c) => c.boardId === boardId);
+  const session = await getSession();
+  return cardChangeSSE(request.signal, (c) => c.boardId === boardId, async () => {
+    const current = await resolveSessionUser(session);const currentBoard = await getBoardById(boardId);
+    return !!current && !!currentBoard && await canAccessBoard(current,currentBoard);
+  });
 }

@@ -303,14 +303,14 @@ export function KanbanBoard({
   const activeCard = activeId != null ? cardById.get(activeId) ?? null : null;
 
   return (
-    <div>
+    <div data-live-refresh-block={activeId!=null}>
       <div className="mb-4 flex flex-wrap gap-1" role="group" aria-label="Board-Ansicht">
         {([["kanban", "Kanban"], ["list", "Liste"], ["table", "Tabelle"], ["calendar", "Kalender"]] as const).map(([key, label]) => (
           <button key={key} type="button" aria-pressed={view === key}
             className={view === key ? "btn-primary" : "btn-secondary"} onClick={() => changeView(key)}>{label}</button>
         ))}
       </div>
-      <div className="mb-3 flex flex-wrap items-end gap-2">
+      <div data-live-refresh-filter className="mb-3 flex flex-wrap items-end gap-2">
         <div className="w-full sm:w-56">
           <label className="label">Suche</label>
           <input

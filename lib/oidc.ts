@@ -56,6 +56,7 @@ type Endpoints = {
   userinfo: string; // intern (Server)
   jwks: string; // intern (Server)
   revoke: string; // intern (Server)
+  introspect: string;
 };
 
 function fallbackEndpoints(): Endpoints {
@@ -68,6 +69,7 @@ function fallbackEndpoints(): Endpoints {
     userinfo: `${int}/userinfo`,
     jwks: `${int}/.well-known/jwks.json`,
     revoke: `${int}/revoke`,
+    introspect: "",
   };
 }
 
@@ -81,7 +83,7 @@ async function getEndpoints(): Promise<Endpoints> {
   try {
     const res = await fetch(
       `${internalIssuer()}/.well-known/openid-configuration`,
-      { cache: "no-store" },
+      { cache: "no-store", signal: AbortSignal.timeout(5000), redirect: "error" },
     );
     if (!res.ok) throw new Error(`discovery ${res.status}`);
     const d = (await res.json()) as Record<string, string>;
@@ -92,6 +94,7 @@ async function getEndpoints(): Promise<Endpoints> {
       userinfo: toInternal(d.userinfo_endpoint),
       jwks: toInternal(d.jwks_uri),
       revoke: toInternal(d.revocation_endpoint),
+      introspect: d.introspection_endpoint ? toInternal(d.introspection_endpoint) : "",
     };
     // Pflicht-Endpunkte vorhanden? Sonst Fallback.
     if (!eps.authorize || !eps.token || !eps.jwks || !eps.endSession) {
@@ -115,7 +118,8 @@ export async function buildAuthorizeUrl(p: {
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", env.OIDC_CLIENT_ID);
   u.searchParams.set("redirect_uri", p.redirectUri);
-  u.searchParams.set("scope", "openid profile email");
+  u.searchParams.set("scope", "openid profile email offline_access");
+  u.searchParams.set("prompt", "consent");
   u.searchParams.set("state", p.state);
   u.searchParams.set("nonce", p.nonce);
   u.searchParams.set("code_challenge", p.codeChallenge);
@@ -129,6 +133,7 @@ type TokenResponse = {
   token_type: string;
   expires_in?: number;
   refresh_token?: string;
+  scope?: string;
 };
 
 function basicAuthHeader(): string {
@@ -238,11 +243,11 @@ export async function fetchUserInfo(
     const { userinfo } = await getEndpoints();
     const res = await fetch(userinfo, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
+      cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as Claims;
-    return data.sub ? data : null;
+    return typeof data.sub === "string" && data.sub ? data : null;
   } catch {
     return null;
   }
@@ -255,6 +260,7 @@ export async function buildEndSessionUrl(
   const { endSession } = await getEndpoints();
   const u = new URL(endSession);
   if (idTokenHint) u.searchParams.set("id_token_hint", idTokenHint);
+  u.searchParams.set("client_id", env.OIDC_CLIENT_ID);
   u.searchParams.set("post_logout_redirect_uri", postLogoutRedirectUri);
   return u.toString();
 }
@@ -313,4 +319,33 @@ export async function fetchPicture(pictureUrl: string): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+
+/** Live provider check; never log token/response bodies or silently fall back to JWT validation. */
+export async function introspectSsoToken(token: string, hint: "access_token" | "refresh_token"): Promise<{active:boolean;sub?:string;client_id?:string;exp?:number;token_type?:string} | null> {
+  try {
+    const { introspect } = await getEndpoints();
+    if (!introspect || new URL(introspect).origin !== new URL(internalIssuer()).origin) return null;
+    const response = await fetch(introspect, {
+      method: "POST", headers: {"Content-Type":"application/x-www-form-urlencoded", Authorization:basicAuthHeader(), Accept:"application/json"},
+      body: new URLSearchParams({token,token_type_hint:hint}), cache:"no-store", redirect:"error", signal:AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const value = await response.json();
+    if (!value || typeof value.active !== "boolean") return null;
+    return value;
+  } catch { return null; }
+}
+
+
+/** Called only by an explicit profile sync, not by the five-minute session check. */
+export async function refreshAccessToken(refreshToken: string): Promise<{access_token:string;refresh_token?:string;id_token?:string} | null> {
+  try {
+    const {token}=await getEndpoints();
+    const response=await fetch(token,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded",Authorization:basicAuthHeader()},body:new URLSearchParams({grant_type:"refresh_token",refresh_token:refreshToken}),cache:"no-store",redirect:"error",signal:AbortSignal.timeout(5000)});
+    if(!response.ok)return null;
+    const value=await response.json();
+    return typeof value.access_token === "string" && value.access_token ? value : null;
+  } catch {return null;}
 }

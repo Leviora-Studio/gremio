@@ -722,24 +722,7 @@ export async function deleteInstructionFormAction(
 }
 
 // --- Eigentum & Löschen -------------------------------------------------
-export async function transferOwnerAction(
-  boardId: number,
-  formData: FormData,
-): Promise<void> {
-  await requireBoardManage(boardId);
-  const newOwnerId = Number(formData.get("ownerId"));
-  if (!Number.isInteger(newOwnerId)) return;
-  const owner = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.id, newOwnerId), eq(users.isActive, true)))
-    .limit(1);
-  if (!owner.length) return; // nur aktive Nutzer dürfen Eigentümer werden
-  await db.update(boards).set({ ownerId: newOwnerId }).where(eq(boards.id, boardId));
-  rev(boardId);
-}
 
-// --- Nextcloud-Archiv ---------------------------------------------------
 export async function setArchiveConfigAction(
   boardId: number,
   _prev: State,

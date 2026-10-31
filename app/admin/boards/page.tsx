@@ -7,9 +7,9 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boards, users } from "@/lib/db/schema";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
-import { TransferOwnerForm } from "@/components/admin/TransferOwnerForm";
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { FilterableList } from "@/components/FilterableList";
-import { deleteBoardAdminConfirmedAction, transferOwnerAction } from "./actions";
+import { deleteBoardAdminConfirmedAction } from "./actions";
 
 export default async function AdminBoardsPage() {
   // Nicht nur im Layout: Guard in JEDEM Handler (CLAUDE.md) — Layout-Guards
@@ -29,11 +29,6 @@ export default async function AdminBoardsPage() {
     .leftJoin(users, eq(users.id, boards.ownerId))
     .orderBy(boards.name);
 
-  const allUsers = await db
-    .select({ id: users.id, username: users.username })
-    .from(users)
-    .where(eq(users.isActive, true))
-    .orderBy(users.username);
 
   return (
     <div className="space-y-3">
@@ -63,19 +58,11 @@ export default async function AdminBoardsPage() {
                       </span>
                     )}
                     <span className="ml-2 text-sm text-slate-500">
-                      Eigentümer: {b.ownerName ?? "—"} · {b.cards} Karte(n)
+                      {b.cards} Karte(n)
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <TransferOwnerForm
-                      action={transferOwnerAction.bind(null, b.id)}
-                      options={allUsers.map((u) => ({
-                        value: String(u.id),
-                        label: u.username,
-                      }))}
-                      currentOwnerId={String(b.ownerId)}
-                      entityLabel={`Board „${b.name}"`}
-                    />
+                  <div className="w-full space-y-4 border-t border-slate-100 pt-4">
+                    <OwnerSettings kind="board" id={b.id}/>
                     <DeleteConfirm
                       action={deleteBoardAdminConfirmedAction.bind(null, b.id)}
                       buttonLabel="Löschen"

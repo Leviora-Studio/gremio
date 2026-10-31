@@ -8,7 +8,6 @@ import {
   conditionClass,
   conditionLabel,
 } from "@/lib/inventory-condition";
-import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const metadata = { title: "Inventar-Archiv — Gremio" };
 
@@ -23,7 +22,6 @@ export default async function InventoryArchivePage({
 
   return (
     <div className="space-y-5">
-      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
       <div>
         <Link
           href={`/intern/inventar/${board.id}`}

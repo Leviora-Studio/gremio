@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
@@ -50,13 +51,14 @@ export default async function AdminInventoryPage() {
         {boards.map((b) => (
           <div
             key={b.id}
-            className="flex items-center justify-between rounded border border-slate-200 px-4 py-3"
+            className="flex flex-wrap items-start justify-between gap-5 rounded border border-slate-200 px-4 py-3"
           >
             <div>
               <div className="font-medium text-slate-800">{b.name}</div>
               <div className="text-xs text-slate-500">
-                Eigentümer: {b.ownerName ?? "—"}
+                Eigentümer verwalten
               </div>
+              <div className="mt-3"><OwnerSettings kind="inventory" id={b.id}/></div>
             </div>
             <div className="flex items-center gap-3">
               <span

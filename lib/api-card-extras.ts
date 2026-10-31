@@ -174,7 +174,7 @@ export async function commentsApi(
   // Editing is author-only; deletion follows the existing author/board-manager rule.
   if (
     comment.userId !== r.ctx.user.id &&
-    (req.method !== "DELETE" || !canManageBoard(r.ctx.user, r.board))
+    (req.method !== "DELETE" || !(await canManageBoard(r.ctx.user, r.board)))
   )
     return apiError(403, "Keine Berechtigung für diesen Kommentar.");
   if (req.method === "DELETE") {

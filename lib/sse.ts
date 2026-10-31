@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import {subscribeAppChanges} from "@/lib/app-realtime";
 import {
   subscribeCardChanges,
   subscribeInventoryChanges,
@@ -24,6 +25,7 @@ function changeSSE<T>(
   signal: AbortSignal,
   subscribe: (cb: (c: T) => void) => () => void,
   match: (c: T) => boolean,
+  authorize?: () => Promise<boolean>,
 ): Response {
   if (active >= MAX_SSE_CONNECTIONS) {
     return new Response("Zu viele gleichzeitige Live-Verbindungen.", {
@@ -68,11 +70,18 @@ function changeSSE<T>(
 
       send("retry: 5000\n\n");
       send(": connected\n\n");
+      const checkedSend = async (value: string) => {
+        try {
+          if (authorize && !await authorize()) { close(); return; }
+          send(value);
+        } catch { close(); }
+      };
       unsub = subscribe((c) => {
-        if (match(c)) send("data: change\n\n");
+        if (match(c)) void checkedSend("data: change\n\n");
       });
-      heartbeat = setInterval(() => send(": ping\n\n"), 25000);
-      signal.addEventListener("abort", close);
+      heartbeat = setInterval(() => void checkedSend(": ping\n\n"), 25000);
+      signal.addEventListener("abort", close, {once:true});
+      if(signal.aborted)close();
     },
     cancel() {
       release();
@@ -93,14 +102,19 @@ function changeSSE<T>(
 export function cardChangeSSE(
   signal: AbortSignal,
   match: (c: CardChange) => boolean,
+  authorize?: () => Promise<boolean>,
 ): Response {
-  return changeSSE(signal, subscribeCardChanges, match);
+  return changeSSE(signal, subscribeCardChanges, match, authorize);
 }
 
 /** SSE der Inventar-Änderungen, gefiltert über `match` (Board-ID / Token). */
 export function inventoryChangeSSE(
   signal: AbortSignal,
   match: (c: InventoryChange) => boolean,
+  authorize?: () => Promise<boolean>,
 ): Response {
-  return changeSSE(signal, subscribeInventoryChanges, match);
+  return changeSSE(signal, subscribeInventoryChanges, match, authorize);
 }
+
+/** Authenticated application-wide invalidation; never contains record data. */
+export function appChangeSSE(signal:AbortSignal,authorize:()=>Promise<boolean>):Response{return changeSSE(signal,cb=>subscribeAppChanges(()=>cb(undefined)),()=>true,authorize);}

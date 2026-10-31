@@ -33,7 +33,7 @@ export async function GET(
     .from(boardInstructionForms)
     .where(eq(boardInstructionForms.boardId, boardId))
     .limit(1);
-  if (!config || (!config.enabled && !canManageBoard(user, board))) {
+  if (!config || (!config.enabled && !(await canManageBoard(user, board)))) {
     return new Response("Not found", { status: 404 });
   }
 

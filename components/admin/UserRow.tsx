@@ -5,7 +5,7 @@
 
 import { Avatar } from "@/components/Avatar";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { setRoleAction } from "@/app/admin/users/actions";
+import { setRoleAction, setUserActiveAction } from "@/app/admin/users/actions";
 
 type Role = "admin" | "template_manager" | "user";
 
@@ -90,6 +90,15 @@ export function UserRow({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {(!user.isActive || (!isSelf && !isProtectedAdmin)) && <ConfirmButton
+            action={setUserActiveAction.bind(null,user.id,!user.isActive)}
+            className={user.isActive ? "btn-danger px-3 py-1.5" : "btn-secondary px-3 py-1.5"}
+            label={user.isActive ? "Deaktivieren" : "Reaktivieren"}
+            title={`„${name}“ ${user.isActive ? "deaktivieren" : "reaktivieren"}`}
+            message={user.isActive ? "Der Zugriff auf Gremio wird gesperrt. Bestehende Browsersitzungen werden ungültig. Inhalte bleiben erhalten. Das SSO-Konto wird nicht verändert." : "Der Nutzer darf sich wieder über das SSO anmelden. Frühere Browsersitzungen werden nicht wieder freigeschaltet."}
+            confirmLabel={user.isActive ? "Nutzer deaktivieren" : "Nutzer reaktivieren"}
+            confirmClassName={user.isActive ? "btn-danger" : "btn-primary"}
+          />}
           {targets.map((r) => {
             // Admin-Rechte abgeben (admin → andere Rolle) nur, wenn erlaubt.
             if (user.role === "admin" && (isSelf || isProtectedAdmin)) return null;

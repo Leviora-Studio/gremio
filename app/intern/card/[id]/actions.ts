@@ -636,7 +636,7 @@ export async function deleteCommentAction(
     .where(and(eq(cardComments.id, commentId), eq(cardComments.cardId, card.id)))
     .limit(1);
   if (!c) return;
-  if (c.userId !== user.id && !canManageBoard(user, board)) return;
+  if (c.userId !== user.id && !(await canManageBoard(user, board))) return;
   await db.delete(cardComments).where(eq(cardComments.id, c.id));
   revalidatePath(`/intern/card/${card.id}`);
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { isResourceOwner, additionalOwnedIds } from "@/lib/board-ownership";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -76,7 +77,7 @@ export async function canAccessFinanceBoard(
   access: "read" | "write" = "read",
 ): Promise<boolean> {
   if (user.role === "admin") return true;
-  if (fb.ownerId === user.id) return true;
+  if (await isResourceOwner("finance",fb,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
   const rows = await db
     .select({ id: financeBoardAccess.id })
@@ -98,8 +99,8 @@ export async function canAccessFinanceBoard(
 }
 
 /** Verwalten (Name, Konto, Quellen, Freigaben, Plan, löschen): admin ODER Eigentümer. */
-export function canManageFinanceBoard(user: User, fb: FinanceBoard): boolean {
-  return user.role === "admin" || fb.ownerId === user.id;
+export async function canManageFinanceBoard(user: User, fb: FinanceBoard): Promise<boolean> {
+  return user.role === "admin" || await isResourceOwner("finance",fb,user.id);
 }
 
 export async function getAccessibleFinanceBoards(
@@ -124,7 +125,7 @@ export async function getAccessibleFinanceBoards(
         .where(inArray(financeBoardAccess.groupId, groupIds))
     : [];
   const ids = Array.from(
-    new Set([...ownerRows, ...userRows, ...groupRows].map((r) => r.id)),
+    new Set([...ownerRows, ...await additionalOwnedIds("finance",user.id), ...userRows, ...groupRows].map((r) => r.id)),
   );
   if (!ids.length) return [];
   return db
@@ -148,7 +149,7 @@ export async function requireFinanceManage(
 ): Promise<{ user: User; fb: FinanceBoard }> {
   const user = await requireUser();
   const fb = await getFinanceBoardById(id);
-  if (!fb || !canManageFinanceBoard(user, fb)) notFound();
+  if (!fb || !(await canManageFinanceBoard(user, fb))) notFound();
   return { user, fb };
 }
 

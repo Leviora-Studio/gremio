@@ -33,9 +33,11 @@ type LocationLite = {
 export function LocationEditor({
   location,
   boards,
+  receiptSettings,
 }: {
   location: LocationLite;
   boards: BoardWithStatuses[];
+  receiptSettings?: React.ReactNode;
 }) {
   // Beide Felder als kontrollierter lokaler State — die Anzeige spiegelt immer
   // die zuletzt getroffene Auswahl wider (unabhängig von Revalidation-Timing).
@@ -145,6 +147,7 @@ export function LocationEditor({
           {targetState.error ?? targetState.success}
         </p>
       )}
+      {receiptSettings&&<details className="mt-4 border-t border-slate-200 pt-4"><summary className="cursor-pointer text-sm font-semibold">Empfangsbestätigung gestalten</summary><div className="mt-4 max-w-2xl">{receiptSettings}</div></details>}
     </div>
   );
 }

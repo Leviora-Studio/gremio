@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { additionalOwnedIds } from "@/lib/board-ownership";
 import Link from "next/link";
 import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -26,6 +27,10 @@ import type { TaskPrefs } from "./aufgaben/actions";
 
 export default async function InternHome() {
   const user = await requireUser();
+  const boardOwnerships=new Set((await additionalOwnedIds("board",user.id)).map(r=>r.id));
+  const financeOwnerships=new Set((await additionalOwnedIds("finance",user.id)).map(r=>r.id));
+  const inventoryOwnerships=new Set((await additionalOwnedIds("inventory",user.id)).map(r=>r.id));
+
 
   const [prefRow] = await db
     .select({ config: userTaskPrefs.config })
@@ -97,7 +102,7 @@ export default async function InternHome() {
             id: b.id,
             name: b.name,
             description: b.description,
-            isOwner: b.ownerId === user.id,
+            isOwner: b.ownerId === user.id || boardOwnerships.has(b.id),
             isSystemBoard: b.inventoryBoardId != null,
           }))}
         />
@@ -130,7 +135,7 @@ export default async function InternHome() {
             id: fb.id,
             name: fb.name,
             description: fb.description,
-            isOwner: fb.ownerId === user.id,
+            isOwner: fb.ownerId === user.id || financeOwnerships.has(fb.id),
           }))}
         />
       )}
@@ -154,7 +159,7 @@ export default async function InternHome() {
         <SortableBoardGrid
           hrefBase="/intern/inventar/"
           action={reorderInventoryBoardsAction}
-          boards={inventoryBoards.map(board => ({ id: board.id, name: board.name, description: board.description, isOwner: board.ownerId === user.id }))}
+          boards={inventoryBoards.map(board => ({ id: board.id, name: board.name, description: board.description, isOwner: board.ownerId === user.id || inventoryOwnerships.has(board.id) }))}
         />
       )}
     </div>

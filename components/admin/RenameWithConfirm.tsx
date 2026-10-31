@@ -50,7 +50,7 @@ export function RenameWithConfirm({
     });
 
   return (
-    <div>
+    <div data-live-refresh-managed data-live-refresh-dirty={name !== currentName || pending}>
       <div className="flex items-center gap-2">
         <input
           className={inputClassName}

@@ -14,7 +14,6 @@ import {
 import { listDefects, listLoans } from "@/lib/inventory-loans";
 import { listInventoryAttachments } from "@/lib/inventory-attachments";
 import { ItemDetail } from "@/components/inventory/ItemDetail";
-import { LiveRefresh } from "@/components/LiveRefresh";
 
 export default async function InventoryItemPage({
   params,
@@ -54,7 +53,6 @@ export default async function InventoryItemPage({
 
   return (
     <>
-      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
       <ItemDetail
         canEdit={canEdit}
         item={view}

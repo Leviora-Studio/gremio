@@ -79,6 +79,7 @@ export function PlanItemRow({
   return (
     <div className={`flex flex-wrap items-end gap-2 ${child ? "ml-6" : ""}`}>
       <form
+        data-live-refresh-dirty={["pending","saving","error"].includes(saveStatus)}
         ref={formRef}
         onSubmit={(e) => e.preventDefault()}
         className="flex flex-1 flex-wrap items-end gap-2"

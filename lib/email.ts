@@ -10,6 +10,8 @@ import { publicBaseUrl } from "@/lib/public-api";
 import { buildConfirmationPdf, buildFeedbackConfirmationPdf } from "@/lib/pdf";
 import { env } from "@/lib/env";
 
+import { receiptCopy } from "@/lib/receipt-copy";
+import { getReceiptBranding } from "@/lib/receipt-branding";
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export function mailTransport(config: typeof smtpSettings.$inferSelect) {
   return nodemailer.createTransport({ host: config.host, port: config.port, secure: config.security === "tls", requireTLS: config.security === "starttls", ignoreTLS: config.security === "none",
@@ -33,9 +35,16 @@ export async function renderEmail(job: typeof emailOutbox.$inferSelect) {
   const prefix = job.kind === "feedback" ? "/feedback/status/" : job.kind === "inventory" ? "/inventar/status/" : "/status/";
   // Only application-generated public URLs of the correct token type are used.
   const statusLink = `${publicBaseUrl()}${prefix}${p.statusLink}`;
-  const pdf = job.kind === "feedback" ? await buildFeedbackConfirmationPdf({ areaName: p.areaName!, submitterName: p.applicant!, feedbackText: p.feedbackText!, eingang: new Date(p.receivedAt!), statusLink, number: p.number })
-    : await buildConfirmationPdf({ kind: job.kind === "inventory" ? "inventory" : "application", title: p.title, applicant: p.applicant!, eingang: new Date(p.receivedAt!), statusLink, number: p.number });
-  return { subject, text: `Vielen Dank! Wir haben ${job.kind === "inventory" ? "deine Ausleihanfrage" : job.kind === "feedback" ? "dein Feedback" : "deinen Antrag"} erhalten.\n\n${p.title}\n\nDen aktuellen Status findest du hier:\n${statusLink}\n\nDie PDF-Eingangsbestätigung ist dieser E-Mail beigefügt. Bitte bewahre den persönlichen Status-Link vertraulich auf.`, attachments: [{ filename: "eingangsbestaetigung.pdf", content: Buffer.from(pdf), contentType: "application/pdf" }] };
+  const branding=await getReceiptBranding(p.receiptScope);
+  const pdf = job.kind === "feedback" ? await buildFeedbackConfirmationPdf({ areaName: p.areaName!, submitterName: p.applicant!, feedbackText: p.feedbackText!, eingang: new Date(p.receivedAt!), statusLink, number: p.number,branding })
+    : await buildConfirmationPdf({ kind: job.kind === "inventory" ? "inventory" : "application", title: p.title, applicant: p.applicant!, eingang: new Date(p.receivedAt!), statusLink, number: p.number,branding });
+  const copy=receiptCopy(job.kind as "application"|"inventory"|"feedback");
+  const text=`${copy.greeting}\n\n${copy.introduction}\n\n${p.title}${p.number?`\nVorgangsnummer: ${p.number}`:""}\n\n${copy.statusText}\n${statusLink}\n\n${copy.attachmentText} ${copy.privacyText}\n\n${copy.closing}\n${branding.organization}\n\n${copy.disclaimer}`;
+  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
+  const html=`<!doctype html><html lang="de"><body style="margin:0;background:#f3f5f7;color:#202934;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:32px 16px"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;margin:auto;background:#fff;border:1px solid #dde2e7"><tr><td style="padding:32px;border-bottom:1px solid #dde2e7">${branding.logoPng?'<img src="cid:receipt-logo" alt="" style="display:block;max-width:160px;max-height:70px;margin-bottom:20px"/>':""}<strong>${escape(branding.organization)}</strong></td></tr><tr><td style="padding:32px;line-height:1.6"><p style="margin:0 0 8px;color:#657180;font-size:12px">EMPFANGSBESTÄTIGUNG</p><h1 style="margin:0 0 24px;font-size:23px">${escape(copy.headline)}</h1><p>${escape(copy.greeting)}</p><p>${escape(copy.introduction)}</p><p><strong>${escape(p.title)}</strong>${p.number?`<br/>Vorgangsnummer: ${escape(p.number)}`:""}</p><p>${escape(copy.statusText)}</p><p><a href="${escape(statusLink)}" style="color:#234c7b">Bearbeitungsstand ansehen</a></p><p>${escape(copy.attachmentText)} ${escape(copy.privacyText)}</p><p>${escape(copy.closing)}<br/>${escape(branding.organization)}</p><p style="margin-top:28px;color:#657180;font-size:12px">${escape(copy.disclaimer)}</p></td></tr></table></td></tr></table></body></html>`;
+  const attachments:{filename:string;content:Buffer;contentType:string;cid?:string;contentDisposition?:"inline"}[]=[{filename:"eingangsbestaetigung.pdf",content:Buffer.from(pdf),contentType:"application/pdf"}];
+  if(branding.logoPng)attachments.push({filename:"logo.png",content:Buffer.from(branding.logoPng,"base64"),contentType:"image/png",cid:"receipt-logo",contentDisposition:"inline"});
+  return {subject,text,html,attachments};
 }
 
 /** Claim briefly, send without DB locks, then finalize. Stable Message-ID across retries. */

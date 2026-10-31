@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { getReceiptBranding } from "@/lib/receipt-branding";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
@@ -49,6 +50,7 @@ export async function GET(
     title: antrag.title,
     applicant: antrag.applicant,
     eingang: antrag.createdAt,
+    branding: await getReceiptBranding(antrag.locationId==null?undefined:{kind:"location",id:antrag.locationId}),
     statusLink: `${publicBaseUrl()}/status/${token}`,
     number: antrag.number,
   });

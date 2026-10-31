@@ -8,11 +8,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { apiTokenBoards, apiTokens, users } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth";
-import { getSession } from "@/lib/auth/session";
+import { refreshIdentity } from "@/lib/auth/session-identity";
+import { getSession, saveSession } from "@/lib/auth/session";
 import { provisionUser } from "@/lib/auth/provision";
 import { getAccessibleBoards } from "@/lib/authz";
 import { generateApiToken } from "@/lib/api-token";
-import { fetchUserInfo } from "@/lib/oidc";
+import { fetchUserInfo, refreshAccessToken } from "@/lib/oidc";
 import { allowRequest } from "@/lib/rate-limit";
 import { CertError, encryptCert, inspectP12 } from "@/lib/cert";
 import { CERTIFICATE_EXT, MAX_CERTIFICATE_BYTES } from "@/lib/constants";
@@ -102,20 +103,28 @@ export async function createApiTokenAction(
 
 /**
  * Profil (Name, Anzeige-Mail, Avatar) aus dem SSO neu ziehen — über den
- * UserInfo-Endpoint mit dem gespeicherten access_token. Funktioniert, solange
- * das access_token gültig ist; sonst bitte neu anmelden.
+ * UserInfo-Endpoint. Ein kurzlebiges Access-Token wird bei Bedarf über die
+ * bestehende Offline-Berechtigung geholt; die 14-Tage-Frist bleibt unverändert.
  */
 export async function resyncProfileAction(): Promise<{
   ok: boolean;
   error?: string;
 }> {
-  await requireUser();
+  const user = await requireUser();
   if (!(await allowRequest("resync", 5, 60_000))) {
     return { ok: false, error: "Zu viele Versuche. Bitte kurz warten." };
   }
   const session = await getSession();
-  const claims = await fetchUserInfo(session.accessToken);
-  if (!claims) {
+  let accessToken=session.accessToken;
+  if(session.refreshToken){
+    const refreshed=await refreshAccessToken(session.refreshToken);
+    if(!refreshed)return {ok:false,error:"Das Profil konnte beim SSO nicht aktualisiert werden. Bitte später erneut versuchen."};
+    accessToken=refreshed.access_token;
+    if(refreshed.refresh_token){session.refreshToken=refreshed.refresh_token;Object.assign(session,refreshIdentity(user.sub!,refreshed.refresh_token));}
+    await saveSession(session);
+  }
+  const claims = await fetchUserInfo(accessToken);
+  if (!claims || claims.sub !== user.sub) {
     return {
       ok: false,
       error: "SSO-Sitzung abgelaufen — bitte ab- und wieder anmelden.",

@@ -53,9 +53,9 @@ export async function GET(
     )
     .orderBy(asc(boardCardFields.position));
 
-  const canManage = canManageBoard(ctx.user, board);
+  const canManage = (await canManageBoard(ctx.user, board));
   return NextResponse.json({
-    board: serializeBoard(board, ctx.user),
+    board: await serializeBoard(board, ctx.user),
     statuses: statuses.map((s) => serializeStatus(s, canManage)),
     visibleFields: fields.map((f) => f.k),
   });

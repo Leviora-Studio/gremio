@@ -14,8 +14,8 @@ import { parseEmailRecipients } from "@/lib/email-validation";
 export async function saveBoardEmailRuleAction(boardId:number,statusId:number,_previous:{error?:string;success?:string},form:FormData):Promise<{error?:string;success?:string}> {
   const user=await requireUser();const board=await getBoardById(boardId);
   if(!board)notFound();
-  if(board.inventoryBoardId!=null){const inventory=await getInventoryBoardById(board.inventoryBoardId);if(!inventory||inventory.loanBoardId!==board.id||!canManageInventoryBoard(user,inventory))notFound();}
-  else if(!canManageBoard(user,board))notFound();
+  if(board.inventoryBoardId!=null){const inventory=await getInventoryBoardById(board.inventoryBoardId);if(!inventory||inventory.loanBoardId!==board.id||!(await canManageInventoryBoard(user,inventory)))notFound();}
+  else if(!(await canManageBoard(user,board)))notFound();
   if(!Number.isSafeInteger(statusId)||statusId<1||statusId>2147483647)return {error:"Ungültige Spalte."};
   const [status]=await db.select({id:boardStatuses.id}).from(boardStatuses).where(and(eq(boardStatuses.id,statusId),eq(boardStatuses.boardId,board.id)));
   if(!status)return {error:"Die Spalte gehört nicht zu diesem Board."};

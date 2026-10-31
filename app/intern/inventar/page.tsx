@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { additionalOwnedIds } from "@/lib/board-ownership";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleInventoryBoards } from "@/lib/inventory";
@@ -12,6 +13,8 @@ export const metadata = { title: "Inventar — Gremio" };
 
 export default async function InventarPage() {
   const user = await requireUser();
+  const inventoryOwnerships=new Set((await additionalOwnedIds("inventory",user.id)).map(r=>r.id));
+
   const boards = await sortByUserInventoryBoardOrder(
     user.id,
     await getAccessibleInventoryBoards(user),
@@ -73,7 +76,7 @@ export default async function InventarPage() {
               id: b.id,
               name: b.name,
               description: b.description,
-              isOwner: b.ownerId === user.id,
+              isOwner: b.ownerId === user.id || inventoryOwnerships.has(b.id),
             }))}
           />
         </>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { isResourceOwner, additionalOwnedIds, resourceOwners } from "@/lib/board-ownership";
 import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -45,7 +46,7 @@ async function canAccessInventoryBoardById(
     .where(eq(inventoryBoards.id, inventoryBoardId))
     .limit(1);
   if (!inv) return false;
-  if (inv.ownerId === user.id) return true;
+  if (await isResourceOwner("inventory",{id:inventoryBoardId,ownerId:inv.ownerId},user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
   const rows = await db
     .select({ id: inventoryBoardAccess.id })
@@ -80,7 +81,7 @@ export async function canAccessBoard(
   if (board.inventoryBoardId != null) {
     return canAccessInventoryBoardById(user, board.inventoryBoardId, access);
   }
-  if (board.ownerId === user.id) return true;
+  if (await isResourceOwner("board",board,user.id)) return true;
 
   const groupIds = await getUserGroupIds(user.id);
   const rows = await db
@@ -101,8 +102,10 @@ export async function canAccessBoard(
 }
 
 /** Verwalten (umbenennen, Stati, Freigaben, Nextcloud, löschen): admin ODER Eigentümer. */
-export function canManageBoard(user: User, board: Board): boolean {
-  return user.role === "admin" || board.ownerId === user.id;
+export async function canManageBoard(user: User, board: Board): Promise<boolean> {
+  if(user.role==="admin")return true;
+  if(board.inventoryBoardId!=null){const [inv]=await db.select().from(inventoryBoards).where(eq(inventoryBoards.id,board.inventoryBoardId));return !!inv&&await isResourceOwner("inventory",inv,user.id);}
+  return isResourceOwner("board",board,user.id);
 }
 
 /** Alle Boards, die ein Nutzer sehen darf (Admin: alle). */
@@ -144,7 +147,7 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
         .where(inArray(inventoryBoardAccess.groupId, groupIds))
     : [];
   const invIds = Array.from(
-    new Set([...invOwner, ...invUser, ...invGroup].map((r) => r.id)),
+    new Set([...invOwner, ...await additionalOwnedIds("inventory",user.id), ...invUser, ...invGroup].map((r) => r.id)),
   );
   const sysRows = invIds.length
     ? await db
@@ -155,7 +158,7 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
 
   const ids = Array.from(
     new Set(
-      [...ownerRows, ...userRows, ...groupRows, ...sysRows].map((r) => r.id),
+      [...ownerRows, ...await additionalOwnedIds("board",user.id), ...userRows, ...groupRows, ...sysRows].map((r) => r.id),
     ),
   );
   if (!ids.length) return [];
@@ -194,17 +197,10 @@ export async function getBoardMemberUsers(
     .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
 
   // System-Board (Leihvorgänge): Mitglieder = Mitglieder des Inventars.
-  let ownerId = board.ownerId;
   let directRows: { id: number | null }[];
   let groupMemberRows: { id: number }[];
   if (board.inventoryBoardId != null) {
     const invId = board.inventoryBoardId;
-    const [inv] = await db
-      .select({ ownerId: inventoryBoards.ownerId })
-      .from(inventoryBoards)
-      .where(eq(inventoryBoards.id, invId))
-      .limit(1);
-    if (inv) ownerId = inv.ownerId;
     directRows = await db
       .select({ id: inventoryBoardAccess.userId })
       .from(inventoryBoardAccess)
@@ -238,7 +234,7 @@ export async function getBoardMemberUsers(
 
   const ids = Array.from(
     new Set<number>([
-      ownerId,
+      ...((await resourceOwners(board.inventoryBoardId!=null?"inventory":"board",board.inventoryBoardId??board.id)).map(o=>o.id)),
       ...adminRows.map((r) => r.id),
       ...directRows.map((r) => r.id as number),
       ...groupMemberRows.map((r) => r.id),
@@ -273,7 +269,7 @@ export async function requireBoardManage(
 ): Promise<{ user: User; board: Board }> {
   const user = await requireUser();
   const board = await getBoardById(boardId);
-  if (!board || !canManageBoard(user, board)) notFound();
+  if (!board || !(await canManageBoard(user, board))) notFound();
   // System-Boards (Leihvorgänge) haben KEINE normalen Board-Einstellungen — sie
   // werden über /intern/inventar/{id}/einstellungen verwaltet. Serverseitig hart
   // abweisen (nicht nur die Seite umleiten), damit Done-Spalte/Archiv-Trigger/

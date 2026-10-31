@@ -23,7 +23,7 @@ export default async function FinanceBoardPage({
   const fbId = Number(id);
   const { user, fb } = await requireFinanceAccess(fbId);
   const canEdit = await canEditFinanceBoard(user, fb);
-  const manage = canManageFinanceBoard(user, fb);
+  const manage = (await canManageFinanceBoard(user, fb));
 
   const {
     accountNames,

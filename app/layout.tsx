@@ -3,6 +3,7 @@
 
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AppLiveRefresh } from "@/components/AppLiveRefresh";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default function RootLayout({
     <html lang="de">
       <body>
         {children}
+        <AppLiveRefresh />
         <ServiceWorkerRegister />
       </body>
     </html>

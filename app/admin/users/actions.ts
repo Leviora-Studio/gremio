@@ -4,7 +4,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
@@ -41,4 +41,24 @@ export async function setRoleAction(
     await tx.update(users).set({ role }).where(eq(users.id, userId));
   });
   revalidatePath("/admin/users");
+}
+
+
+/** Local access switch; never changes the upstream SSO account. */
+export async function setUserActiveAction(userId: number, active: boolean): Promise<State> {
+  const me = await requireAdmin();
+  if (!Number.isSafeInteger(userId) || userId < 1 || typeof active !== "boolean") return {error:"Ungültiger Nutzer."};
+  if (!active && me.id === userId) return {error:"Du kannst dein eigenes Konto nicht deaktivieren."};
+  const result = await db.transaction(async tx => {
+    const admins = await tx.select({id:users.id}).from(users).where(and(eq(users.role,"admin"),eq(users.isActive,true))).orderBy(users.id).for("update");
+    const [actor] = await tx.select().from(users).where(eq(users.id,me.id)).for("update");
+    if (!actor?.isActive || actor.role !== "admin") return {error:"Keine aktiven Admin-Rechte."};
+    const [target] = await tx.select().from(users).where(eq(users.id,userId)).for("update");
+    if (!target) return {error:"Nutzer nicht gefunden."};
+    if (!active && target.isActive && target.role === "admin" && admins.filter(u=>u.id!==userId).length===0) return {error:"Der letzte aktive Admin kann nicht deaktiviert werden."};
+    if (target.isActive !== active) await tx.update(users).set({isActive:active,sessionVersion:sql`${users.sessionVersion} + 1`}).where(eq(users.id,userId));
+    return {success:active?"Nutzer reaktiviert. Eine neue Anmeldung ist erforderlich.":"Nutzer deaktiviert."};
+  });
+  revalidatePath("/admin/users");
+  return result;
 }

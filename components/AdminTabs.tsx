@@ -10,6 +10,7 @@ import { clsx } from "clsx";
 const tabs = [
   { href: "/admin", label: "Übersicht", exact: true },
   { href: "/admin/email", label: "E-Mail / SMTP" },
+  { href: "/admin/empfangsbestaetigung", label: "Empfangsbestätigungen" },
   { href: "/admin/users", label: "Nutzer" },
   { href: "/admin/groups", label: "Gruppen" },
   { href: "/admin/boards", label: "Boards" },

@@ -392,3 +392,53 @@ is added. Revoked read access also revokes the supplemental movement permission.
 ### Spalten-E-Mails
 
 Instanzweites SMTP und Bestätigungen werden ausschließlich im Admin-Dashboard verwaltet. Board-Einstellungen erlauben Eigentümer/Admin Spaltenregeln mit Empfangsadressen. Neue Karten oder echte Statuswechsel über UI, REST oder MCP erzeugen atomar eine Nachricht pro Empfänger in der Outbox, sofern SMTP und die Zielspalten-Regel aktiviert sind. Positionsänderungen und No-op-Statusupdates senden nichts. Versand läuft nach dem Commit; API-Antworten und Berechtigungen bleiben unverändert. Es gibt keine neuen SMTP-Konfigurationsendpunkte und keine Kontaktadressen in öffentlichen Karten-/Statusantworten.
+
+
+### Sitzungen: getrennte Berechtigungen und sessiongebundene Downloads
+
+Sitzungen und TOPs werden in dieser Version ausschließlich über authentifizierte Seiten/Server Actions verwaltet. Es gibt keine neuen v1-Bearer- oder MCP-Funktionen. Bestehende Kartenantworten und ihre Berechtigungen bleiben unverändert; Sitzungsfreigaben gewähren keinen Board-Zugriff. Kartenreferenzen werden nach aktuellen Board-Rechten gefiltert, einschließlich RSC-Daten und Auswahllisten.
+
+`GET /api/meetings/{id}/pdf` und `GET /api/meeting-document/{id}` akzeptieren ausschließlich eine aktive Benutzersession. Fehlende Anmeldung ergibt 401, unzugängliche oder fehlende Ressourcen 404. Antworten sind private/no-store/no-referrer. Ein API-Token ersetzt die Session nicht. Das Tagesordnungs-PDF verwendet gemeinsam freigegebene TOP-Inhalte und Unterlagen-Dateinamen; vertrauliche TOPs bleiben unabhängig von der Rolle ausgenommen. Finanz-Unter-TOPs ergänzen Antragsnummer/Titel, Antragsteller, Konto, Haushaltstitel, beantragten Betrag und internen Kartenlink ausschließlich nach aktuellen Board-/Feldrechten des Exportierenden. Gewöhnliche Kartenreferenzen werden nicht expandiert. Finanzanträge-Einplanung benötigt Sitzungs- und Board-Schreibrechte und aktualisiert Karte und Unter-TOP gemeinsam; diese Aktionen sind keine Bearer-/MCP-Endpunkte. Eigenständige Dateikopien folgen TOP-/Sitzungsrechten, ihre Quelldateien unverändert Board-/Feldrechten.
+
+Sitzungsrechte werden über `meeting_areas` und `meeting_area_access` vergeben, nicht pro Sitzung. Berechtigungsprüfungen von TOPs, Referenzen, PDF-Export und Unterlagen folgen bei jedem Zugriff den aktuellen Bereichsfreigaben. Neue Sitzungen gewähren ihrem Ersteller keine zusätzlichen Eigentümerrechte; die Bereichsrechte bleiben maßgeblich. Bereichsfreigaben erweitern niemals Board-/API-Token-/MCP-Rechte. Der Bereichsname wird als Gremienbezeichnung abgeleitet.
+
+### Lokale Nutzersperre und Browser-Sitzungen
+
+Administratoren können Nutzer lokal deaktivieren. Die vorhandene Prüfung des aktuellen `users.is_active` sperrt auch Bearer-API-/MCP-Zugriffe während dieser Sperre. Browser-Sitzungen gelten mit `offline_access` fest 14 Tage und werden zusätzlich spätestens alle fünf Minuten über SSO-Introspection bestätigt (die Prüffrist ist keine Sitzungsablauffrist) und durch `users.session_version` bei lokaler Sperre dauerhaft widerrufen. Die SSO-Prüfung ist keine neue Abhängigkeit für separat ausgestellte Bearer-Token; deren Scopes und Verträge bleiben unverändert.
+
+### Mehrere Board-Eigentümer
+
+Zusätzliche Eigentümer haben dieselben Live-Rechte wie der unter `ownerId` geführte Eigentümer. Boardlisten, `role`, geschützte Felder und Managementprüfungen verwenden diese Rechte auch bei Bearer-API-/MCP-Zugriffen; Token-Scopes und Boardbeschränkungen bleiben verbindlich. `ownerId` bleibt aus Kompatibilitätsgründen ein tatsächlicher Eigentümer und wechselt gegebenenfalls beim Austritt dieser Person. Die Ernennung und Entfernung erfolgt ausschließlich über die authentifizierten Einstellungen mit Texteingabe, nicht über eine neue externe API. Der letzte Eigentümer bleibt serverseitig geschützt.
+
+Die Gestaltung öffentlicher Empfangsbestätigungen wird instanzweit durch Admins gepflegt. `/api/receipt-logo` ist ausschließlich eine private Admin-Session-Vorschau und akzeptiert keine Bearer-API-Token. Öffentliche Bestätigungs-PDFs behalten ihre bisherigen Token-, Cache- und Datenschutzregeln; das neue Layout erweitert keine öffentlich sichtbaren Einreichungsdaten.
+
+### Appweite Live-Invalidierung (nur Browser-Session)
+
+`GET /api/app/stream` benötigt eine aktive Browser-Sitzung; Bearer-Token allein ergeben 401. Der Stream überträgt ausschließlich `data: change` ohne fachliche Daten. Lokale Aktivierung, Sitzungsversion und SSO werden während der Verbindung erneut geprüft. Der anschließende Seitenabruf prüft sämtliche aktuellen Board-/Bereichs-/Rollenrechte. Änderungen aus REST/MCP und Hintergrundprozessen werden über DB-Commit-Benachrichtigungen ebenfalls sichtbar; vorhandene externe API-/MCP-Verträge und Scopes bleiben unverändert. Öffentliche Status-Streams behalten ihre eigene Token-/Zugriffsprüfung.
+
+Die Admin-Vorschau `GET /api/receipt-logo` kann optional die Parameter
+`kind=location|feedback` und `id` für ein eigenes Standort-/Umfragelogo erhalten.
+Sie bleibt ausschließlich admin-sessiongebunden (sonst 404) und private/no-store;
+keine Bearer-/MCP-Erweiterung. Empfangs-PDFs und Bestätigungs-E-Mails lösen das
+Branding nach der tatsächlich gewählten Formularquelle auf. Die bestehenden
+öffentlichen JSON-Antworten enthalten keine neuen Branding-Felder.
+
+TOP-Statuswechsel und Übernahmen bleiben sessiongebundene Server Actions. Die
+persönliche Ursprungsreferenz gewährt keine zusätzlichen Sitzungsrechte;
+Verlaufsanzeigen und Zielverweise werden nach aktueller TOP-/Sitzungsberechtigung
+gefiltert. Lesende dürfen eigene Themenspeicher-Einträge innerhalb der
+Einreichungsfrist als neue Sitzungsvorschläge einreichen, ohne den privaten
+Ursprung zu verschieben. Historische übernommene TOPs sind schreibgeschützt.
+Die externen Bearer- und MCP-Verträge bleiben unverändert.
+
+Der persönliche TOP-Aktivitätsverlauf ist eine sessiongebundene Anzeige mit
+chronologischen, transaktional erfassten Zustandsereignissen. Jeder Eintrag wird
+nach aktuellen TOP-/Sitzungsrechten gefiltert; es gibt keine neue öffentliche
+oder Bearer-/MCP-Schnittstelle und keine Ereignis-Bearbeitungsroute.
+
+Eigene zurückgezogene Themen können über sessiongebundene persönliche Aktionen
+neu vorgeschlagen oder privat erledigt werden. Der ursprüngliche Sitzungs-TOP
+bleibt beim persönlichen Abschluss zurückgezogen. Sein Status bleibt über die
+normalen Schreibrechte änderbar; solange er zurückgezogen ist, wird er nicht in
+eine andere Sitzung übernommen. Private Erledigung erweitert keine
+Sitzungs-/Boardrechte und ist keine neue Bearer-/MCP-Funktion.

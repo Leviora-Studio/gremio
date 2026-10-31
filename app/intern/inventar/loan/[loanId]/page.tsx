@@ -23,7 +23,6 @@ import { LoanContractUpload } from "@/components/inventory/LoanContractUpload";
 import { BorrowerNoteForm } from "@/components/inventory/BorrowerNoteForm";
 import { LoanQuantityEditor } from "@/components/inventory/LoanQuantityEditor";
 import { LoanColumnSelect } from "@/components/inventory/LoanColumnSelect";
-import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   approveLoanAction,
   deleteLoanAction,
@@ -96,7 +95,6 @@ export default async function InventoryLoanPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <LiveRefresh src={`/api/inventory/board/${board.id}/stream`} />
 
       <div>
         <div className="flex flex-wrap items-center gap-1.5 text-sm">

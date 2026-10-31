@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { getFeedbackReceiptBranding } from "@/lib/receipt-branding";
 import { publicBaseUrl } from "@/lib/public-api";
 import { buildFeedbackConfirmationPdf } from "@/lib/pdf";
 import { getFeedbackByToken } from "@/lib/public-feedback-submission";
@@ -35,6 +36,7 @@ export async function GET(
     submitterName: fb.submitterName,
     feedbackText: fb.feedbackText,
     eingang: fb.createdAt,
+    branding: await getFeedbackReceiptBranding(fb.cardId),
     statusLink: `${publicBaseUrl()}/feedback/status/${token}`,
     number: fb.number,
   });

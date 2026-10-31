@@ -294,7 +294,7 @@ export async function submitPublicFeedback<T = never>(
             inserted.id,
           );
 
-          await queueConfirmation(tx, "feedback", targetBoardId, parsed.data.email, { title, applicant: submitterName, areaName: area.name, feedbackText, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
+          await queueConfirmation(tx, "feedback", targetBoardId, parsed.data.email, { receiptScope:{kind:"feedback",id:area.id}, title, applicant: submitterName, areaName: area.name, feedbackText, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
 
           if (opts.withinTx) {
             await opts.withinTx(tx, {

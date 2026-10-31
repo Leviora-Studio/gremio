@@ -40,7 +40,7 @@ export function Nav({ user }: { user: User }) {
             <span>Gremio</span>
           </Link>
 
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm">
           <Link
             href="/intern"
             className="font-medium text-slate-600 hover:text-brand-600"
@@ -59,6 +59,7 @@ export function Nav({ user }: { user: User }) {
           >
             Boards
           </Link>
+          <Link href="/intern/sitzungen" className="font-medium text-slate-600 hover:text-brand-600">Sitzungen</Link>
           <Link
             href="/finanzen"
             className="font-medium text-slate-600 hover:text-brand-600"
@@ -92,7 +93,7 @@ export function Nav({ user }: { user: User }) {
             className="flex items-center gap-2 font-medium text-slate-600 hover:text-brand-600"
           >
             <Avatar username={displayName} src={avatarUrl(user)} size={28} />
-            <span className="hidden sm:inline">{displayName}</span>
+            <span className="hidden max-w-40 truncate sm:inline">{displayName}</span>
           </Link>
           <form action={logoutAction}>
             <button type="submit" className="btn-secondary px-3 py-1.5">

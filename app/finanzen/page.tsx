@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { additionalOwnedIds } from "@/lib/board-ownership";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccessibleFinanceBoards } from "@/lib/finance";
@@ -10,6 +11,8 @@ import { reorderFinanceBoardsAction } from "./actions";
 
 export default async function FinanzenPage() {
   const user = await requireUser();
+  const financeOwnerships=new Set((await additionalOwnedIds("finance",user.id)).map(r=>r.id));
+
   const boards = await sortByUserFinanceBoardOrder(
     user.id,
     await getAccessibleFinanceBoards(user),
@@ -43,7 +46,7 @@ export default async function FinanzenPage() {
               id: fb.id,
               name: fb.name,
               description: fb.description,
-              isOwner: fb.ownerId === user.id,
+              isOwner: fb.ownerId === user.id || financeOwnerships.has(fb.id),
             }))}
           />
         </>

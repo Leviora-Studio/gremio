@@ -182,7 +182,7 @@ export default async function AntragDetailPage({
       : feedback
         ? `${publicBaseUrl()}/feedback/status/${card.token}`
         : `${publicBaseUrl()}/status/${card.token}`;
-  const manage = canManageBoard(user, board);
+  const manage = (await canManageBoard(user, board));
 
   const comments = await db
     .select({
@@ -253,6 +253,7 @@ export default async function AntragDetailPage({
             </div>
           </>
         )}
+        <div className="sm:col-span-2"><a href={`/intern/sitzungen?card=${card.id}`} className="text-brand-600 hover:underline">Für eine Sitzung vorschlagen</a></div>
         {card.submitterEmail && <div><span className="text-slate-500">Kontakt-E-Mail:</span> <a className="text-brand-600" href={`mailto:${card.submitterEmail}`}>{card.submitterEmail}</a></div>}
         {canEdit && statusLink && (
           <div className="sm:col-span-2">

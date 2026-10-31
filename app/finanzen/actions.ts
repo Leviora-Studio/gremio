@@ -158,28 +158,7 @@ export async function deleteFinanceBoardAction(id: number): Promise<void> {
   redirect("/finanzen");
 }
 
-/** Eigentum übertragen (Owner ODER Admin). */
-export async function transferFinanceOwnerAction(
-  id: number,
-  formData: FormData,
-): Promise<void> {
-  await requireFinanceManage(id);
-  const newOwnerId = Number(formData.get("ownerId"));
-  if (!newOwnerId) return;
-  const [u] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.id, newOwnerId), eq(users.isActive, true)))
-    .limit(1);
-  if (!u) return;
-  await db
-    .update(financeBoards)
-    .set({ ownerId: newOwnerId })
-    .where(eq(financeBoards.id, id));
-  rev(id);
-}
 
-/** Admin-Löschen aus dem Admin-Panel (ohne Redirect zur Finanzliste). */
 export async function deleteFinanceBoardAdminAction(id: number): Promise<void> {
   await requireAdmin();
   await db.delete(financeBoards).where(eq(financeBoards.id, id));
