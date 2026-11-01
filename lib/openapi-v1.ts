@@ -117,6 +117,17 @@ const badRequest = {
   },
 } as const;
 
+const payloadTooLarge = {
+  description:
+    "Request-Body größer als 1 MB (1.000.000 Byte). Die Grenze gilt beim Lesen, auch ohne `Content-Length` (chunked/HTTP-2).",
+  content: {
+    "application/json": {
+      schema: { $ref: "#/components/schemas/ErrorResponse" },
+      example: { error: "Request-Body zu groß." },
+    },
+  },
+} as const;
+
 const conflictLoanBoard = {
   description:
     "Leihvorgang-Board: Dessen Karten werden ausschließlich über das Inventar verwaltet, die API ist dort nur lesend.",
@@ -361,6 +372,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
           403: forbiddenWrite,
           404: notFoundBoard,
           409: conflictLoanBoard,
+          413: payloadTooLarge,
         },
       },
     },
@@ -471,6 +483,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
           403: forbiddenWrite,
           404: notFoundCard,
           409: conflictLoanBoard,
+          413: payloadTooLarge,
         },
       },
       delete: {
@@ -799,7 +812,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           "Schreibbare Kartenfelder. **Unbekannte Felder werden mit `400` abgelehnt** (Tippfehler-Schutz). Bei `PATCH` sind alle Felder optional; bei `POST` ist `title` erforderlich. `null` löscht ein Feld.",
         additionalProperties: false,
         properties: {
-          budgetPositions: { type: "array", minItems: 1, items: { $ref: "#/components/schemas/BudgetPositionWrite" }, description: "Atomic full replacement; PATCH requires the last read budgetRevision. POST supports positions directly. Cannot combine with top-level budgetTitle/accountId/amounts. Board fields budget_title and account must be enabled. Visible prefilled values may be changed on the first transition. A single row returns to single mode only if its description is empty." },
+          budgetPositions: { type: "array", minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/BudgetPositionWrite" }, description: "Atomic full replacement; PATCH requires the last read budgetRevision. POST supports positions directly. Cannot combine with top-level budgetTitle/accountId/amounts. Board fields budget_title and account must be enabled. Visible prefilled values may be changed on the first transition. A single row returns to single mode only if its description is empty." },
           budgetRevision: { type: "integer", minimum: 0, maximum: 2147483647, description: "Only with budgetPositions. Required for PATCH; on POST omit or set 0. Stale revisions return 400 without changing the card." },
           title: { type: "string", minLength: 1, maxLength: 200 },
           applicant: { type: ["string", "null"], maxLength: 200 },

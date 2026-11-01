@@ -468,7 +468,7 @@ Konfiguration; beim Update entstehen keine zusätzlichen Rechte.
 
 ### System-E-Mails
 
-Admin-Dashboard → **E-Mail / SMTP** (`/admin/email`): Host, Port, TLS/STARTTLS, optional Anmeldung, Absender und Antwortadresse einstellen. SMTP-Passwörter werden mit dem vorhandenen `ENCRYPTION_KEY` verschlüsselt; diesen bei Updates unverändert sichern. „Verbindung prüfen“ prüft den gespeicherten Stand ohne Mailversand. Unverschlüsselter SMTP-Versand ist nur für interne Relays vorgesehen. Bei Updates sind Versand und sämtliche Bestätigungen zunächst ausgeschaltet; bestehende Anträge bleiben unverändert.
+Admin-Dashboard → **E-Mail / SMTP** (`/admin/email`): Host, Port, TLS/STARTTLS, optional Anmeldung, Absender und Antwortadresse einstellen. SMTP-Passwörter werden mit dem vorhandenen `ENCRYPTION_KEY` verschlüsselt; diesen bei Updates unverändert sichern. Wer Host, Port oder Verschlüsselung ändert, muss das Passwort erneut eingeben, damit das gespeicherte Passwort nie ungefragt an einen anderen Server geht. „Verbindung prüfen“ prüft den gespeicherten Stand ohne Mailversand. Unverschlüsselter SMTP-Versand ist nur für interne Relays vorgesehen. Bei Updates sind Versand und sämtliche Bestätigungen zunächst ausgeschaltet; bestehende Anträge bleiben unverändert.
 
 Board-Einstellungen → **Email-Settings**: pro Spalte aktivieren und bis zu 50 Adressen eingeben (Zeilen, Komma oder Semikolon). Eigentümer/Admin verwalten diese Regeln. Neue Karten und tatsächliche Statuswechsel lösen die Zielspalten-Regel aus; Umsortieren innerhalb einer Spalte löst keine Mail aus. Inventar-Vorgangsboards haben dieselben Regeln in den Inventar-Einstellungen. Jede Adresse erhält eine eigene Mail mit Kartentitel, Board, Status und internem Kartenlink.
 

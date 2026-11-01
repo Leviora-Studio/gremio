@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Select } from "@/components/Select";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { AMOUNT_KEYS, BUDGET_FIELDS, budgetTotals, editableBudgetPosition, type BudgetPosition } from "@/lib/card-budget";
+import { AMOUNT_KEYS, BUDGET_FIELDS, MAX_BUDGET_POSITIONS, budgetTotals, editableBudgetPosition, type BudgetPosition } from "@/lib/card-budget";
 import { centsToInput, formatCents, parseEuroToCents } from "@/lib/money";
 import { getBudgetSnapshotAction, saveBudgetPositionsAction } from "@/app/intern/card/[id]/actions";
 
@@ -83,7 +83,7 @@ export function BudgetPositionsEditor({ cardId, initial, revision: initialRevisi
   }
   function schedule() { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => void save(), 700); }
   function change(next: Draft[]) { current.current = next; setRows(next); dirty.current = true; onDirtyChange?.(true); setError(false); setMessage("Noch nicht gespeichert …"); schedule(); }
-  function add() { change([...current.current, { id: crypto.randomUUID(), budgetTitle: null, description: null, accountId: defaultAccount.current, requestedAmount: "", approvedAmount: "", actualAmount: "" }]); }
+  function add() { if (current.current.length >= MAX_BUDGET_POSITIONS) return; change([...current.current, { id: crypto.randomUUID(), budgetTitle: null, description: null, accountId: defaultAccount.current, requestedAmount: "", approvedAmount: "", actualAmount: "" }]); }
   async function start() {
     if (starting) return;
     setStarting(true);
@@ -122,7 +122,7 @@ export function BudgetPositionsEditor({ cardId, initial, revision: initialRevisi
       {rows.length > 1 && <button type="button" className="mt-3 text-sm text-red-600 hover:underline" onClick={() => setRemoveId(row.id)}>Position entfernen</button>}
     </fieldset>)}
     <div className="grid gap-3 rounded-lg bg-slate-50 p-4 sm:grid-cols-3">{AMOUNT_KEYS.filter((k) => visible.includes(BUDGET_FIELDS[k])).map((k) => <div key={k}><div className="text-xs text-slate-500">{labels[k]} gesamt</div><div>{totals ? formatCents(totals[k]) || "Noch nicht eingetragen" : "Entwurf unvollständig"}</div></div>)}<p className="text-xs text-slate-500 sm:col-span-3">Automatisch aus allen Positionen berechnet.</p></div>
-    {canEdit && <button type="button" className="btn-secondary btn-sm" onClick={add}>Weiteren Haushaltstitel hinzufügen</button>}
+    {canEdit && <button type="button" className="btn-secondary btn-sm" disabled={rows.length >= MAX_BUDGET_POSITIONS} title={rows.length >= MAX_BUDGET_POSITIONS ? `Höchstens ${MAX_BUDGET_POSITIONS} Haushaltspositionen je Karte.` : undefined} onClick={add}>Weiteren Haushaltstitel hinzufügen</button>}
     {error && <button type="button" className="ml-3 text-sm text-brand-700" onClick={() => void save()}>Erneut speichern</button>}
     <ConfirmDialog open={removeId != null} title="Position entfernen" message="Diese Haushaltsposition samt Kontozuordnung und Beträgen entfernen? Die Gesamtsummen werden neu berechnet." confirmLabel="Entfernen" onClose={() => setRemoveId(null)} onConfirm={() => { change(rows.filter((r) => r.id !== removeId)); setRemoveId(null); }} />
     </div>

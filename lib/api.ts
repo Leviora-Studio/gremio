@@ -5,6 +5,7 @@ import { canManageBoard } from "@/lib/authz";
 import { isResourceOwner } from "@/lib/board-ownership";
 import { internalApiContext } from "@/lib/api-context";
 import { NextResponse } from "next/server";
+import { readLimitedBody } from "@/lib/public-api";
 import type { Board, BoardStatus, Card, User } from "@/lib/db/schema";
 import { authenticateApiToken, type ApiContext } from "@/lib/api-token";
 
@@ -24,6 +25,33 @@ export function apiError(
   extra?: Record<string, unknown>,
 ): NextResponse {
   return NextResponse.json({ error: message, ...extra }, { status });
+}
+
+/** Obergrenze für JSON-Bodies der Karten-API (Kartenfelder inkl. Haushaltspositionen). */
+export const MAX_API_JSON_BYTES = 1_000_000;
+
+/**
+ * JSON-Body beim Lesen begrenzen statt `req.json()`: das puffert sonst den
+ * gesamten Body, und `Content-Length` fehlt bei chunked/HTTP-2 oft.
+ */
+export async function readApiJson(
+  req: Request,
+  maxBytes = MAX_API_JSON_BYTES,
+): Promise<{ ok: true; body: unknown } | { ok: false; response: NextResponse }> {
+  const raw = await readLimitedBody(req, maxBytes);
+  if (!raw.ok) {
+    return {
+      ok: false,
+      response: raw.reason === "too_large"
+        ? apiError(413, "Request-Body zu groß.")
+        : apiError(400, "Body muss gültiges JSON sein."),
+    };
+  }
+  try {
+    return { ok: true, body: JSON.parse(new TextDecoder().decode(raw.body)) };
+  } catch {
+    return { ok: false, response: apiError(400, "Body muss gültiges JSON sein.") };
+  }
 }
 
 /**

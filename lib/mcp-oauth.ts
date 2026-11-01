@@ -9,6 +9,7 @@ import {
 } from "node:crypto";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { z } from "zod";
+import { limitArrayLength } from "@/lib/zod-limits";
 import { db } from "@/lib/db";
 import {
   mcpClients,
@@ -53,10 +54,10 @@ export function validRedirect(value: string): boolean {
 export const registrationSchema = z
   .object({
     client_name: z.string().trim().min(1).max(100),
-    redirect_uris: z
-      .array(z.string().max(2000).refine(validRedirect))
-      .min(1)
-      .max(10),
+    redirect_uris: limitArrayLength(
+      z.array(z.string().max(2000).refine(validRedirect)).min(1).max(10),
+      10,
+    ),
     token_endpoint_auth_method: z.literal("none").default("none"),
     grant_types: z
       .array(z.enum(["authorization_code", "refresh_token"]))
@@ -93,7 +94,7 @@ export const grantSelectionSchema = z
   .object({
     scope: z.enum(["read", "write"]),
     allBoards: z.boolean(),
-    boardIds: z.array(z.number().int().positive().max(2147483647)).max(1000),
+    boardIds: limitArrayLength(z.array(z.number().int().positive().max(2147483647)).max(1000), 1000),
   })
   .strict();
 export type GrantSelection = z.infer<typeof grantSelectionSchema>;

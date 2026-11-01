@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetTotals, budgetTitles, budgetPositionsSchema, canReturnToSingle, editableBudgetPosition } from "../lib/card-budget";
+import { budgetTotals, budgetTitles, budgetPositionsSchema, budgetPositionsInputSchema, canReturnToSingle, editableBudgetPosition, MAX_BUDGET_POSITIONS } from "../lib/card-budget";
 import { randomUUID } from "node:crypto";
 
 const row = (requestedAmount: number | null, approvedAmount: number | null, actualAmount: number | null) => ({ id: randomUUID(), budgetTitle: "12345", description: null, accountId: 1, requestedAmount, approvedAmount, actualAmount });
@@ -28,4 +28,13 @@ test("stable IDs, required accounts, duplicate titles and lossless single-mode c
   assert.equal(budgetTitles([a, a, { budgetTitle: "12344" }]), "12345, 12344");
   assert.equal(canReturnToSingle([a]), true);
   assert.equal(canReturnToSingle([{ ...a, description: "Must survive" }]), false);
+});
+test("position count is capped before per-element validation (zod 3 keeps validating after .max())", () => {
+  const a = row(0, null, null);
+  const hundred = Array.from({ length: MAX_BUDGET_POSITIONS }, () => ({ ...a, id: randomUUID() }));
+  assert.equal(budgetPositionsSchema.safeParse(hundred).success, true);
+  assert.equal(budgetPositionsInputSchema.safeParse([...hundred, { ...a, id: randomUUID() }]).success, false);
+  const flood = budgetPositionsInputSchema.safeParse(Array.from({ length: 200_000 }, () => null));
+  assert.equal(flood.success, false);
+  assert.equal(flood.success ? 0 : flood.error.issues.length, 1, "one issue instead of one per element");
 });

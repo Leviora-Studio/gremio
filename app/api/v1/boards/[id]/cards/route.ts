@@ -9,6 +9,7 @@ import {
   apiError,
   authApi,
   parseApiId,
+  readApiJson,
   requireWriteScope,
   tokenAllowsBoard,
 } from "@/lib/api";
@@ -57,13 +58,9 @@ export async function POST(
     );
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return apiError(400, "Body muss gültiges JSON sein.");
-  }
-  const parsed = cardWriteSchema.safeParse(body);
+  const body = await readApiJson(req);
+  if (!body.ok) return body.response;
+  const parsed = cardWriteSchema.safeParse(body.body);
   if (!parsed.success) {
     return apiError(400, "Ungültige Eingabe.", {
       issues: parsed.error.issues.map((i) => ({

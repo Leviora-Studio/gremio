@@ -971,6 +971,15 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: "Leihvorgang-Board: Karten werden über das Inventar verwaltet (API nur lesend)."
+        "413": &a26
+          description: Request-Body größer als 1 MB (1.000.000 Byte). Die Grenze gilt beim Lesen, auch ohne
+            `Content-Length` (chunked/HTTP-2).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Request-Body zu groß.
   /api/v1/me/cards:
     get:
       tags:
@@ -1147,6 +1156,7 @@ paths:
         "403": *a23
         "404": *a24
         "409": *a25
+        "413": *a26
     delete:
       tags:
         - Karten
@@ -1857,6 +1867,7 @@ components:
         budgetPositions:
           type: array
           minItems: 1
+          maxItems: 100
           items:
             $ref: "#/components/schemas/BudgetPositionWrite"
           description: Atomic full replacement; PATCH requires the last read budgetRevision. POST supports

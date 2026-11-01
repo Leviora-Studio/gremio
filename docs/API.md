@@ -28,6 +28,9 @@ Per PATCH kann
 `budgetPositions` gemeinsam mit der zuletzt gelesenen `budgetRevision` gesetzt
 werden (vollständiger atomarer Ersatz, Array-Reihenfolge ist maßgeblich). Jede
 Position braucht ein existierendes Konto, andere Felder dürfen `null` sein.
+Je Karte sind höchstens 100 Positionen zulässig (400). JSON-Bodies von
+`POST /api/v1/boards/{id}/cards` und `PATCH /api/v1/cards/{id}` sind auf 1 MB
+begrenzt; größere Bodies ergeben 413, auch ohne `Content-Length`.
 Beim ersten Wechsel füllt der Editor Position 1 mit den bisherigen Kartenwerten
 vor. Sichtbare Werte dürfen bereits im ersten PATCH geändert werden; ein bislang
 fehlendes Konto muss ergänzt werden. ID, Titel, Beschreibung und Konto müssen im

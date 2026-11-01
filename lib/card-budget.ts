@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { sanitizeSingleLine } from "@/lib/text";
+import { limitArrayLength } from "@/lib/zod-limits";
 
 const text = (max: number) => z.preprocess((v) => typeof v === "string" ? sanitizeSingleLine(v) : v, z.string().max(max).nullable());
 const amount = z.number().int().min(0).max(MAX_AMOUNT_CENTS).nullable();
@@ -9,8 +10,11 @@ export const budgetPositionSchema = z.object({
   accountId: z.number().int().positive({ message: "Jede Position benötigt ein Konto." }).max(2147483647),
   requestedAmount: amount, approvedAmount: amount, actualAmount: amount,
 }).strict();
-export const budgetPositionsSchema = z.array(budgetPositionSchema).min(1).refine((rows) => new Set(rows.map((r) => r.id)).size === rows.length, "Positions-IDs dürfen nicht doppelt vorkommen.");
-export const budgetPositionsInputSchema = z.array(budgetPositionSchema.partial({ requestedAmount: true, approvedAmount: true, actualAmount: true })).min(1).refine((rows) => new Set(rows.map((r) => r.id)).size === rows.length, "Positions-IDs dürfen nicht doppelt vorkommen.");
+/** Obergrenze je Karte (Web, REST, MCP); vorher war die Anzahl unbegrenzt. */
+export const MAX_BUDGET_POSITIONS = 100;
+const tooManyPositions = `Höchstens ${MAX_BUDGET_POSITIONS} Haushaltspositionen je Karte.`;
+export const budgetPositionsSchema = limitArrayLength(z.array(budgetPositionSchema).min(1).max(MAX_BUDGET_POSITIONS, tooManyPositions).refine((rows) => new Set(rows.map((r) => r.id)).size === rows.length, "Positions-IDs dürfen nicht doppelt vorkommen."), MAX_BUDGET_POSITIONS);
+export const budgetPositionsInputSchema = limitArrayLength(z.array(budgetPositionSchema.partial({ requestedAmount: true, approvedAmount: true, actualAmount: true })).min(1).max(MAX_BUDGET_POSITIONS, tooManyPositions).refine((rows) => new Set(rows.map((r) => r.id)).size === rows.length, "Positions-IDs dürfen nicht doppelt vorkommen."), MAX_BUDGET_POSITIONS);
 export type BudgetPosition = z.infer<typeof budgetPositionSchema>;
 /** Explicit editor payload: database rows also carry read-only cardId/position. */
 export function editableBudgetPosition(row: BudgetPosition): BudgetPosition {

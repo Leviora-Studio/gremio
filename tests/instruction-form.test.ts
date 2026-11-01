@@ -99,3 +99,10 @@ test("instruction filenames use the current card number and retain the sequence"
   assert.equal(instructionNumber("2026_42_Anweisung0.pdf"), null);
   assert.equal(instructionNumber("2026_42_Anweisung7.docx"), null);
 });
+
+test("instruction filenames never take path or control characters from the editable card number", () => {
+  assert.equal(nextInstructionFilename([], "../2026/42"), "__2026_42_Anweisung1.pdf");
+  assert.equal(nextInstructionFilename([], "A\u0000B\\C"), "A_B_C_Anweisung1.pdf");
+  assert.equal(nextInstructionFilename([], "x".repeat(300)).length, 100 + "_Anweisung1.pdf".length);
+  assert.equal(instructionNumber(nextInstructionFilename(["__2026_42_Anweisung1.pdf"], "../2026/42")), 2);
+});

@@ -35,7 +35,7 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   const values = { ...parsed.data, committee: area.name, ownerId: area.ownerId, startsAt, submissionDeadline };
   if (id == null) {
     if (!user.isActive) throw new MeetingError("Kein Zugriff.");
-    const [meeting] = await db.insert(meetings).values({ ...values, ownerId: user.id }).returning();
+    const [meeting] = await db.insert(meetings).values(values).returning();
     return meeting.id;
   }
   const previous = await requireMeeting(user, id, "write");

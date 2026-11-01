@@ -498,7 +498,8 @@ board_template_statuses(id, template_id FK→board_templates ON DELETE CASCADE, 
 ## Haushaltspositionen und öffentliche Einreichung (Migration 0062)
 
 Bestehende Karten bleiben `budget_mode='single'`: bisherige Felder und optionale
-Kontozuordnung bleiben unverändert. `card_budget_positions` speichert im Modus
+Kontozuordnung bleiben unverändert. Je Karte sind höchstens 100 Positionen
+zulässig (`MAX_BUDGET_POSITIONS`, Web, REST und MCP). `card_budget_positions` speichert im Modus
 `positions` UUID, Karten-FK (CASCADE), Reihenfolge, Haushaltstitel, Bezeichnung,
 verpflichtende Konto-FK (RESTRICT) und drei nullable Centbeträge. `cards.account_id`
 und `cards.budget_title` sind dann NULL; die drei Kartenbeträge sind atomar mit den
@@ -755,7 +756,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **DB-Verbindung ohne TLS** ist im privaten Docker-Netz ok; bei **externem** Postgres `ssl` aktivieren.
 - **CSP** setzt nur `frame-ancestors 'none'` (+ `X-Frame-Options`, `nosniff`); **HSTS** terminiert nginx. Eine strikte `script-src`-CSP (Nonces) ist bewusst zurückgestellt.
 - **Upload-Validierung** prüft MIME/Endung (keine Magic-Bytes); ausgeliefert wird mit erzwungenem Content-Type + `nosniff` → kein Stored-XSS, Restrisiko nur „Müll-PDFs".
-- **Dependencies (Audit 04.09.2026):** `npm audit` ist inklusive Entwicklungsbaum ohne Befund. `@esbuild-kit/core-utils` verwendet über einen gezielten Override esbuild ^0.25.12; kein Drizzle-Downgrade. Auch `pip-audit` meldet für die gepinnten PDF-Renderer-Abhängigkeiten keine bekannten Schwachstellen. Der Stand ist zeitgebunden; Details und Grenzen stehen in `docs/SECURITY_AUDIT_SINCE_2.7.0.md`.
+- **Dependencies (Audit 01.11.2026):** Per `npm audit fix` ohne Major-Sprünge aktualisiert und als Mindestversionen festgeschrieben: `next` ^15.5.28, `node-forge` ^1.4.2, `sharp` ^0.35.5 (auch als Override), `@modelcontextprotocol/sdk` ^1.32.2. Offen bleiben ausschließlich Befunde, die einen Major-Wechsel verlangen: `zod` < 4.6.6 (zod 3 prüft nach verletztem `.max()` dennoch jedes Element; Abmilderung: `limitArrayLength` in `lib/zod-limits.ts` weist übergroße Arrays vor der Elementprüfung ab, REST-Karten-Bodies sind auf 1 MB begrenzt, öffentliche API und MCP begrenzen Bodies beim Lesen; Server Actions erlauben bis 150 MB — Upgrade auf zod 4 separat einplanen), `minimatch` über `webdav` sowie die ESLint-Entwicklungskette (moderat, nur Entwicklungsbaum). `@esbuild-kit/core-utils` verwendet über einen gezielten Override esbuild ^0.25.12; kein Drizzle-Downgrade. Der Stand ist zeitgebunden; ältere Details und Grenzen stehen in `docs/SECURITY_AUDIT_SINCE_2.7.0.md`.
 - **Eingangsbereinigung freier Texte** (`lib/text.ts`): `sanitizeSingleLine` für Titel/Namen, `sanitizeMultiLine` für Freitext. Entfernt NUL (das PostgreSQL ablehnt) und C0-Steuerzeichen (an denen der WinAnsi-Encoder der PDF-Bestätigung wirft) an der **Eingangsgrenze** — Formular, REST-API und öffentliche API laufen alle darüber. `winAnsiSafe` in `lib/pdf.ts` bleibt als zweite Verteidigungslinie.
 - **Öffentliche Zeitfalle ist an den Client gebunden** (`lib/antispam.ts`): Das signierte Token deckt Zeitstempel **und** eine pseudonyme Client-Kennung ab und gilt **6 Stunden**. Abgelaufen/fremd ist KEIN stiller Verwurf mehr, sondern eine sichtbare Meldung samt frischem Token — die stille Fake-Bestätigung bleibt Honeypot und „zu schnell ausgefüllt" vorbehalten (dort soll der Bot nicht lernen, woran er scheitert).
 - **Idempotenz-Schlüssel der öffentlichen API verfallen nach 30 Tagen** (`IDEMPOTENCY_TTL_DAYS`, Tages-Sweeper aus `runStartupBootstrap`). Ein Retry NACH Ablauf legt eine zweite Einreichung an — so in `docs/PUBLIC_API.md` und in der OpenAPI-Beschreibung zugesichert.

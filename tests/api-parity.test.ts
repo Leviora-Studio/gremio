@@ -121,6 +121,16 @@ test("REST handlers preserve app parity: budgets, assignments, triggers, field v
       response = await patchCard(request(editor.value, "PATCH", { number: "manual", instructionDate: "2026-09-01", transferDate: "2026-09-02" }), params(cardId));
       assert.equal(response.status, 200); assert.equal((await response.json()).card.number, "manual");
       assert.equal((await patchCard(request(editor.value, "PATCH", { assigneeUserIds: [outside.id] }), params(cardId))).status, 400);
+      // Oversized arrays are rejected before per-element validation; oversized bodies while reading.
+      const oversized = await patchCard(request(editor.value, "PATCH", { assigneeUserIds: Array.from({ length: 50_000 }, () => "x") }), params(cardId));
+      assert.equal(oversized.status, 400);
+      assert.equal((await oversized.json()).issues.length, 1, "no issue per array element");
+      const chunked = new Request(`http://localhost:3000/api/v1/cards/${cardId}`, {
+        method: "PATCH", headers: { authorization: `Bearer ${editor.value}`, "content-type": "application/json" },
+        body: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(`{"notes":"${"a".repeat(1_000_001)}"}`)); controller.close(); } }),
+        duplex: "half",
+      } as RequestInit);
+      assert.equal((await patchCard(chunked, params(cardId))).status, 413);
       for (const method of ["PATCH", "DELETE"] as const) {
         const handler = method === "PATCH" ? patchCard : deleteCard;
         assert.equal((await handler(request(read.value, method, method === "PATCH" ? {} : undefined), params(cardId))).status, 403);

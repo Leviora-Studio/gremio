@@ -57,6 +57,12 @@ export function nextInstructionFilename(
     const number = instructionNumber(filename);
     if (number != null) highest = Math.max(highest, number);
   }
-  const prefix = cardNumber?.trim();
+  // Die Antragsnummer ist frei editierbar: keine Pfad-/Steuerzeichen in den Dateinamen übernehmen.
+  const prefix = cardNumber
+    ?.replace(/[\\/:*?"<>|\x00-\x1f\x7f]+/g, "_")
+    .replace(/\.{2,}/g, "_")
+    .replace(/^[.\s]+/, "")
+    .trim()
+    .slice(0, 100);
   return `${prefix ? `${prefix}_` : ""}Anweisung${highest + 1}.pdf`;
 }

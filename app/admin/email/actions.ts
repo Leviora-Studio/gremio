@@ -22,6 +22,8 @@ export async function saveSmtpAction(_previous: EmailState, form: FormData): Pro
   if (data.security === "none" && isPublicHost(data.host)) return { error: "Für öffentliche SMTP-Server ist TLS oder STARTTLS erforderlich." };
   const [old] = await db.select().from(smtpSettings).where(eq(smtpSettings.id, 1));
   if (data.username && data.username !== old?.username && !data.password) return { error: "Bei neuem Benutzernamen bitte auch das Passwort eingeben." };
+  // Das gespeicherte Passwort nie ungefragt an einen anderen Server oder über eine schwächere Verbindung senden.
+  if (data.username && !data.password && old?.passwordEnc && (data.host.toLowerCase() !== old.host.toLowerCase() || data.port !== old.port || data.security !== old.security)) return { error: "Bei geändertem Server, Port oder Verschlüsselung bitte das SMTP-Passwort erneut eingeben." };
   const passwordEnc = !data.username ? null : data.password ? encryptSecret(data.password) : old?.passwordEnc ?? null;
   if (data.username && !passwordEnc) return { error: "Für SMTP-Anmeldung ist ein Passwort erforderlich. Für ein Relay ohne Anmeldung Benutzername leer lassen." };
   const values = { enabled: form.get("enabled") === "on", host: data.host, port: data.port, security: data.security, username: data.username || null, passwordEnc, fromEmail: data.fromEmail, fromName: sanitizeSingleLine(form.get("fromName")).slice(0, 100) || "Gremio", replyTo: data.replyTo || null };

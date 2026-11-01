@@ -63,6 +63,11 @@ export async function checkEmailSettings() {
     assert.ok((await api.smtp.saveSmtpAction({}, smtpForm({ password: "" }))).success);
     assert.equal((await db.select().from(schema.smtpSettings))[0].passwordEnc, saved.passwordEnc);
     assert.ok((await api.smtp.saveSmtpAction({}, smtpForm({ username: "different", password: "" }))).error);
+    // The stored password is never reused for a different server or a weaker transport.
+    for (const changed of [{ host: "relay.internal" }, { port: "2525" }, { security: "tls" }]) {
+      assert.match((await api.smtp.saveSmtpAction({}, smtpForm({ ...changed, password: "" }))).error ?? "", /Passwort erneut/);
+    }
+    assert.equal((await db.select().from(schema.smtpSettings))[0].host, "localhost");
     await api.smtp.saveEmailConfirmationAction("application", board.id, form({ enabled: "on" }));
     await api.smtp.saveEmailConfirmationAction("application", board.id, form({}));
     assert.equal((await db.select().from(schema.emailConfirmationSettings)).find(row => row.boardId === board.id)?.enabled, false);

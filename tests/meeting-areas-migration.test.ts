@@ -27,7 +27,10 @@ test("meeting areas preserve separate legacy audiences, topics and document path
     const upgraded=(await pool.query("select id,area_id from meetings order by id")).rows;assert.notEqual(upgraded[0].area_id,upgraded[1].area_id);
     const grants=(await pool.query("select area_id,user_id,group_id,access_level from meeting_area_access order by id")).rows;
     assert.deepEqual(grants,[{area_id:upgraded[0].area_id,user_id:guest,group_id:null,access_level:'read'},{area_id:upgraded[1].area_id,user_id:null,group_id:group,access_level:'write'}]);
-    assert.deepEqual((await pool.query("select * from meeting_topics where id=$1",[topic.id])).rows[0],{...topic,parent_id:null});
+    // Later migrations add columns; every legacy value must remain unchanged.
+    const upgradedTopic=(await pool.query("select * from meeting_topics where id=$1",[topic.id])).rows[0];
+    assert.deepEqual(Object.fromEntries(Object.keys(topic).map(key=>[key,upgradedTopic[key]])),topic);
+    assert.equal(upgradedTopic.parent_id,null);
     assert.deepEqual((await pool.query("select * from meeting_documents where id=$1",[doc.id])).rows[0],doc);
     const next=(await pool.query("insert into meeting_areas(name,owner_id) values('New',$1) returning id",[owner])).rows[0];assert.ok(next.id>Math.max(...upgraded.map(m=>m.area_id)));
   }finally{await pool.end();}

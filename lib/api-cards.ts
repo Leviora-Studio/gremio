@@ -40,6 +40,7 @@ import { generateToken, isTokenConflict } from "@/lib/token";
 import { deleteStoredFile } from "@/lib/attachments";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { budgetPositionsInputSchema } from "@/lib/card-budget";
+import { limitArrayLength } from "@/lib/zod-limits";
 import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions } from "@/lib/card-budget-db";
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
@@ -94,7 +95,7 @@ export const cardWriteSchema = z
     position: z.number().int().min(0).max(2147483647).optional(),
     priorityId: z.number().int().positive().max(2147483647).nullish(),
     accountId: z.number().int().positive().max(2147483647).nullish(),
-    assigneeUserIds: z.array(z.number().int().positive().max(2147483647)).max(50).optional(),
+    assigneeUserIds: limitArrayLength(z.array(z.number().int().positive().max(2147483647)).max(50), 50).optional(),
     creatorUserId: z.number().int().positive().max(2147483647).nullish(),
     deadline: date,
     meeting: date,

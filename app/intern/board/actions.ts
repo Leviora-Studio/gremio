@@ -76,13 +76,18 @@ export async function moveCardAction(
   if (!target) return;
 
   let fullWrite = await canEditBoard(user, board);
-  const statusChanged = card.statusId !== statusId;
+  // Aus der gesperrten Zeile bestimmt: Ein paralleler Wechsel darf weder
+  // doppelte Trigger noch einen falschen Aktivitätseintrag auslösen.
+  let statusChanged = false;
+  let previousStatusId = card.statusId;
 
   await db.transaction(async (tx) => {
     const [fresh] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
     if (!fresh || !(await canMoveBoardCard(user, board, fresh, statusId, tx))) throw new Error("Dieser Statuswechsel ist nicht mehr erlaubt. Bitte neu laden.");
     fullWrite = await canEditBoard(user, board);
     if (!fullWrite && fresh.statusId !== card.statusId) throw new Error("Die Karte wurde zwischenzeitlich verschoben. Bitte neu laden.");
+    previousStatusId = fresh.statusId;
+    statusChanged = fresh.statusId !== statusId;
     if (statusChanged) {
       await tx
         .update(cards)
@@ -91,7 +96,7 @@ export async function moveCardAction(
           statusId,
           updatedAt: new Date(),
           resubmittedAt: null,
-          doneSince: doneSinceForStatus(board.doneStatusId, statusId, card.doneSince),
+          doneSince: doneSinceForStatus(board.doneStatusId, statusId, fresh.doneSince),
         })
         .where(eq(cards.id, cardId));
     }
@@ -121,7 +126,7 @@ export async function moveCardAction(
     const [old] = await db
       .select({ name: boardStatuses.name })
       .from(boardStatuses)
-      .where(eq(boardStatuses.id, card.statusId))
+      .where(eq(boardStatuses.id, previousStatusId))
       .limit(1);
     await logActivity(
       cardId,
