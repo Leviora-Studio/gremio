@@ -1,5 +1,32 @@
 # Gremio
 
+### 4.6.0: Sitzungen, Tagesordnungen und geschützte Exporte
+
+Sitzungsbereiche bündeln Sitzungen mit Lese- und Schreibfreigaben, persönlichem
+Themenspeicher, Unter-TOPs und nachvollziehbarem Statusverlauf. Begrüßung und
+Regularien sowie öffentliche und nicht öffentliche Tagesordnungsbereiche erhalten
+eine konfigurierbare Nummerierung. Bereichsvorlagen liefern unabhängige
+Standard-TOPs; Finanzanträge lassen sich mit ihrem Kartenstatus und Sitzungsdatum
+gemeinsam einplanen. Beschlussvorschläge können aktuelle, berechtigungsgeprüfte
+Kartenfelder verwenden.
+
+Eigentümer und Admins exportieren Tagesordnungen als PDF oder anhand eigener
+DOCX-/DOTX-Vorlagen als Worddatei. Exporte enthalten auch vertrauliche TOPs und
+erfasste Ergebnisse; Finanzdaten bleiben durch die aktuellen Board- und Feldrechte
+geschützt. Aktive Word-Inhalte und externe Ressourcen werden abgewiesen.
+
+Weitere Neuerungen sind gemeinsame Board-Eigentümer, appweite Live-Aktualisierung,
+anpassbare Empfangsbestätigungen und lokale Kontensperren mit SSO-Prüfung.
+Feedback-E-Mail ist wieder optional; bei Finanzanträgen und Inventaranfragen
+bleibt sie Pflicht. Öffentliche Formularzuordnungen prüfen und sperren die
+benötigten Kartenfelder. Die ergänzenden Bug- und Sicherheitskorrekturen sind im
+[Auditbericht ab 95d1719](docs/BUG_SECURITY_AUDIT_95d1719.md) dokumentiert.
+
+**Update:** Migrationen `0073` bis `0092` werden beim Produktionsstart automatisch
+angewendet; lokal vorher `npm run db:migrate` ausführen. Bestehende Sitzungen
+erhalten getrennte Bereiche mit ihren bisherigen Freigaben. Bestehende Daten und
+Status-Links bleiben erhalten.
+
 Der Bug- und Security-Audit ab einschließlich 4.2.0 ist in
 [docs/SECURITY_AUDIT_SINCE_4.2.0.md](docs/SECURITY_AUDIT_SINCE_4.2.0.md)
 dokumentiert. Die Korrekturen sichern aktuelle Berechtigungen auch nach
