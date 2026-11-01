@@ -576,6 +576,9 @@ function CardView({
       {visibleSet.has("applicant") && card.applicant && (
         <div className="text-xs text-slate-500">{card.applicant}</div>
       )}
+      {visibleSet.has("submitter_email") && card.fields?.submitter_email && (
+        <div className="break-all text-xs text-slate-500">{card.fields.submitter_email}</div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {card.resubmitted && (
           <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-800">

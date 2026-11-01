@@ -5,6 +5,7 @@
 
 import { moveCardAction } from "@/app/intern/board/actions";
 import { redirect } from "next/navigation";
+import { emailAddressSchema } from "@/lib/email-validation";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
 import { and, eq, isNull, max } from "drizzle-orm";
@@ -94,6 +95,7 @@ function isValidDate(s: string): boolean {
 export type CardValues = {
   title: string;
   applicant: string;
+  submitterEmail: string | null;
   budgetTitle: string | null;
   number: string | null;
   creatorUserId: number | null;
@@ -132,6 +134,16 @@ export async function saveCardAction(
   }
   if (visible.has("applicant") && typeof values.applicant === "string") {
     update.applicant = sanitizeSingleLine(values.applicant).slice(0, 200);
+  }
+  if (visible.has("submitter_email") && "submitterEmail" in values) {
+    const value = values.submitterEmail;
+    if (value === null || (typeof value === "string" && !value.trim())) {
+      update.submitterEmail = null;
+    } else {
+      const parsed = emailAddressSchema.safeParse(value);
+      if (!parsed.success) return { ok: false, error: "Bitte eine gültige E-Mail-Adresse angeben." };
+      update.submitterEmail = parsed.data;
+    }
   }
   if (visible.has("budget_title") && "budgetTitle" in values) {
     const v = sanitizeSingleLine(values.budgetTitle);

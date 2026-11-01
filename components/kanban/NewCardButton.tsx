@@ -126,6 +126,7 @@ export function NewCardButton({
               initial={{
                 title: "",
                 applicant: "",
+                submitterEmail: null,
                 budgetTitle: null,
                 number: null,
                 deadline: null,

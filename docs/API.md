@@ -445,3 +445,7 @@ bleibt beim persönlichen Abschluss zurückgezogen. Sein Status bleibt über die
 normalen Schreibrechte änderbar; solange er zurückgezogen ist, wird er nicht in
 eine andere Sitzung übernommen. Private Erledigung erweitert keine
 Sitzungs-/Boardrechte und ist keine neue Bearer-/MCP-Funktion.
+
+Das Board-Metadatenfeld `visibleFields` kann auch `submitter_email` enthalten.
+Die Kontaktadresse bleibt ein internes UI-Feld und wird über REST/MCP weder
+ausgegeben noch als Karten-Schreibfeld akzeptiert.

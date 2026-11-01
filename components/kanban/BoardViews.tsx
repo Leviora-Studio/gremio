@@ -18,7 +18,7 @@ import type { KanbanCard } from "./KanbanBoard";
 
 export type BoardView = "kanban" | "list" | "table" | "calendar";
 type Status = { id: number; name: string };
-const tableFields = new Set(["number", "applicant", "assignee", "priority", "deadline", "meeting", "budget_title", "account", "requested_amount", "approved_amount", "actual_amount", "instruction_date", "transfer_date", "decision_ref"]);
+const tableFields = new Set(["number", "applicant", "submitter_email", "assignee", "priority", "deadline", "meeting", "budget_title", "account", "requested_amount", "approved_amount", "actual_amount", "instruction_date", "transfer_date", "decision_ref"]);
 const dateLabel = (date: string) => date.split("-").reverse().join(".");
 
 export function BoardViews({ view, cards, statuses, visible, priorities, preferenceKey, onMove, resultFocusKey, canEdit = true, officeMoveRules }: {
@@ -194,7 +194,7 @@ export function BoardViews({ view, cards, statuses, visible, priorities, prefere
             {items.length === 0 ? empty : <ul className="divide-y divide-slate-100">{items.map(card => <li key={card.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
               <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                 {visible.includes("number") && card.number && <span className="mr-2 text-xs text-slate-500">{card.number}</span>}{title(card)}
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">{["applicant", "assignee", "priority", "deadline", "meeting"].filter(k => visible.includes(k) && value(card, k)).map(k =>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">{["applicant", "submitter_email", "assignee", "priority", "deadline", "meeting"].filter(k => visible.includes(k) && value(card, k)).map(k =>
                   <span key={k} className={k === "deadline" && card.deadline! < todayInBerlin() ? "font-medium text-red-700" : ""}>{CARD_FIELD_LABELS[k as CardFieldKey]}: {display(card, k)}</span>)}</div>
               </div><div className="w-full sm:w-52">{statusSelect(card)}</div>
             </li>)}</ul>}

@@ -3,6 +3,7 @@
 
 "use server";
 
+import { getLocationRequiredFieldKeys, lockLocationBoard } from "@/lib/location-board-fields";
 import { parseAccessLevel } from "@/lib/access-level";
 import { setBoardTriggerSources } from "@/lib/board-triggers";
 import { isTriggerKind, setTriggerAssignmentConfig } from "@/lib/trigger-assignments";
@@ -522,7 +523,12 @@ export async function setCardFieldsAction(
       ? i
       : order.length + (CARD_FIELD_KEYS as readonly string[]).indexOf(key);
   };
-  await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
+    await lockLocationBoard(tx, boardId);
+    const required = await getLocationRequiredFieldKeys(boardId, tx);
+    if (required.some((key) => formData.get(`field_${key}`) !== "on")) {
+      return { error: "Felder des Antragsformulars können nicht deaktiviert werden, solange ein aktiver Standort diesem Board zugeordnet ist." };
+    }
     for (const key of CARD_FIELD_KEYS) {
       const visible = formData.get(`field_${key}`) === "on";
       const position = positionOf(key);
@@ -535,6 +541,7 @@ export async function setCardFieldsAction(
         });
     }
   });
+  if (result?.error) return result;
   rev(boardId);
   return { success: "Kartenfelder gespeichert." };
 }

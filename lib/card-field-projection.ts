@@ -5,7 +5,7 @@
 export function maskHiddenCardFields<T extends object>(value: T, visible: ReadonlySet<string>): T {
   const result = { ...value } as Record<string, unknown>;
   const fields: Record<string, string[]> = {
-    applicant: ["applicant"], budget_title: ["budgetTitle"], number: ["number"],
+    applicant: ["applicant"], submitter_email: ["submitterEmail"], budget_title: ["budgetTitle"], number: ["number"],
     creator: ["creatorUserId", "creator"], assignee: ["assigneeUserIds", "assignees"],
     deadline: ["deadline"], meeting: ["meeting"], decision_ref: ["decisionRef"],
     instruction_date: ["instructionDate"], transfer_date: ["transferDate"],

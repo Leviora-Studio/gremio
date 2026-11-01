@@ -31,6 +31,7 @@ import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { BoardEmailSettings } from "@/components/board/BoardEmailSettings";
 import { OfficeRoleForm } from "@/components/board/OfficeRoleForm";
 import { StatusList } from "@/components/board/StatusList";
+import { getLocationRequiredFieldKeys } from "@/lib/location-board-fields";
 import { CardFieldsForm } from "@/components/board/CardFieldsForm";
 import { BoardNumberingForm } from "@/components/board/BoardNumberingForm";
 import { InstructionFormSettings } from "@/components/board/InstructionFormSettings";
@@ -87,6 +88,7 @@ export default async function BoardSettingsPage({
     .from(boardCardFields)
     .where(eq(boardCardFields.boardId, boardId))
     .orderBy(asc(boardCardFields.position));
+  const requiredFields = await getLocationRequiredFieldKeys(boardId);
   const visibility: Record<string, boolean> = {};
   for (const f of fieldRows) visibility[f.fieldKey] = f.visible;
   // Editierbare Felder in gespeicherter Reihenfolge; fehlende (z.B. neu
@@ -339,6 +341,7 @@ export default async function BoardSettingsPage({
           boardId={boardId}
           visibility={visibility}
           fieldOrder={fieldOrder}
+          requiredFields={requiredFields}
         />
       </CollapsibleSection>
 

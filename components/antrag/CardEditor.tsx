@@ -53,6 +53,7 @@ export function CardEditor({
   initial: {
     title: string;
     applicant: string;
+    submitterEmail: string | null;
     budgetTitle: string | null;
     number: string | null;
     deadline: string | null;
@@ -83,6 +84,7 @@ export function CardEditor({
   const valuesRef = useRef<CardValues>({
     title: initial.title,
     applicant: initial.applicant,
+    submitterEmail: initial.submitterEmail,
     budgetTitle: initial.budgetTitle,
     number: initial.number,
     creatorUserId: creator?.id ?? null,
@@ -197,6 +199,19 @@ export function CardEditor({
           defaultValue={valuesRef.current.applicant}
           className="input"
           onChange={(e) => update({ applicant: e.target.value })}
+          onBlur={flushNow}
+        />
+      </div>
+    ),
+    submitter_email: (
+      <div>
+        <label className="label">E-Mail-Adresse</label>
+        <input
+          type="email"
+          maxLength={254}
+          defaultValue={valuesRef.current.submitterEmail ?? ""}
+          className="input"
+          onChange={(e) => update({ submitterEmail: e.target.value })}
           onBlur={flushNow}
         />
       </div>

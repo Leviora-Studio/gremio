@@ -254,7 +254,6 @@ export default async function AntragDetailPage({
           </>
         )}
         <div className="sm:col-span-2"><a href={`/intern/sitzungen?card=${card.id}`} className="text-brand-600 hover:underline">Für eine Sitzung vorschlagen</a></div>
-        {card.submitterEmail && <div><span className="text-slate-500">Kontakt-E-Mail:</span> <a className="text-brand-600" href={`mailto:${card.submitterEmail}`}>{card.submitterEmail}</a></div>}
         {canEdit && statusLink && (
           <div className="sm:col-span-2">
             <span className="text-slate-500">Status-Link:</span>{" "}
@@ -297,6 +296,7 @@ export default async function AntragDetailPage({
           initial={maskHiddenCardFields({
             title: card.title,
             applicant: card.applicant,
+            submitterEmail: card.submitterEmail,
             budgetTitle: card.budgetTitle,
             number: card.number,
             deadline: card.deadline,

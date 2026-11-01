@@ -1563,6 +1563,7 @@ components:
             enum:
               - number
               - applicant
+              - submitter_email
               - budget_title
               - requested_amount
               - approved_amount

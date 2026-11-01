@@ -54,6 +54,7 @@ export default async function BoardPage({
       requestedAmount: cards.requestedAmount,
       decisionRef: cards.decisionRef,
       applicant: cards.applicant,
+      submitterEmail: cards.submitterEmail,
       priorityId: cards.priorityId,
       resubmittedAt: cards.resubmittedAt,
       deadline: cards.deadline,
@@ -96,6 +97,7 @@ export default async function BoardPage({
       r.title,
       r.number,
       r.applicant,
+      r.submitterEmail,
       visibleSet.has("budget_title") ? budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle : null,
       r.notes,
       r.decisionRef,
@@ -126,6 +128,7 @@ export default async function BoardPage({
       meeting: r.meeting,
       assignees,
       fields: {
+        submitter_email: r.submitterEmail,
         budget_title: visibleSet.has("budget_title") ? budgetDisplay.get(r.id)?.budgetTitle ?? r.budgetTitle : null,
         account: visibleSet.has("account") ? budgetDisplay.get(r.id)?.accountName ?? (r.accountId != null ? accountLabel.get(r.accountId) ?? null : null) : null,
         requested_amount: r.requestedAmount,

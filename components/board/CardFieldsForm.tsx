@@ -33,10 +33,12 @@ function FieldRow({
   fieldKey,
   checked,
   onToggle,
+  locked,
 }: {
   fieldKey: string;
   checked: boolean;
   onToggle: () => void;
+  locked: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: fieldKey });
@@ -62,10 +64,12 @@ function FieldRow({
         <input
           type="checkbox"
           checked={checked}
+          disabled={locked}
           onChange={onToggle}
           className="h-4 w-4"
         />
         {CARD_FIELD_LABELS[fieldKey as CardFieldKey]}
+        {locked && <span className="text-xs text-slate-500">(Standortformular)</span>}
       </label>
     </div>
   );
@@ -75,10 +79,12 @@ export function CardFieldsForm({
   boardId,
   visibility,
   fieldOrder,
+  requiredFields = [],
 }: {
   boardId: number;
   visibility: Record<string, boolean>;
   fieldOrder: string[];
+  requiredFields?: readonly string[];
 }) {
   const [state, dispatch, pending] = useActionState(
     setCardFieldsAction.bind(null, boardId),
@@ -89,7 +95,7 @@ export function CardFieldsForm({
   // Sichtbarkeit aller (ab-)wählbaren Felder als kontrollierter Zustand.
   const allKeys = [...fieldOrder, ...ATTACHMENT_FIELD_KEYS];
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(allKeys.map((k) => [k, visibility[k] ?? true])),
+    Object.fromEntries(allKeys.map((k) => [k, requiredFields.includes(k) || (visibility[k] ?? true)])),
   );
 
   const sensors = useSensors(
@@ -97,11 +103,11 @@ export function CardFieldsForm({
   );
 
   const toggle = (key: string) =>
-    setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
+    !requiredFields.includes(key) && setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
   const setAll = (value: boolean) =>
     setChecked((prev) => {
       const next: Record<string, boolean> = {};
-      for (const k of Object.keys(prev)) next[k] = value;
+      for (const k of Object.keys(prev)) next[k] = requiredFields.includes(k) || value;
       return next;
     });
 
@@ -122,13 +128,14 @@ export function CardFieldsForm({
     const fd = new FormData();
     fd.set("order", order.join(","));
     for (const key of Object.keys(checked)) {
-      if (checked[key]) fd.set(`field_${key}`, "on");
+      if (requiredFields.includes(key) || checked[key]) fd.set(`field_${key}`, "on");
     }
     startTransition(() => dispatch(fd));
   }
 
   return (
     <div className="space-y-5">
+      {requiredFields.length > 0 && <p className="text-sm text-slate-500">Felder des Antragsformulars bleiben aktiv, solange diesem Board ein aktiver Standort zugeordnet ist.</p>}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -162,7 +169,8 @@ export function CardFieldsForm({
                 <FieldRow
                   key={key}
                   fieldKey={key}
-                  checked={checked[key] ?? true}
+                  checked={requiredFields.includes(key) || (checked[key] ?? true)}
+                  locked={requiredFields.includes(key)}
                   onToggle={() => toggle(key)}
                 />
               ))}
@@ -178,7 +186,8 @@ export function CardFieldsForm({
             <label key={key} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={checked[key] ?? true}
+                checked={requiredFields.includes(key) || (checked[key] ?? true)}
+                disabled={requiredFields.includes(key)}
                 onChange={() => toggle(key)}
                 className="h-4 w-4"
               />
@@ -201,6 +210,7 @@ export function CardFieldsForm({
           <span className="text-sm text-green-600">{state.success}</span>
         )}
       </div>
+      {state.error && <p role="alert" className="text-sm text-red-600">{state.error}</p>}
       <p className="text-xs text-slate-500">
         Titel, Erstellungszeitpunkt und Letzte Änderung sind immer sichtbar.
         Aktivierte Felder dürfen leer bleiben. Auf der Karte stehen jeweils zwei

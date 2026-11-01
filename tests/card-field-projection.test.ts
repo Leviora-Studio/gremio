@@ -12,3 +12,11 @@ test("client props and searchable fields do not carry disabled card values", () 
     notes: null, assignees: [], assigneeUserIds: [], creator: null });
   assert.equal(card.requestedAmount, 12345, "projection never clears stored values");
 });
+
+
+test("email follows visibility without mutating stored contact information", () => {
+  const card = { title: "Application", submitterEmail: "person@example.org" };
+  assert.equal(maskHiddenCardFields(card, new Set()).submitterEmail, null);
+  assert.equal(maskHiddenCardFields(card, new Set(["submitter_email"])).submitterEmail, card.submitterEmail);
+  assert.equal(card.submitterEmail, "person@example.org");
+});

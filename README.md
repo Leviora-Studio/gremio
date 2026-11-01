@@ -1,5 +1,11 @@
 # Gremio
 
+Das interne Kartenfeld „E-Mail-Adresse“ ist pro Board konfigurierbar und für
+Board-Schreiber bearbeitbar. Standort-Zuordnungen aktivieren die Felder des
+Antragsformulars automatisch; aktive Standorte schützen diese vor Deaktivierung.
+Migration `0087_application_card_fields.sql` ergänzt die Feldkonfiguration
+bestehender Boards und korrigiert bereits aktive Standort-Zuordnungen.
+
 ### 4.5.0: Board-Ansichten, abgestufte Freigaben und System-E-Mails
 
 Boards bieten zusätzlich gruppierte Listen, Tabellen und Kalender; Suche und

@@ -62,6 +62,7 @@ export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
 export const CARD_FIELD_KEYS = [
   "number",
   "applicant",
+  "submitter_email",
   "budget_title",
   "requested_amount",
   "approved_amount",
@@ -102,6 +103,7 @@ export const EDITABLE_FIELD_KEYS = CARD_FIELD_KEYS.filter(
 export const CARD_FIELD_LABELS: Record<CardFieldKey, string> = {
   number: "Antragsnummer",
   applicant: "Antragsteller",
+  submitter_email: "E-Mail-Adresse",
   budget_title: "Haushaltstitel",
   requested_amount: "Beantragter Betrag (€)",
   approved_amount: "Genehmigter Betrag (€)",
@@ -254,3 +256,8 @@ export const TRIGGER_LABELS: Record<TriggerKind, string> = {
   archive: "Nextcloud-Archiv",
   done: "Done-Spalte",
 };
+
+/** All fields accepted by the public application form, including optional uploads. */
+export const APPLICATION_CARD_FIELD_KEYS = [
+  "applicant", "submitter_email", "finance_request", "student_card", "annex_a", "annex_b",
+] as const satisfies readonly CardFieldKey[];
