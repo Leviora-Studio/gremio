@@ -194,6 +194,7 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 - Konfiguriert wird das in den **Board-Einstellungen** (Eigentümer/Admin), nicht im globalen Admin Panel.
 - Zugriff über WebDAV / Nextcloud-API; keine weitere Nextcloud-Funktionalität.
 - **Sicherheit:** Zugangsdaten **verschlüsselt** in der DB (AES-256-GCM via Node-`crypto`, Schlüssel aus `.env`). Empfehlung: Nextcloud-**App-Passwort** statt Hauptpasswort. Passwortfeld im UI nur schreibend („gesetzt"-Anzeige, ersetzen statt anzeigen).
+- Archivordner verwenden den konfigurierten, bereinigten Namen ohne automatisch ergänzte Karten-ID. Gleichnamige Ordner werden wiederverwendet. Uploads verwenden bedingtes Anlegen: Bereits vorhandene identische Dateien werden bei Wiederholungen wiederverwendet. Bei anderem Inhalt wird die Gremio-Datei daneben als `Name_Gremio.ext` abgelegt; weitere Konflikte verwenden `Name_Gremio_2.ext`, `Name_Gremio_3.ext` usw. Auch identische Ausweichdateien werden bei Wiederholungen wiederverwendet. Ausweichnamen respektieren die UTF-8-Bytegrenze und reservieren die Pfade anderer Anhänge; vorhandene Dateien werden nie überschrieben. Der Inhaltsvergleich liest höchstens bis zur ersten Abweichung und hat eine Zeitgrenze. Vorhandene abgeschlossene Archive werden nicht umbenannt.
 
 
 ---
@@ -585,6 +586,8 @@ Beispiel: "Grillabend am FB5"
 ## Inventar- & Entleihsystem
 
 Interne Gegenstandslisten und -details filtern optionale ausgeblendete Metadaten vor der Übergabe an Client-Komponenten, einschließlich Suchdaten. Das betrifft Nummer, Seriennummer, Gruppen-/Kategorien-/Standortzuordnung, Zustandsnotiz, aktuelle Person/Frist, Preis, Kaufdatum, Händler und Notizen. Im Inventararchiv bleiben ausgeblendete Nummern und Zustandsnotizen ebenfalls verborgen. Operative Bestands-, Zustands- und Verfügbarkeitsdaten bleiben für die Ausleihsteuerung verfügbar; eigenständige Vorgangs- und Mängelhistorien behalten ihr bestehendes Rechtemodell.
+
+Ausgeblendete Kategorien und Standorte entfernen auch ihre Auswahlkataloge aus internen Client-Props. Die öffentliche Inventarliste enthält bei deaktivierter Kategorie weder Kategorienamen/-IDs noch Kategorieoptionen oder Suchwerte. Bei aktivierter Kategorie werden ausschließlich Optionen öffentlich sichtbarer Gegenstände übertragen; interne und ungenutzte Kategorien bleiben verborgen. Gespeicherte Zuordnungen bleiben erhalten.
 
 Eigenständiges Modul (seit 2.0.0) zur Verwaltung von Gegenständen und deren Ausleihe. **Inventar-Boards sind keine Kanban-Boards** — eigene Tabellen, eigene Listenansicht. Sie teilen sich mit den Kanban-Boards nur Nutzer, Gruppen und das **identische Zugriffsmodell**: Zugriff = Admin ∨ Eigentümer ∨ Freigabe an Nutzer/Gruppe (read/write, höchste Stufe gilt); Verwalten = Admin ∨ Eigentümer (`lib/inventory.ts`, gleiche Struktur wie `lib/authz/index.ts`). Jeder eingeloggte Nutzer darf ein Inventar-Board erstellen und ist dann dessen Eigentümer.
 

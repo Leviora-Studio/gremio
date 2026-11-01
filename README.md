@@ -8,6 +8,17 @@ Sitzungen auf deren Verwaltung, entfernen private PDF-Feldwerte aus Fehlerlogs
 und begrenzen kollidierende Archivnamen. Zod 4 und gezielte minimatch-Updates
 beheben die gemeldeten Sicherheitslücken der Produktionsabhängigkeiten.
 
+Der ergänzende Audit ab `c6e053a` verhindert eine unbeabsichtigte Ausweitung von
+API-Tokens bei veralteter Board-Auswahl und sichert die Token-Obergrenze bei
+paralleler Anlage. Ausgeblendete Inventarkategorien und Standortoptionen werden
+vor der Browserausgabe entfernt, einschließlich öffentlicher Suchdaten.
+Nextcloud-Archivordner verwenden den konfigurierten Namen ohne automatisch
+ergänzte Karten-ID. Gleichnamige Ordner und identische Dateien werden
+wiederverwendet. Bei anderem Inhalt wird die
+Gremio-Datei daneben als `Name_Gremio.ext` abgelegt; weitere Namenskonflikte
+erhalten `_Gremio_2`, `_Gremio_3` usw. Vorhandene Dateien werden nie überschrieben.
+Abgeschlossene Archive behalten ihre bisherigen Namen.
+
 Das interne Kartenfeld „E-Mail-Adresse“ ist pro Board konfigurierbar und für
 Board-Schreiber bearbeitbar. Standort-Zuordnungen aktivieren die Felder des
 Antragsformulars automatisch; aktive Standorte schützen diese vor Deaktivierung.

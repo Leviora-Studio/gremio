@@ -2,11 +2,12 @@
 // Copyright (C) 2026 Leviora Studio
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attachmentArchiveLayout, organizationName, sanitizeSegment } from "../lib/attachment-organization";
+import { attachmentArchiveLayout, archiveConflictName, organizationName, sanitizeSegment } from "../lib/attachment-organization";
 
 test("archive root folders obey UTF-8 component limits without splitting characters", () => {
   for (const value of ["€".repeat(120), "😀".repeat(120), "Übersicht".repeat(40)]) {
     const name = sanitizeSegment(value);
+    assert.ok(name.length <= 120);
     assert.ok(Buffer.byteLength(name, "utf8") <= 255);
     assert.equal(Buffer.from(name).toString("utf8"), name);
     assert.ok(!name.includes("\ufffd"));
@@ -54,6 +55,19 @@ test("archive collision names stay within filesystem limits even with long legac
   ]);
   for (const file of layout.files) assert.ok(Buffer.byteLength(file.name) <= 255);
   assert.equal(new Set(layout.files.map(file => file.name)).size, 2);
+  assert.equal(archiveConflictName("Antrag.pdf", 1), "Antrag_Gremio.pdf");
+  assert.equal(archiveConflictName("Antrag.final.PDF", 2), "Antrag.final_Gremio_2.PDF");
+  assert.equal(archiveConflictName("Dokument", 1), "Dokument_Gremio");
+  for (const sequence of [1, 2, 1000]) {
+    const name = archiveConflictName(`${"€".repeat(83)}.pdf`, sequence);
+    assert.ok(Buffer.byteLength(name) <= 255);
+    assert.ok(name.endsWith(".pdf"));
+    assert.ok(name.includes("_Gremio"));
+    const legacy = archiveConflictName(filename, sequence);
+    assert.ok(Buffer.byteLength(legacy) <= 255);
+    assert.ok(legacy.includes("_Gremio"));
+    assert.ok(!legacy.includes("\ufffd"));
+  }
 });
 
 test("Nextcloud uploader creates empty subfolders and writes each file to its planned path", async () => {
@@ -62,17 +76,26 @@ test("Nextcloud uploader creates empty subfolders and writes each file to its pl
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { createRequire } = await import("node:module");
+  const { Readable } = await import("node:stream");
   const require = createRequire(import.meta.url);
   const Module = require("node:module");
   const directory = await mkdtemp(join(tmpdir(), "gremio-folder-cloud-"));
   const entry = join(directory, "nextcloud.cjs");
   const created: string[] = [];
+  const directories = new Set<string>();
   const uploaded: { path: string; content: Buffer }[] = [];
+  const stored = new Map<string, Buffer>();
+  let stalled = false;
   const context = globalThis as unknown as { __folderTestWebdav?: unknown };
   context.__folderTestWebdav = {
-    exists: async () => false,
-    createDirectory: async (path: string) => { created.push(path); },
-    putFileContents: async (path: string, content: Buffer) => { uploaded.push({ path, content }); },
+    exists: async (path: string) => directories.has(path),
+    createDirectory: async (path: string) => { directories.add(path); created.push(path); },
+    putFileContents: async (path: string, content: Buffer, options: { overwrite: boolean }) => {
+      assert.equal(options.overwrite, false, "uploads must never overwrite an existing archive");
+      if (stored.has(path)) return false;
+      stored.set(path, content); uploaded.push({ path, content }); return true;
+    },
+    createReadStream: (path: string) => stalled ? new Readable({ read() {} }) : Readable.from([stored.get(path)!]),
   };
   try {
     await build({ entryPoints: ["lib/nextcloud.ts"], outfile: entry, platform: "node", format: "cjs", bundle: true, packages: "external", plugins: [{ name: "local-cloud-double", setup(builder) {
@@ -83,7 +106,7 @@ test("Nextcloud uploader creates empty subfolders and writes each file to its pl
     } }] });
     const loaded = new Module(entry, module); loaded.filename = entry; loaded.paths = module.paths;
     loaded._compile(await readFile(entry, "utf8"), entry);
-    const folder = await loaded.exports.uploadAntragArchive({
+    const options = {
       creds: { url: "https://example.invalid", username: "synthetic", password: "synthetic" },
       targetFolder: "/Archive", subfolder: "Ticket 1",
       folders: [{ id: 1, name: "Belege" }, { id: 2, name: "Leer" }],
@@ -92,7 +115,8 @@ test("Nextcloud uploader creates empty subfolders and writes each file to its pl
         { id: 2, relPath: "first-bytes", filename: "Beleg.pdf", folderId: 1 },
         { id: 3, relPath: "second-bytes", filename: "Beleg.pdf", folderId: 1 },
       ],
-    });
+    };
+    const folder = await loaded.exports.uploadAntragArchive(options);
     assert.equal(folder, "/Archive/Ticket 1");
     assert.deepEqual(created, ["/Archive", folder, `${folder}/Belege`, `${folder}/Leer`]);
     assert.deepEqual(uploaded.map((f) => [f.path, f.content.toString()]), [
@@ -100,6 +124,58 @@ test("Nextcloud uploader creates empty subfolders and writes each file to its pl
       [`${folder}/Belege/Beleg.pdf`, "first-bytes"],
       [`${folder}/Belege/Beleg (3).pdf`, "second-bytes"],
     ]);
+    const other = await loaded.exports.uploadAntragArchive({
+      creds: { url: "https://example.invalid", username: "synthetic", password: "synthetic" },
+      targetFolder: "/Archive", subfolder: "Ticket 1",
+      folders: [], files: [{ id: 4, relPath: "unrelated-ticket", filename: "Antrag.pdf", folderId: null }],
+    });
+    assert.equal(other, folder, "equal configured names reuse the same folder without an ID suffix");
+    assert.equal(created.filter(path => path === folder).length, 1, "existing archive folders are reused");
+    assert.equal(stored.get(`${folder}/Antrag.pdf`)!.toString(), "root-bytes");
+    assert.equal(stored.get(`${folder}/Antrag_Gremio.pdf`)!.toString(), "unrelated-ticket", "another ticket's differing file is stored beside the original");
+    assert.equal(new Set(uploaded.map(file => file.path)).size, uploaded.length);
+    assert.equal(await loaded.exports.uploadAntragArchive(options), folder, "identical partial uploads are safely retried");
+    assert.equal(uploaded.length, 4, "retry reuses all identical files");
+    stored.set(`${folder}/Antrag.pdf`, Buffer.from("Legacy archive contents"));
+    assert.equal(await loaded.exports.uploadAntragArchive(options), folder);
+    assert.equal(stored.get(`${folder}/Antrag_Gremio_2.pdf`)!.toString(), "root-bytes");
+    assert.equal(stored.get(`${folder}/Antrag.pdf`)!.toString(), "Legacy archive contents");
+    const afterConflict = uploaded.length;
+    await loaded.exports.uploadAntragArchive(options);
+    assert.equal(uploaded.length, afterConflict, "retries reuse the identical Gremio copy");
+    stored.set(`${folder}/Antrag_Gremio_2.pdf`, Buffer.from("Another existing file"));
+    await loaded.exports.uploadAntragArchive(options);
+    assert.equal(stored.get(`${folder}/Antrag_Gremio_2.pdf`)!.toString(), "Another existing file");
+    assert.equal(stored.get(`${folder}/Antrag_Gremio_3.pdf`)!.toString(), "root-bytes");
+    const beforeNumberedRetry = uploaded.length;
+    await loaded.exports.uploadAntragArchive(options);
+    assert.equal(uploaded.length, beforeNumberedRetry, "numbered fallback files are reused on retry");
+
+    const reservedFolder = "/Archive/Reserved paths";
+    stored.set(`${reservedFolder}/Antrag.pdf`, Buffer.from("Foreign content"));
+    await loaded.exports.uploadAntragArchive({ ...options, subfolder: "Reserved paths", folders: [], files: [
+      { id: 1, relPath: "first-own-file", filename: "Antrag.pdf", folderId: null },
+      { id: 2, relPath: "second-own-file", filename: "Antrag_Gremio.pdf", folderId: null },
+    ] });
+    assert.equal(stored.get(`${reservedFolder}/Antrag.pdf`)!.toString(), "Foreign content");
+    assert.equal(stored.get(`${reservedFolder}/Antrag_Gremio.pdf`)!.toString(), "second-own-file");
+    assert.equal(stored.get(`${reservedFolder}/Antrag_Gremio_2.pdf`)!.toString(), "first-own-file");
+
+    stored.set(`${folder}/Belege/Beleg.pdf`, Buffer.from("Existing subfolder file"));
+    await Promise.all([loaded.exports.uploadAntragArchive(options), loaded.exports.uploadAntragArchive(options)]);
+    assert.equal(stored.get(`${folder}/Belege/Beleg.pdf`)!.toString(), "Existing subfolder file");
+    assert.equal(stored.get(`${folder}/Belege/Beleg_Gremio.pdf`)!.toString(), "first-bytes");
+    assert.equal(stored.has(`${folder}/Belege/Beleg_Gremio_2.pdf`), false, "parallel retries reuse one identical fallback");
+    const timeout = AbortSignal.timeout;
+    const keepAlive = setTimeout(() => {}, 1000);
+    try {
+      stalled = true;
+      AbortSignal.timeout = () => timeout(10);
+      await assert.rejects(loaded.exports.uploadAntragArchive(options), /abort/i, "a stalled remote body must not keep an archive retry open");
+    } finally {
+      AbortSignal.timeout = timeout;
+      clearTimeout(keepAlive);
+    }
   } finally {
     delete context.__folderTestWebdav;
     await rm(directory, { recursive: true, force: true });

@@ -27,21 +27,34 @@ export function sanitizeSegment(s: string): string {
   return result || "ordner";
 }
 
+function shortenUtf8(value: string, budget: number): string {
+  let result = "";
+  for (const char of value) {
+    if (Buffer.byteLength(result + char, "utf8") > budget) break;
+    result += char;
+  }
+  return result;
+}
+
+/** Add a portable conflict suffix before the extension of an archive filename. */
+export function archiveConflictName(filename: string, sequence: number): string {
+  if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("Invalid archive conflict sequence");
+  const dot = filename.lastIndexOf(".");
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const extension = dot > 0 ? filename.slice(dot) : "";
+  const suffix = sequence === 1 ? "_Gremio" : `_Gremio_${sequence}`;
+  // Reserve the suffix and at least one basename byte even for legacy extensions.
+  const ext = shortenUtf8(extension, 254 - Buffer.byteLength(suffix));
+  return `${shortenUtf8(base, 255 - Buffer.byteLength(suffix + ext)) || "d"}${suffix}${ext}`;
+}
+
 /** Shared cloud/ZIP layout; never overwrite colliding legacy filenames. */
 export function attachmentArchiveLayout<T extends { id: number; filename: string; folderId: number | null }>(
   folders: AttachmentFolder[], files: T[],
 ): { directories: string[]; files: { attachment: T; name: string }[] } {
   function reserve(raw: string, id: number, used: Set<string>): string {
     const name = sanitizeSegment(raw);
-    const shorten = (value: string, budget: number) => {
-      let result = "";
-      for (const char of value) {
-        if (Buffer.byteLength(result + char) > budget) break;
-        result += char;
-      }
-      return result;
-    };
-    let candidate = shorten(name, 255);
+    let candidate = shortenUtf8(name, 255);
     let count = 0;
     const dot = name.lastIndexOf(".");
     const base = dot > 0 ? name.slice(0, dot) : name;
@@ -50,8 +63,8 @@ export function attachmentArchiveLayout<T extends { id: number; filename: string
       const discriminator = ` (${id}${count++ ? `-${count}` : ""})`;
       // Legacy extensions can themselves exceed the component byte limit.
       // Reserve the unique suffix first and leave room for a basename.
-      const suffix = `${discriminator}${shorten(ext, 254 - Buffer.byteLength(discriminator))}`;
-      candidate = `${shorten(base, 255 - Buffer.byteLength(suffix))}${suffix}`;
+      const suffix = `${discriminator}${shortenUtf8(ext, 254 - Buffer.byteLength(discriminator))}`;
+      candidate = `${shortenUtf8(base, 255 - Buffer.byteLength(suffix))}${suffix}`;
     }
     used.add(candidate.toLocaleLowerCase("en-US"));
     return candidate;

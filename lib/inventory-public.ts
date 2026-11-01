@@ -77,16 +77,18 @@ export async function getPublicBoardData(boardId: number): Promise<{
       groupName: it.groupName,
       quantity: it.quantity,
       availableQuantity: it.availableQuantity,
-      categoryIds: it.categoryIds,
-      categoryNames: it.categoryNames,
+      categoryIds: publicFields.includes("category") ? it.categoryIds : [],
+      categoryNames: publicFields.includes("category") ? it.categoryNames : [],
       availability: it.availability,
       lentUntil: it.activeUntil,
     }));
   const toOpts = (rows: { id: number; name: string }[]) =>
     rows.map((r) => ({ id: r.id, name: r.name }));
+  const categoryIds = new Set(items.flatMap(item => item.categoryIds));
   return {
     publicFields,
     items,
-    options: { category: toOpts(options.category) },
+    // Internal-only/unused options must not reach public search or client props.
+    options: { category: toOpts(options.category.filter(option => categoryIds.has(option.id))) },
   };
 }

@@ -142,7 +142,10 @@ Authorization: Bearer grm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 - **Rechtestufe** — `write` (lesen **und** schreiben) oder `read` (nur `GET`).
   Mit einem `read`-Token werden `POST`/`PATCH`/`DELETE` mit `403` abgelehnt.
 - **Board-Beschränkung** — optional auf bestimmte Boards begrenzen. Ohne
-  Auswahl gilt der Token für **alle** Boards des Nutzers (auch künftige). Die
+  Auswahl gilt der Token für **alle** Boards des Nutzers (auch künftige). Beim
+  Erstellen werden veraltete oder unzulässige Board-Auswahlen vollständig
+  abgewiesen, damit keine gewählte Beschränkung verloren geht. Maximal 20 Tokens
+  pro Nutzer werden auch bei paralleler Anlage durchgesetzt. Die
   Beschränkung wirkt **zusätzlich** zur Live-Zugriffsprüfung: Ein Token gewährt
   nie mehr, als der Nutzer selbst aktuell darf. Nicht erlaubte Boards →
   `404`.

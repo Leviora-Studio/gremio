@@ -194,8 +194,8 @@ export default async function InventoryBoardPage({
         visibleFields={Array.from(visible)}
         numberingEnabled={numbering?.enabled ?? false}
         initialOptions={{
-          category: toOpts(options.category),
-          location: toOpts(options.location),
+          category: visible.has("category") ? toOpts(options.category) : [],
+          location: visible.has("location") ? toOpts(options.location) : [],
           loan_status: toOpts(options.loan_status),
         }}
         groupNames={visible.has("group") ? groupNames : []}

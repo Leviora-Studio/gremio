@@ -5,13 +5,14 @@ import { readFile } from "node:fs/promises";
 import { lookup as dnsLookup } from "node:dns";
 import { Agent as HttpAgent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
+import { addAbortSignal, type Readable } from "node:stream";
 import {
   createClient,
   getPatcher,
   type WebDAVClient,
 } from "webdav";
 import { fetch as nodeFetch } from "@buttercup/fetch";
-import { attachmentArchiveLayout, sanitizeSegment, type AttachmentFolder } from "@/lib/attachment-organization";
+import { attachmentArchiveLayout, archiveConflictName, sanitizeSegment, type AttachmentFolder } from "@/lib/attachment-organization";
 import { absPath } from "@/lib/attachments";
 import { isSafeExternalUrl, isPublicHost } from "@/lib/url-guard";
 
@@ -112,6 +113,25 @@ async function ensureDir(c: WebDAVClient, path: string): Promise<void> {
   }
 }
 
+/** Compare a partial-upload retry without buffering an untrusted remote file. */
+async function sameRemoteContent(c: WebDAVClient, path: string, expected: Buffer): Promise<boolean> {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
+  const remote = addAbortSignal(signal, c.createReadStream(path, { signal }) as Readable);
+  try {
+    let offset = 0;
+    for await (const chunk of remote) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (!expected.subarray(offset, offset + bytes.length).equals(bytes)) return false;
+      offset += bytes.length;
+    }
+    return offset === expected.length;
+  } finally {
+    controller.abort();
+    remote.destroy();
+  }
+}
+
 /** Verbindung testen (Verzeichnisinhalt des Zielordners lesen). */
 export async function testConnection(
   creds: NcCredentials,
@@ -145,14 +165,31 @@ export async function uploadAntragArchive(opts: {
   await ensureDir(c, folder);
 
   const layout = attachmentArchiveLayout(opts.folders, opts.files);
+  const reserved = new Set([...layout.directories, ...layout.files.map(file => file.name)].map(name => name.toLocaleLowerCase("en-US")));
   for (const directory of layout.directories) {
     await ensureDir(c, `${folder}/${directory}`);
   }
   for (const f of layout.files) {
     const buf = await readFile(absPath(f.attachment.relPath));
-    await c.putFileContents(`${folder}/${f.name}`, buf, {
-      overwrite: true,
-    });
+    const slash = f.name.lastIndexOf("/");
+    const directory = f.name.slice(0, slash + 1);
+    const filename = f.name.slice(slash + 1);
+    // Conditional PUT protects existing archives, including legacy folder names.
+    // Preserve different bytes beside the original and reuse identical retries.
+    let saved = false;
+    for (let sequence = 0; sequence <= 1000; sequence++) {
+      const name = sequence === 0 ? f.name : `${directory}${archiveConflictName(filename, sequence)}`;
+      const key = name.toLocaleLowerCase("en-US");
+      // A fallback must not occupy another attachment's planned or selected path.
+      if (sequence > 0 && reserved.has(key)) continue;
+      const path = `${folder}/${name}`;
+      if (await c.putFileContents(path, buf, { overwrite: false }) || await sameRemoteContent(c, path, buf)) {
+        reserved.add(key);
+        saved = true;
+        break;
+      }
+    }
+    if (!saved) throw new Error("Kein freier Archivdateiname gefunden. Es wurde nichts überschrieben.");
   }
   return folder;
 }

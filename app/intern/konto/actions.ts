@@ -3,7 +3,7 @@
 
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { apiTokenBoards, apiTokens, users } from "@/lib/db/schema";
@@ -46,7 +46,9 @@ export async function createApiTokenAction(
     !input ||
     typeof input.name !== "string" ||
     (input.scope !== "read" && input.scope !== "write") ||
-    !Array.isArray(input.boardIds)
+    !Array.isArray(input.boardIds) ||
+    input.boardIds.length > 1000 ||
+    input.boardIds.some((id) => !Number.isSafeInteger(id) || id < 1 || id > 2_147_483_647)
   ) {
     return { ok: false, error: "Ungültige Eingabe." };
   }
@@ -55,27 +57,27 @@ export async function createApiTokenAction(
 
   const scope = input.scope === "read" ? "read" : "write";
 
-  const existing = await db
-    .select({ id: apiTokens.id })
-    .from(apiTokens)
-    .where(eq(apiTokens.userId, user.id));
-  if (existing.length >= MAX_TOKENS_PER_USER) {
-    return {
-      ok: false,
-      error: `Maximal ${MAX_TOKENS_PER_USER} Tokens. Bitte zuerst eines widerrufen.`,
-    };
-  }
-
   // Board-Beschränkung nur auf Boards zulassen, auf die der Nutzer Zugriff hat.
   const accessibleIds = new Set(
     (await getAccessibleBoards(user)).map((b) => b.id),
   );
-  const boardIds = [...new Set(input.boardIds)].filter((id) =>
-    accessibleIds.has(id),
-  );
+  const boardIds = [...new Set(input.boardIds)];
+  if (boardIds.some((id) => !accessibleIds.has(id))) {
+    return { ok: false, error: "Die Board-Auswahl ist nicht mehr verfügbar. Bitte neu laden und erneut auswählen." };
+  }
 
   const { token, hash, prefix } = generateApiToken();
-  await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<CreateTokenResult> => {
+    // Serialize this account's quota without conflicting with board-owner locks.
+    await tx.execute(sql`select pg_advisory_xact_lock(${0x4154}, ${user.id})`);
+    const [current] = await tx.select().from(users).where(eq(users.id, user.id)).for("share");
+    if (!current?.isActive || current.sessionVersion !== user.sessionVersion) {
+      return { ok: false, error: "Die Sitzung ist nicht mehr gültig. Bitte erneut anmelden." };
+    }
+    const existing = await tx.select({ id: apiTokens.id }).from(apiTokens).where(eq(apiTokens.userId, user.id));
+    if (existing.length >= MAX_TOKENS_PER_USER) {
+      return { ok: false, error: `Maximal ${MAX_TOKENS_PER_USER} Tokens. Bitte zuerst eines widerrufen.` };
+    }
     const [row] = await tx
       .insert(apiTokens)
       .values({
@@ -95,10 +97,11 @@ export async function createApiTokenAction(
         .insert(apiTokenBoards)
         .values(boardIds.map((boardId) => ({ tokenId: row.id, boardId })));
     }
+    return { ok: true, token, name: clean };
   });
 
   revalidatePath("/intern/konto");
-  return { ok: true, token, name: clean };
+  return result;
 }
 
 /**

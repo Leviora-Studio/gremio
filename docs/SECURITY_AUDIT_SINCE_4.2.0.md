@@ -4,6 +4,9 @@ Audit date: 2026-11-01. Starting checkout: `ef75a69`.
 
 The initial audit below is retained as historical evidence. The additional audit
 starting at `3796fd5` is recorded in the follow-up section at the end.
+The latest run starts at `c6e053a`; its four further findings, current validation
+and remaining dependency alerts are recorded in
+[Additional audit starting at c6e053a](#additional-audit-starting-at-c6e053a).
 
 ## Scope and method
 
@@ -202,3 +205,115 @@ container OS CVEs and a production penetration test are outside these local
 checks. The optional real-Keycloak and dedicated notification/activity checks
 from the first audit were not repeated; their relevant standard/HTTP regressions
 were rerun. A source audit and passing tests cannot prove absence of every bug.
+
+## Additional audit starting at c6e053a
+
+Date: 2026-11-01. The starting working tree was clean. Scope remains
+`v4.2.0^..c6e053a` plus the corrections from this review, including 4.2.0 itself.
+The release comparison contains 316 changed files, of which 238 are application,
+library, component, configuration or migration files (including generated
+migration snapshots). The earlier audit sections are historical results and were
+not counted as checks executed by this run.
+
+The review combines source tracing of permissions and data flows with the full
+regression suite, an isolated production build, real HTTP/browser workflows,
+current npm advisories and local secret/configuration scanners. Source tracing
+covers read/write and office permissions, ownership and revocation, REST/MCP
+restrictions, public application/feedback/inventory projections, budgets and
+finance sources, meeting confidentiality/revisions/documents, archive paths and
+retries, PDF editing/signing, SMTP, SSO/session checks, SSE and migrations. Related
+callers outside changed hunks are included where they participate in these flows;
+not every affected line was first introduced in 4.2.0.
+
+### Confirmed findings and fixes
+
+| ID | Impact | Finding and correction | Evidence |
+| --- | --- | --- | --- |
+| R01 | Medium, unintended token access | API-token creation silently filtered inaccessible/deleted board selections. If no selection survived, the token became unrestricted and could access every board available to its user. Creation now rejects the complete request if any selected board is unavailable, validates integer IDs and caps the selection at 1,000 entries. An explicitly empty selection retains the documented all-boards behavior. | The regression failed before the correction because an invalid selection returned a successful unrestricted token. `api-token-restriction-db.test.ts` checks invalid/mixed/oversized selections, a real restricted bearer token and explicit all-board access. |
+| R02 | Low, concurrent token issuance | The 20-token account quota was checked outside the insert transaction, allowing parallel requests to exceed it. The transaction now serializes issuance per account with a dedicated advisory lock, rereads the account under a shared lock and rejects deactivated or invalidated sessions before inserting. The shared account lock avoids an opposite lock order with board ownership changes. | Four simultaneous requests with 19 existing tokens produce exactly one success and 20 persisted tokens. A stale active-account snapshot cannot issue another token after deactivation. |
+| R03 | High, archive data loss | Archive layout deduplicated filenames within a ticket but reused the outer directory for different tickets with equal/sanitized/truncated titles. `overwrite: true` could replace another ticket's document. New directories reserve the stable ` (<card ID>)` suffix within the Unicode/byte limits. Conditional WebDAV PUT never overwrites an existing file, including legacy name collisions. Partial retries reuse a file only after an exact streaming content comparison; mismatched or stalled responses fail safely. Completed archives retain their existing paths. | A synthetic uploader reproduced two different tickets using the same archive directory before the fix. `attachment-organization.test.ts` verifies distinct paths, Unicode limits, stable retries, preserved conflicting legacy bytes, conditional writes and cancellation of a stalled remote body. No real Nextcloud files were accessed. |
+| R04 | Medium, inventory metadata disclosure | Disabled category values remained in public inventory client props/search data, and the public options catalog included internal-only/unused categories. Internal list/detail props also retained disabled category/location catalogs after masking item values. All affected server projections now omit disabled values/catalogs. Public options are limited to categories actually used by publicly visible items. Stored options and assignments are preserved. | `public-inventory-fields-db.test.ts` failed on a disclosed hidden category before the fix. The expanded production access-level workflow also failed against the previous build's complete public HTML response. It verifies disabled public/internal values, enabled public categories and absence of internal-only options. |
+
+These changes add no production dependency, migration or external API capability.
+They do not attempt to recover any historical Nextcloud overwrite: deployed data
+and remote file history were not inspected.
+
+### Validation from this run
+
+- Full standard suite on Node 22.23.2: **145 passed, 0 failed, 0 skipped**,
+  including three fresh empty-database upgrade checks. The final archive stream
+  cancellation regression was additionally rerun after its final adjustment.
+- `npx tsc --noEmit`, `npm run lint`, separate production build and
+  `git diff --check`: passed. The existing Next lint deprecation notice remains.
+- Six component/browser workflows passed: board views, finance plan, meeting
+  visibility, live refresh, public/budget workflows and home dashboard.
+- Eleven production-server browser/HTTP workflows passed: access levels
+  (including the new public/internal inventory payload regression), system email,
+  public workflows, meetings, meeting finance, MCP/OAuth, SSO, ownership/receipts,
+  scoped receipts, topic history and app-wide live refresh.
+- `npm audit --omit=dev --json`: **0 findings**. Full audit: **13 moderate
+  development-only dependency-chain entries**, all rooted in the same minimatch
+  advisory; no high/critical entries and no dependency/advisory suppression.
+- Trivy 0.76.1 ran locally with networking disabled and read-only mounts.
+  Secret/configuration scan of the source and secret scan of committed diffs from
+  4.2.0 onward: **0 secrets and 0 configuration findings**. Git internals,
+  dependencies, build output, ordinary uploads and data were excluded from the
+  source scan.
+
+The initial standard-suite attempt passed 141 tests and failed the upload-path
+safety assertion because the temporary directory name did not contain `test`.
+It did not access ordinary upload data. Renaming the dedicated temporary upload
+directory to satisfy that guard and using fresh upgrade databases produced the
+successful complete run above. The intentionally failing pre-fix regression
+runs are evidence of reproduction, not successful validation.
+
+### Remaining dependency alerts and limits
+
+The current primary
+[minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+still declares versions below 11.0.1 affected. The production WebDAV consumer and
+TypeScript parser use 11.0.3; the remaining 3.1.5 consumers belong to the ESLint
+development chain. The advisory describes `firstPhasePreProcess()` with
+`optimizationLevel >= 2`; both are absent from that installed 3.1.5 implementation.
+This is a source-based reachability assessment, not an advisory withdrawal.
+Those consumers require the older callable CommonJS interface; forcing minimatch
+11 globally would break the development toolchain. The 13 alerts remain open
+pending a compatible upstream/tooling resolution or corrected advisory range.
+
+All database fixtures use a newly created audit-only PostgreSQL container and
+dedicated databases. Uploads are temporary; identity and mail fixtures are
+synthetic/local. The audit container and its temporary volume were removed after
+validation. Ordinary application data, real Nextcloud files and external
+email recipients were not used. No commit, push, PR, publication or deployment
+was made. Production infrastructure, proxy configuration in service, container
+OS CVEs and an external penetration test are outside this local audit. The
+optional real-Keycloak and dedicated notification/activity migration scripts
+were not repeated in this run; their standard/HTTP regressions were included.
+A source audit and successful tests cannot prove that every possible defect or
+security vulnerability has been found.
+
+### Subsequent requested archive conflict behavior
+
+This section supersedes R03's original folder-ID and content-conflict policy.
+The user-requested follow-up replaces R03's content-conflict error with a sibling
+file: `Name_Gremio.ext`, then `Name_Gremio_2.ext`, etc. Conditional PUT still
+prevents overwrites; exact existing copies at any candidate name are reused.
+Fallbacks preserve extensions/UTF-8 limits and avoid paths reserved for other
+attachments. Candidate selection is bounded to 1,000 alternatives per file.
+The uploader regression covers conflicting originals and fallbacks, stable and
+parallel retries, subfolders and reserved attachment names. No real Nextcloud
+files are used. The audit results above remain the historical validation of the
+audit patch. Follow-up verification: **7 archive/WebDAV tests passed**;
+TypeScript, lint and `git diff --check` passed. The full database/browser suites
+and production build were not repeated for this isolated filename-policy change.
+
+A further user request removes the automatic card-ID suffix from directory
+names. The configured sanitized name is used directly, and existing equal
+directories are reused. The conditional writes, content comparison and `_Gremio`
+fallbacks above protect files even when different tickets share that directory.
+Existing completed archives are not renamed. The uploader regression now checks
+the exact folder name without an ID and two imports sharing a directory while
+retaining both versions of a conflicting document.
+Verification of this removal: **6 archive/WebDAV tests passed**; TypeScript,
+lint and `git diff --check` passed. No full database/browser run or production
+build was repeated for the removal.
