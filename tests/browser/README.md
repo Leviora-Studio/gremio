@@ -253,3 +253,16 @@ and board lists. `meeting-document-concurrency-db.test.ts` holds an uncommitted
 meeting closure while uploading, then verifies denied writes, revision conflicts
 and cleanup of the new file. Both DB tests require an isolated
 `gremio_workflows_test_*` database and a test-only upload directory.
+
+
+`meeting-word-production.cjs` runs with `node --import tsx` and checks real template
+upload, all style mappings, original-template download, owner/admin-only PDF and
+Word exports (including confidential content), denial for readers/writers and
+bearer-only requests, preserved opaque OOXML parts, removal and desktop/mobile
+settings. It uses a synthetic alternative template by default; set
+`GREMIO_WORD_TEMPLATE_FIXTURE` to a local `.dotx`/`.docx` to verify an official
+reference without adding it to the repository. Use `GREMIO_TEST_BUILD_DIR`,
+`PLAYWRIGHT_MODULE`, `CHROME_PATH` and the isolated migrated test database as above.
+Word fields are refreshed on open; final Microsoft Word pagination is a separate
+manual validation. Generated documents and screenshots remain in the printed
+local temporary directory.

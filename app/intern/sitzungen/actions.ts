@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { MeetingError } from "@/lib/meetings/access";
+import {uploadWordTemplate,saveWordConfiguration,removeWordTemplate} from "@/lib/meetings/word";
+import {wordStyleRoles,type WordStyleMapping} from "@/lib/meetings/word-template-types";
 import * as service from "@/lib/meetings/service";
 import { saveFinanceConfiguration, markFinanceTopic, planFinanceCard } from "@/lib/meetings/finance";
 export type MeetingActionState = { error?: string; success?: string };
@@ -152,4 +154,17 @@ export async function proposePersonalTopicAction(topicId:number,_previous:Meetin
 export async function saveAgendaSettingsAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
   try{await service.saveAgendaSettings(user,areaId,{publicNumbering:form.get("publicNumbering"),nonPublicNumbering:form.get("nonPublicNumbering"),firstSection:form.get("firstSection")});refresh();return {success:"Tagesordnungseinstellungen gespeichert."};}catch(error){return errorState(error);}
+}
+
+export async function uploadWordTemplateAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
+  const user=await requireUser();
+  try{const file=form.get("template");if(!(file instanceof File))throw new MeetingError("Bitte eine Wordvorlage auswählen.");await uploadWordTemplate(user,areaId,file,revision(form));refresh();return {success:"Wordvorlage gespeichert. Bitte Formatvorlagen und Musterbereich prüfen."};}catch(error){return errorState(error);}
+}
+export async function saveWordConfigurationAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
+  const user=await requireUser();
+  try{const styles=Object.fromEntries(Object.keys(wordStyleRoles).map(role=>[role,String(form.get(`style_${role}`)??"")])) as WordStyleMapping;const insertion=String(form.get("insertion")) as "replace"|"placeholder"|"append";await saveWordConfiguration(user,areaId,{styles,insertion,start:Number(form.get("start")),end:Number(form.get("end"))},revision(form));refresh();return {success:"Wordexport-Einstellungen gespeichert."};}catch(error){return errorState(error);}
+}
+export async function removeWordTemplateAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
+  const user=await requireUser();
+  try{await removeWordTemplate(user,areaId,revision(form));refresh();return {success:"Wordvorlage entfernt."};}catch(error){return errorState(error);}
 }

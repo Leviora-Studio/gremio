@@ -28,6 +28,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.45.2",
+    "fast-xml-parser": "^5.11.2",
     "iron-session": "^8.0.3",
     "jose": "^6.2.3",
     "nanoid": "^5.0.7",

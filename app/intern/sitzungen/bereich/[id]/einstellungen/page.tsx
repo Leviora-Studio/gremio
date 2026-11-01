@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { meetingAreaAccess,users,groups,boardStatuses } from "@/lib/db/schema";
 import { getAccessibleBoards,canManageBoard } from "@/lib/authz";
+import { WordTemplateConfiguration } from "@/components/meetings/WordTemplateConfiguration";
+import {wordTemplateSettings} from "@/lib/meetings/word";
 import { FinanceConfiguration } from "@/components/meetings/FinanceConfiguration";
 import { requireArea } from "@/lib/meetings/access";
 import { parseApiId } from "@/lib/api";
@@ -19,6 +21,8 @@ import { areaGrantAction,saveAreaAction,saveAgendaSettingsAction } from "../../.
 export default async function AreaSettings({params}:{params:Promise<{id:string}>}) {
   const user=await requireUser();const id=parseApiId((await params).id);if(!id)notFound();
   const area=await requireArea(user,id,"manage").catch(()=>null);if(!area)notFound();
+  let wordInfo=null,wordError="";
+  try{wordInfo=await wordTemplateSettings(user,id);}catch(error){wordError=error instanceof Error?error.message:"Die Wordvorlage ist nicht lesbar.";}
   const people=await db.select({id:users.id,name:users.username,avatarPath:users.avatarPath}).from(users).orderBy(asc(users.username));
   const groupRows=await db.select().from(groups).orderBy(asc(groups.name));
   const grants=await db.select().from(meetingAreaAccess).where(eq(meetingAreaAccess.areaId,id));
@@ -27,6 +31,7 @@ export default async function AreaSettings({params}:{params:Promise<{id:string}>
   return <div className="mx-auto max-w-5xl space-y-6"><Link href={`/intern/sitzungen/bereich/${id}`} className="break-words text-sm text-brand-700">← {area.name}</Link><h1 className="text-2xl font-bold">Bereichseinstellungen</h1>
     <CollapsibleSection title="Allgemein" defaultOpen><MeetingActionForm action={saveAreaAction.bind(null,id)}><label className="label">Bezeichnung<input name="name" className="input" defaultValue={area.name} maxLength={200} required/></label><label className="label">Beschreibung<textarea name="description" className="input" defaultValue={area.description} maxLength={5000}/></label></MeetingActionForm></CollapsibleSection>
     <CollapsibleSection title="Tagesordnung" defaultOpen><MeetingActionForm action={saveAgendaSettingsAction.bind(null,id)}><p className="text-sm text-slate-500">Diese Einstellungen gelten für alle Sitzungen dieses Bereichs. Beide Teile werden unabhängig voneinander nummeriert.</p>{([{name:"publicNumbering",label:"Nummerierung öffentlicher Teil"},{name:"nonPublicNumbering",label:"Nummerierung nicht öffentlicher Teil"}] as const).map(field=><div key={field.name}><label className="label">{field.label}</label><Select portal name={field.name} ariaLabel={field.label} defaultValue={area[field.name]} options={[{value:"arabic",label:"Arabisch (1, 2, 3)"},{value:"roman",label:"Römisch (I, II, III)"}]}/></div>)}<div><label className="label">Reihenfolge der Bereiche</label><Select portal name="firstSection" ariaLabel="Reihenfolge der Bereiche" defaultValue={area.firstSection} options={[{value:"public",label:"Öffentlich vor nicht öffentlich"},{value:"non_public",label:"Nicht öffentlich vor öffentlich"}]}/></div></MeetingActionForm></CollapsibleSection>
+    <CollapsibleSection title="Wordexport" defaultOpen><WordTemplateConfiguration areaId={id} name={area.wordTemplateName} revision={area.wordTemplateRevision} info={wordInfo} configuration={area.wordConfiguration} error={wordError}/></CollapsibleSection>
     <CollapsibleSection title="Finanzanträge" defaultOpen><FinanceConfiguration areaId={id} boards={financeBoards} boardId={area.financeBoardId} sourceIds={area.financeSourceStatusIds} targetId={area.financeTargetStatusId}/></CollapsibleSection>
     <CollapsibleSection title="Freigaben" defaultOpen><p className="mb-3 text-sm text-slate-500">Freigaben gelten für alle bestehenden und zukünftigen Sitzungen dieses Bereichs. Bei mehreren direkten oder Gruppenfreigaben gelten die höchsten Rechte. Eigentümer und Admins behalten volle Rechte. Board-Rechte bleiben getrennt.</p>
       <div className="grid gap-3 sm:grid-cols-2">{(["user","group"] as const).map(subject=><MeetingActionForm key={subject} action={areaGrantAction.bind(null,id)} compact submit="+"><input type="hidden" name="subject" value={subject}/><div className="min-w-0 w-full"><label className="label">{subject==="user"?"Nutzer freigeben":"Gruppe freigeben"}</label><Select portal name="subjectId" ariaLabel={subject==="user"?"Nutzer freigeben":"Gruppe freigeben"} searchable searchPlaceholder={subject==="user"?"Nutzer suchen…":"Gruppe suchen…"} placeholder={subject==="user"?"Nutzer…":"Gruppe…"} options={(subject==="user"?people:groupRows).map(row=>({value:String(row.id),label:row.name}))}/></div><div className="w-full"><label className="label">Zugriff</label><Select portal name="accessLevel" ariaLabel={`Zugriff für neue ${subject==="user"?"Personenfreigabe":"Gruppenfreigabe"}`} defaultValue="read" options={ACCESS_LEVEL_OPTIONS}/></div></MeetingActionForm>)}</div>

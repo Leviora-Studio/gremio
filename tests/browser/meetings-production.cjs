@@ -127,7 +127,7 @@ async function assertMenuReachable(page) {
         assert.equal((await ctx.request.get(`${base}/intern/sitzungen/${meetingId}/einstellungen`)).status(),kind==='writer'?200:404);
         assert.equal((await ctx.request.get(`${base}/intern/sitzungen/bereich/${areaId}/einstellungen`)).status(),404);
         assert.equal(await p.getByRole('button',{name:'TOP bearbeiten',exact:true}).count()>0,kind==='writer');
-        const agendaPdf=await ctx.request.get(`${base}/api/meetings/${meetingId}/pdf`);assert.equal(agendaPdf.status(),200);const exportedBytes=await agendaPdf.body();assert.ok((await PDFDocument.load(exportedBytes)).getPageCount()>=1);if(kind==='reader')writeFileSync(join(output,'agenda.pdf'),exportedBytes);
+        assert.equal((await ctx.request.get(`${base}/api/meetings/${meetingId}/pdf`)).status(),404);assert.equal(await p.getByRole('link',{name:'Tagesordnung als PDF',exact:true}).count(),0);
         if(kind==='reader') {
           await p.goto(`${base}/intern/sitzungen/${meetingId}`);await p.getByRole('button',{name:'+ TOP vorschlagen',exact:true}).click();await p.screenshot({path:join(output,'reader-proposal-dialog.png'),fullPage:true});
           assert.equal(await p.getByRole('button',{name:'Einplanen als',exact:true}).count(),0,'readers propose main TOPs only');

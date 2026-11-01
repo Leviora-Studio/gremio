@@ -4,21 +4,16 @@ import { PDFDocument, StandardFonts, rgb, PDFString } from "pdf-lib";
 import { env } from "@/lib/env";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { meetingDocuments, meetingTopics, type User } from "@/lib/db/schema";
+import { meetingDocuments, type User } from "@/lib/db/schema";
 import { requireMeeting, visibleTopics } from "./access";
 import { agendaTopics, agendaSections, agendaSectionLabels } from "./agenda";
 import { topicKinds,topicStates } from "./validation";
 import { formatDateTime } from "@/lib/dates";
 import { winAnsiSafe, wrapText } from "@/lib/pdf";
-/** Confidential TOPs are excluded. Financial projections use the exporter's live board/field permissions. */
+/** Owner/admin export includes confidential TOPs; financial fields still use live board permissions. */
 export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uint8Array> {
-  const meeting = await requireMeeting(user,id);
-  // visibleTopics detaches sub-TOPs from hidden parents; confidentiality is inherited from the stored parent.
-  const stored = await db.select({id:meetingTopics.id,parentId:meetingTopics.parentId,confidential:meetingTopics.confidential}).from(meetingTopics).where(eq(meetingTopics.meetingId,id));
-  const confidential = new Set(stored.filter(topic=>topic.confidential).map(topic=>topic.id));
-  const storedParent = new Map(stored.map(topic=>[topic.id,topic.parentId]));
-  const isConfidential = (topicId:number) => { const parentId = storedParent.get(topicId); return confidential.has(topicId) || parentId != null && confidential.has(parentId); };
-  const topics = agendaTopics((await visibleTopics(user,id)).filter(topic=>!topic.confidential&&!isConfidential(topic.id)),meeting);
+  const meeting = await requireMeeting(user,id,"manage");
+  const topics = agendaTopics(await visibleTopics(user,id),meeting);
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   let page = pdf.addPage([595.28,841.89]), y=780;
@@ -39,7 +34,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
   line(meeting.startsAt?`Beginn: ${formatDateTime(meeting.startsAt)}`:"Termin noch offen");
   if(meeting.location)line(`Ort / Videokonferenz: ${meeting.location}`);
   if(meeting.chair)line(`Sitzungsleitung: ${meeting.chair}`);
-  line("Enthält die Tagesordnung und die für dich zugänglichen Finanzantragsdaten. Vertrauliche TOPs sind ausgenommen. Bei Weitergabe den Empfängerkreis beachten.");
+  line("Enthält die Tagesordnung und die für dich zugänglichen Finanzantragsdaten. Vertrauliche TOPs sind enthalten. Bei Weitergabe den Empfängerkreis beachten.");
   let elapsed=0;
   for(const section of agendaSections(meeting)) {
     line(agendaSectionLabels[section],true,16);
@@ -69,6 +64,6 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
   }
   }
   if(!topics.length)line("Noch keine freigegebenen TOPs eingeplant.");
-  await requireMeeting(user,id);
+  await requireMeeting(user,id,"manage");
   return pdf.save();
 }

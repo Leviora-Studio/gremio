@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import type { MeetingWordConfiguration } from "@/lib/meetings/word-template-types";
 import type { EmailPayload } from "@/lib/email-validation";
 import { sql } from "drizzle-orm";
 import {
@@ -1408,6 +1409,10 @@ export const emailOutbox = pgTable("email_outbox", {
 
 // Meeting areas own permissions; meetings never grant source-board access.
 export const meetingAreas = pgTable("meeting_areas", {
+  wordTemplatePath: text("word_template_path"),
+  wordTemplateName: text("word_template_name"),
+  wordTemplateRevision: integer("word_template_revision").notNull().default(0),
+  wordConfiguration: jsonb("word_configuration").$type<MeetingWordConfiguration>(),
   publicNumbering: text("public_numbering", { enum: ["arabic", "roman"] }).notNull().default("arabic"),
   nonPublicNumbering: text("non_public_numbering", { enum: ["arabic", "roman"] }).notNull().default("roman"),
   firstSection: text("first_section", { enum: ["public", "non_public"] }).notNull().default("public"),

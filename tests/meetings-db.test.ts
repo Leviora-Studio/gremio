@@ -112,7 +112,9 @@ test("independent meeting grants, confidential TOPs, safe references and explici
     const { extractPdfText }=await import("../lib/pdf-text");
     const {text}=await extractPdfText(Buffer.from(exported));
     assert.ok(text.includes("Public TOP"));
-    for(const secret of ["SECRET CARD TITLE","SECRET BOARD NAME","SECRET NOTES","SECRET CONFIDENTIAL","SECRET PRIVATE FILE","SECRET ID"])assert.equal(text.includes(secret),false,`PDF must not expose ${secret}`);
+    for(const secret of ["SECRET CARD TITLE","SECRET BOARD NAME","SECRET NOTES","SECRET ID"])assert.equal(text.includes(secret),false,`PDF must not expose ${secret}`);
+    assert.ok(text.includes("SECRET CONFIDENTIAL TOP"));assert.ok(text.includes("SECRET PRIVATE FILE"));
+    await assert.rejects(buildMeetingAgendaPdf(reader,meetingId),/Zugriff/);await assert.rejects(buildMeetingAgendaPdf(writer,meetingId),/Zugriff/);
     const last=await service.createTopic(writer,meetingId,{...topicValues,title:"Second public"});
     const revision=(await access.requireMeeting(owner,meetingId)).revision;
     await service.reorderTopics(writer,meetingId,[last,top],revision);
@@ -223,7 +225,7 @@ test("only planners assign one-level subtopics; order, exports, copies and inher
   }
 });
 
-test("agenda PDFs never export sub-TOPs of confidential main TOPs, including deferred, withdrawn and detached ones",async()=>{
+test("owner agenda PDFs include confidential sub-TOPs, including deferred, withdrawn and detached ones",async()=>{
   assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
   const suffix=randomUUID();
   const [owner]=await db.insert(s.users).values({username:`pdf-privacy-${suffix}`}).returning();
@@ -241,12 +243,12 @@ test("agenda PDFs never export sub-TOPs of confidential main TOPs, including def
     await service.setTopicStatus(owner,withdrawn,"withdrawn",(await access.requireMeeting(owner,meeting)).revision);
     let text=await exportText();
     assert.ok(text.includes("Open main"));
-    assert.equal(text.includes("Secret"),false,"deferred/withdrawn children inherit the parent's confidentiality");
+    assert.ok(text.includes("Secret main"));assert.ok(text.includes("Secret deferred child"));assert.ok(text.includes("Secret withdrawn child"));
     // A scheduled parent is hidden after transfer; its withdrawn child stays and is shown detached.
     await service.transferTopic(owner,main,target,true);
     assert.ok((await access.visibleTopics(owner,meeting)).some(t=>t.id===withdrawn&&t.parentId==null));
     text=await exportText();
-    assert.equal(text.includes("Secret withdrawn child"),false,"detached children of hidden confidential parents stay private");
+    assert.ok(text.includes("Secret withdrawn child"),"owner export includes remaining confidential historical children");
   }finally{
     await service.deleteMeeting(owner,meeting);await service.deleteMeeting(owner,target);
     await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));

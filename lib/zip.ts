@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 
 // CRC32 (wie in lib/xlsx.ts) — eigenständig, damit der ZIP-Helfer unabhängig ist.
 const CRC_TABLE = (() => {
@@ -80,4 +80,39 @@ export function zip(files: { name: string; data: Buffer }[]): Buffer {
   eocd.writeUInt32LE(centralBuf.length, 12);
   eocd.writeUInt32LE(offset, 16);
   return Buffer.concat([...chunks, centralBuf, eocd]);
+}
+
+/** Read a bounded, CRC-checked Office ZIP without extracting paths to disk. */
+export function unzipOffice(buffer: Buffer): {name:string;data:Buffer}[] {
+  const fail=()=>{throw new Error("Invalid or unsupported Office ZIP.");};
+  if(buffer.length<22||buffer.length>25*1024*1024)return fail();
+  let end=-1;
+  for(let i=buffer.length-22;i>=Math.max(0,buffer.length-65557);i--){
+    if(buffer.readUInt32LE(i)===0x06054b50&&i+22+buffer.readUInt16LE(i+20)===buffer.length){end=i;break;}
+  }
+  if(end<0)return fail();
+  const count=buffer.readUInt16LE(end+10),size=buffer.readUInt32LE(end+12),offset=buffer.readUInt32LE(end+16);
+  if(buffer.readUInt16LE(end+4)||buffer.readUInt16LE(end+6)||buffer.readUInt16LE(end+8)!==count||count>2048||offset+size!==end)return fail();
+  const files:{name:string;data:Buffer}[]=[],names=new Set<string>();
+  let cursor=offset,total=0;
+  for(let i=0;i<count;i++){
+    if(cursor+46>end||buffer.readUInt32LE(cursor)!==0x02014b50)return fail();
+    const flags=buffer.readUInt16LE(cursor+8),method=buffer.readUInt16LE(cursor+10),crc=buffer.readUInt32LE(cursor+16),compressed=buffer.readUInt32LE(cursor+20),expanded=buffer.readUInt32LE(cursor+24);
+    const nameLength=buffer.readUInt16LE(cursor+28),extra=buffer.readUInt16LE(cursor+30),comment=buffer.readUInt16LE(cursor+32),local=buffer.readUInt32LE(cursor+42);
+    const next=cursor+46+nameLength+extra+comment;
+    if(next>end||flags&1||![0,8].includes(method)||buffer.readUInt16LE(cursor+34)||expanded>32*1024*1024||(total+=expanded)>64*1024*1024)return fail();
+    const name=buffer.subarray(cursor+46,cursor+46+nameLength).toString("utf8");
+    if(!name||name.startsWith("/")||name.includes("\\")||name.includes("\0")||name.split("/").some(part=>part===".."||part===".")||names.has(name))return fail();
+    names.add(name);
+    if(local+30>offset||buffer.readUInt32LE(local)!==0x04034b50||buffer.readUInt16LE(local+8)!==method)return fail();
+    const localNameLength=buffer.readUInt16LE(local+26),localExtra=buffer.readUInt16LE(local+28),dataStart=local+30+localNameLength+localExtra;
+    if(dataStart+compressed>offset||!buffer.subarray(local+30,local+30+localNameLength).equals(buffer.subarray(cursor+46,cursor+46+nameLength)))return fail();
+    const packed=buffer.subarray(dataStart,dataStart+compressed);
+    const data=method===0?Buffer.from(packed):inflateRawSync(packed,{maxOutputLength:Math.max(1,expanded)});
+    if(data.length!==expanded||crc32(data)!==crc)return fail();
+    if(!name.endsWith("/"))files.push({name,data});
+    cursor=next;
+  }
+  if(cursor!==end)return fail();
+  return files;
 }

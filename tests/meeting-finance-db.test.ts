@@ -75,7 +75,7 @@ test("financial agenda planning is atomic, permission-filtered, revision-safe an
     await db.update(s.boardCardFields).set({visible:false}).where(and(eq(s.boardCardFields.boardId,board.id),eq(s.boardCardFields.fieldKey,"applicant")));
     assert.equal((await visibleTopics(owner,mid)).find(t=>t.id===child)?.financeDetails?.applicant,"Nicht freigegeben");
     await db.delete(s.boardAccess).where(eq(s.boardAccess.userId,writer.id));assert.equal((await visibleTopics(writer,mid)).find(t=>t.id===child)?.financeDetails,undefined);
-    const readerPdf=await PDFDocument.load(await buildMeetingAgendaPdf(reader,mid));assert.ok(readerPdf.getPages().every(page=>!(page.node.lookupMaybe(PDFName.of("Annots"),PDFArray)?.size())),"no private card link in reader export");
+    await assert.rejects(buildMeetingAgendaPdf(reader,mid),/Zugriff/);await assert.rejects(buildMeetingAgendaPdf(writer,mid),/Zugriff/);
     await db.delete(s.cards).where(eq(s.cards.id,card.id));assert.equal((await visibleTopics(owner,mid)).find(t=>t.id===child)?.financeDetails,undefined);
     await service.deleteTopic(owner,child);await service.deleteTopic(owner,child2);await markFinanceTopic(owner,root,false,await rev());
   } finally {

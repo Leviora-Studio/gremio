@@ -57,10 +57,10 @@ test("agenda sections preserve permissions, hierarchy, scheduling, transfers and
   assert.equal((await topic(proposal)).section,"non_public");
   await service.scheduleTopic(writer,proposal,await rev());
   assert.equal((await topic(proposal)).section,"non_public");
-  const pdf=(await extractPdfText(await buildMeetingAgendaPdf(reader,mid))).text;
+  const pdf=(await extractPdfText(await buildMeetingAgendaPdf(owner,mid))).text;
   assert.match(pdf,/Nicht öffentlicher Teil/);assert.match(pdf,/Öffentlicher Teil/);
   assert.match(pdf,/TOP 1: Nonpublic item/);assert.match(pdf,/TOP 1.1: Child item/);assert.match(pdf,/TOP I: Public item/);
-  assert.ok(pdf.indexOf("TOP 1: Nonpublic item")<pdf.indexOf("TOP I: Public item"));assert.doesNotMatch(pdf,/SECRET ITEM/);
+  assert.ok(pdf.indexOf("TOP 1: Nonpublic item")<pdf.indexOf("TOP I: Public item"));assert.match(pdf,/SECRET ITEM/);await assert.rejects(buildMeetingAgendaPdf(reader,mid),/Zugriff/);
   // Changing a root moves every child, including those hidden from the writer.
   await service.saveTopic(writer,proposal,{...await topic(proposal),section:"public"},await rev(),false);
   assert.equal((await topic(child)).section,"public");assert.equal((await topic(hidden)).section,"public");
