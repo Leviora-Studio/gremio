@@ -50,7 +50,7 @@ test('Word template lifecycle and both exports enforce management rights, live r
    assert.equal(votingParagraphs.length,2,'only topics with a motion get voting lines');
    for(const paragraph of votingParagraphs)assert.match(paragraph,/<w:rPr><w:b w:val="1"\/><w:bCs w:val="1"\/><\/w:rPr>/);
    assert.equal((xml.match(/Beschlussvorschlag: Motion<\/w:t><\/w:r><\/w:p><w:p>[^]*?<w:t xml:space="preserve">Abstimmung:/g)??[]).length,2,'voting line immediately follows each motion');
-   const {text}=await extractPdfText(await buildMeetingAgendaPdf(user,meetingId));assert.match(text,/CONFIDENTIAL HEADING/);assert.match(text,/CONFIDENTIAL BODY/);assert.equal((text.match(/Abstimmung: Dafür \/ Dagegen \/ Enthaltung/g)??[]).length,2);
+   const {text}=await extractPdfText(await buildMeetingAgendaPdf(user,meetingId));assert.match(text,/CONFIDENTIAL HEADING/);assert.match(text,/CONFIDENTIAL BODY/);assert.match(text,/Actual recorded result/);assert.equal((text.match(/Abstimmung: Dafür \/ Dagegen \/ Enthaltung/g)??[]).length,2);
   }
   const before=createHash('sha256').update(bytes).digest('hex');await word.buildMeetingAgendaWord(owner,meetingId);assert.equal(createHash('sha256').update(await readFile(absPath(first.wordTemplatePath!))).digest('hex'),before);
   const races=await Promise.allSettled([word.uploadWordTemplate(owner,areaId,file,2),word.uploadWordTemplate(admin,areaId,file,2)]);assert.equal(races.filter(r=>r.status==='fulfilled').length,1);

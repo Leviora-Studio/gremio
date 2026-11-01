@@ -79,6 +79,12 @@ const nextConfig = {
         source: "/api/public/v1/status",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      // Keep the session-bound document routes' privacy contract. The global
+      // rule otherwise overrides the no-referrer value set by their handlers.
+      ...["/api/meetings/:path*", "/api/meeting-areas/:path*", "/api/meeting-document/:path*"].map(source => ({
+        source,
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      })),
     ];
   },
 };

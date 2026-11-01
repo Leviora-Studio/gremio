@@ -28,7 +28,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),{Pool}=req
   await page.getByRole('button',{name:'Antragsboard',exact:true}).click();await page.getByRole('option',{name:'Financial applications board',exact:true}).click();
   await page.getByRole('checkbox',{name:'Incoming',exact:true}).check();
   await page.getByRole('button',{name:'Zielspalte beim Einplanen',exact:true}).click();await page.getByRole('option',{name:'Scheduled',exact:true}).click();
-  await page.getByRole('button',{name:'Speichern',exact:true}).nth(1).click();await page.getByRole('status').filter({hasText:'Finanzanträge-Einstellungen gespeichert.'}).waitFor();
+  const financeForm=page.locator('form').filter({has:page.getByRole('button',{name:'Antragsboard',exact:true})});
+  await financeForm.getByRole('button',{name:'Speichern',exact:true}).click();await financeForm.getByRole('status').filter({hasText:'Finanzanträge-Einstellungen gespeichert.'}).waitFor();
   const config=(await q('select finance_board_id,finance_source_status_ids,finance_target_status_id from meeting_areas where id=$1',[area])).rows[0];assert.equal(config.finance_board_id,board);assert.deepEqual(config.finance_source_status_ids,[source.id]);assert.equal(config.finance_target_status_id,target.id);
   for(const width of [1400,390]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(400);await page.screenshot({path:join(output,'settings-'+width+'.png'),fullPage:true,animations:"disabled"});}
   await page.setViewportSize({width:1400,height:1000});await page.goto(base+'/intern/sitzungen/top/'+root);

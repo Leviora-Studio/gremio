@@ -17,6 +17,10 @@ import { agendaSettingsInput, meetingInput, parseBerlinDate, topicInput, topicSt
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export async function touchMeeting(tx: Tx, id: number, revision?: number, openOnly = true) {
+  // Area settings lock the area before updating its meetings. Use the same order
+  // here, including financial planning, which also reads the area under a lock.
+  const [meeting] = await tx.select({ areaId: meetings.areaId }).from(meetings).where(eq(meetings.id, id));
+  if (meeting) await tx.select({ id: meetingAreas.id }).from(meetingAreas).where(eq(meetingAreas.id, meeting.areaId)).for("share");
   const rows = await tx.update(meetings).set({ revision: sql`${meetings.revision} + 1` }).where(and(eq(meetings.id, id), revision == null ? undefined : eq(meetings.revision, revision), openOnly ? ne(meetings.state, "closed") : undefined)).returning({ id: meetings.id });
   if (!rows.length) throw new MeetingError("Die Sitzung wurde zwischenzeitlich geändert. Bitte neu laden.");
 }
@@ -83,6 +87,7 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   const previous = await requireMeeting(user, id, "write");
   if (previous.areaId !== area.id) throw new MeetingError("Die Bereichszuordnung kann nicht über Sitzungseinstellungen geändert werden.");
   await db.transaction(async tx => {
+    await tx.select({ id: meetingAreas.id }).from(meetingAreas).where(eq(meetingAreas.id, area.id)).for("share");
     const [current] = await tx.select().from(meetings).where(eq(meetings.id, id)).for("update");
     if (current?.state === "closed" && values.state !== "closed" && !canManageMeeting(user, previous)) {
       throw new MeetingError("Nur die Sitzungsverwaltung darf eine abgeschlossene Sitzung wieder öffnen.");

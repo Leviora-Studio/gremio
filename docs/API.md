@@ -408,6 +408,8 @@ Sitzungen und TOPs werden in dieser Version ausschließlich über authentifizier
 
 Sitzungsrechte werden über `meeting_areas` und `meeting_area_access` vergeben, nicht pro Sitzung. Berechtigungsprüfungen von TOPs, Referenzen, PDF-Export und Unterlagen folgen bei jedem Zugriff den aktuellen Bereichsfreigaben. Neue Sitzungen gewähren ihrem Ersteller keine zusätzlichen Eigentümerrechte; die Bereichsrechte bleiben maßgeblich. Bereichsfreigaben erweitern niemals Board-/API-Token-/MCP-Rechte. Der Bereichsname wird als Gremienbezeichnung abgeleitet.
 
+Beide Tagesordnungsexporte enthalten auch gespeicherte TOP-Ergebnisse/Notizen. Wordvorlagen mit aktiven Office-Inhalten, externen Datenfeldern oder externen Ressourcen werden beim Upload und Export abgewiesen; sichere HTTP(S)-/E-Mail-/Telefon-Hyperlinks bleiben erlaubt. Eine bereits gespeicherte ungeeignete Vorlage erzeugt für die berechtigte Verwaltung weiterhin 422 beim Wordexport. Leere Sitzungs-Metadaten ersetzen alte Musterwerte durch leere Inhalte. Die öffentlichen und Bearer-/MCP-Verträge bleiben unverändert.
+
 ### Lokale Nutzersperre und Browser-Sitzungen
 
 Administratoren können Nutzer lokal deaktivieren. Die vorhandene Prüfung des aktuellen `users.is_active` sperrt auch Bearer-API-/MCP-Zugriffe während dieser Sperre. Browser-Sitzungen gelten mit `offline_access` fest 14 Tage und werden zusätzlich spätestens alle fünf Minuten über SSO-Introspection bestätigt (die Prüffrist ist keine Sitzungsablauffrist) und durch `users.session_version` bei lokaler Sperre dauerhaft widerrufen. Die SSO-Prüfung ist keine neue Abhängigkeit für separat ausgestellte Bearer-Token; deren Scopes und Verträge bleiben unverändert.

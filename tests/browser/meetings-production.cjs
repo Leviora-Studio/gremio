@@ -121,7 +121,7 @@ async function assertMenuReachable(page) {
         if(kind==='writer'&&proposalId){await p.getByRole('button',{name:'Status für Reader proposal',exact:true}).first().click();await p.getByRole('option',{name:'Einplanen: öffentlich',exact:true}).click();await p.waitForTimeout(500);assert.equal((await query('select state from meeting_topics where id=$1',[proposalId])).rows[0].state,'scheduled');await p.getByRole('tab',{name:/Tagesordnung/}).click();await p.getByRole('link',{name:/Reader proposal/}).waitFor();}
         await p.goto(`${base}/intern/sitzungen/top/${topicId}`);const html=await p.content();for(const secret of ['SECRET CARD TITLE','SECRET BOARD','SECRET APPLICANT'])assert.equal(html.includes(secret),false,secret+' must not leak through RSC');
         assert.equal((await p.getByRole('button',{name:/Shared fixture\.pdf/}).count()),1);
-        const file=await ctx.request.get(`${base}/api/meeting-document/${document.id}`);assert.equal(file.status(),200);assert.equal(file.headers()['cache-control'],'private, no-store');assert.deepEqual(await file.body(),bytes);
+        const file=await ctx.request.get(`${base}/api/meeting-document/${document.id}`);assert.equal(file.status(),200);assert.equal(file.headers()['cache-control'],'private, no-store');assert.equal(file.headers()['referrer-policy'],'no-referrer');assert.deepEqual(await file.body(),bytes);
         assert.equal((await ctx.request.get(`${base}/api/attachment/${attachmentId}`)).status(),403,'session copy grants no source attachment access');
         assert.equal((await ctx.request.get(`${base}/intern/sitzungen/top/${privateTopic}`)).status(),404);
         assert.equal((await ctx.request.get(`${base}/intern/sitzungen/${meetingId}/einstellungen`)).status(),kind==='writer'?200:404);

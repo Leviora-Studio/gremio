@@ -263,7 +263,9 @@ settings. It uses a synthetic alternative template by default; set
 `GREMIO_WORD_TEMPLATE_FIXTURE` to a local `.dotx`/`.docx` to verify an official
 reference without adding it to the repository. Use `GREMIO_TEST_BUILD_DIR`,
 `PLAYWRIGHT_MODULE`, `CHROME_PATH` and the isolated migrated test database as above.
-Word fields are refreshed on open; final Microsoft Word pagination is a separate
+The workflow also rejects an active DDE template through the real upload action
+and verifies that it never becomes the stored template. Automatic Word field
+refresh stays disabled; final Microsoft Word pagination is a separate
 manual validation. Generated documents and screenshots remain in the printed
 local temporary directory.
 

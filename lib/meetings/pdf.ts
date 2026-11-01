@@ -59,6 +59,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
     }
     if(topic.description)line(topic.description);
     if(topic.motion?.trim()){line("Beschlussvorschlag",true);line(topic.motion);line("Abstimmung: Dafür / Dagegen / Enthaltung",true);}
+    if(topic.outcome){line("Ergebnis / Notiz",true);line(topic.outcome);}
     const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
     if(docs.length){line("Freigegebene Sitzungsunterlagen",true);for(const doc of docs)line(doc.filename);}
   }

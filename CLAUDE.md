@@ -1082,6 +1082,14 @@ Die Bereichsoption `include_miscellaneous` (Migration `0091_meeting_miscellaneou
 
 PDF- und Word-Tagesordnungsexporte ergänzen direkt unter jedem nicht leeren Beschlussvorschlag die vollständig fett gedruckte Zeile „Abstimmung: Dafür / Dagegen / Enthaltung“. TOPs ohne Beschlussvorschlag erhalten keine Abstimmungszeile.
 
+Beide Exporte enthalten erfasste Ergebnisse/Notizen. Die Wordprüfung weist neben Makros und DTDs auch ActiveX-/OLE-Objekte, eingebettete Office-Pakete, HTML-Importe (`altChunk`), DDE-/externe Datenfelder und externe Ressourcenbeziehungen ab. Externe Hyperlinks sind auf HTTP(S), `mailto` und `tel` ohne URL-Zugangsdaten beschränkt. Auch umbenannte Objektdateien werden anhand ihrer Content-Types und Relationship-Typen erkannt. Die Prüfung läuft beim Hochladen und erneut beim Export; eingebettete Bilder, interne Kopf-/Fußzeilen und sichere Links bleiben erhalten. Dies ist keine allgemeine Antivirusprüfung.
+
+Bekannte Word-Metadatenfelder werden auch bei leeren Sitzungsangaben geleert und bei selbstschließenden Textknoten korrekt befüllt. Veraltete `fullDate`-Werte werden ersetzt oder entfernt. Unbekannte Felder wie Anwesenheit bleiben manuell. XML-unzulässige Unicode-Zeichen werden an der Ausgabegrenze entfernt; gültige ergänzende Unicode-Zeichen bleiben erhalten. Beim Umordnen von Seitenabschnitten werden geerbte Kopf-/Fußzeilen auch in zuvor selbstschließende `sectPr`-Elemente eingefügt.
+
+`touchMeeting` und Änderungen vorhandener Sitzungen sperren den Bereich vor der Sitzung. Damit verwenden TOP-/Finanzplanung, Default-Übernahme und Bereichs-/Wordeinstellungen dieselbe Sperrreihenfolge. Konflikte werden über die Sitzungsrevision abgewiesen statt durch eine Datenbankverklemmung; Dateioperationen bleiben außerhalb der Sperren. `tests/meeting-area-concurrency-db.test.ts` prüft dies mit konkurrierenden echten Speichervorgängen.
+
+`next.config.mjs` setzt nach der allgemeinen Headerregel ausdrücklich `Referrer-Policy: no-referrer` für `/api/meetings/*`, `/api/meeting-areas/*` und `/api/meeting-document/*`. Sonst überschreibt Next.js die gleichlautenden Route-Handler-Header. Der Browser-Exporttest prüft die tatsächlich ausgelieferten Header für erlaubte und abgelehnte Zugriffe.
+
 ## Financial agenda motion templates
 
 `meeting_areas.finance_motion_template` (migration `0092_meeting_finance_motion.sql`) stores an optional motion template next to the finance board/status configuration. The settings editor offers visible card fields as insertion buttons and shows a sample-data preview. `finance-motion.ts` defines the explicit placeholder allowlist (`{{requested_amount}}`, `{{title}}`, etc.); unknown or hidden field placeholders are rejected when saving. Amounts use the shared Euro formatter, dates use German day/month/year presentation, and account/budget title fields support multiple budget positions.

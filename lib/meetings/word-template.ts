@@ -19,7 +19,7 @@ const find=(node:Node,name:string)=>children(node).find(child=>local(tag(child))
 const attr=(node:Node|undefined,name:string):string=>node?String(Object.entries((node[":@"]??{}) as Record<string,unknown>).find(([key])=>local(key.replace(/^@_/,""))===name)?.[1]??""):"";
 function descendants(node:Node,name:string):Node[]{return children(node).flatMap(child=>[...(local(tag(child))===name?[child]:[]),...descendants(child,name)]);}
 const text=(node:Node):string=>local(tag(node))==="t"?children(node).map(child=>String(child["#text"]??"")).join(""):descendants(node,"t").map(text).join("");
-export const wordXmlEscape=(value:string)=>value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+export const wordXmlEscape=(value:string)=>value.replace(/[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu,"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
 function parse(xml:string):Part{
   if(xml.length>8*1024*1024||/<!DOCTYPE|<!ENTITY/i.test(xml)||XMLValidator.validate(xml)!==true)throw new Error("Ungültige Word-XML-Struktur.");
   // The parser normalizes CRLF; translate its offsets back to the unmodified source.
@@ -30,6 +30,10 @@ function parse(xml:string):Part{
 }
 function bounds(part:Part,node:Node){const data=(node as unknown as Record<symbol,{startIndex:number;endIndex:number}>)[meta];if(!data)throw new Error("Word-Element nicht lesbar.");return {start:part.positions[data.startIndex],end:part.positions[data.endIndex]};}
 function raw(part:Part,node:Node){const {start,end}=bounds(part,node);return part.xml.slice(start,end);}
+function filledText(part:Part,node:Node,value:string){
+  const original=raw(part,node),escaped=wordXmlEscape(value);
+  return original.endsWith("/>")?original.slice(0,-2)+`>${escaped}</${tag(node)}>`:original.replace(/>[^]*<\//,()=>`>${escaped}</`);
+}
 function patch(part:Part,patches:Patch[]):string{
   let result=part.xml,last=part.xml.length;
   for(const change of patches.sort((a,b)=>b.start-a.start)){if(change.end>last||change.start>change.end)throw new Error("Überlappende Word-Ersetzungsbereiche.");result=result.slice(0,change.start)+change.text+result.slice(change.end);last=change.start;}
@@ -39,16 +43,48 @@ const root=(part:Part,name:string)=>part.nodes.find(node=>local(tag(node))===nam
 function mainBody(part:Part){const document=root(part,"document"),body=document&&find(document,"body");if(!body)throw new Error("Die Vorlage enthält keinen Word-Dokumentkörper.");return body;}
 function paragraphStyle(node:Node){const props=find(node,"pPr");return attr(props&&find(props,"pStyle"),"val");}
 function partText(files:{name:string;data:Buffer}[],name:string){const file=files.find(file=>file.name===name);if(!file)throw new Error(`Vorlagenbestandteil fehlt: ${name}`);return file.data.toString("utf8");}
+/** Exports must not make Word fetch remote templates/resources or execute active fields. */
+function validatePassivePart(part:Part){
+  const unsafe=()=>{throw new Error("Bitte eine Wordvorlage ohne aktive Inhalte, eingebettete Objekte oder externe Ressourcen verwenden. Bilder müssen eingebettet sein; normale Weblinks sind erlaubt.");};
+  const field=(instruction:string)=>{if(/^\s*(?:DDEAUTO|DDE|INCLUDETEXT|INCLUDEPICTURE|LINK|DATABASE)\b/i.test(instruction))unsafe();};
+  const fields:string[]=[];
+  function visit(node:Node){
+    const name=local(tag(node));
+    if(name==="altChunk")unsafe();
+    if(name==="fldSimple")field(attr(node,"instr"));
+    if(name==="fldChar"){
+      const type=attr(node,"fldCharType");
+      if(type==="begin")fields.push("");
+      else if(type==="separate"){if(fields.length)field(fields.at(-1)!);}
+      else if(type==="end"){if(fields.length)field(fields.pop()!);}
+    }
+    if(name==="instrText"&&fields.length)fields[fields.length-1]+=children(node).map(child=>String(child["#text"]??"")).join("");
+    if(name==="Relationship"&&/\/(?:oleObject|package|control|activeXControlBinary|aFChunk|vbaProject|vbaData)$/i.test(attr(node,"Type")))unsafe();
+    if(name==="Relationship"&&(attr(node,"TargetMode").toLowerCase()==="external"||/^[a-z][a-z0-9+.-]*:|^[\\/]{2}/i.test(attr(node,"Target")))){
+      if(attr(node,"Type")!=="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink")unsafe();
+      try{const url=new URL(attr(node,"Target"));if(!["http:","https:","mailto:","tel:"].includes(url.protocol)||url.username||url.password)unsafe();}catch{unsafe();}
+    }
+    for(const child of children(node))visit(child);
+  }
+  for(const node of part.nodes)visit(node);
+  for(const instruction of fields)field(instruction);
+}
 function load(buffer:Buffer){
   const files=unzipOffice(buffer);
   if(files.some(file=>/vbaProject|_xmlsignatures\//i.test(file.name)))throw new Error("Bitte eine unsignierte Wordvorlage ohne Makros verwenden.");
   const types=partText(files,"[Content_Types].xml"),typePart=parse(types),mainTypes=children(root(typePart,"Types")??{}).filter(node=>local(tag(node))==="Override"&&attr(node,"PartName")==="/word/document.xml");
+  if(files.some(file=>/^word\/(?:activeX|embeddings)\//i.test(file.name))||children(root(typePart,"Types")??{}).some(node=>/macroEnabled|vbaProject|activeX|oleObject/i.test(attr(node,"ContentType"))))throw new Error("Bitte eine Wordvorlage ohne Makros, ActiveX oder eingebettete Objekte verwenden.");
   if(mainTypes.length!==1||![DOCX_TYPE,DOTX_TYPE].includes(attr(mainTypes[0],"ContentType")))throw new Error("Bitte eine DOCX- oder DOTX-Vorlage verwenden.");
   const document=parse(partText(files,"word/document.xml")),styles=parse(partText(files,"word/styles.xml"));
   if(!document.xml.includes(WORD_NS))throw new Error("Dieses Word-Format wird nicht unterstützt. Bitte als DOCX oder DOTX speichern.");
   if(!styleNodes(styles).some(node=>attr(node,"type")==="paragraph"))throw new Error("Die Vorlage enthält keine zuordenbaren Absatzformatvorlagen.");
-  // Validate all XML without ever fetching external entities or relationships.
-  for(const file of files)if(/\.(xml|rels)$/.test(file.name))parse(file.data.toString("utf8"));
+  // Office XML parts can have arbitrary extensions; the package content type is
+  // authoritative. Never fetch external entities or relationships.
+  const contentTypes=children(root(typePart,"Types")??{});
+  for(const file of files){
+    const type=contentTypes.find(node=>local(tag(node))==="Override"&&attr(node,"PartName")==="/"+file.name)??contentTypes.find(node=>local(tag(node))==="Default"&&attr(node,"Extension").toLowerCase()===file.name.split(".").at(-1)?.toLowerCase());
+    if(/\.(xml|rels)$/i.test(file.name)||/(?:\/xml|\+xml)$/i.test(attr(type,"ContentType")))validatePassivePart(parse(file.data.toString("utf8")));
+  }
   return {files,types,document,styles};
 }
 function styleNodes(part:Part){return children(root(part,"styles")??{}).filter(node=>local(tag(node))==="style");}
@@ -168,15 +204,15 @@ function fillMetadata(xml:string,values:Record<string,string>){
   const filled=new Set<Node>();
   for(const control of descendants(document,"sdt")){
     const props=find(control,"sdtPr"),content=find(control,"sdtContent"),alias=props&&attr(find(props,"alias"),"val");
-    const key=alias&&aliases[alias],value=key&&values[key];
-    if(!props||!content||!value||find(props,"dataBinding")||(!find(props,"text")&&!find(props,"date")))continue;
+    const key=alias&&aliases[alias],value=key?values[key]:undefined;
+    if(!props||!content||value===undefined||find(props,"dataBinding")||(!find(props,"text")&&!find(props,"date")))continue;
     const texts=descendants(content,"t");if(!texts.length)continue;
-    for(const [index,node] of texts.entries()){filled.add(node);const b=bounds(part,node),original=raw(part,node);patches.push({...b,text:original.replace(/>[^]*<\//,()=>`>${index===0?wordXmlEscape(value):""}</`)});}
+    for(const [index,node] of texts.entries()){filled.add(node);patches.push({...bounds(part,node),text:filledText(part,node,index===0?value:"")});}
     const showing=find(props,"showingPlcHdr");if(showing){
       patches.push({...bounds(part,showing),text:""});
       for(const style of descendants(content,"rStyle"))if(/placeholder|platzhalter/i.test(attr(style,"val")))patches.push({...bounds(part,style),text:""});
     }
-    const date=find(props,"date");if(date&&values.ISO_DATUM){const dateXml=raw(part,date),value=wordXmlEscape(values.ISO_DATUM);const opening=/\b(?:\w+:)?fullDate=/.test(dateXml)?dateXml.replace(/\b(?:\w+:)?fullDate="[^"]*"/,()=>`w:fullDate="${value}"`):dateXml.replace(/<[^>]+/,first=>first+` w:fullDate="${value}"`);patches.push({...bounds(part,date),text:opening});}
+    const date=find(props,"date");if(date&&values.ISO_DATUM!==undefined){const dateXml=raw(part,date).replace(/\s+(?:\w+:)?fullDate\s*=\s*(?:"[^"]*"|'[^']*')/,"");const updated=values.ISO_DATUM?dateXml.replace(/<[^\s/>]+/,first=>first+` w:fullDate="${wordXmlEscape(values.ISO_DATUM)}"`):dateXml;patches.push({...bounds(part,date),text:updated});}
   }
   for(const node of descendants(document,"p")){
     const texts=descendants(node,"t").filter(t=>!filled.has(t));if(!texts.length)continue;
@@ -189,7 +225,7 @@ function fillMetadata(xml:string,values:Record<string,string>){
       const start=match.index!,end=start+match[0].length;
       for(const range of ranges){if(range.end<=start||range.start>=end)continue;range.value=range.value.slice(0,Math.max(0,start-range.start))+(range.start<=start?values[match[1]]??"":"")+range.value.slice(Math.min(range.value.length,end-range.start));}
     }
-    for(const range of ranges)patches.push({...bounds(part,range.node),text:raw(part,range.node).replace(/>[^]*<\//,()=>`>${wordXmlEscape(range.value)}</`)});
+    for(const range of ranges)patches.push({...bounds(part,range.node),text:filledText(part,range.node,range.value)});
   }
   return patch(part,patches);
 }
@@ -202,6 +238,7 @@ function sectionProperties(part:Part){
     const original=raw(part,section),base=bounds(part,section).start;
     let remaining=original;
     for(const reference of [...references].reverse()){const b=bounds(part,reference);remaining=remaining.slice(0,b.start-base)+remaining.slice(b.end-base);}
+    if(remaining.endsWith("/>"))remaining=remaining.slice(0,-2)+`></${tag(section)}>`;
     const ordered=[...inherited.values()].sort((a,b)=>(a.kind==="headerReference"?0:1)-(b.kind==="headerReference"?0:1));
     const opening=remaining.indexOf(">")+1;
     result.set(section,remaining.slice(0,opening)+ordered.map(ref=>ref.xml).join("")+remaining.slice(opening));
