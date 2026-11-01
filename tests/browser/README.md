@@ -1,5 +1,14 @@
 # Browser regression tests
 
+Use Node 22, matching the Dockerfile and CI, for production workflow checks.
+Scripts that import application TypeScript directly (including
+`ownership-receipts-production.cjs`) require `node --import tsx`.
+Production checks must use `GREMIO_TEST_BUILD_DIR` pointing at a separate built
+copy; never run a build in a directory serving an active test or dev server.
+The access-level, system-email, public-workflow and MCP production fixtures use
+local synthetic SSO introspection, including the offline refresh token required
+by current sessions. No external identity provider is required for those checks.
+
 `pdf-legacy.cjs` mounts the actual PDF editor and reads a local sample supplied via
 `PDF_LEGACY_SAMPLE`. It checks every text overlay, repeated fields and radio states
 at desktop/mobile widths and verifies the source SHA-256 remains unchanged.

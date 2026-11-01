@@ -76,6 +76,7 @@ export async function canAccessFinanceBoard(
   fb: FinanceBoard,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
+  if (!user.isActive) return false;
   if (user.role === "admin") return true;
   if (await isResourceOwner("finance",fb,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
@@ -100,12 +101,14 @@ export async function canAccessFinanceBoard(
 
 /** Verwalten (Name, Konto, Quellen, Freigaben, Plan, löschen): admin ODER Eigentümer. */
 export async function canManageFinanceBoard(user: User, fb: FinanceBoard): Promise<boolean> {
+  if (!user.isActive) return false;
   return user.role === "admin" || await isResourceOwner("finance",fb,user.id);
 }
 
 export async function getAccessibleFinanceBoards(
   user: User,
 ): Promise<FinanceBoard[]> {
+  if (!user.isActive) return [];
   if (user.role === "admin") {
     return db.select().from(financeBoards).orderBy(financeBoards.name);
   }

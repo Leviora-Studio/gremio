@@ -40,7 +40,14 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   }
   const previous = await requireMeeting(user, id, "write");
   if (previous.areaId !== area.id) throw new MeetingError("Die Bereichszuordnung kann nicht über Sitzungseinstellungen geändert werden.");
-  await db.transaction(async tx => { await touchMeeting(tx, id, revision, false); await tx.update(meetings).set(values).where(eq(meetings.id, id)); });
+  await db.transaction(async tx => {
+    const [current] = await tx.select().from(meetings).where(eq(meetings.id, id)).for("update");
+    if (current?.state === "closed" && values.state !== "closed" && !canManageMeeting(user, previous)) {
+      throw new MeetingError("Nur die Sitzungsverwaltung darf eine abgeschlossene Sitzung wieder öffnen.");
+    }
+    await touchMeeting(tx, id, revision, false);
+    await tx.update(meetings).set(values).where(eq(meetings.id, id));
+  });
   return id;
 }
 export async function saveAreaGrant(user: User, areaId: number, subject: "user" | "group", subjectId: number, level: "read" | "write" | "remove") {

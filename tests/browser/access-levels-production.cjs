@@ -21,7 +21,8 @@ const assert = require('node:assert/strict');
   const reservation = createServer(); await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: process.env.GREMIO_TEST_BUILD_DIR || process.cwd(), env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, UPLOAD_DIR: join(output, 'uploads'), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const sso = await require('./synthetic-sso.cjs').startSyntheticSso();
+  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: process.env.GREMIO_TEST_BUILD_DIR || process.cwd(), env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, OIDC_ISSUER: sso.issuer, UPLOAD_DIR: join(output, 'uploads'), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; child.stdout.on('data', data => { log += data; }); child.stderr.on('data', data => { log += data; });
   const people = []; let boardId, fbId, inventoryId, systemId, groupId, browser;
   try {
@@ -30,6 +31,7 @@ const assert = require('node:assert/strict');
     assert.ok(ready, log);
     const suffix = `access-browser-${randomUUID()}`;
     for (const role of ['owner', 'reader', 'writer']) people.push((await query('insert into users(username) values ($1) returning id', [`${suffix}-${role}`])).rows[0].id);
+    for (const userId of people) await query('update users set sub=$1 where id=$2', ['synthetic:'+userId,userId]);
     const [ownerId, readerId, writerId] = people;
     boardId = (await query('insert into boards(name,owner_id) values ($1,$2) returning id', [suffix, ownerId])).rows[0].id;
     fbId = (await query('insert into finance_boards(name,owner_id) values ($1,$2) returning id', [suffix, ownerId])).rows[0].id;
@@ -61,7 +63,7 @@ const assert = require('node:assert/strict');
     for (const width of [1400,390]) {
       for (const [kind,userId] of [['reader',readerId],['writer',writerId],['owner',ownerId]]) {
         const context = await browser.newContext({viewport:{width,height:1000}});
-        await context.addCookies([{name:'gremio_session',value:await sealData({userId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+        await context.addCookies([{name:'gremio_session',value:await sealData(sso.session(userId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
         const page = await context.newPage(); const errors=[]; page.on('pageerror', error=>errors.push(error.message));
         const writable = kind !== 'reader';
         const boardResponse = await page.goto(`${base}/intern/board/${boardId}`); assert.equal(boardResponse.status(),200);
@@ -118,7 +120,7 @@ const assert = require('node:assert/strict');
         await context.close();
       }
       const ownerContext = await browser.newContext({viewport:{width,height:1000}});
-      await ownerContext.addCookies([{name:'gremio_session',value:await sealData({userId:ownerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+      await ownerContext.addCookies([{name:'gremio_session',value:await sealData(sso.session(ownerId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
       const ownerPage = await ownerContext.newPage();
       await ownerPage.goto(`${base}/intern/board/${boardId}/einstellungen`);
       await ownerPage.locator('summary').filter({hasText:'Bürokraft aktivieren'}).click();
@@ -130,7 +132,7 @@ const assert = require('node:assert/strict');
       await ownerPage.getByRole('button',{name:'Bürokraft-Einstellung speichern',exact:true}).click();
       await ownerPage.getByRole('status').filter({hasText:'Bürokraft-Einstellung gespeichert.'}).waitFor();
       const officeContext = await browser.newContext({viewport:{width,height:1000}});
-      await officeContext.addCookies([{name:'gremio_session',value:await sealData({userId:readerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+      await officeContext.addCookies([{name:'gremio_session',value:await sealData(sso.session(readerId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
       const officePage = await officeContext.newPage();
       await officePage.goto(`${base}/intern/card/${cardId}`);
       assert.equal(await officePage.getByPlaceholder('Titel der Karte').isDisabled(),true);
@@ -146,7 +148,7 @@ const assert = require('node:assert/strict');
       await officePage.screenshot({path:join(output,`office-${width}.png`),fullPage:true});
       await query('update board_office_roles set user_id=$1 where board_id=$2',[writerId,boardId]);
       const writerContext = await browser.newContext();
-      await writerContext.addCookies([{name:'gremio_session',value:await sealData({userId:writerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+      await writerContext.addCookies([{name:'gremio_session',value:await sealData(sso.session(writerId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
       const writerPage = await writerContext.newPage();await writerPage.goto(`${base}/intern/card/${cardId}`);
       assert.equal(await writerPage.getByPlaceholder('Titel der Karte').isEnabled(),true,'group write wins over office restrictions');
       await writerContext.close();await officeContext.close();await ownerContext.close();
@@ -155,6 +157,7 @@ const assert = require('node:assert/strict');
     }
   } finally {
     if(browser)await browser.close(); child.kill();
+    await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));
     writeFileSync(join(output,'server.log'),log);
     if(systemId)await query('delete from boards where id=$1',[systemId]);
     if(boardId)await query('delete from boards where id=$1',[boardId]);
@@ -162,6 +165,6 @@ const assert = require('node:assert/strict');
     if(inventoryId)await query('delete from inventory_boards where id=$1',[inventoryId]);
     if(groupId)await query('delete from groups where id=$1',[groupId]);
     for(const id of people)await query('delete from users where id=$1',[id]);
-    await pool.end();console.log(`Browser artifacts: ${output}`);
+    await pool.end();await sso.close();console.log(`Browser artifacts: ${output}`);
   }
 })().catch(error=>{console.error(error);process.exitCode=1;});

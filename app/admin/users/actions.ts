@@ -16,14 +16,9 @@ export async function setRoleAction(
   role: "admin" | "template_manager" | "user",
 ): Promise<void> {
   const me = await requireAdmin();
-  const [target] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  if (!target) return;
+  if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647 || !["admin", "template_manager", "user"].includes(role)) return;
   // Sich selbst nie die Admin-Rechte entziehen.
-  if (target.role === "admin" && role !== "admin" && target.id === me.id) return;
+  if (role !== "admin" && userId === me.id) return;
 
   await db.transaction(async (tx) => {
     // Aktive Admins per FOR UPDATE sperren → parallele Degradierungen werden
@@ -32,7 +27,13 @@ export async function setRoleAction(
       .select({ id: users.id })
       .from(users)
       .where(and(eq(users.role, "admin"), eq(users.isActive, true)))
+      .orderBy(users.id)
       .for("update");
+
+    // Authentication can precede a concurrent role revocation or local block.
+    // Recheck after the same locks used by setUserActiveAction are acquired.
+    const [actor] = await tx.select().from(users).where(eq(users.id, me.id)).for("update");
+    if (!actor?.isActive || actor.role !== "admin") return;
 
     const demotingAdmin = role !== "admin" && admins.some((a) => a.id === userId);
     if (demotingAdmin && admins.filter((a) => a.id !== userId).length < 1) {

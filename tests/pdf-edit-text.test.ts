@@ -18,6 +18,26 @@ test("sanitizeWinAnsi keeps line breaks only where they can be stored", () => {
   assert.equal(sanitizeWinAnsi("a\tb"), "a b");
 });
 
+test("failed PDF field edits never log submitted document values", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const choice = doc.getForm().createDropdown("Selection");
+  choice.addOptions(["Allowed"]);
+  choice.addToPage(page, { x: 30, y: 30, width: 100, height: 25 });
+  const input = Buffer.from(await doc.save());
+  const secret = "PRIVATE_DOCUMENT_VALUE_9b7f";
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args) => { warnings.push(args); };
+  try {
+    const result = await applyPdfEdits(input, { fields: [{ name: "Selection", value: secret }] });
+    assert.deepEqual(result.failed, ["Selection"]);
+    assert.ok(!JSON.stringify(warnings).includes(secret));
+  } finally {
+    console.warn = warn;
+  }
+});
+
 test("sanitizeWinAnsi keeps every Helvetica glyph and only marks truly missing ones", () => {
   // Zerlegte Umlaute (macOS/PDF-Copy) werden zusammengesetzt.
   assert.equal(sanitizeWinAnsi("für Müller"), "für Müller");

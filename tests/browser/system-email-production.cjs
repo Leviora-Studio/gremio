@@ -19,7 +19,8 @@ const assert = require('node:assert/strict');
   const reservation = createServer(); await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: process.env.GREMIO_TEST_BUILD_DIR || process.cwd(), env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, UPLOAD_DIR: join(output, 'uploads'), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const sso = await require('./synthetic-sso.cjs').startSyntheticSso();
+  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: process.env.GREMIO_TEST_BUILD_DIR || process.cwd(), env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, OIDC_ISSUER: sso.issuer, UPLOAD_DIR: join(output, 'uploads'), NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; child.stdout.on('data', data => { log += data; }); child.stderr.on('data', data => { log += data; });
   let userId, boardId, inventoryId, systemId, browser;
   try {
@@ -27,6 +28,7 @@ const assert = require('node:assert/strict');
     for (let i = 0; i < 100; i++) { try { if ((await fetch(`${base}/api/health`)).ok) { ready = true; break; } } catch {} await new Promise(resolve => setTimeout(resolve, 200)); }
     assert.ok(ready, log);
     userId = (await query("insert into users(username,role) values ($1,'admin') returning id", [randomUUID()])).rows[0].id;
+    await query('update users set sub=$1 where id=$2', ['synthetic:'+userId, userId]);
     boardId = (await query("insert into boards(name,owner_id) values ('Email test board',$1) returning id", [userId])).rows[0].id;
     const statusId = (await query("insert into board_statuses(board_id,name) values ($1,'Incoming') returning id", [boardId])).rows[0].id;
     const areaId = (await query("insert into feedback_areas(name,enabled,target_board_id,target_status_id) values ('Email feedback',true,$1,$2) returning id", [boardId,statusId])).rows[0].id;
@@ -37,7 +39,7 @@ const assert = require('node:assert/strict');
     await query("insert into board_statuses(board_id,name) values ($1,'Loans')",[systemId]);
     browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true });
     const context = await browser.newContext({viewport:{width:1400,height:1000}});
-    await context.addCookies([{name:'gremio_session',value:await sealData({userId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+    await context.addCookies([{name:'gremio_session',value:await sealData(sso.session(userId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
     const page = await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
     assert.equal((await page.goto(`${base}/admin/email`)).status(),200);
     await page.getByLabel('SMTP-Host',{exact:true}).fill('localhost');
@@ -85,10 +87,10 @@ const assert = require('node:assert/strict');
     assert.equal((await query('select * from email_outbox')).rowCount,0,'SMTP remains off; no external emails');
     assert.deepEqual(errors,[]);console.log('SMTP UI, encrypted credentials, board/inventory settings, desktop/mobile and required public email verified. Screenshots: '+output);
   } finally {
-    if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>child.once('exit',resolve));
+    if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));
     await query('delete from smtp_settings');await query('delete from email_outbox');
     if(boardId){await query('delete from locations where target_board_id=$1',[boardId]);await query('delete from feedback_areas where target_board_id=$1',[boardId]);await query('delete from boards where id=$1',[boardId]);}
     if(inventoryId){await query('update inventory_boards set loan_board_id=null where id=$1',[inventoryId]);if(systemId)await query('delete from boards where id=$1',[systemId]);await query('delete from inventory_boards where id=$1',[inventoryId]);}
-    if(userId)await query('delete from users where id=$1',[userId]);await pool.end();
+    if(userId)await query('delete from users where id=$1',[userId]);await pool.end();await sso.close();
   }
 })().catch(error=>{console.error(error);process.exitCode=1;});

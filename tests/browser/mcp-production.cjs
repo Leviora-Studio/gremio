@@ -61,6 +61,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
           userinfo_endpoint: issuer + "/userinfo",
           end_session_endpoint: issuer + "/logout",
           revocation_endpoint: issuer + "/revoke",
+          introspection_endpoint: issuer + "/introspect",
         });
       if (url.pathname === "/jwks") return json({ keys: [jwk] });
       if (url.pathname === "/authorize") {
@@ -102,8 +103,19 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
         return json({
           id_token: idToken,
           access_token: "local-oidc-access",
+          refresh_token: "local-oidc-offline-refresh",
+          scope: "openid profile email offline_access",
           token_type: "Bearer",
         });
+      }
+      if (url.pathname === "/introspect") {
+        assert.equal(req.headers.authorization, "Basic " + Buffer.from("gremio-test:local-test-secret").toString("base64"));
+        let body = "";
+        for await (const chunk of req) body += chunk;
+        const token = new URLSearchParams(body).get("token");
+        return json(token === "local-oidc-offline-refresh"
+          ? { active: true, sub: suffix, client_id: "gremio-test", exp: Math.floor(Date.now() / 1000) + 3600 }
+          : { active: false });
       }
       if (url.pathname === "/mcp-callback") {
         callback = url;
@@ -158,7 +170,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
         String(port),
       ],
       {
-        cwd: process.env.GREMIO_TEST_STANDALONE_DIR || process.cwd(),
+        cwd: process.env.GREMIO_TEST_STANDALONE_DIR || process.env.GREMIO_TEST_BUILD_DIR || process.cwd(),
         env: {
           ...process.env,
           HOSTNAME: "127.0.0.1",
@@ -403,7 +415,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
     await browser?.close();
     if (child) {
       child.kill("SIGTERM");
-      await new Promise((resolve) => child.once("exit", resolve));
+      await new Promise((resolve) => child.exitCode !== null ? resolve() : child.once("exit", resolve));
     }
     await new Promise((resolve) => mock.close(resolve));
     if (clientId)

@@ -376,13 +376,10 @@ export async function applyPdfEdits(
           }
         }
         changedFields.add(field);
-      } catch (e) {
-        console.warn(
-          "[pdf-edit] Feld konnte nicht gesetzt werden:",
-          fe.name,
-          JSON.stringify(fe.value),
-          e instanceof Error ? e.message : e,
-        );
+      } catch {
+        // PDF library errors can repeat the submitted value, including private
+        // application data. Keep both the value and raw error out of logs.
+        console.warn("[pdf-edit] Formularfeld konnte nicht gesetzt werden.");
         failed.push(fe.name);
       }
     }

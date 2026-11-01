@@ -70,13 +70,13 @@ export const cardQuerySchema = z
   })
   .strict();
 export const pageQuerySchema = z.object({
-  limit: int.pipe(z.number().max(100)).default("50"),
+  limit: int.pipe(z.number().max(100)).default(50),
   offset: z
     .string()
     .regex(/^\d+$/)
     .transform(Number)
     .pipe(z.number().int().min(0).max(1000000))
-    .default("0"),
+    .default(0),
 });
 export function pagination(req: Request) {
   return pageQuerySchema.safeParse(

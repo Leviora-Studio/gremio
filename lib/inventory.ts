@@ -28,6 +28,7 @@ export async function canAccessInventoryBoard(
   board: InventoryBoard,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
+  if (!user.isActive) return false;
   if (user.role === "admin") return true;
   if (await isResourceOwner("inventory",board,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
@@ -55,6 +56,7 @@ export async function canManageInventoryBoard(
   user: User,
   board: InventoryBoard,
 ): Promise<boolean> {
+  if (!user.isActive) return false;
   return user.role === "admin" || await isResourceOwner("inventory",board,user.id);
 }
 
@@ -62,6 +64,7 @@ export async function canManageInventoryBoard(
 export async function getAccessibleInventoryBoards(
   user: User,
 ): Promise<InventoryBoard[]> {
+  if (!user.isActive) return [];
   if (user.role === "admin") {
     return db.select().from(inventoryBoards).orderBy(inventoryBoards.name);
   }

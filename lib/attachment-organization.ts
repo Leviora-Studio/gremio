@@ -42,7 +42,10 @@ export function attachmentArchiveLayout<T extends { id: number; filename: string
     const base = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : "";
     while (used.has(candidate.toLocaleLowerCase("en-US"))) {
-      const suffix = ` (${id}${count++ ? `-${count}` : ""})${ext}`;
+      const discriminator = ` (${id}${count++ ? `-${count}` : ""})`;
+      // Legacy extensions can themselves exceed the component byte limit.
+      // Reserve the unique suffix first and leave room for a basename.
+      const suffix = `${discriminator}${shorten(ext, 254 - Buffer.byteLength(discriminator))}`;
       candidate = `${shorten(base, 255 - Buffer.byteLength(suffix))}${suffix}`;
     }
     used.add(candidate.toLocaleLowerCase("en-US"));

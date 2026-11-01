@@ -1,5 +1,13 @@
 # Gremio
 
+Der Bug- und Security-Audit ab einschließlich 4.2.0 ist in
+[docs/SECURITY_AUDIT_SINCE_4.2.0.md](docs/SECURITY_AUDIT_SINCE_4.2.0.md)
+dokumentiert. Die Korrekturen sichern aktuelle Berechtigungen auch nach
+Nutzersperren und Rollenentzug, beschränken das Wiederöffnen abgeschlossener
+Sitzungen auf deren Verwaltung, entfernen private PDF-Feldwerte aus Fehlerlogs
+und begrenzen kollidierende Archivnamen. Zod 4 und gezielte minimatch-Updates
+beheben die gemeldeten Sicherheitslücken der Produktionsabhängigkeiten.
+
 Das interne Kartenfeld „E-Mail-Adresse“ ist pro Board konfigurierbar und für
 Board-Schreiber bearbeitbar. Standort-Zuordnungen aktivieren die Felder des
 Antragsformulars automatisch; aktive Standorte schützen diese vor Deaktivierung.

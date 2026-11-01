@@ -76,6 +76,7 @@ export async function canAccessBoard(
   board: Board,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
+  if (!user.isActive) return false;
   if (user.role === "admin") return true;
   // System-Board (Leihvorgänge): Zugriff spiegelt das verknüpfte Inventar.
   if (board.inventoryBoardId != null) {
@@ -103,6 +104,7 @@ export async function canAccessBoard(
 
 /** Verwalten (umbenennen, Stati, Freigaben, Nextcloud, löschen): admin ODER Eigentümer. */
 export async function canManageBoard(user: User, board: Board): Promise<boolean> {
+  if (!user.isActive) return false;
   if(user.role==="admin")return true;
   if(board.inventoryBoardId!=null){const [inv]=await db.select().from(inventoryBoards).where(eq(inventoryBoards.id,board.inventoryBoardId));return !!inv&&await isResourceOwner("inventory",inv,user.id);}
   return isResourceOwner("board",board,user.id);
@@ -110,6 +112,7 @@ export async function canManageBoard(user: User, board: Board): Promise<boolean>
 
 /** Alle Boards, die ein Nutzer sehen darf (Admin: alle). */
 export async function getAccessibleBoards(user: User): Promise<Board[]> {
+  if (!user.isActive) return [];
   if (user.role === "admin") {
     return db.select().from(boards).orderBy(boards.name);
   }

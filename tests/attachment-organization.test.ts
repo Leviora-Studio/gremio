@@ -37,6 +37,16 @@ test("archives preserve folders, empty folders, and every colliding legacy attac
   assert.throws(() => attachmentArchiveLayout(folders, [{ id: 17, filename: "Lost.pdf", folderId: 99 }]), /Unknown attachment folder/);
 });
 
+test("archive collision names stay within filesystem limits even with long legacy extensions", () => {
+  const filename = `a.${"€".repeat(100)}`;
+  const layout = attachmentArchiveLayout([], [
+    { id: 1, filename, folderId: null },
+    { id: 2, filename, folderId: null },
+  ]);
+  for (const file of layout.files) assert.ok(Buffer.byteLength(file.name) <= 255);
+  assert.equal(new Set(layout.files.map(file => file.name)).size, 2);
+});
+
 test("Nextcloud uploader creates empty subfolders and writes each file to its planned path", async () => {
   const { build } = await import("esbuild");
   const { mkdtemp, readFile, rm } = await import("node:fs/promises");

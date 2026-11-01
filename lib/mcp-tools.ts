@@ -61,7 +61,7 @@ type Definition = {
   description: string;
   method: string;
   path: string;
-  schema: z.AnyZodObject;
+  schema: z.ZodObject;
   run: (req: Request, a: Record<string, unknown>) => Promise<Response>;
   upload?: boolean;
   download?: boolean;

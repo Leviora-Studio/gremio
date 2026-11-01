@@ -1,4 +1,4 @@
-// Real Next production server + isolated database. No OIDC/Nextcloud calls.
+// Real Next production server + isolated database and local synthetic OIDC.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { Pool } = require('pg');
 const { sealData } = require('iron-session');
@@ -37,7 +37,8 @@ function readZipEntries(buffer) {
   const reservation = createServer(); await new Promise(resolve => reservation.listen(0,'127.0.0.1',resolve));
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'),'start','-p',String(port),'-H','127.0.0.1'], { env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, UPLOAD_DIR: uploadDir, NODE_ENV:'production' }, stdio:['ignore','pipe','pipe'] });
+  const sso = await require('./synthetic-sso.cjs').startSyntheticSso();
+  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'),'start','-p',String(port),'-H','127.0.0.1'], { cwd: process.env.GREMIO_TEST_BUILD_DIR || process.cwd(), env: { ...process.env, APP_BASE_URL: base, PUBLIC_BASE_URL: base, OIDC_ISSUER: sso.issuer, UPLOAD_DIR: uploadDir, NODE_ENV:'production' }, stdio:['ignore','pipe','pipe'] });
   let log=''; child.stdout.on('data',data=>{log+=data.toString();}); child.stderr.on('data',data=>{log+=data.toString();});
   let browser, ownerId, boardId; const accountIds=[];
   const query = (sql,args=[])=>pool.query(sql,args);
@@ -47,6 +48,7 @@ function readZipEntries(buffer) {
     assert.ok(ready,`production server should start\n${log}`);
     const suffix=`browser-${randomUUID()}`;
     ownerId=(await query("insert into users(username,role) values ($1,'admin') returning id",[suffix])).rows[0].id;
+    await query('update users set sub=$1 where id=$2',['synthetic:'+ownerId,ownerId]);
     const accs=(await query("insert into accounts(name) values ($1),($2) returning id",[suffix+'-A',suffix+'-B'])).rows; accountIds.push(...accs.map(a=>a.id));
     boardId=(await query("insert into boards(name,owner_id,default_account_id) values ($1,$2,$3) returning id",[suffix,ownerId,accs[1].id])).rows[0].id;
     const statuses=(await query("insert into board_statuses(board_id,name,is_receipt_trigger,position) values ($1,'Quittungen offen',true,0),($1,'Eingereicht',false,1) returning id",[boardId])).rows;
@@ -69,7 +71,7 @@ function readZipEntries(buffer) {
     const instructionAttachment=(await query("insert into attachments(card_id,kind,upload_purpose,filename,path,mime,size,uploaded_by) values ($1,'other','instruction','Anweisung 1.pdf',$2,'application/pdf',$3,$4) returning id",[card.id,instructionPath,instructionBytes.length,ownerId])).rows[0];
     browser=await chromium.launch({ executablePath:process.env.CHROME_PATH || undefined,headless:true });
     const page=await browser.newPage({viewport:{width:1400,height:1000}});
-    await page.context().addCookies([{name:'gremio_session',value:await sealData({userId:ownerId},{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+    await page.context().addCookies([{name:'gremio_session',value:await sealData(sso.session(ownerId),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
     for (const route of ['/intern/protokolle', '/intern/protokolle/neu', '/intern/protokolle/1', '/intern/protokolle/1/einstellungen', '/intern/protokolle/1/sitzung/1', '/vorlagen/protokolle', '/dokumente/1/1', '/dokumente/1/1/ergebnis', '/api/protokolle/1/logos/1', '/api/protokolle/1/sitzung/1/image', '/api/protokolle/1/sitzung/1/pdf', '/api/protokolle/1/sitzung/1/pdf/fields']) {
       assert.equal((await page.request.get(base + route)).status(), 404, `${route}: removed minutes route must not exist`);
     }
@@ -206,6 +208,6 @@ function readZipEntries(buffer) {
     if(boardId)await query('delete from boards where id=$1',[boardId]);
     if(accountIds.length)await query('delete from accounts where id=any($1::int[])',[accountIds]);
     if(ownerId)await query('delete from users where id=$1',[ownerId]);
-    await pool.end();
+    await pool.end();await sso.close();
   }
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

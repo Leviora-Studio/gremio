@@ -943,6 +943,13 @@ Vertraulichkeit eines Haupt-TOPs schützt auch seine Unter-TOPs und Dateien. Los
 
 ## Laufende SSO-Prüfung und lokale Nutzersperren
 
+Die gemeinsamen Board-, Finanz- und Inventar-Berechtigungshelfer weisen deaktivierte
+Konten einschließlich Eigentümern und Admins ab. Das gilt auch bei stellvertretender
+Prüfung für Finanzquellen: Ein deaktivierter Finanzboard-Eigentümer vermittelt keine
+Quellrechte. Rollenänderungen prüfen nach Erwerb der Admin-Sperren erneut die aktuelle
+Rolle und Aktivierung der handelnden Person; zwischenzeitlich entzogene Rechte können
+nicht durch eine bereits gestartete Anfrage wiederhergestellt werden.
+
 `resolveSessionUser` prüft für jede Browser-Anfrage die aktuelle lokale Aktivierung und `session_version` aus der DB. Das Cookie enthält dieselbe Versionsnummer; alte Cookies ohne Nummer gelten als Version 0. Eine lokale Deaktivierung/Reaktivierung erhöht die Version. Die serverseitige Admin-Action sperrt aktive Admins und Zielkonto transaktional, schützt das eigene/letzte Admin-Konto. Inhalte, Eigentum und Freigaben bleiben erhalten. Lokale Deaktivierung greift auch für bestehende API-/MCP-Tokens über deren bestehende `isActive`-Prüfung. Ihre unabhängigen Token-Verträge werden nicht erweitert.
 
 Neue Browser-Anmeldungen fordern `openid profile email offline_access` mit Zustimmung an. Der Login-Callback verlangt ein Refresh-Token mit Offline-Berechtigung, prüft das ID-Token und bindet dessen Subject an den Hash des erhaltenen Refresh-Tokens im verschlüsselten Cookie. Das Cookie enthält eine feste Ablaufzeit von 14 Tagen. Profilaktionen verlängern diese Frist nicht. Kurzlebige Access-Tokens werden bei neuen Anmeldungen nicht gespeichert; „Profil neu abgleichen“ bezieht bei Bedarf über den Refresh-Grant ein neues Access-Token. Ein ID-Token dient nur als Logout-Hinweis und kann bei großen Cookies entfallen. SSO-Tokens werden nicht in der DB gespeichert.
