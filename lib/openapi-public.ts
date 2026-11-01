@@ -119,7 +119,7 @@ export const openApiPublicSpec = {
 
 Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen zwischengeschalteten Backend-Server und keine API-Authentifizierung. Native Clients unterliegen keinem Browser-CORS, deshalb setzt diese API **bewusst keine CORS-Header**. Aus einem Webbrowser heraus ist sie damit nicht cross-origin nutzbar.
 
-**Status-Link:** Die Antwort enthält \`statusUrl\` — einen geheimen Link, der wie ein Bearer-Token wirkt. Wer ihn besitzt, sieht die zugehörige öffentliche Statusansicht. Die App muss ihn lokal speichern und vertraulich behandeln (nicht loggen, nicht teilen). Bei aktivierter Empfangsbestätigung wird er an die Pflicht-Kontaktadresse geschickt; ohne diese Bestätigung lässt sich ein verlorener Link nicht wiederherstellen. Anträge und Feedback haben getrennte Statusrouten (\`/status/…\` bzw. \`/feedback/status/…\`).
+**Status-Link:** Die Antwort enthält \`statusUrl\` — einen geheimen Link, der wie ein Bearer-Token wirkt. Wer ihn besitzt, sieht die zugehörige öffentliche Statusansicht. Die App muss ihn lokal speichern und vertraulich behandeln (nicht loggen, nicht teilen). Bei aktivierter Empfangsbestätigung und angegebener E-Mail wird er an diese Kontaktadresse geschickt; ohne diese Bestätigung lässt sich ein verlorener Link nicht wiederherstellen. Anträge und Feedback haben getrennte Statusrouten (\`/status/…\` bzw. \`/feedback/status/…\`).
 
 **Rate-Limits:** Anträge und Feedback haben vollständig getrennte Kontingente; das Browserformular wiederum ein eigenes.
 
@@ -920,12 +920,12 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
       },
       FeedbackSubmissionRequest: {
         type: "object",
-        required: ["areaId", "feedback", "email"],
+        required: ["areaId", "feedback"],
         description:
           "Unbekannte Felder werden mit `400` abgelehnt (Tippfehler-Schutz — ein vertipptes `submiterName` erzeugte sonst still eine Einreichung ohne Namen).",
         additionalProperties: false,
         properties: {
-          email: { type: "string", format: "email", maxLength: 254, description: "Pflichtfeld. Bleibt intern; bei aktivierter Bestätigung wird ein Status-Link mit PDF versendet.", examples: ["person@example.org"] },
+          email: { type: "string", format: "email", maxLength: 254, description: "Optional. Ohne Adresse keine E-Mail-Bestätigung; eine angegebene Adresse bleibt intern.", examples: ["person@example.org"] },
           areaId: {
             type: "integer",
             description:
@@ -938,7 +938,7 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
             description:
               `OPTIONAL. Name des Einreichers (wird getrimmt). Fehlt das Feld ` +
               `oder ist es leer, wird „${ANONYMOUS_SUBMITTER}" gespeichert — ` +
-              `Der Name bleibt optional; die Pflicht-E-Mail ist intern bekannt. Für die Idempotenz sind ` +
+              `Name und E-Mail bleiben optional; eine angegebene E-Mail ist intern bekannt. Für die Idempotenz sind ` +
               `ein fehlender Name und „${ANONYMOUS_SUBMITTER}" derselbe Request ` +
               `(kein 409 beim Retry).`,
             examples: ["Max Mustermann"],

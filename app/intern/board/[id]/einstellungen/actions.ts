@@ -527,7 +527,7 @@ export async function setCardFieldsAction(
     await lockLocationBoard(tx, boardId);
     const required = await getLocationRequiredFieldKeys(boardId, tx);
     if (required.some((key) => formData.get(`field_${key}`) !== "on")) {
-      return { error: "Felder des Antragsformulars können nicht deaktiviert werden, solange ein aktiver Standort diesem Board zugeordnet ist." };
+      return { error: "Pflichtfelder können nicht deaktiviert werden, solange dieses Board einem Standort, einer Umfrage oder einem Inventar zugeordnet ist." };
     }
     for (const key of CARD_FIELD_KEYS) {
       const visible = formData.get(`field_${key}`) === "on";

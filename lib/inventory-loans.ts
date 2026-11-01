@@ -61,7 +61,7 @@ async function maybeCreateTrackingCard(
   tx: Tx,
   units: LoanUnit[],
   loanId: number,
-  info: { borrower: string; purpose: string | null },
+  info: { borrower: string; borrowerEmail:string|null; purpose: string | null },
 ): Promise<void> {
   const leadId = units[0]?.itemId;
   if (leadId == null) return;
@@ -109,6 +109,7 @@ async function maybeCreateTrackingCard(
       statusId: firstCol.id,
       title,
       applicant: info.borrower || "—",
+      submitterEmail:info.borrowerEmail,
       token: generateToken(), // eigener Token; wird nicht veröffentlicht
       notes: info.purpose,
       position,
@@ -508,6 +509,7 @@ export async function createLoan(
         );
         await maybeCreateTrackingCard(tx, units, row.id, {
           borrower: data.borrower,
+          borrowerEmail:data.borrowerEmail,
           purpose: data.purpose,
         });
         return row.id;
@@ -722,7 +724,8 @@ export async function createLoanRequest(
           });
           await maybeCreateTrackingCard(tx, units, row.id, {
             borrower: data.borrower,
-            purpose: data.purpose,
+            borrowerEmail:data.borrowerEmail,
+          purpose: data.purpose,
           });
           const requestedItems = await tx.select({ name: inventoryItems.name, boardId: inventoryItems.boardId }).from(inventoryItems).where(inArray(inventoryItems.id, units.map(unit => unit.itemId)));
           await queueConfirmation(tx, "inventory", requestedItems[0].boardId, data.borrowerEmail!, { title: `Ausleihanfrage: ${requestedItems.map(item => item.name).join(", ")} (${totalQty} Stück)`, applicant: data.borrower, receivedAt: row.createdAt.toISOString(), statusLink: token });

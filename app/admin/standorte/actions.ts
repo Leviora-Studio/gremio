@@ -3,7 +3,7 @@
 
 "use server";
 
-import { enableApplicationCardFields, lockLocationBoard } from "@/lib/location-board-fields";
+import {missingBoardFields,missingBoardFieldsMessage,lockLocationBoard} from "@/lib/location-board-fields";
 import { revalidatePath } from "next/cache";
 import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { boards, boardStatuses, locations } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
+import {APPLICATION_REQUIRED_CARD_FIELD_KEYS} from "@/lib/constants";
 import { sanitizeSingleLine } from "@/lib/text";
 
 export type State = { error?: string; success?: string };
@@ -157,13 +158,15 @@ export async function setLocationTargetAction(
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
   }
   try {
-    await db.transaction(async (tx) => {
+    const result=await db.transaction(async (tx) => {
       await lockLocationBoard(tx, boardId);
-      const updated = await tx.update(locations)
+      const missing=await missingBoardFields(boardId,APPLICATION_REQUIRED_CARD_FIELD_KEYS,tx);
+      if(missing.length)return {error:missingBoardFieldsMessage(missing)};
+      await tx.update(locations)
         .set({ targetBoardId: boardId, targetStatusId: statusId })
         .where(eq(locations.id, locationId)).returning({ id: locations.id });
-      if (updated.length) await enableApplicationCardFields(tx, boardId);
     });
+    if(result?.error)return result;
   } catch (e) {
     // Board/Spalte wurde zwischen Prüfung und UPDATE gelöscht (RESTRICT-FK).
     if (isForeignKeyViolation(e)) {
@@ -197,7 +200,11 @@ export async function toggleLocationEnabledAction(
   // geprüft, und beim Aktivieren muss das Ziel in derselben Anweisung noch
   // gesetzt sein.
   const geaendert = await db.transaction(async (tx) => {
-    if (!loc.enabled && loc.targetBoardId) await lockLocationBoard(tx, loc.targetBoardId);
+    if (!loc.enabled && loc.targetBoardId){
+      await lockLocationBoard(tx, loc.targetBoardId);
+      const missing=await missingBoardFields(loc.targetBoardId,APPLICATION_REQUIRED_CARD_FIELD_KEYS,tx);
+      if(missing.length)return {error:missingBoardFieldsMessage(missing)};
+    }
     const updated = await tx
       .update(locations)
       .set({ enabled: !loc.enabled })
@@ -212,12 +219,10 @@ export async function toggleLocationEnabledAction(
             ),
       )
       .returning({ id: locations.id });
-    if (updated.length && !loc.enabled && loc.targetBoardId) {
-      await enableApplicationCardFields(tx, loc.targetBoardId);
-    }
     return updated;
   });
   revalidatePath("/admin/standorte");
+  if("error" in geaendert)return geaendert;
   if (!geaendert.length) {
     return {
       error:

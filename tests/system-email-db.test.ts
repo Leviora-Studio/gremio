@@ -67,7 +67,9 @@ test("durable private email delivery, all public receipts, rollback, status tran
     const opts = { activityDetail: "Test" };
     const jobs = () => db.select().from(emailOutbox);
     const missingFeedback = await submitPublicFeedback({ ...raw, email: undefined }, opts);
-    assert.equal(missingFeedback.ok, false);
+    assert.equal(missingFeedback.ok, true);
+    if(missingFeedback.ok)assert.equal((await db.select().from(cards).where(eq(cards.id,missingFeedback.cardId)))[0].submitterEmail,null);
+    assert.equal((await submitPublicFeedback({...raw,email:"not-an-email"},opts)).ok,false);
     const missingApplication = await submitPublicApplication({ locationId: location.id, title: "Test", applicant: "Person", files: {} }, opts);
     assert.equal(missingApplication.ok, false);
     if (!missingApplication.ok && missingApplication.reason === "validation") assert.equal(missingApplication.issues?.[0].field, "email");
@@ -78,6 +80,8 @@ test("durable private email delivery, all public receipts, rollback, status tran
     assert.equal((await submitPublicFeedback(raw, opts)).ok, true);
     assert.equal((await jobs()).length, 0, "per-board receipt off creates no mail");
     await db.update(emailConfirmationSettings).set({ enabled: true });
+    assert.equal((await submitPublicFeedback({...raw,email:""},opts)).ok,true);
+    assert.equal((await jobs()).length,0,"omitted contact creates no mail even with SMTP and receipts enabled");
     const failed = await submitPublicFeedback(raw, { ...opts, withinTx: async () => { throw new Error("rollback"); } });
     assert.equal(failed.ok, false); assert.equal((await jobs()).length, 0, "rollback includes mail");
     const feedback = await submitPublicFeedback(raw, opts); assert.equal(feedback.ok, true);

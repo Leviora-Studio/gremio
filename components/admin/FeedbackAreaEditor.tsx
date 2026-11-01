@@ -17,6 +17,7 @@ import {
 } from "@/app/admin/umfragen/actions";
 
 type BoardWithStatuses = {
+  missingRequiredFields?:string[];
   id: number;
   name: string;
   statuses: { id: number; name: string }[];
@@ -118,7 +119,8 @@ export function FeedbackAreaEditor({
               ]}
             />
           </div>
-          <button type="submit" disabled={targetPending} className="btn-primary">
+          {!!selectedBoard?.missingRequiredFields?.length&&<p role="alert" className="max-w-lg rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Bitte zuerst folgende Pflichtfelder in den <a className="underline" href={`/intern/board/${selectedBoard.id}/einstellungen`}>Boardeinstellungen</a> aktivieren: {selectedBoard.missingRequiredFields.join(", ")}.</p>}
+          <button type="submit" disabled={targetPending||!!selectedBoard?.missingRequiredFields?.length} className="btn-primary">
             {"Ziel speichern"}
           </button>
         </form>

@@ -43,7 +43,6 @@ export function PublicFeedbackForm({
     const hasText = (key: string) => String(fd.get(key) ?? "").trim() !== "";
 
     const need: string[] = [];
-    if (!hasText("email")) need.push("E-Mail-Adresse");
     if (!hasText("areaId")) need.push("Bereich");
     // Der Name ist bewusst NICHT dabei — leer lassen ist erlaubt und wird
     // serverseitig zu „Anonym".
@@ -91,9 +90,9 @@ export function PublicFeedbackForm({
       </div>
 
       <div>
-        <label htmlFor="contact-email" className="label">E-Mail-Adresse *</label>
-        <input id="contact-email" name="email" type="email" required maxLength={254} autoComplete="email" className="input" defaultValue={state.values?.email ?? ""} />
-        <p className="mt-1 text-xs text-slate-500">Die Adresse bleibt intern. Wenn für diesen Bereich aktiviert, erhältst du eine Empfangsbestätigung mit Status-Link und PDF.</p>
+        <label htmlFor="contact-email" className="label">E-Mail-Adresse (optional)</label>
+        <input id="contact-email" name="email" type="email" maxLength={254} autoComplete="email" className="input" defaultValue={state.values?.email ?? ""} />
+        <p className="mt-1 text-xs text-slate-500">Wenn du eine Adresse angibst, bleibt sie intern. Bei aktivierter E-Mail-Bestätigung erhältst du eine Empfangsbestätigung mit Status-Link und PDF.</p>
       </div>
 
       <div>
@@ -110,7 +109,7 @@ export function PublicFeedbackForm({
         />
         <p className="mt-1 text-sm text-slate-500">
           Lässt du das Feld leer, erscheint dein Feedback als „
-          {ANONYMOUS_SUBMITTER}". Deine E-Mail-Adresse ist dem zuständigen Gremium trotzdem bekannt.
+          {ANONYMOUS_SUBMITTER}". Eine freiwillig angegebene E-Mail-Adresse ist dem zuständigen Gremium intern bekannt.
         </p>
       </div>
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 export const wordStyleRoles = {
-  title: "Dokumenttitel",
   body: "Fließtext und TOP-Inhalt",
   section: "Überschrift öffentlicher / nicht öffentlicher Teil",
   publicTopic: "Öffentlicher TOP 1. Ordnung",

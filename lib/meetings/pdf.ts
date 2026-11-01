@@ -37,9 +37,9 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
   line("Enthält die Tagesordnung und die für dich zugänglichen Finanzantragsdaten. Vertrauliche TOPs sind enthalten. Bei Weitergabe den Empfängerkreis beachten.");
   let elapsed=0;
   for(const section of agendaSections(meeting)) {
-    line(agendaSectionLabels[section],true,16);
+    if(section!=="opening")line(agendaSectionLabels[section],true,16);
     const sectionTopics=topics.filter(topic=>topic.section===section);
-    if(!sectionTopics.length)line("Keine TOPs in diesem Bereich eingeplant.");
+    if(!sectionTopics.length&&section!=="opening")line("Keine TOPs in diesem Bereich eingeplant.");
   for(const topic of sectionTopics) {
     if(y<170){page=pdf.addPage([595.28,841.89]);y=780;}
     line(`TOP ${topic.number}: ${topic.title}`,true,topic.parentId==null?14:12);
@@ -58,7 +58,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
       line(`Beantragter Betrag: ${details.amount||"—"}`);
     }
     if(topic.description)line(topic.description);
-    if(topic.motion){line("Beschlussvorschlag",true);line(topic.motion);}
+    if(topic.motion?.trim()){line("Beschlussvorschlag",true);line(topic.motion);line("Abstimmung: Dafür / Dagegen / Enthaltung",true);}
     const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
     if(docs.length){line("Freigegebene Sitzungsunterlagen",true);for(const doc of docs)line(doc.filename);}
   }

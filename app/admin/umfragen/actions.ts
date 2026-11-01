@@ -4,10 +4,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNotNull, max } from "drizzle-orm";
+import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { boards, boardStatuses, feedbackAreas } from "@/lib/db/schema";
+import {FEEDBACK_REQUIRED_CARD_FIELD_KEYS} from "@/lib/constants";
+import {lockLocationBoard,missingBoardFields,missingBoardFieldsMessage} from "@/lib/location-board-fields";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
 import { sanitizeSingleLine } from "@/lib/text";
@@ -176,10 +178,13 @@ export async function setFeedbackAreaTargetAction(
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
   }
   try {
-    await db
-      .update(feedbackAreas)
-      .set({ targetBoardId: boardId, targetStatusId: statusId })
-      .where(eq(feedbackAreas.id, areaId));
+    const result=await db.transaction(async tx=>{
+      await lockLocationBoard(tx,boardId);
+      const missing=await missingBoardFields(boardId,FEEDBACK_REQUIRED_CARD_FIELD_KEYS,tx);
+      if(missing.length)return {error:missingBoardFieldsMessage(missing)};
+      await tx.update(feedbackAreas).set({targetBoardId:boardId,targetStatusId:statusId}).where(eq(feedbackAreas.id,areaId));
+    });
+    if(result?.error)return result;
   } catch (e) {
     // Board/Spalte wurde zwischen Prüfung und UPDATE gelöscht (RESTRICT-FK).
     if (isForeignKeyViolation(e)) {
@@ -210,8 +215,13 @@ export async function toggleFeedbackAreaEnabledAction(
   // Bedingtes UPDATE (Begründung siehe app/admin/standorte/actions.ts): Sonst
   // ließe sich ein Bereich aktivieren, dem ein zweiter Admin gerade das
   // Routingziel entzogen hat.
-  const geaendert = await db
-    .update(feedbackAreas)
+  const geaendert = await db.transaction(async tx=>{
+    if(!area.enabled&&area.targetBoardId){
+      await lockLocationBoard(tx,area.targetBoardId);
+      const missing=await missingBoardFields(area.targetBoardId,FEEDBACK_REQUIRED_CARD_FIELD_KEYS,tx);
+      if(missing.length)return {error:missingBoardFieldsMessage(missing)};
+    }
+    return tx.update(feedbackAreas)
     .set({ enabled: !area.enabled })
     .where(
       area.enabled
@@ -219,11 +229,13 @@ export async function toggleFeedbackAreaEnabledAction(
         : and(
             eq(feedbackAreas.id, areaId),
             eq(feedbackAreas.enabled, false),
-            isNotNull(feedbackAreas.targetBoardId),
-            isNotNull(feedbackAreas.targetStatusId),
+            eq(feedbackAreas.targetBoardId,area.targetBoardId!),
+            eq(feedbackAreas.targetStatusId,area.targetStatusId!),
           ),
     )
     .returning({ id: feedbackAreas.id });
+  });
+  if("error" in geaendert)return geaendert;
   revalidatePath("/admin/umfragen");
   if (!geaendert.length) {
     return {

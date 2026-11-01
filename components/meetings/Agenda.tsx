@@ -10,15 +10,16 @@ import { CSS } from "@dnd-kit/utilities";
 import { reorderTopicsAction } from "@/app/intern/sitzungen/actions";
 import { agendaTopics, agendaSections, agendaSectionLabels, type AgendaSettings, type AgendaSection } from "@/lib/meetings/agenda";
 import { topicKinds,topicStates } from "@/lib/meetings/validation";
-type AgendaItem = { section?:AgendaSection; transferred?:boolean; isFinanceTopic?:boolean; documentCount?:number; parentId: number|null; position:number;state:string;id: number; title: string; durationMinutes: number; kind: keyof typeof topicKinds; confidential: boolean; presenter: string };
+type AgendaItem = { isFinanceItem?:boolean;motion?:string; isMiscellaneous?:boolean; section?:AgendaSection; transferred?:boolean; isFinanceTopic?:boolean; documentCount?:number; parentId: number|null; position:number;state:string;id: number; title: string; durationMinutes: number; kind: keyof typeof topicKinds; confidential: boolean; presenter: string };
 function AgendaRow({ item, number, time, editable, actions }: { item: AgendaItem; number: string; time: string; editable: boolean; actions?:React.ReactNode }) {
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !editable||item.transferred });
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !editable||item.transferred||item.isMiscellaneous });
   return <li data-live-refresh-block={isDragging} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`flex flex-col items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row ${item.parentId!=null?"ml-4 border-l-4 sm:ml-8":""}`}>
-    <div className="flex shrink-0 items-start gap-2">{editable&&!item.transferred && <button type="button" {...attributes} {...listeners} aria-label={`TOP ${number} verschieben`} className="cursor-grab touch-none rounded px-2 py-1 text-slate-500">⠿</button>}
+    <div className="flex shrink-0 items-start gap-2">{editable&&!item.transferred&&!item.isMiscellaneous && <button type="button" {...attributes} {...listeners} aria-label={`TOP ${number} verschieben`} className="cursor-grab touch-none rounded px-2 py-1 text-slate-500">⠿</button>}
     <span className="mt-0.5 min-w-8 rounded-md bg-slate-100 px-2 py-1 text-center text-xs font-semibold text-slate-600" aria-hidden="true">{number}</span></div><div className="w-full min-w-0 flex-1"><Link href={`/intern/sitzungen/top/${item.id}`} className="block break-words font-semibold text-slate-900 hover:text-brand-700">TOP {number}: {item.title}</Link>
-      <p className="mt-1 text-sm text-slate-500">{time && `${time} · `}{item.durationMinutes} Min. · {topicKinds[item.kind]}{item.confidential && " · Vertraulich"}</p>
+      <p className="mt-1 text-sm text-slate-500">{time && `${time} · `}{item.durationMinutes} Min. · {topicKinds[item.kind]}{item.confidential && " · Vertraulich"}{item.isMiscellaneous&&" · Immer letzter TOP"}</p>
       {item.isFinanceTopic&&<Link href={`/intern/sitzungen/top/${item.id}`} className="mt-3 inline-flex rounded-md bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700">{editable?"Finanzanträge einplanen →":"Finanzanträge ansehen →"}</Link>}
       <p className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${["deferred","withdrawn"].includes(item.state)?"bg-red-50 text-red-700":"bg-slate-100 text-slate-600"}`}>{topicStates[item.state as keyof typeof topicStates]}{item.transferred?" · Weitergegeben":""}</p>
+      {item.isFinanceItem&&item.motion&&<div className="mt-3 rounded-lg bg-brand-50 p-3 text-sm"><p className="font-semibold">Beschlussvorschlag</p><p className="mt-1 whitespace-pre-wrap break-words">{item.motion}</p></div>}
       {item.presenter && <p className="mt-1 break-words text-sm">{item.presenter}</p>}
       {!!item.documentCount&&<Link href={`/intern/sitzungen/top/${item.id}#unterlagen`} className="mt-3 inline-block text-xs font-medium text-brand-700 hover:underline">{item.documentCount} Unterlage{item.documentCount===1?"":"n"} ansehen →</Link>}
       {actions&&<div className="mt-4 flex flex-wrap items-start gap-3">{actions}</div>}
@@ -33,7 +34,7 @@ export function Agenda({ items, meetingId, revision, editable, startsAt, actions
   async function end(event: DragEndEvent) {
     if (!event.over || event.over.id === event.active.id || saving) return;
     const source=rows.find(row=>row.id===event.active.id),target=rows.find(row=>row.id===event.over!.id);
-    if(!source||!target)return;
+    if(!source||!target||source.isMiscellaneous)return;
     if(source.section!==target.section){setError("TOPs werden innerhalb ihres Bereichs sortiert. Den Bereich kannst du im TOP ändern.");return;}
     let next:AgendaItem[];
     if(source.parentId==null){
@@ -49,7 +50,7 @@ export function Agenda({ items, meetingId, revision, editable, startsAt, actions
       const ordered=arrayMove(siblings,siblings.findIndex(row=>row.id===source.id),siblings.findIndex(row=>row.id===target.id));
       let index=0;next=rows.map(row=>row.parentId===source.parentId?ordered[index++]:row);
     }
-    next=next.map((row,index)=>({...row,position:index}));
+    next=agendaTopics(next.map((row,index)=>({...row,position:index})),settings).map((row,index)=>({...row,position:index}));
     setRows(next);setSaving(true);setError("");
     try { const result = await reorderTopicsAction(meetingId,next.map(row=>row.id),revision); if (result.error) {setRows(items);setError(result.error);} router.refresh(); }
     catch {setRows(items);setError("Die Reihenfolge konnte nicht gespeichert werden.");}

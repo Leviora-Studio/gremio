@@ -150,6 +150,7 @@ export function PublicLoanRequestForm({
         </label>
         <input
           id="rq-email"
+          required
           name="email"
           type="email"
           className="input"

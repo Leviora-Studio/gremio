@@ -24,3 +24,14 @@ test("orphaned deferred TOPs retain their inherited section and roman numerals s
  assert.deepEqual(agendaTopics(rows).map(t=>[t.id,t.parentId,t.number,t.section]),[[2,null,"I","non_public"]]);
  assert.deepEqual([4,9,14,49,99,444,999,1000].map(romanNumber),["IV","IX","XIV","XLIX","XCIX","CDXLIV","CMXCIX","M"]);
 });
+
+test("opening topics always lead and public numbering continues while the remaining areas can swap",()=>{
+ const rows=[{id:1,parentId:null,position:4,state:"scheduled",section:"opening" as const},{id:2,parentId:1,position:5,state:"scheduled",section:"opening" as const},{id:3,parentId:null,position:0,state:"scheduled",section:"public" as const},{id:4,parentId:null,position:2,state:"scheduled",section:"non_public" as const}];
+ assert.deepEqual(agendaTopics(rows,{firstSection:"non_public"}).map(t=>[t.id,t.number]),[[1,"1"],[2,"1.1"],[4,"I"],[3,"2"]]);
+ assert.deepEqual(agendaTopics(rows).map(t=>[t.id,t.number]),[[1,"1"],[2,"1.1"],[3,"2"],[4,"I"]]);
+});
+
+test("automatic miscellaneous TOP stays last even when new public topics have higher stored positions",()=>{
+ const rows=[{id:1,parentId:null,position:0,state:"scheduled",section:"public" as const,isMiscellaneous:true},{id:2,parentId:null,position:9,state:"scheduled",section:"public" as const},{id:3,parentId:null,position:10,state:"scheduled",section:"opening" as const}];
+ assert.deepEqual(agendaTopics(rows).map(t=>[t.id,t.number]),[[3,"1"],[2,"2"],[1,"3"]]);
+});

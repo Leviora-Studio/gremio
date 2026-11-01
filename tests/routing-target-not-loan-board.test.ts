@@ -14,6 +14,8 @@ import {
   locations,
   users,
 } from "../lib/db/schema";
+import {getVisibleFieldKeys} from "../lib/board-fields";
+import {INVENTORY_REQUIRED_CARD_FIELD_KEYS} from "../lib/constants";
 import { createLoanBoardForInventory } from "../lib/boards";
 import {
   listPublicLocations,
@@ -85,6 +87,8 @@ test("Leih-System-Board ist kein gültiges Routing-Ziel", async (t) => {
     .orderBy(asc(boardStatuses.position))
     .limit(1);
   assert.ok(spalte, "Vorbedingung: das Leihboard hat Spalten");
+  const fields=await getVisibleFieldKeys(loanBoardId);
+  assert.ok(INVENTORY_REQUIRED_CARD_FIELD_KEYS.every(key=>fields.has(key)),"automatically created loan board enables its required fields");
 
   // Routing direkt in der Datenbank setzen — die Admin-Aktion weist es
   // inzwischen ab, der Altbestand einer früheren Version könnte aber so

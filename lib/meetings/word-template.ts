@@ -57,7 +57,7 @@ function chooseStyles(styles:Part):WordStyleMapping{
   const pick=(candidates:string[],fallback:string)=>candidates.map(candidate=>nodes.find(node=>attr(node,"styleId")===candidate||attr(find(node,"name"),"val")===candidate)).find(Boolean)??nodes.find(node=>attr(node,"styleId")===fallback)??nodes[0];
   const body=attr(nodes.find(node=>attr(node,"default")==="1")??pick(["Standard","Normal"],""),"styleId");
   return {
-    body,title:attr(pick(["Titel","Title"],body),"styleId"),section:attr(pick(["Bereich","Heading1","berschrift1","heading 1"],body),"styleId"),
+    body,section:attr(pick(["Bereich","Heading1","berschrift1","heading 1"],body),"styleId"),
     publicTopic:attr(pick(["TOP1","TOP 1","Heading1","berschrift1","heading 1"],body),"styleId"),
     publicSubtopic:attr(pick(["TOP2","TOP 2","Heading2","berschrift2","heading 2"],body),"styleId"),
     nonPublicTopic:attr(pick(["NTOP1","NÖ TOP 1","TOP1","TOP 1","Heading1","berschrift1"],body),"styleId"),
@@ -111,8 +111,9 @@ export function validateWordConfiguration(buffer:Buffer,configuration:MeetingWor
   return configuration;
 }
 
-export type WordExportTopic={id:number;parentId:number|null;section:AgendaSection;number:string;title:string;lines:string[]};
-export type WordExportContent={title:string;metadata:string[];topics:WordExportTopic[];settings:AgendaSettings;values:Record<string,string>};
+export type WordExportLine=string|{text:string;href?:string;bold?:boolean};
+export type WordExportTopic={id:number;parentId:number|null;section:AgendaSection;number:string;title:string;lines:WordExportLine[]};
+export type WordExportContent={topics:WordExportTopic[];settings:AgendaSettings;values:Record<string,string>};
 function ensureWordPrefix(xml:string,element:string){
   return xml.replace(new RegExp(`<([\\w]+:)?${element}\\b[^>]*>`),opening=>{
     const name=opening.match(/^<([^\s/>]+)/)![1];
@@ -120,8 +121,10 @@ function ensureWordPrefix(xml:string,element:string){
     return opening.endsWith("/>")?opening.slice(0,-2)+`></${name}>`:opening;
   });
 }
-function paragraph(style:string,value:string,props="",bookmark?:{id:number;name:string}){
-  return `<w:p><w:pPr><w:pStyle w:val="${wordXmlEscape(style)}"/>${props}</w:pPr>${bookmark?`<w:bookmarkStart w:id="${bookmark.id}" w:name="${bookmark.name}"/>`:""}<w:r><w:t xml:space="preserve">${wordXmlEscape(value)}</w:t></w:r>${bookmark?`<w:bookmarkEnd w:id="${bookmark.id}"/>`:""}</w:p>`;
+function paragraph(style:string,value:string,props="",bookmark?:{id:number;name:string},link?:{id:string;style:string},bold=false){
+  const run=`<w:r>${link||bold?`<w:rPr>${link?(link.style?`<w:rStyle w:val="${wordXmlEscape(link.style)}"/>`:'<w:u w:val="single"/>'):""}${bold?'<w:b w:val="1"/><w:bCs w:val="1"/>':""}</w:rPr>`:""}<w:t xml:space="preserve">${wordXmlEscape(value)}</w:t></w:r>`;
+  const content=link?`<w:hyperlink r:id="${link.id}" w:history="1">${run}</w:hyperlink>`:run;
+  return `<w:p><w:pPr><w:pStyle w:val="${wordXmlEscape(style)}"/>${props}</w:pPr>${bookmark?`<w:bookmarkStart w:id="${bookmark.id}" w:name="${bookmark.name}"/>`:""}${content}${bookmark?`<w:bookmarkEnd w:id="${bookmark.id}"/>`:""}</w:p>`;
 }
 /** Derive numbering geometry from the actual mapped styles; never modify their definitions. */
 function numbering(source:ReturnType<typeof load>,mapping:WordStyleMapping,settings:AgendaSettings){
@@ -143,7 +146,7 @@ function numbering(source:ReturnType<typeof load>,mapping:WordStyleMapping,setti
   let abstractId=Math.max(0,...nodes.filter(n=>local(tag(n))==="abstractNum").map(n=>Number(attr(n,"abstractNumId"))))+1;
   let numId=Math.max(0,...nodes.filter(n=>local(tag(n))==="num").map(n=>Number(attr(n,"numId"))))+1;
   const ids={} as Record<AgendaSection,number>,abstracts:string[]=[],instances:string[]=[];
-  for(const section of agendaSections(settings)){
+  for(const section of agendaSections(settings).filter(section=>section!=="opening")){
     const roles=section==="public"?[mapping.publicTopic,mapping.publicSubtopic]:[mapping.nonPublicTopic,mapping.nonPublicSubtopic];
     const format=(section==="public"?settings.publicNumbering??"arabic":settings.nonPublicNumbering??"roman")==="roman"?"upperRoman":"decimal";
     const levels=roles.map((style,index)=>{
@@ -156,6 +159,7 @@ function numbering(source:ReturnType<typeof load>,mapping:WordStyleMapping,setti
   }
   const firstNum=nodes.find(node=>local(tag(node))==="num"),closing=xml.lastIndexOf("</");
   xml=patch(part,firstNum?[{start:bounds(part,firstNum).start,end:bounds(part,firstNum).start,text:abstracts.join("")},{start:closing,end:closing,text:instances.join("")}]:[{start:closing,end:closing,text:abstracts.join("")+instances.join("")}]);
+  ids.opening=ids.public;
   return {xml,ids};
 }
 function fillMetadata(xml:string,values:Record<string,string>){
@@ -212,30 +216,40 @@ export function buildWordFromTemplate(buffer:Buffer,configuration:MeetingWordCon
   let bookmarkId=Math.max(0,...descendants(root(part,"document")!,"bookmarkStart").map(node=>Number(attr(node,"id"))||0))+1;
   const prefix=`Gremio${bookmarkId}_`,bookmarks=new Map<number,{id:number;name:string}>();
   for(const topic of content.topics)bookmarks.set(topic.id,{id:bookmarkId++,name:`${prefix}TOP${topic.id}`});
+  const relPart=parse(partText(source.files,"word/_rels/document.xml.rels")),relRoot=root(relPart,"Relationships")!;
+  const usedIds=new Set(children(relRoot).map(node=>attr(node,"Id"))),hyperlinks=new Map<string,string>();
+  const hyperlinkStyle=attr(styleNodes(source.styles).find(node=>attr(node,"type")==="character"&&/^(hyperlink|internet link)$/i.test(attr(find(node,"name"),"val"))),"styleId");
+  function cardLink(href:string){
+    const url=new URL(href);if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw new Error("Ungültiger Kartenlink.");
+    const target=url.href;let id=hyperlinks.get(target);
+    if(!id){id=`gremioCard${hyperlinks.size+1}`;while(usedIds.has(id))id+="x";usedIds.add(id);hyperlinks.set(target,id);}return id;
+  }
   const sectionContent=(section:AgendaSection)=>{
-    let xml=paragraph(mapping.section,agendaSectionLabels[section],'<w:keepNext/><w:numPr><w:numId w:val="0"/></w:numPr><w:outlineLvl w:val="0"/>');
+    let xml=section==="opening"?"":paragraph(mapping.section,agendaSectionLabels[section],'<w:keepNext/><w:numPr><w:numId w:val="0"/></w:numPr><w:outlineLvl w:val="0"/>');
     const topics=content.topics.filter(topic=>topic.section===section);
-    if(!topics.length)xml+=paragraph(mapping.body,"Keine TOPs in diesem Bereich eingeplant.");
+    if(!topics.length&&section!=="opening")xml+=paragraph(mapping.body,"Keine TOPs in diesem Bereich eingeplant.");
     for(const topic of topics){
-      const child=topic.parentId!=null,style=section==="public"?(child?mapping.publicSubtopic:mapping.publicTopic):(child?mapping.nonPublicSubtopic:mapping.nonPublicTopic);
+      const child=topic.parentId!=null,style=section!=="non_public"?(child?mapping.publicSubtopic:mapping.publicTopic):(child?mapping.nonPublicSubtopic:mapping.nonPublicTopic);
       xml+=paragraph(style,topic.title,`<w:keepNext/><w:numPr><w:ilvl w:val="${child?1:0}"/><w:numId w:val="${nums.ids[section]}"/></w:numPr><w:outlineLvl w:val="${child?1:0}"/>`,bookmarks.get(topic.id));
-      for(const line of topic.lines)for(const paragraphText of line.split(/\r?\n/))xml+=paragraph(mapping.body,paragraphText);
+      for(const line of topic.lines){
+        if(typeof line==="string")for(const paragraphText of line.split(/\r?\n/))xml+=paragraph(mapping.body,paragraphText);
+        else for(const paragraphText of line.text.split(/\r?\n/))xml+=paragraph(mapping.body,paragraphText,"",undefined,line.href?{id:cardLink(line.href),style:hyperlinkStyle}:undefined,line.bold);
+      }
     }
     return xml;
   };
-  const title=paragraph(mapping.title,content.title)+content.metadata.map(line=>paragraph(mapping.body,line)).join("");
   let start:number,end:number;
   if(configuration.insertion==="placeholder"){
     const placeholders=blocks.filter(node=>local(tag(node))==="p"&&text(node).trim()==="{{TAGESORDNUNG}}");
     if(placeholders.length!==1||descendants(placeholders[0],"sectPr").length)throw new Error("Bitte genau einen Platzhalterabsatz ohne Abschnittswechsel verwenden.");
-    ({start,end}=bounds(part,placeholders[0]));patches.push({start,end,text:title+agendaSections(content.settings).map(sectionContent).join("")});
+    ({start,end}=bounds(part,placeholders[0]));patches.push({start,end,text:agendaSections(content.settings).map(sectionContent).join("")});
   }else if(configuration.insertion==="append"){
-    const section=blocks.find(node=>local(tag(node))==="sectPr");const at=section?bounds(part,section).start:part.xml.lastIndexOf("</",bounds(part,body).end-1);start=at;end=at;patches.push({start,end,text:title+agendaSections(content.settings).map(sectionContent).join("")});
+    const section=blocks.find(node=>local(tag(node))==="sectPr");const at=section?bounds(part,section).start:part.xml.lastIndexOf("</",bounds(part,body).end-1);start=at;end=at;patches.push({start,end,text:agendaSections(content.settings).map(sectionContent).join("")});
   }else{
     const selected=blocks.slice(configuration.start,configuration.end);start=bounds(part,selected[0]).start;end=bounds(part,selected.at(-1)!).end;
     const breaks=selected.flatMap(node=>descendants(node,"sectPr").map(section=>({node,section})));
     const terminal=blocks.find(node=>local(tag(node))==="sectPr");
-    let replacement=title;
+    let replacement="";
     if(breaks.length===0){replacement+=agendaSections(content.settings).map(sectionContent).join("");}
     else{
       // Section properties belong to the preceding content. Retain front matter and
@@ -248,8 +262,8 @@ export function buildWordFromTemplate(buffer:Buffer,configuration:MeetingWordCon
       const middleIsNonPublic=originals.has(agendaSectionLabels.non_public);
       const resolved=sectionProperties(part);
       const sectionProps={public:resolved.get(middleIsNonPublic?terminal:second.section)!,non_public:resolved.get(middleIsNonPublic?second.section:terminal)!};
-      const order=agendaSections(content.settings);
-      replacement=raw(part,first.node)+title+sectionContent(order[0])+`<w:p><w:pPr>${sectionProps[order[0]]}</w:pPr></w:p>`+sectionContent(order[1]);
+      const order=agendaSections(content.settings).filter(section=>section!=="opening");
+      replacement=sectionContent("opening")+raw(part,first.node)+sectionContent(order[0])+`<w:p><w:pPr>${sectionProps[order[0]]}</w:pPr></w:p>`+sectionContent(order[1]);
       patches.push({...bounds(part,terminal),text:sectionProps[order[1]]});
     }
     patches.push({start,end,text:replacement});
@@ -269,14 +283,16 @@ export function buildWordFromTemplate(buffer:Buffer,configuration:MeetingWordCon
       const tocStyles=styleNodes(source.styles);
       const tocStyle=(level:number)=>attr(tocStyles.find(style=>attr(find(style,"name"),"val").toLowerCase()===`toc ${level}`),"styleId")||mapping.body;
       const entries=agendaSections(content.settings).flatMap(section=>[
-        {value:agendaSectionLabels[section],level:1,anchor:""},
+        ...(section==="opening"?[]:[{value:agendaSectionLabels[section],level:1,anchor:""}]),
         ...content.topics.filter(topic=>topic.section===section).map(topic=>({value:`${topic.number} ${topic.title}`,level:topic.parentId==null?1:2,anchor:bookmarks.get(topic.id)!.name})),
       ]);
       const cache=entries.map((entry,index)=>`<w:p><w:pPr><w:pStyle w:val="${wordXmlEscape(tocStyle(entry.level))}"/></w:pPr>${index===0?field:""}${entry.anchor?`<w:hyperlink w:anchor="${entry.anchor}">`:""}<w:r><w:t>${wordXmlEscape(entry.value)}</w:t></w:r>${entry.anchor?"</w:hyperlink>":""}${index===entries.length-1?'<w:r><w:fldChar w:fldCharType="end"/></w:r>':""}</w:p>`).join("");
       patches.push({start:bounds(part,tocStart).start,end:bounds(part,node).end,text:cache});tocStart=undefined;
     }
   }
-  let document=fillMetadata(patch(part,patches),content.values);parse(document);
+  let document=fillMetadata(patch(part,patches),content.values);
+  if(hyperlinks.size)document=document.replace(/<([\w]+:)?document\b[^>]*>/,opening=>/xmlns:r=/.test(opening)?opening:opening.slice(0,-1)+' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">');
+  parse(document);
   const files=source.files.map(file=>{
     if(file.name==="word/document.xml")return {...file,data:Buffer.from(document)};
     if(file.name==="[Content_Types].xml"){
@@ -285,7 +301,9 @@ export function buildWordFromTemplate(buffer:Buffer,configuration:MeetingWordCon
     }
     if(file.name==="word/numbering.xml")return {...file,data:Buffer.from(nums.xml)};
     if(file.name==="word/settings.xml"){
-      let settings=ensureWordPrefix(file.data.toString("utf8"),"settings");settings=settings.replace(/<w:updateFields\b[^>]*(?:\/>|>[^]*?<\/w:updateFields>)/,"");settings=settings.replace(/<\/[^>]*settings>/,'<w:updateFields w:val="true"/>$&');return {...file,data:Buffer.from(settings)};
+      const settings=ensureWordPrefix(file.data.toString("utf8"),"settings"),settingsPart=parse(settings),settingsRoot=root(settingsPart,"settings")!;
+      const clean=patch(settingsPart,descendants(settingsRoot,"updateFields").map(node=>({...bounds(settingsPart,node),text:""})));
+      return {...file,data:Buffer.from(clean.replace(/<\/[^>]*settings>/,'<w:updateFields w:val="false"/>$&'))};
     }
     return file;
   });
@@ -302,7 +320,12 @@ export function buildWordFromTemplate(buffer:Buffer,configuration:MeetingWordCon
     }
   }
   ensurePart("word/numbering.xml",Buffer.from(nums.xml),"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml","http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering");
-  ensurePart("word/settings.xml",Buffer.from(`<w:settings xmlns:w="${WORD_NS}"><w:updateFields w:val="true"/></w:settings>`),"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml","http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings");
+  ensurePart("word/settings.xml",Buffer.from(`<w:settings xmlns:w="${WORD_NS}"><w:updateFields w:val="false"/></w:settings>`),"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml","http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings");
+  if(hyperlinks.size){
+    const rel=files.find(file=>file.name==="word/_rels/document.xml.rels")!,prefix=tag(relRoot).includes(":")?tag(relRoot).split(":")[0]+":":"";
+    const additions=[...hyperlinks].map(([target,id])=>`<${prefix}Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${wordXmlEscape(target)}" TargetMode="External"/>`).join("");
+    rel.data=Buffer.from(rel.data.toString("utf8").replace(/<\/[^>]*Relationships>/,closing=>additions+closing));
+  }
   // Verify the package we actually return, including every XML part and CRC.
   const output=zip(files);load(output);document="";return output;
 }

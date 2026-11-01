@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import type { DefaultTopic } from "@/lib/meetings/presets";
 import type { MeetingWordConfiguration } from "@/lib/meetings/word-template-types";
 import type { EmailPayload } from "@/lib/email-validation";
 import { sql } from "drizzle-orm";
@@ -1408,7 +1409,16 @@ export const emailOutbox = pgTable("email_outbox", {
 }, t => ({ due: index("email_outbox_due_idx").on(t.state, t.nextAttemptAt), stateCheck: check("email_outbox_state_check", sql`${t.state} in ('pending','sending','sent','failed')`), kindCheck: check("email_outbox_kind_check", sql`${t.kind} in ('status','application','feedback','inventory')`) }));
 
 // Meeting areas own permissions; meetings never grant source-board access.
+export const meetingAreaTemplates = pgTable("meeting_area_templates", {
+  id: serial("id").primaryKey(), name: text("name").notNull().unique(), description: text("description").notNull().default(""),
+  topics: jsonb("topics").$type<DefaultTopic[]>().notNull().default(sql`'[]'::jsonb`),
+  revision: integer("revision").notNull().default(0), createdAt: createdAt(),
+});
 export const meetingAreas = pgTable("meeting_areas", {
+  includeMiscellaneous: boolean("include_miscellaneous").notNull().default(false),
+  defaultTopics: jsonb("default_topics").$type<DefaultTopic[]>().notNull().default(sql`'[]'::jsonb`),
+  defaultTopicsRevision: integer("default_topics_revision").notNull().default(0),
+  defaultTopicsTemplateId: integer("default_topics_template_id").references(() => meetingAreaTemplates.id, {onDelete:"set null"}),
   wordTemplatePath: text("word_template_path"),
   wordTemplateName: text("word_template_name"),
   wordTemplateRevision: integer("word_template_revision").notNull().default(0),
@@ -1417,6 +1427,7 @@ export const meetingAreas = pgTable("meeting_areas", {
   nonPublicNumbering: text("non_public_numbering", { enum: ["arabic", "roman"] }).notNull().default("roman"),
   firstSection: text("first_section", { enum: ["public", "non_public"] }).notNull().default("public"),
   id: serial("id").primaryKey(), name: text("name").notNull(), description: text("description").notNull().default(""),
+  financeMotionTemplate: text("finance_motion_template").notNull().default(""),
   financeBoardId: integer("finance_board_id").references(() => boards.id, { onDelete: "set null" }),
   financeSourceStatusIds: integer("finance_source_status_ids").array().notNull().default(sql`'{}'::integer[]`),
   financeTargetStatusId: integer("finance_target_status_id").references(() => boardStatuses.id, { onDelete: "set null" }),
@@ -1427,6 +1438,7 @@ export const meetingAreas = pgTable("meeting_areas", {
   firstSectionCheck: check("meeting_areas_first_section_check", sql`${t.firstSection} in ('public','non_public')`),
 }));
 export const meetings = pgTable("meetings", {
+  defaultsApplied: boolean("defaults_applied").notNull().default(false),
   id: serial("id").primaryKey(),
   areaId: integer("area_id").notNull().references(() => meetingAreas.id),
   ownerId: integer("owner_id").notNull().references(() => users.id),
@@ -1455,6 +1467,7 @@ export const meetingBoards = pgTable("meeting_boards", {
 }, t => ({ pk: primaryKey({ columns: [t.meetingId, t.boardId] }) }));
 
 export const meetingTopics = pgTable("meeting_topics", {
+  isMiscellaneous: boolean("is_miscellaneous").notNull().default(false),
   id: serial("id").primaryKey(),
   resolvedAt: timestamp("resolved_at",{withTimezone:true}),
   originTopicId: integer("origin_topic_id").references((): AnyPgColumn => meetingTopics.id, {onDelete:"set null"}),
@@ -1472,11 +1485,11 @@ export const meetingTopics = pgTable("meeting_topics", {
   kind: text("kind", { enum: ["information", "discussion", "decision"] }).notNull().default("discussion"),
   durationMinutes: integer("duration_minutes").notNull().default(10),
   confidential: boolean("confidential").notNull().default(false),
-  section: text("section", { enum: ["public", "non_public"] }).notNull().default("public"),
+  section: text("section", { enum: ["opening", "public", "non_public"] }).notNull().default("public"),
   state: text("state", { enum: ["proposed", "scheduled", "treated", "deferred", "withdrawn"] }).notNull().default("proposed"),
   outcome: text("outcome").notNull().default(""), position: integer("position").notNull().default(0),
   createdAt: createdAt(),
-}, t => ({ sectionCheck: check("meeting_topics_section_check", sql`${t.section} in ('public','non_public')`), originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
+}, t => ({ miscellaneousUnique: uniqueIndex("meeting_topics_miscellaneous_uq").on(t.meetingId).where(sql`${t.isMiscellaneous} = true`), miscellaneousCheck: check("meeting_topics_miscellaneous_check", sql`not ${t.isMiscellaneous} or (${t.meetingId} is not null and ${t.parentId} is null and ${t.section} = 'public' and not ${t.isFinanceTopic} and not ${t.isFinanceItem})`), sectionCheck: check("meeting_topics_section_check", sql`${t.section} in ('opening','public','non_public')`), originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
   financeRoot: uniqueIndex("meeting_topics_finance_root_uq").on(t.meetingId).where(sql`${t.isFinanceTopic} = true and ${t.transferred} = false`),
   financeCard: uniqueIndex("meeting_topics_finance_card_uq").on(t.meetingId, t.financeCardId).where(sql`${t.transferred} = false`),
   financeRootCheck: check("meeting_topics_finance_root_check", sql`not ${t.isFinanceTopic} or (${t.parentId} is null and ${t.meetingId} is not null and not ${t.isFinanceItem})`),

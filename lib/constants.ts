@@ -261,3 +261,8 @@ export const TRIGGER_LABELS: Record<TriggerKind, string> = {
 export const APPLICATION_CARD_FIELD_KEYS = [
   "applicant", "submitter_email", "finance_request", "student_card", "annex_a", "annex_b",
 ] as const satisfies readonly CardFieldKey[];
+
+/** Mandatory public input mapped to optional card fields (title is always present). */
+export const APPLICATION_REQUIRED_CARD_FIELD_KEYS = ["applicant", "submitter_email", "finance_request", "student_card"] as const satisfies readonly CardFieldKey[];
+export const FEEDBACK_REQUIRED_CARD_FIELD_KEYS = ["notes"] as const satisfies readonly CardFieldKey[];
+export const INVENTORY_REQUIRED_CARD_FIELD_KEYS = ["applicant", "submitter_email", "notes"] as const satisfies readonly CardFieldKey[];

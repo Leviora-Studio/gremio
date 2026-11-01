@@ -10,6 +10,7 @@ import { clsx } from "clsx";
 const tabs = [
   { href: "/vorlagen/boards", label: "Boardvorlagen" },
   { href: "/vorlagen/finanzen", label: "Finanzvorlagen" },
+  { href: "/vorlagen/sitzungsbereiche", label: "Sitzungsbereichsvorlagen" },
 ];
 
 export function VorlagenTabs() {

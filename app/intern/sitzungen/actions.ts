@@ -29,7 +29,7 @@ function topicValues(form: FormData) {
 }
 export async function saveFinanceConfigurationAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
-  try{await saveFinanceConfiguration(user,areaId,form.get("boardId")?id(form.get("boardId")):null,form.getAll("sourceStatusId").map(value=>id(value)),form.get("targetStatusId")?id(form.get("targetStatusId")):null);refresh();return {success:"Finanzanträge-Einstellungen gespeichert."};}catch(error){return errorState(error);}
+  try{await saveFinanceConfiguration(user,areaId,form.get("boardId")?id(form.get("boardId")):null,form.getAll("sourceStatusId").map(value=>id(value)),form.get("targetStatusId")?id(form.get("targetStatusId")):null,String(form.get("motionTemplate")??""));refresh();return {success:"Finanzanträge-Einstellungen gespeichert."};}catch(error){return errorState(error);}
 }
 export async function markFinanceTopicAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
@@ -131,12 +131,12 @@ export async function confirmedRemoveDocumentAction(documentId:number):Promise<M
 export async function scheduleTopicAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
   try {
-    await service.scheduleTopic(user,topicId,revision(form),form.has("section")?String(form.get("section")) as "public"|"non_public":undefined);refresh();
+    await service.scheduleTopic(user,topicId,revision(form),form.has("section")?String(form.get("section")) as "opening"|"public"|"non_public":undefined);refresh();
     return {success:"In die Tagesordnung übernommen."};
   }catch(error){return errorState(error);}
 }
 
-export async function setTopicStatusAction(topicId:number,state:string,rev:number,section?:"public"|"non_public"):Promise<MeetingActionState>{
+export async function setTopicStatusAction(topicId:number,state:string,rev:number,section?:"opening"|"public"|"non_public"):Promise<MeetingActionState>{
   const user=await requireUser();try{await service.setTopicStatus(user,topicId,state,rev,section);refresh();return {success:"TOP-Status gespeichert."};}catch(error){return errorState(error);}
 }
 export async function transferTopicInlineAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
@@ -167,4 +167,8 @@ export async function saveWordConfigurationAction(areaId:number,_previous:Meetin
 export async function removeWordTemplateAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
   try{await removeWordTemplate(user,areaId,revision(form));refresh();return {success:"Wordvorlage entfernt."};}catch(error){return errorState(error);}
+}
+
+export async function applyAreaDefaultsToMeetingAction(meetingId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
+  const user=await requireUser();try{await service.applyAreaDefaultsToMeeting(user,meetingId,revision(form));refresh();return {success:"Standard-TOPs übernommen."};}catch(error){return errorState(error);}
 }

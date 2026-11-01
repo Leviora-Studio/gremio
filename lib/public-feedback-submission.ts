@@ -55,7 +55,7 @@ export {
 };
 
 const schema = z.object({
-  email: emailAddressSchema,
+  email: z.preprocess(value=>value===undefined||typeof value==="string"&&!value.trim()?"":value,z.union([z.literal(""),emailAddressSchema])),
   areaId: z.coerce.number().int().positive("Bitte einen Bereich wählen."),
   // OPTIONAL: Ohne Angabe wird „Anonym" gespeichert (siehe
   // normalizeSubmitterName). Deshalb kein min(1) — nur die Längenobergrenze,
@@ -263,7 +263,7 @@ export async function submitPublicFeedback<T = never>(
               applicant: submitterName,
               // Der VOLLSTÄNDIGE Text — der Titel oben ist nur die Kurzfassung.
               notes: feedbackText,
-              submitterEmail: parsed.data.email,
+              submitterEmail: parsed.data.email||null,
               token,
               creatorUserId: null,
               accountId: null,
@@ -294,7 +294,7 @@ export async function submitPublicFeedback<T = never>(
             inserted.id,
           );
 
-          await queueConfirmation(tx, "feedback", targetBoardId, parsed.data.email, { receiptScope:{kind:"feedback",id:area.id}, title, applicant: submitterName, areaName: area.name, feedbackText, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
+          if(parsed.data.email)await queueConfirmation(tx, "feedback", targetBoardId, parsed.data.email, { receiptScope:{kind:"feedback",id:area.id}, title, applicant: submitterName, areaName: area.name, feedbackText, number: assignedNumber, statusLink: token, receivedAt: inserted.createdAt.toISOString() });
 
           if (opts.withinTx) {
             await opts.withinTx(tx, {

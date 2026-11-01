@@ -209,11 +209,11 @@ Antrags-Endpunkt, der Dateien überträgt). Body-Grenze: **32 KiB**.
 | Feld | Typ | Pflicht | Regeln |
 |------|-----|---------|--------|
 | `areaId` | integer | ✅ | ID aus `GET /feedback-areas` |
-| `email` | string | ✅ | gültige E-Mail-Adresse, max. 254 Zeichen; bleibt intern |
+| `email` | string | optional | falls angegeben gültige E-Mail-Adresse, max. 254 Zeichen; bleibt intern. Ohne Adresse keine E-Mail-Bestätigung. |
 | `submitterName` | string | — | getrimmt, max. 200 Zeichen. **Optional:** fehlt das Feld oder ist es leer, wird `Anonym` gespeichert |
 | `feedback` | string | ✅ | getrimmt, 1–10.000 Zeichen |
 
-Der Name bleibt optional. Die Pflicht-E-Mail ist dem zuständigen Gremium intern bekannt; die Einreichung ist deshalb nicht vollständig anonym. Für die Idempotenz gelten ein
+Name und E-Mail sind optional. Eine freiwillig angegebene E-Mail bleibt intern; ohne Adresse wird keine E-Mail-Bestätigung versendet. Für die Idempotenz gelten ein
 fehlender Name und ein explizites `"Anonym"` als **derselbe** Request — ein
 Retry, der das Feld einmal weglässt und einmal mitsendet, ergibt also einen
 Replay (`200`) und keinen Konflikt.

@@ -5,22 +5,28 @@ import { db } from "@/lib/db";
 import { boards, boardStatuses, cards, meetingAreas, meetingTopics, meetingTopicCards, type User } from "@/lib/db/schema";
 import { canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { requireArea, requireTopic, MeetingError } from "./access";
+import {getVisibleFieldKeys} from "@/lib/board-fields";
+import {sanitizeMultiLine} from "@/lib/text";
+import {financeMotionFields,validFinanceMotion} from "./finance-motion";
 import { touchMeeting } from "./service";
 import { scheduleFinancialCard,finishFinancialMove } from "./finance-status";
 
-export async function saveFinanceConfiguration(user:User,areaId:number,boardId:number|null,sourceIds:number[],targetId:number|null) {
-  await requireArea(user,areaId,"manage");
+export async function saveFinanceConfiguration(user:User,areaId:number,boardId:number|null,sourceIds:number[],targetId:number|null,motionTemplate?:string) {
+  const previous=await requireArea(user,areaId,"manage");
   if(sourceIds.length>200||sourceIds.some(id=>!Number.isSafeInteger(id)||id<1)||new Set(sourceIds).size!==sourceIds.length)throw new MeetingError("Ungültige Spaltenauswahl.");
+  const template=motionTemplate===undefined?undefined:sanitizeMultiLine(motionTemplate);
+  if(template!==undefined&&!validFinanceMotion(template,boardId==null||template===previous.financeMotionTemplate&&boardId===previous.financeBoardId?new Set(financeMotionFields.map(f=>f.field)):await getVisibleFieldKeys(boardId)))throw new MeetingError("Bitte höchstens 10.000 Zeichen und nur verfügbare Kartenfeld-Platzhalter verwenden.");
   if(boardId!=null) {
     const board=await getBoardById(boardId);
     if(!board||board.inventoryBoardId!=null||!await canManageBoard(user,board))throw new MeetingError("Die Anbindung erfordert Verwaltungsrechte auf dem Antragsboard.");
     const statuses=await db.select({id:boardStatuses.id}).from(boardStatuses).where(eq(boardStatuses.boardId,boardId));
     if(targetId==null||![...sourceIds,targetId].every(id=>statuses.some(s=>s.id===id)))throw new MeetingError("Bitte gültige Quellspalten und eine Zielspalte des Antragsboards wählen.");
   }
-  await db.update(meetingAreas).set({financeBoardId:boardId,financeSourceStatusIds:boardId==null?[]:sourceIds,financeTargetStatusId:boardId==null?null:targetId}).where(eq(meetingAreas.id,areaId));
+  await db.update(meetingAreas).set({...(template!==undefined?{financeMotionTemplate:template}:{}),financeBoardId:boardId,financeSourceStatusIds:boardId==null?[]:sourceIds,financeTargetStatusId:boardId==null?null:targetId}).where(eq(meetingAreas.id,areaId));
 }
 export async function markFinanceTopic(user:User,topicId:number,enabled:boolean,revision:number) {
   const {topic,meeting}=await requireTopic(user,topicId,true);
+  if(topic.isMiscellaneous)throw new MeetingError("Sonstiges bleibt der letzte öffentliche TOP und kann nicht als Finanzanträge-TOP markiert werden.");
   if(!meeting||topic.parentId!=null||topic.isFinanceItem)throw new MeetingError("Bitte einen Haupt-TOP dieser Sitzung auswählen.");
   if(enabled&&!["scheduled","treated"].includes(topic.state))throw new MeetingError("Bitte den Haupt-TOP zuerst einplanen.");
   await db.transaction(async tx=>{
@@ -60,7 +66,7 @@ export async function planFinanceCard(user:User,topicId:number,cardId:number,rev
     const [existing]=await tx.select().from(meetingTopics).where(and(eq(meetingTopics.meetingId,meeting.id),eq(meetingTopics.financeCardId,card.id),eq(meetingTopics.transferred,false)));
     if(existing)throw new MeetingError("Diese Karte ist in der Sitzung bereits eingeplant.");
     const [max]=await tx.select({position:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(eq(meetingTopics.meetingId,meeting.id));
-    const [created]=await tx.insert(meetingTopics).values({meetingId:meeting.id,parentId:topicId,title:"Finanzantrag",isFinanceItem:true,financeCardId:card.id,state:"scheduled",kind:"decision",createdBy:user.id,position:max.position}).returning({id:meetingTopics.id});
+    const [created]=await tx.insert(meetingTopics).values({meetingId:meeting.id,parentId:topicId,title:"Finanzantrag",motion:area.financeMotionTemplate,isFinanceItem:true,financeCardId:card.id,state:"scheduled",kind:"decision",createdBy:user.id,position:max.position}).returning({id:meetingTopics.id});
     await tx.insert(meetingTopicCards).values({topicId:created.id,cardId:card.id});
     const move=await scheduleFinancialCard(tx,user,card.id,meeting,topicId);
     return {id:created.id,...move};

@@ -1,30 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
-
-import { and, eq, max } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { boardCardFields, boards, locations } from "@/lib/db/schema";
-import { APPLICATION_CARD_FIELD_KEYS } from "@/lib/constants";
-
+import { boardCardFields, boards, locations, feedbackAreas } from "@/lib/db/schema";
+import { APPLICATION_REQUIRED_CARD_FIELD_KEYS, FEEDBACK_REQUIRED_CARD_FIELD_KEYS, INVENTORY_REQUIRED_CARD_FIELD_KEYS, CARD_FIELD_LABELS, type CardFieldKey } from "@/lib/constants";
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-/** Serialize routing activation and field configuration on the same board. */
+/** Routing and field settings serialize on the same board, including inactive routes. */
 export async function lockLocationBoard(tx: Transaction, boardId: number) {
-  await tx.select({ id: boards.id }).from(boards).where(eq(boards.id, boardId)).for("update");
+ await tx.select({id:boards.id}).from(boards).where(eq(boards.id,boardId)).for("update");
 }
-
-export async function getLocationRequiredFieldKeys(boardId: number, reader: Transaction | typeof db = db): Promise<readonly string[]> {
-  const [location] = await reader.select({ id: locations.id }).from(locations)
-    .where(and(eq(locations.targetBoardId, boardId), eq(locations.enabled, true))).limit(1);
-  return location ? APPLICATION_CARD_FIELD_KEYS : [];
+export async function getLocationRequiredFieldKeys(boardId:number,reader:Transaction|typeof db=db):Promise<readonly string[]>{
+ const [location]=await reader.select({id:locations.id}).from(locations).where(eq(locations.targetBoardId,boardId)).limit(1);
+ const [feedback]=await reader.select({id:feedbackAreas.id}).from(feedbackAreas).where(eq(feedbackAreas.targetBoardId,boardId)).limit(1);
+ const [board]=await reader.select({inventoryBoardId:boards.inventoryBoardId}).from(boards).where(eq(boards.id,boardId));
+ return [...new Set([...(location?APPLICATION_REQUIRED_CARD_FIELD_KEYS:[]),...(feedback?FEEDBACK_REQUIRED_CARD_FIELD_KEYS:[]),...(board?.inventoryBoardId!=null?INVENTORY_REQUIRED_CARD_FIELD_KEYS:[])])];
 }
-
-/** Caller must lock the board before changing its routing or field settings. */
-export async function enableApplicationCardFields(tx: Transaction, boardId: number) {
-  const [row] = await tx.select({ position: max(boardCardFields.position) }).from(boardCardFields)
-    .where(eq(boardCardFields.boardId, boardId));
-  for (const [index, fieldKey] of APPLICATION_CARD_FIELD_KEYS.entries()) {
-    await tx.insert(boardCardFields).values({ boardId, fieldKey, visible: true, position: (row?.position ?? -1) + index + 1 })
-      .onConflictDoUpdate({ target: [boardCardFields.boardId, boardCardFields.fieldKey], set: { visible: true } });
-  }
+export async function missingBoardFields(boardId:number,required:readonly string[],reader:Transaction|typeof db=db){
+ const fields=await reader.select({key:boardCardFields.fieldKey}).from(boardCardFields).where(and(eq(boardCardFields.boardId,boardId),eq(boardCardFields.visible,true)));
+ return required.filter(key=>!fields.some(field=>field.key===key));
+}
+export function missingBoardFieldsMessage(keys:readonly string[]){
+ return `Bitte zuerst folgende Pflichtfelder in den Boardeinstellungen aktivieren: ${keys.map(key=>CARD_FIELD_LABELS[key as CardFieldKey]??key).join(", ")}.`;
 }

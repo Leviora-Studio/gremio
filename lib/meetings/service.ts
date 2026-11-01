@@ -11,6 +11,7 @@ import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
 import { absPath, deleteStoredFile, saveNamedBuffer, saveNamedFile, validateUpload } from "@/lib/attachments";
 import { canManageMeeting, meetingAccessLevel, MeetingError, requireArea, requireMeeting, requireTopic, visibleTopics } from "./access";
 import {scheduleFinancialCard,finishFinancialMove,type FinancialMove} from "./finance-status";
+import { defaultTopicsInput, type DefaultTopic } from "./presets";
 import { agendaTopics } from "./agenda";
 import { agendaSettingsInput, meetingInput, parseBerlinDate, topicInput, topicStates } from "./validation";
 
@@ -35,6 +36,29 @@ export async function manageSourceBoard(user: User, board: typeof boards.$inferS
   const inventory = await getInventoryBoardById(board.inventoryBoardId);
   return !!inventory && inventory.loanBoardId === board.id && (await canManageInventoryBoard(user, inventory));
 }
+async function insertMeetingDefaults(tx:Tx,meetingId:number,userId:number,defaults:DefaultTopic[],position:number,includeMiscellaneous=false){
+  let miscellaneousCreated:boolean=false;
+  for(const {children,...root} of defaults){
+    const isMiscellaneous:boolean=includeMiscellaneous&&!miscellaneousCreated&&root.section==="public"&&root.title.trim().toLocaleLowerCase("de")==="sonstiges";
+    miscellaneousCreated ||= isMiscellaneous;
+    const [topic]=await tx.insert(meetingTopics).values({...root,isMiscellaneous,meetingId,createdBy:userId,state:"scheduled",position:position++}).returning({id:meetingTopics.id});
+    for(const child of children)await tx.insert(meetingTopics).values({...child,section:root.section,parentId:topic.id,meetingId,createdBy:userId,state:"scheduled",position:position++});
+  }
+  if(includeMiscellaneous&&!miscellaneousCreated)await tx.insert(meetingTopics).values({meetingId,createdBy:userId,title:"Sonstiges",section:"public",state:"scheduled",durationMinutes:5,isMiscellaneous:true,position});
+}
+export async function applyAreaDefaultsToMeeting(user:User,id:number,revision:number){
+  const meeting=await requireMeeting(user,id,"write");
+  await db.transaction(async tx=>{
+    const [area]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,meeting.areaId)).for("update");
+    await requireMeeting(user,id,"write");await touchMeeting(tx,id,revision);
+    const [current]=await tx.select().from(meetings).where(eq(meetings.id,id));
+    if(current.defaultsApplied)throw new MeetingError("Die Standard-TOPs wurden für diese Sitzung bereits übernommen.");
+    const defaults=defaultTopicsInput.parse(area?.defaultTopics??[]);if(!defaults.length&&!area?.includeMiscellaneous)throw new MeetingError("Für diesen Bereich sind keine Standard-TOPs hinterlegt.");
+    const [max]=await tx.select({n:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(eq(meetingTopics.meetingId,id));
+    await insertMeetingDefaults(tx,id,user.id,defaults,max.n,area?.includeMiscellaneous??false);
+    await tx.update(meetings).set({defaultsApplied:true}).where(eq(meetings.id,id));
+  });
+}
 export async function saveMeeting(user: User, id: number | null, raw: unknown, revision?: number) {
   const parsed = meetingInput.safeParse(raw);
   if (!parsed.success) throw new MeetingError("Bitte Titel und gültige Sitzungsangaben ergänzen.");
@@ -46,8 +70,15 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   const values = { ...parsed.data, committee: area.name, ownerId: area.ownerId, startsAt, submissionDeadline };
   if (id == null) {
     if (!user.isActive) throw new MeetingError("Kein Zugriff.");
-    const [meeting] = await db.insert(meetings).values(values).returning();
-    return meeting.id;
+    return db.transaction(async tx=>{
+      const [currentArea]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,area.id)).for("update");
+      if(!currentArea)throw new MeetingError("Der Sitzungsbereich existiert nicht mehr.");
+      await requireArea(user,area.id,"write");
+      const defaults=defaultTopicsInput.parse(currentArea.defaultTopics);
+      const [meeting]=await tx.insert(meetings).values({...values,defaultsApplied:defaults.length>0||currentArea.includeMiscellaneous}).returning();
+      await insertMeetingDefaults(tx,meeting.id,user.id,defaults,0,currentArea.includeMiscellaneous);
+      return meeting.id;
+    });
   }
   const previous = await requireMeeting(user, id, "write");
   if (previous.areaId !== area.id) throw new MeetingError("Die Bereichszuordnung kann nicht über Sitzungseinstellungen geändert werden.");
@@ -124,6 +155,7 @@ export async function saveTopic(user: User, id: number, raw: unknown, revision: 
   const { topic, meeting } = await requireTopic(user, id, true);
   const parsed = topicInput.safeParse(raw);
   if (!parsed.success) throw new MeetingError("Bitte Titel, Art und Dauer prüfen.");
+  if(topic.isMiscellaneous&&(parsed.data.parentId!=null||parsed.data.section!=="public"))throw new MeetingError("Sonstiges bleibt ein eigenständiger letzter TOP im öffentlichen Teil.");
   if(topic.isFinanceTopic&&parsed.data.parentId!=null)throw new MeetingError("Der Finanzanträge-TOP muss ein Haupt-TOP bleiben.");
   if(topic.isFinanceItem&&parsed.data.parentId!==topic.parentId)throw new MeetingError("Eingeplante Finanzanträge bleiben ihrem Finanzanträge-TOP zugeordnet. Zum Neuplanen bitte den Unter-TOP entfernen und erneut einplanen.");
   if (meeting && parsed.data.confidential && !canManageMeeting(user, meeting)) throw new MeetingError("Vertrauliche TOPs verwaltet nur die Sitzungsverwaltung.");
@@ -136,13 +168,14 @@ export async function saveTopic(user: User, id: number, raw: unknown, revision: 
   await finishFinancialMove(move);
 }
 /** Preserve content, parent, confidentiality and documents when accepting a proposal. */
-export async function scheduleTopic(user:User,id:number,revision:number,section?:"public"|"non_public") {
+export async function scheduleTopic(user:User,id:number,revision:number,section?:"opening"|"public"|"non_public") {
   const {topic,meeting}=await requireTopic(user,id,true);
   if(!meeting||!["proposed","deferred"].includes(topic.state))throw new MeetingError("Dieser TOP kann nicht direkt eingeplant werden. Bitte neu laden.");
   await saveTopic(user,id,{...topic,section:section??topic.section,state:"scheduled"},revision,false);
 }
 export async function transferTopic(user: User, id: number, targetMeetingId: number, disclose: boolean): Promise<number> {
   const {topic,meeting}=await requireTopic(user,id);
+  if(topic.isMiscellaneous)throw new MeetingError("Der automatische Sonstiges-TOP wird für jede Sitzung separat angelegt und nicht weitergegeben.");
   if(meeting&&topic.state==="withdrawn")throw new MeetingError("Zurückgezogene TOPs werden nicht übernommen. Die einreichende Person kann das Thema aus ihrem Themenspeicher neu vorschlagen.");
   if(topic.resolvedAt)throw new MeetingError("Dieses Thema ist bereits erledigt.");
   if(topic.transferred)throw new MeetingError("Dieser TOP wurde bereits weitergegeben. Bitte den aktuellen TOP öffnen.");
@@ -211,11 +244,12 @@ async function syncPersonalCompletion(tx:Tx,origin:number|null){
   const [treated]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.state,"treated"))).limit(1);
   await tx.update(meetingTopics).set({state:treated?"treated":"proposed",...(active.length?{resolvedAt:null}:{})}).where(eq(meetingTopics.id,origin));
 }
-export async function setTopicStatus(user:User,id:number,state:string,revision:number,section?:"public"|"non_public"){
+export async function setTopicStatus(user:User,id:number,state:string,revision:number,section?:"opening"|"public"|"non_public"){
   if(!Object.prototype.hasOwnProperty.call(topicStates,state))throw new MeetingError("Ungültiger TOP-Status.");
   const {topic,meeting}=await requireTopic(user,id,true);
   if(!meeting)throw new MeetingError("Dieses Thema ist noch keiner Sitzung zugeordnet.");
-  if(section!==undefined&&!["public","non_public"].includes(section))throw new MeetingError("Ungültiger Tagesordnungsbereich.");
+  if(topic.isMiscellaneous&&section!==undefined&&section!=="public")throw new MeetingError("Sonstiges bleibt im öffentlichen Teil.");
+  if(section!==undefined&&!["opening","public","non_public"].includes(section))throw new MeetingError("Ungültiger Tagesordnungsbereich.");
   let move:FinancialMove|undefined;
   await db.transaction(async tx=>{
     await touchMeeting(tx,meeting.id,revision);

@@ -74,18 +74,29 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'E-Mail-Regel speichern',exact:true}).click();
     await page.getByRole('status').filter({hasText:'E-Mail-Regel gespeichert.'}).waitFor();
     assert.equal((await query('select recipients from board_email_rules where status_id=$1',[statusId])).rows[0].recipients.length,2);
+    await page.goto(`${base}/admin/standorte`);
+    const locationCard=page.locator('.card').filter({has:page.getByRole('button',{name:'Email location',exact:true})});
+    // Legacy routes with disabled fields get a named warning instead of silent repair.
+    const locationWarning=page.getByRole('alert').filter({hasText:'E-Mail-Adresse'});await locationWarning.waitFor();
+    assert.ok((await locationWarning.textContent()).includes('Studierendenausweis'));
+    await page.goto(`${base}/intern/board/${boardId}/einstellungen`);await page.getByText('Kartenfelder',{exact:true}).click();
+    const fieldPanel=page.locator('details').filter({has:page.getByRole('button',{name:'Kartenfelder speichern',exact:true})});
+    assert.equal(await fieldPanel.getByRole('checkbox',{name:/^E-Mail-Adresse/}).isDisabled(),true);
+    assert.equal(await fieldPanel.getByRole('checkbox',{name:/^Anlage A/}).isDisabled(),false);
+    await fieldPanel.getByRole('button',{name:'Alle auswählen',exact:true}).click();await fieldPanel.getByRole('button',{name:'Kartenfelder speichern',exact:true}).click();await fieldPanel.getByText('Kartenfelder gespeichert.',{exact:true}).waitFor();
+    await page.goto(`${base}/admin/standorte`);assert.equal(await page.getByRole('alert').filter({hasText:'E-Mail-Adresse'}).count(),0);
     const publicPage = await browser.newPage();
     for(const url of ['/', '/feedback']) {
       await publicPage.goto(base+url);
-      assert.equal(await publicPage.locator('input[name=email]').getAttribute('required'),'');
+      assert.equal(await publicPage.locator('input[name=email]').getAttribute('required'),url==='/'?'':null);
     }
     const submit = payload => fetch(base+'/api/public/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:JSON.stringify(payload)});
-    assert.equal((await submit({areaId,feedback:'Test'})).status,400);
+    assert.equal((await submit({areaId,feedback:'Test'})).status,201);
     assert.equal((await submit({areaId,feedback:'Test',email:'bad'})).status,400);
     const response=await submit({areaId,feedback:'Test',email:'person@example.invalid'});assert.equal(response.status,201);
     const result=await response.json();assert.equal(JSON.stringify(result).includes('person@example.invalid'),false);
     assert.equal((await query('select * from email_outbox')).rowCount,0,'SMTP remains off; no external emails');
-    assert.deepEqual(errors,[]);console.log('SMTP UI, encrypted credentials, board/inventory settings, desktop/mobile and required public email verified. Screenshots: '+output);
+    assert.deepEqual(errors,[]);console.log('SMTP UI, encrypted credentials, board/inventory settings, desktop/mobile and required application / optional survey email verified. Screenshots: '+output);
   } finally {
     if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));
     await query('delete from smtp_settings');await query('delete from email_outbox');

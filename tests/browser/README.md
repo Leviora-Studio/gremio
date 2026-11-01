@@ -266,3 +266,23 @@ reference without adding it to the repository. Use `GREMIO_TEST_BUILD_DIR`,
 Word fields are refreshed on open; final Microsoft Word pagination is a separate
 manual validation. Generated documents and screenshots remain in the printed
 local temporary directory.
+
+
+`meeting-templates-production.cjs` (with `node --import tsx`) covers central
+session-area template creation/editing, selection and independent area customization,
+automatic default TOP copies on meeting creation, per-meeting edits, the three agenda
+sections and their order, and Word output without an additional title/metadata block.
+With `GREMIO_WORD_TEMPLATE_FIXTURE`, it also verifies opening topics remain before
+the original template's first section break. Use the isolated test DB and separate
+build directory described above. Screenshots cover desktop and mobile editors.
+
+`meeting-templates-production.cjs` also covers finance motion placeholders:
+visible-field insertion buttons, sample preview, repeated settings saves with
+checkbox retention and DOM identity checks, mobile layout, planning and resolved
+motion display in the session overview. It verifies the miscellaneous checkbox
+survives saving another settings section. Run only with an isolated migrated DB.
+
+`system-email-production.cjs` verifies required location application email versus
+optional survey email (including email-free POST), named warnings for missing
+routing fields, locked required card fields, editable optional attachments and
+repair by saving board fields. SMTP stays disabled; no external mail is sent.

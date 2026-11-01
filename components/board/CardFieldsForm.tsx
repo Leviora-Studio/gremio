@@ -69,7 +69,7 @@ function FieldRow({
           className="h-4 w-4"
         />
         {CARD_FIELD_LABELS[fieldKey as CardFieldKey]}
-        {locked && <span className="text-xs text-slate-500">(Standortformular)</span>}
+        {locked && <span className="text-xs text-slate-500">(Pflichtfeld)</span>}
       </label>
     </div>
   );
@@ -135,7 +135,8 @@ export function CardFieldsForm({
 
   return (
     <div className="space-y-5">
-      {requiredFields.length > 0 && <p className="text-sm text-slate-500">Felder des Antragsformulars bleiben aktiv, solange diesem Board ein aktiver Standort zugeordnet ist.</p>}
+      {requiredFields.some(key=>visibility[key]!==true)&&<p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Folgende Pflichtfelder sind noch nicht aktiv: {requiredFields.filter(key=>visibility[key]!==true).map(key=>CARD_FIELD_LABELS[key as CardFieldKey]??key).join(", ")}. Bitte diese Einstellungen speichern, um sie zu aktivieren.</p>}
+      {requiredFields.length > 0 && <p className="text-sm text-slate-500">Pflichtfelder können nicht deaktiviert werden, solange dieses Board einem Standort, einer Umfrage oder einem Inventar zugeordnet ist.</p>}
       <div className="flex items-center gap-2">
         <button
           type="button"

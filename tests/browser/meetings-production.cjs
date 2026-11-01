@@ -35,7 +35,7 @@ async function assertMenuReachable(page) {
     browser=await chromium.launch({executablePath:process.env.CHROME_PATH,headless:true});
     const context=await browser.newContext({viewport:{width:1400,height:1000}});
     await context.addCookies([{name:'gremio_session',value:await sealData(sso.session(owner),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
-    const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const page=await context.newPage();const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error at '+page.url()+': '+e.stack);});
     await page.goto(base+'/intern/sitzungen');await page.getByText('+ Neuer Sitzungsbereich',{exact:true}).click();
     await page.getByLabel('Bezeichnung',{exact:true}).fill(`Test committee ${suffix}`);
     await page.getByRole('button',{name:'Bereich anlegen',exact:true}).click();await page.waitForURL(/\/intern\/sitzungen\/bereich\/\d+$/);
@@ -209,7 +209,7 @@ async function assertMenuReachable(page) {
     await agendaSettings.getByRole('button',{name:'Speichern',exact:true}).click();await page.getByRole('status').filter({hasText:'Tagesordnungseinstellungen gespeichert.'}).waitFor();
     await page.goto(`${base}/intern/sitzungen/${meetingId}`);
     const regions=page.getByRole('region').filter({has:page.locator('h3')});
-    assert.equal(await regions.first().getAttribute('aria-label'),'Nicht öffentlicher Teil');
+    assert.equal(await regions.first().getAttribute('aria-label'),'Begrüßung und Regularien');assert.equal(await regions.nth(1).getAttribute('aria-label'),'Nicht öffentlicher Teil');
     await page.getByRole('region',{name:'Nicht öffentlicher Teil',exact:true}).getByRole('button',{name:'TOP 1 verschieben',exact:true}).waitFor();
     await page.getByRole('button',{name:'Status für Shared agenda topic',exact:true}).click();await page.getByRole('option',{name:'Vertagt',exact:true}).click();
     await page.getByRole('tab',{name:/Vertagt/}).click();await page.getByRole('link',{name:'Shared agenda topic',exact:true}).waitFor();

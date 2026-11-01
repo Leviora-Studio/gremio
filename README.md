@@ -20,8 +20,8 @@ erhalten `_Gremio_2`, `_Gremio_3` usw. Vorhandene Dateien werden nie überschrie
 Abgeschlossene Archive behalten ihre bisherigen Namen.
 
 Das interne Kartenfeld „E-Mail-Adresse“ ist pro Board konfigurierbar und für
-Board-Schreiber bearbeitbar. Standort-Zuordnungen aktivieren die Felder des
-Antragsformulars automatisch; aktive Standorte schützen diese vor Deaktivierung.
+Board-Schreiber bearbeitbar. Standort-Zuordnungen erfordern bereits aktivierte Pflichtfelder des
+Antragsformulars; solange die Zuordnung besteht, können diese nicht deaktiviert werden.
 Migration `0087_application_card_fields.sql` ergänzt die Feldkonfiguration
 bestehender Boards und korrigiert bereits aktive Standort-Zuordnungen.
 
@@ -409,7 +409,7 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
   `X-Real-IP`. nginx **muss** fremde Host-Header abweisen (siehe Beispiel), sonst
   Host-Header-Injection.
 - **Volumes nie verlieren:** `./pgdata` und `./uploads` liegen außerhalb des Images.
-- **DSGVO:** Pflicht-Kontaktadresse bei öffentlichen Einreichungen bleibt intern; Status per geheimem Token-Link; Roh-IPs werden
+- **DSGVO:** E-Mail bei Inventar und Standort-Anträgen verpflichtend, bei Umfragen optional; angegebene Adressen bleiben intern; Status per geheimem Token-Link; Roh-IPs werden
   nicht gespeichert (nur HMAC fürs Rate-Limit). Studierendenausweis ist nie
   öffentlich abrufbar.
 - **Skalierung:** Rate-Limiting läuft in-memory (eine Instanz). Bei horizontaler
@@ -501,7 +501,7 @@ Admin-Dashboard → **E-Mail / SMTP** (`/admin/email`): Host, Port, TLS/STARTTLS
 
 Board-Einstellungen → **Email-Settings**: pro Spalte aktivieren und bis zu 50 Adressen eingeben (Zeilen, Komma oder Semikolon). Eigentümer/Admin verwalten diese Regeln. Neue Karten und tatsächliche Statuswechsel lösen die Zielspalten-Regel aus; Umsortieren innerhalb einer Spalte löst keine Mail aus. Inventar-Vorgangsboards haben dieselben Regeln in den Inventar-Einstellungen. Jede Adresse erhält eine eigene Mail mit Kartentitel, Board, Status und internem Kartenlink.
 
-Empfangsbestätigungen für öffentliche Finanzanträge, Feedback und Inventaranfragen aktiviert ausschließlich der Admin je Board und Einreichungsart. E-Mail ist unabhängig vom Haken ein Pflichtfeld. Bestätigungen enthalten den persönlichen Status-Link und das Eingangs-PDF; keine Ausweise oder anderen Uploads. Feedback ohne Namen bleibt möglich, die Kontaktadresse ist intern jedoch bekannt.
+Empfangsbestätigungen für öffentliche Finanzanträge, Feedback und Inventaranfragen aktiviert ausschließlich der Admin je Board und Einreichungsart. Bei Standort-Anträgen und Inventaranfragen ist E-Mail unabhängig vom Haken ein Pflichtfeld; bei Umfragen ist sie optional. Ohne Adresse wird keine E-Mail-Bestätigung versendet. Bestätigungen enthalten den persönlichen Status-Link und das Eingangs-PDF; keine Ausweise oder anderen Uploads. Feedback ohne Namen und E-Mail bleibt möglich; freiwillig angegebene Kontaktadressen bleiben intern.
 
 Der Node-Server verarbeitet die PostgreSQL-Outbox alle 15 Sekunden, auch im lokalen Dev-Betrieb. Produktion benötigt einen dauerhaft laufenden Node-Prozess. Nach Fehlern erfolgen maximal fünf Versuche mit wachsender Wartezeit (2, 4, 8, 16 Minuten zwischen den Versuchen). Terminale Fehler sind im Admin-Bereich sichtbar und erneut anstoßbar. Globale Deaktivierung pausiert ausstehende Mails und verhindert neue Einträge. Nach erfolgreichem Versand werden Empfänger und Inhalt aus der Outbox entfernt; Versandmetadaten nach sieben Tagen. Fehlgeschlagene Inhalte bleiben für erneute Zustellung gespeichert. Bei einem Absturz nach SMTP-Annahme, aber vor Bestätigung in PostgreSQL, sind doppelte Zustellungen möglich; Wiederholungen verwenden dieselbe Message-ID.
 
@@ -518,9 +518,9 @@ Boards können in den Sitzungs-Einstellungen angebunden werden, wenn dieselbe Pe
 
 „Tagesordnung als PDF“ steht ausschließlich Eigentümern und Admins zur Verfügung und enthält auch vertrauliche TOPs. Die bestehende PDF-Gestaltung bleibt erhalten; Finanzangaben folgen weiterhin den aktuellen Board-/Feldrechten. Die normale Karten-/Anhangberechtigung gilt unverändert.
 
-Optional unter **Bereichseinstellungen → Wordexport** eine `.dotx`- oder `.docx`-Vorlage (max. 25 MB) hochladen. Danach die vorhandenen Absatzformatvorlagen für Titel, Fließtext, Bereichsüberschriften und öffentliche/nicht öffentliche Haupt- und Unter-TOPs zuordnen. Einen vorhandenen Musterbereich zum Ersetzen auswählen (das Endelement bleibt erhalten), alternativ einen einzelnen Absatz mit `{{TAGESORDNUNG}}` in der Vorlage verwenden oder am Dokumentende ergänzen. Das Original bleibt gespeichert; Logos, Kopf-/Fußzeilen, Tabellen und Vorlagenstile werden bewahrt. Unbekannte Abstimmungs- oder Anwesenheitsdaten bleiben zur manuellen Bearbeitung offen. Sehr komplexe Abschnittsstrukturen erfordern eine vorbereitete Platzhaltervorlage. Worddateien vor offiziellem Einsatz prüfen und Inhaltsverzeichnis/Seitenfelder beim Öffnen in Word aktualisieren.
+Optional unter **Bereichseinstellungen → Wordexport** eine `.dotx`- oder `.docx`-Vorlage (max. 25 MB) hochladen. Danach die vorhandenen Absatzformatvorlagen für Fließtext, Bereichsüberschriften und öffentliche/nicht öffentliche Haupt- und Unter-TOPs zuordnen. Einen vorhandenen Musterbereich zum Ersetzen auswählen (das Endelement bleibt erhalten), alternativ einen einzelnen Absatz mit `{{TAGESORDNUNG}}` in der Vorlage verwenden oder am Dokumentende ergänzen. Das Original bleibt gespeichert; Logos, Kopf-/Fußzeilen, Tabellen und Vorlagenstile werden bewahrt. Unbekannte Abstimmungs- oder Anwesenheitsdaten bleiben zur manuellen Bearbeitung offen. Sehr komplexe Abschnittsstrukturen erfordern eine vorbereitete Platzhaltervorlage. Worddateien vor offiziellem Einsatz prüfen. Das Inhaltsverzeichnis in Word per Rechtsklick → „Felder aktualisieren“ → „Gesamtes Verzeichnis aktualisieren“ einschließlich der Seitenzahlen aktualisieren. Der Export fordert beim Öffnen keine automatische Feldaktualisierung an und benötigt keine zusätzliche Textverarbeitung auf dem Server.
 
-„Tagesordnung als Word“ erscheint nur mit hinterlegter Vorlage und nur für Eigentümer/Admins. Wie das PDF enthält die DOCX auch vertrauliche Inhalte. Die Vorlagendownloads und Exporte benötigen eine aktive Session; API-Tokens reichen nicht aus. `fast-xml-parser` wird als direkte XML-Abhängigkeit verwendet. Migrationen bis einschließlich `0089` laufen beim Produktionsstart automatisch; im lokalen Dev-Betrieb vorher `npm run db:migrate` ausführen. SMTP-Einladungen, Kalenderdateien und ein Protokolleditor sind spätere Erweiterungen.
+„Tagesordnung als Word“ erscheint nur mit hinterlegter Vorlage und nur für Eigentümer/Admins. Wie das PDF enthält die DOCX auch vertrauliche Inhalte. Die Vorlagendownloads und Exporte benötigen eine aktive Session; API-Tokens reichen nicht aus. `fast-xml-parser` wird als direkte XML-Abhängigkeit verwendet. Migrationen bis einschließlich `0091` laufen beim Produktionsstart automatisch; im lokalen Dev-Betrieb vorher `npm run db:migrate` ausführen. SMTP-Einladungen, Kalenderdateien und ein Protokolleditor sind spätere Erweiterungen.
 
 Die Bereichsumstellung übernimmt bestehende Sitzungen jeweils in einen eigenen Bereich mit unveränderten Rechten. Gleichnamige Sitzungen werden aus Zugriffsschutzgründen nicht automatisch zusammengeführt. Dateien und Links bleiben erhalten. Kalender, Uhrzeitauswahl, Datei-Uploader, Freigabezeilen und Löschdialoge nutzen die vorhandenen App-Komponenten.
 
@@ -616,3 +616,42 @@ Zugriff auf die Sitzung besteht.
 Im Themenspeicher steht **Thema anlegen** oben, gefolgt von aktuellen und
 vergangenen Themen. Jedes Thema lässt sich einzeln aufklappen; sein Verlauf
 ist standardmäßig eingeklappt.
+
+
+Unter **Vorlagen → Sitzungsbereichsvorlagen** legen Admins und Vorlagenverwalter
+wiederverwendbare Haupt- und Unter-TOPs an. Unter **Bereichseinstellungen →
+Standard-TOPs** eine Vorlage übernehmen und die Bereichskopie nach Bedarf anpassen.
+Neue Sitzungen erhalten automatisch eigene eingeplante Kopien; vorhandene
+Sitzungen können diese einmalig über „Standard-TOPs übernehmen“ ergänzen.
+Änderungen an Vorlagen oder Bereichseinstellungen verändern keine früheren Sitzungen.
+Die Übersicht zeigt zuerst **Begrüßung und Regularien**, danach die beiden anderen
+Bereiche in der eingestellten Reihenfolge. Regularien und öffentliche TOPs teilen
+sich die öffentliche Nummerierung; nicht öffentliche TOPs werden getrennt nummeriert.
+Im Wordexport bleibt der Titel der Vorlage erhalten. Sitzungsdaten werden nur in
+Vorlagenfelder eingetragen; interne Finanzkartenlinks sind anklickbar.
+
+Mit dem Haken **Sonstiges als letzten TOP im öffentlichen Teil automatisch anlegen**
+unter Standard-TOPs wird dieser Punkt bei der Übernahme ergänzt. Er bleibt auch
+nach späterem Einplanen oder Umsortieren anderer TOPs am Ende des öffentlichen
+Teils und hat keinen Verschiebegriff. Die Option wirkt auf neue bzw. ausdrücklich
+mit Standard-TOPs ergänzte Sitzungen, nicht rückwirkend auf vorhandene Inhalte.
+
+Im Sitzungsbereich unter **Einstellungen → Finanzanträge** kann zusätzlich ein
+**Beschlussvorschlag für Finanzanträge** hinterlegt werden. Text eingeben und
+Kartenfelder per Schaltfläche an der Cursorposition einfügen, z. B.:
+`Bis zu einem Betrag von {{requested_amount}} wird {{title}} bewilligt.`
+Eine Vorschau zeigt das Ergebnis mit Beispieldaten. Nur aktivierte Kartenfelder
+werden angeboten. Beim Einplanen wird die Vorlage in den neuen Finanz-TOP
+übernommen; bestehende TOPs bleiben bei Vorlagenänderungen unverändert.
+Platzhalter zeigen die aktuellen freigegebenen Kartenwerte in der Übersicht,
+im TOP sowie in PDF und Word. Board-Rechte und ausgeblendete Felder bleiben
+wirksam. Den Vorschlag kann man anschließend im TOP individuell bearbeiten.
+
+Beim Verknüpfen eines Standorts oder Umfragebereichs mit einem Board müssen
+alle benötigten Pflichtfelder bereits aktiviert sein. Fehlende Felder werden
+namentlich angezeigt; die Zuordnung bleibt bis zur Aktivierung gesperrt.
+Die Pflichtfelder können in den Boardeinstellungen erst nach dem Entfernen
+aller entsprechenden Zuordnungen deaktiviert werden, auch wenn der Standort
+oder Bereich vorübergehend deaktiviert ist. Optionale Antragsanlagen bleiben
+konfigurierbar. Automatisch angelegte Leihboards schützen Name, E-Mail und
+Zweck/Notizen ihrer Vorgänge ebenfalls.

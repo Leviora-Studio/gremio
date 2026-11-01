@@ -6,12 +6,11 @@ import {db} from "@/lib/db";
 import {meetingAreas,meetingDocuments,meetings,type User} from "@/lib/db/schema";
 import {absPath,deleteStoredFile,displayFileName,saveNamedBuffer} from "@/lib/attachments";
 import {MAX_UPLOAD_BYTES} from "@/lib/constants";
-import {formatDateTime} from "@/lib/dates";
 import {env} from "@/lib/env";
 import {MeetingError,requireArea,requireMeeting,visibleTopics} from "./access";
 import {agendaTopics} from "./agenda";
 import {topicKinds,topicStates} from "./validation";
-import {buildWordFromTemplate,inspectWordTemplate,validateWordConfiguration,type WordExportTopic} from "./word-template";
+import {buildWordFromTemplate,inspectWordTemplate,validateWordConfiguration,type WordExportTopic,type WordExportLine} from "./word-template";
 import type {MeetingWordConfiguration} from "./word-template-types";
 
 function checkRevision(value:number){if(!Number.isSafeInteger(value)||value<0)throw new MeetingError("Bitte die Vorlageneinstellungen neu laden.");}
@@ -69,20 +68,19 @@ export async function buildMeetingAgendaWord(user:User,id:number):Promise<Buffer
   const topics=agendaTopics(await visibleTopics(user,id),meeting),items:WordExportTopic[]=[];let elapsed=0;
   for(const topic of topics){
     const time=meeting.startsAt?new Date(meeting.startsAt.getTime()+elapsed*60000).toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"}):"";
-    const lines=[`${topicStates[topic.state]}${topic.transferred?" · Weitergegeben":""}${topic.confidential?" · Vertraulich":""}`,`${time?`${time} Uhr · `:""}${topic.durationMinutes} Minuten · ${topicKinds[topic.kind]}`];elapsed+=topic.durationMinutes;
+    const lines:WordExportLine[]=[`${topicStates[topic.state]}${topic.transferred?" · Weitergegeben":""}${topic.confidential?" · Vertraulich":""}`,`${time?`${time} Uhr · `:""}${topic.durationMinutes} Minuten · ${topicKinds[topic.kind]}`];elapsed+=topic.durationMinutes;
     if(topic.presenter)lines.push(`Verantwortlich: ${topic.presenter}`);
-    if(topic.isFinanceItem&&topic.financeDetails){const d=topic.financeDetails;lines.push(`Interne Karte: ${new URL(`/intern/card/${d.cardId}`,env.APP_BASE_URL).href}`,`Antragsteller: ${d.applicant}`,`Konto: ${d.account}`,`Haushaltstitel: ${d.budgetTitle}`,`Beantragter Betrag: ${d.amount||"—"}`);}
+    if(topic.isFinanceItem&&topic.financeDetails){const d=topic.financeDetails,href=new URL(`/intern/card/${d.cardId}`,env.APP_BASE_URL).href;lines.push({text:`Interne Karte: ${href}`,href},`Antragsteller: ${d.applicant}`,`Konto: ${d.account}`,`Haushaltstitel: ${d.budgetTitle}`,`Beantragter Betrag: ${d.amount||"—"}`);}
     if(topic.description)lines.push(topic.description);
-    if(topic.motion)lines.push(`Beschlussvorschlag: ${topic.motion}`);
+    if(topic.motion?.trim())lines.push(`Beschlussvorschlag: ${topic.motion}`,{text:"Abstimmung: Dafür / Dagegen / Enthaltung",bold:true});
     if(topic.outcome)lines.push(`Ergebnis / Notiz: ${topic.outcome}`);
     const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
     if(docs.length)lines.push("Freigegebene Sitzungsunterlagen",...docs.map(doc=>doc.filename));
     items.push({...topic,lines});
   }
   const date=meeting.startsAt,values={SITZUNGSTITEL:meeting.title,GREMIUM:meeting.committee,ORT:meeting.location,SITZUNGSLEITUNG:meeting.chair,DATUM:date?date.toLocaleDateString("de-DE",{timeZone:"Europe/Berlin"}):"",BEGINN:date?date.toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"}):"",ISO_DATUM:date?.toISOString()??""};
-  const metadata=[meeting.committee,meeting.startsAt?`Beginn: ${formatDateTime(meeting.startsAt)}`:"Termin noch offen",...(meeting.location?[`Ort / Videokonferenz: ${meeting.location}`]:[]),...(meeting.chair?[`Sitzungsleitung: ${meeting.chair}`]:[])];
   let output:Buffer;
-  try{output=buildWordFromTemplate(template,area.wordConfiguration,{title:meeting.title,metadata,topics:items,settings:meeting,values});}catch(error){throw new MeetingError(error instanceof Error?error.message:"Der Wordexport konnte nicht erstellt werden.");}
+  try{output=buildWordFromTemplate(template,area.wordConfiguration,{topics:items,settings:meeting,values});}catch(error){throw new MeetingError(error instanceof Error?error.message:"Der Wordexport konnte nicht erstellt werden.");}
   const current=await requireMeeting(user,id,"manage"),currentArea=await requireArea(user,meeting.areaId,"manage");
   if(current.revision!==meeting.revision||currentArea.wordTemplateRevision!==area.wordTemplateRevision)throw new MeetingError("Die Sitzung oder Vorlage wurde zwischenzeitlich geändert. Bitte den Export erneut starten.");
   return output;

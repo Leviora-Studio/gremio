@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import {APPLICATION_REQUIRED_CARD_FIELD_KEYS,CARD_FIELD_LABELS,type CardFieldKey} from "@/lib/constants";
 import {ReceiptBrandingForm} from "@/components/admin/ReceiptBrandingForm";
 import {logoVersion} from "@/lib/receipt-branding";
 import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
-import { boards, boardStatuses, locations } from "@/lib/db/schema";
+import { boardCardFields, boards, boardStatuses, locations } from "@/lib/db/schema";
 import { LocationEditor } from "@/components/admin/LocationEditor";
 import { CreateLocationForm } from "@/components/admin/CreateLocationForm";
 
@@ -32,9 +33,11 @@ export default async function StandortePage() {
     .from(boardStatuses)
     .orderBy(boardStatuses.position);
 
+  const fieldRows=await db.select().from(boardCardFields);
   const boardsWithStatuses = allBoards.map((b) => ({
     id: b.id,
     name: b.name,
+    missingRequiredFields:APPLICATION_REQUIRED_CARD_FIELD_KEYS.filter(key=>!fieldRows.some(field=>field.boardId===b.id&&field.fieldKey===key&&field.visible)).map(key=>CARD_FIELD_LABELS[key as CardFieldKey]),
     statuses: allStatuses
       .filter((s) => s.boardId === b.id)
       .map((s) => ({ id: s.id, name: s.name })),

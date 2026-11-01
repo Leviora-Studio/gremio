@@ -7,7 +7,7 @@ import {XMLValidator} from "fast-xml-parser";
 import {unzipOffice,zip} from "../lib/zip";
 import {inspectWordTemplate,buildWordFromTemplate,validateWordConfiguration,type WordExportContent} from "../lib/meetings/word-template";
 import {wordTemplateFixture} from "./word-template-fixture";
-const content:WordExportContent={title:'Meeting <&> "$1"',metadata:['Metadata'],settings:{},values:{ORT:'Room <&> $&'},topics:[{id:1,parentId:null,section:'public',number:'1',title:'Public <&> topic',lines:['Description','Outcome']},{id:2,parentId:1,section:'public',number:'1.1',title:'Child topic',lines:[]},{id:3,parentId:null,section:'non_public',number:'I',title:'Confidential topic',lines:['Vertraulich']}]};
+const content:WordExportContent={settings:{},values:{ORT:'Room <&> $&'},topics:[{id:1,parentId:null,section:'public',number:'1',title:'Public <&> topic',lines:['Description','Outcome']},{id:2,parentId:1,section:'public',number:'1.1',title:'Child topic',lines:[]},{id:3,parentId:null,section:'non_public',number:'I',title:'Confidential topic',lines:['Vertraulich']}]};
 const xml=(bytes:Buffer,name='word/document.xml')=>unzipOffice(bytes).find(file=>file.name===name)!.data.toString('utf8');
 
 test('Word export preserves opaque parts, uses real styles and numbering, and converts DOTX to DOCX',()=>{
@@ -21,7 +21,7 @@ test('Word export preserves opaque parts, uses real styles and numbering, and co
   assert.match(document,/Public &lt;&amp;&gt; topic/);assert.match(document,/Room &lt;&amp;&gt; \$&amp;/);assert.doesNotMatch(document,/TAGESORDNUNG/);assert.ok(document.indexOf('Public &lt;')<document.indexOf('Confidential topic'));
   assert.doesNotMatch(document,/>1 Public/,'no duplicate manual/automatic numbering');
   assert.match(xml(result,'word/numbering.xml'),/upperRoman/);assert.match(xml(result,'word/numbering.xml'),/w:lvlText w:val="%1.%2"/);
-  assert.match(xml(result,'word/settings.xml'),/w:updateFields w:val="true"/);assert.doesNotMatch(xml(result,'[Content_Types].xml'),/template.main/);
+  assert.match(xml(result,'word/settings.xml'),/w:updateFields w:val="false"/);assert.doesNotMatch(xml(result,'[Content_Types].xml'),/template.main/);
   assert.match(xml(result,'word/_rels/document.xml.rels'),/numbering.xml/);
   assert.ok(document.includes('Signature'));assert.ok(document.includes('Keep this letterhead'));
  }
@@ -83,4 +83,27 @@ test('append insertion stays inside a document body without explicit section pro
  const template=zip(unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace(/<w:sectPr>[^]*?<\/w:sectPr>/,''))}:file));
  const info=inspectWordTemplate(template),result=buildWordFromTemplate(template,{...info.configuration,insertion:'append'},content),document=xml(result);
  assert.ok(document.indexOf('Confidential topic')<document.indexOf('</w:body>'));
+});
+
+test('Word export keeps the template title and uses actual hyperlink relationships for card links',()=>{
+ const template=wordTemplateFixture(),info=inspectWordTemplate(template);
+ const legacy={...info.configuration,styles:{...info.configuration.styles,title:"obsolete-unused-style"}};
+ const href="https://gremio.example/intern/card/42?view=full&from=agenda";
+ const result=buildWordFromTemplate(template,legacy,{...content,topics:[{...content.topics[0],lines:[{text:"Interne Karte: "+href,href},"Text with https://not-auto-linked.example"]}]}),document=xml(result),rels=xml(result,'word/_rels/document.xml.rels');
+ assert.match(document,/Keep this letterhead/);assert.doesNotMatch(document,/w:pStyle w:val="Titel"/);assert.match(document,/<w:hyperlink r:id="gremioCard1"/);assert.match(rels,/TargetMode="External"/);assert.match(rels,/card\/42\?view=full&amp;from=agenda/);
+ assert.doesNotMatch(rels,/not-auto-linked/);assert.doesNotMatch(document,/Beginn:|Sitzungsleitung:/);
+ assert.throws(()=>buildWordFromTemplate(template,info.configuration,{...content,topics:[{...content.topics[0],lines:[{text:"bad",href:"javascript:alert(1)"}]}]}),/Kartenlink/);
+});
+test('opening topics precede both areas, share public numbering and stay before the first original section break',{skip:!process.env.GREMIO_WORD_TEMPLATE_FIXTURE},async()=>{
+ const template=await readFile(process.env.GREMIO_WORD_TEMPLATE_FIXTURE!),info=inspectWordTemplate(template);
+ const result=buildWordFromTemplate(template,info.configuration,{...content,settings:{firstSection:'non_public'},topics:[{id:9,parentId:null,section:'opening',number:'1',title:'Opening regularities',lines:[]},{...content.topics[0],number:'2'},content.topics[2]]}),document=xml(result);
+ assert.ok(document.indexOf('Opening regularities')<document.indexOf('Confidential topic'));assert.ok(document.lastIndexOf('Opening regularities')<document.indexOf('<w:sectPr'));
+ const opening=document.slice(document.lastIndexOf('Opening regularities')-250,document.lastIndexOf('Opening regularities'));
+ assert.match(opening,/w:pStyle w:val="TOP1"/);
+});
+
+test('Word export disables automatic field recalculation even when a template enables it with another prefix',()=>{
+ const files=unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/settings.xml'?{...file,data:Buffer.from('<x:settings xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><x:updateFields x:val="true"/><x:compat/></x:settings>')}:file);
+ const template=zip(files),output=buildWordFromTemplate(template,inspectWordTemplate(template).configuration,content),settings=xml(output,'word/settings.xml');
+ assert.match(settings,/<w:updateFields w:val="false"\/>/);assert.doesNotMatch(settings,/<x:updateFields/);assert.match(settings,/<x:compat\/>/);
 });
