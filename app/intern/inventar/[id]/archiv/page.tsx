@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { requireInventoryBoardAccess } from "@/lib/inventory";
 import { listInventoryItems } from "@/lib/inventory-items";
+import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
 import {
   conditionClass,
   conditionLabel,
@@ -19,6 +20,7 @@ export default async function InventoryArchivePage({
   const { id } = await params;
   const { board } = await requireInventoryBoardAccess(Number(id));
   const items = await listInventoryItems(board.id, ["defect", "lost"]);
+  const visible = await getVisibleInventoryFieldKeys(board.id);
 
   return (
     <div className="space-y-5">
@@ -65,7 +67,7 @@ export default async function InventoryArchivePage({
                       {it.name || "—"}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 align-top">{it.number ?? "—"}</td>
+                  <td className="px-3 py-2 align-top">{visible.has("number") ? it.number ?? "—" : "—"}</td>
                   <td className="px-3 py-2 align-top">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${conditionClass(it.condition)}`}
@@ -74,7 +76,7 @@ export default async function InventoryArchivePage({
                     </span>
                   </td>
                   <td className="px-3 py-2 align-top text-slate-600">
-                    {it.conditionNote || "—"}
+                    {visible.has("condition") ? it.conditionNote || "—" : "—"}
                   </td>
                 </tr>
               ))}

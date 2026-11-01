@@ -2,7 +2,16 @@
 // Copyright (C) 2026 Leviora Studio
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attachmentArchiveLayout, organizationName } from "../lib/attachment-organization";
+import { attachmentArchiveLayout, organizationName, sanitizeSegment } from "../lib/attachment-organization";
+
+test("archive root folders obey UTF-8 component limits without splitting characters", () => {
+  for (const value of ["€".repeat(120), "😀".repeat(120), "Übersicht".repeat(40)]) {
+    const name = sanitizeSegment(value);
+    assert.ok(Buffer.byteLength(name, "utf8") <= 255);
+    assert.equal(Buffer.from(name).toString("utf8"), name);
+    assert.ok(!name.includes("\ufffd"));
+  }
+});
 
 test("organization names preserve portable Unicode names and reject unsafe paths", () => {
   assert.equal(organizationName("  Belege  2026  "), "Belege 2026");

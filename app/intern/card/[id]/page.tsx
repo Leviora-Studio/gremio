@@ -29,7 +29,7 @@ import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import { loadBudgetSnapshot } from "@/lib/card-budget-db";
-import { maskHiddenCardFields } from "@/lib/card-field-projection";
+import { maskHiddenCardFields, visibleActivityDetail } from "@/lib/card-field-projection";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
 import { AttachmentSlot, WeitereAttachments, AttachmentFolders } from "@/components/antrag/Attachments";
@@ -473,7 +473,7 @@ export default async function AntragDetailPage({
                 <span className="shrink-0 font-medium text-slate-700">
                   {a.username ?? "System"}
                 </span>
-                <span className="min-w-0 flex-1 break-words">{a.detail}</span>
+                <span className="min-w-0 flex-1 break-words">{visibleActivityDetail(a, visibleSet) ?? "Karte aktualisiert"}</span>
                 <span className="basis-full pl-7 text-xs text-slate-400 sm:ml-auto sm:basis-auto sm:pl-0">
                   {fmt(a.createdAt)}
                 </span>

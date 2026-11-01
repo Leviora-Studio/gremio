@@ -6,6 +6,7 @@ import { PublicSubmitForm } from "../../components/PublicSubmitForm";
 import { PublicUploadScope } from "../../components/PublicUploadScope";
 import { PublicGate } from "../../components/PublicGate";
 import { ArchiveTriggerForm } from "../../components/board/ArchiveTriggerForm";
+import { TriggerAssignmentForm } from "../../components/board/TriggerAssignmentForm";
 import { AntraegeTable } from "../../components/finance/AntraegeTable";
 import type { BudgetPosition } from "../../lib/card-budget";
 function Fixture() {
@@ -22,6 +23,7 @@ function Fixture() {
   return <main className="mx-auto max-w-4xl space-y-8 p-4">
     <h1 className="text-xl font-bold">Uploads und Haushaltspositionen</h1>
     <section className="card p-4"><h2 className="mb-3 font-semibold">Trigger-Spalten</h2><ArchiveTriggerForm initial={[1]} statuses={[1,2,3,4].map(id => ({ id, name: `Spalte ${id}` }))} action={async (_s, data) => { (window as any).triggers = data.getAll("statusIds"); return { success: "Trigger gespeichert" }; }} /></section>
+    <section aria-label="Trigger-Zuweisungen"><TriggerAssignmentForm boardId={1} when="Testtrigger" initialClear={false} initialUsers={[{id:1,username:"Synthetic member"}]} assigneeVisible action={async (_state, data) => { (window as any).triggerAssignment = {clear:data.get("clearAssignees"),users:data.getAll("userIds")};return {success:"Zuweisungen gespeichert"};}}/></section>
     <PublicUploadScope>
       <section aria-label="Allgemeine Dateien" className="card space-y-3 p-4"><h2 className="font-semibold">Dateien einreichen</h2><PublicGate allowed className="space-y-4"><p className="text-sm text-slate-500">Hier kannst du allgemeine Dateien und Nachträge als PDF hochladen.</p><PublicUploadForm token="test" /><PublicSubmitForm token="test" purpose="resubmission" label="Nachreichung einreichen" /></PublicGate></section>
       <PublicGate allowed={allowed} className="card space-y-4 p-4"><h2 className="font-semibold">Quittung einreichen</h2><PublicUploadForm token="test" purpose="receipt" /><PublicSubmitForm token="test" purpose="receipt" label="Quittung einreichen" /></PublicGate>

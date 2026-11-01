@@ -429,6 +429,10 @@ Browser ──HTTPS──> nginx (SSL) ──HTTP──> App-Container (Next.js,
   über die heute verfügbaren Sicherheitsmeldungen.
 - Befunde, Korrekturen und Prüfgrenzen seit 2.7.0:
   [Security- und Bug-Audit](docs/SECURITY_AUDIT_SINCE_2.7.0.md).
+- Aktueller Prüfstand einschließlich Version 4.2.0 und aller späteren Änderungen:
+  [Bug- und Security-Audit seit 4.2.0](docs/SECURITY_AUDIT_SINCE_4.2.0.md).
+  Produktionsabhängigkeiten ohne npm-Befund; 13 moderate Meldungen im
+  Entwicklungswerkzeug bleiben mit Erreichbarkeits- und Kompatibilitätsbewertung dokumentiert.
 
 ---
 

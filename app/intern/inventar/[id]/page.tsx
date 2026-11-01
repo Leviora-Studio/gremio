@@ -8,6 +8,7 @@ import {
   canEditInventoryBoard,
 } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
+import { maskHiddenInventoryFields } from "@/lib/inventory-field-projection";
 import {
   getInventoryNumbering,
   getInventoryOptions,
@@ -197,8 +198,8 @@ export default async function InventoryBoardPage({
           location: toOpts(options.location),
           loan_status: toOpts(options.loan_status),
         }}
-        groupNames={groupNames}
-        items={items}
+        groupNames={visible.has("group") ? groupNames : []}
+        items={items.map(item => maskHiddenInventoryFields(item, visible))}
       />
     </div>
   );

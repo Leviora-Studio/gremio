@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { maskHiddenCardFields } from "../lib/card-field-projection";
+import { maskHiddenCardFields, visibleActivityDetail } from "../lib/card-field-projection";
 
 test("client props and searchable fields do not carry disabled card values", () => {
   const card = { id: 1, title: "Visible title", applicant: "Hidden applicant", number: "Hidden number",
@@ -19,4 +19,17 @@ test("email follows visibility without mutating stored contact information", () 
   assert.equal(maskHiddenCardFields(card, new Set()).submitterEmail, null);
   assert.equal(maskHiddenCardFields(card, new Set(["submitter_email"])).submitterEmail, card.submitterEmail);
   assert.equal(card.submitterEmail, "person@example.org");
+});
+
+test("history never discloses disabled values, legacy filenames, paths or unknown event details", () => {
+  for (const type of ["deadline", "assignee"]) {
+    const event = { type, detail: "Previously visible private value" };
+    assert.equal(visibleActivityDetail(event, new Set()), null);
+    assert.equal(visibleActivityDetail(event, new Set([type])), event.detail);
+    assert.equal(event.detail, "Previously visible private value");
+  }
+  for (const type of ["attachment_added", "attachment_removed", "attachment_organized", "attachment_folder_created", "archive", "archive_failed", "legacy_event", "toString"]) {
+    assert.ok(!String(visibleActivityDetail({ type, detail: "Private filename and archive path" }, new Set(["other_pdfs"]))).includes("Private"));
+  }
+  assert.equal(visibleActivityDetail({ type: "status", detail: "Open → Done" }, new Set()), "Open → Done");
 });

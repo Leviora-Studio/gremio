@@ -4,6 +4,7 @@
 import { notFound } from "next/navigation";
 import { canEditInventoryBoard, requireInventoryBoardAccess } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
+import { maskHiddenInventoryFields } from "@/lib/inventory-field-projection";
 import {
   getInventoryItemById,
   getInventoryItemView,
@@ -55,7 +56,7 @@ export default async function InventoryItemPage({
     <>
       <ItemDetail
         canEdit={canEdit}
-        item={view}
+        item={maskHiddenInventoryFields(view, visible)}
       boardName={board.name}
       visibleFields={Array.from(visible)}
       options={{
@@ -63,7 +64,7 @@ export default async function InventoryItemPage({
         location: toOpts(options.location),
         loan_status: toOpts(options.loan_status),
       }}
-        groupNames={groupNames}
+        groupNames={visible.has("group") ? groupNames : []}
         numberingEnabled={numbering?.enabled ?? false}
         loans={canEdit ? loans : loans.map(loan => ({ ...loan, token: null }))}
         defects={defects}

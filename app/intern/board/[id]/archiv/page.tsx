@@ -6,6 +6,8 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, cards } from "@/lib/db/schema";
 import { canEditBoard, requireBoardAccess } from "@/lib/authz";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { SubmitButton } from "@/components/SubmitButton";
 import { restoreCardAction } from "./actions";
 
@@ -19,7 +21,8 @@ export default async function BoardArchivePage({
   const { user, board } = await requireBoardAccess(boardId);
 
   const canEdit = await canEditBoard(user, board);
-  const rows = await db
+  const visible = await getVisibleFieldKeys(board.id);
+  const rows = (await db
     .select({
       id: cards.id,
       number: cards.number,
@@ -31,7 +34,7 @@ export default async function BoardArchivePage({
     .from(cards)
     .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
     .where(and(eq(cards.boardId, boardId), isNotNull(cards.archivedAt)))
-    .orderBy(desc(cards.archivedAt));
+    .orderBy(desc(cards.archivedAt))).map(row => maskHiddenCardFields(row, visible));
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 py-2">

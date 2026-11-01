@@ -11,7 +11,6 @@ import {
   financeBoards,
   financeBoardSources,
   users,
-  type Board,
   type FinanceBoard,
   type User,
 } from "@/lib/db/schema";
@@ -29,9 +28,7 @@ export async function resolveSourceBoards(fb: FinanceBoard): Promise<{
 }> {
   const rows = await db
     .select({
-      id: boards.id,
-      name: boards.name,
-      ownerId: boards.ownerId,
+      board: boards,
       expiredStatusId: financeBoardSources.expiredStatusId,
     })
     .from(financeBoardSources)
@@ -48,11 +45,10 @@ export async function resolveSourceBoards(fb: FinanceBoard): Promise<{
   const accessible: { id: number; name: string; expiredStatusId: number | null }[] = [];
   const inaccessible: { id: number; name: string }[] = [];
   for (const r of rows) {
-    const board = { id: r.id, ownerId: r.ownerId } as unknown as Board;
-    if (ownerUser && (await canAccessBoard(ownerUser, board))) {
-      accessible.push({ id: r.id, name: r.name, expiredStatusId: r.expiredStatusId });
+    if (ownerUser && (await canAccessBoard(ownerUser, r.board))) {
+      accessible.push({ id: r.board.id, name: r.board.name, expiredStatusId: r.expiredStatusId });
     } else {
-      inaccessible.push({ id: r.id, name: r.name });
+      inaccessible.push({ id: r.board.id, name: r.board.name });
     }
   }
   return { accessible, inaccessible };

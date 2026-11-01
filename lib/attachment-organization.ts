@@ -18,8 +18,13 @@ export function organizationName(raw: unknown): string | null {
 export function sanitizeSegment(s: string): string {
   const cleaned = s.replace(/[\\/:*?"<>|\x00-\x1f\x7f]+/g, "_")
     .replace(/\.{2,}/g, "_").replace(/^\.+/, "")
-    .replace(/\s+/g, " ").trim().slice(0, 120);
-  return cleaned || "ordner";
+    .replace(/\s+/g, " ").trim();
+  let result = "";
+  for (const char of cleaned) {
+    if (result.length + char.length > 120 || Buffer.byteLength(result + char, "utf8") > 255) break;
+    result += char;
+  }
+  return result || "ordner";
 }
 
 /** Shared cloud/ZIP layout; never overwrite colliding legacy filenames. */

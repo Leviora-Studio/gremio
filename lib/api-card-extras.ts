@@ -19,6 +19,7 @@ import { apiError, parseApiId } from "@/lib/api";
 import { resolveApiBoard, resolveApiCard } from "@/lib/api-access";
 import { canManageBoard, getBoardMemberUsers } from "@/lib/authz";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { visibleActivityDetail } from "@/lib/card-field-projection";
 import { pagination } from "@/lib/api-query";
 import { sanitizeMultiLine } from "@/lib/text";
 import { readLimitedBody } from "@/lib/public-api";
@@ -210,31 +211,12 @@ export async function activityApi(req: Request, id: string) {
     .orderBy(desc(cardActivity.id))
     .limit(limit + 1)
     .offset(offset);
-  // Legacy details contain filenames, archive paths, and historical hidden values.
-  // Never forward those unstructured strings for file/archive/unknown events.
-  const labels: Record<string, string> = {
-    attachment_added: "Datei hinzugefügt",
-    attachment_removed: "Datei entfernt",
-    archive: "Archivierung abgeschlossen",
-    archive_failed: "Archivierung fehlgeschlagen",
-  };
   const activity = rows.slice(0, limit).map((row) => ({
     id: row.id,
     userId: row.userId,
     type: row.type,
     createdAt: row.createdAt,
-    detail:
-      row.type === "status" || row.type === "created"
-        ? row.detail
-        : row.type === "assignee"
-          ? visible.has("assignee")
-            ? row.detail
-            : null
-          : row.type === "deadline"
-            ? visible.has("deadline")
-              ? row.detail
-              : null
-            : (labels[row.type] ?? null),
+    detail: visibleActivityDetail(row, visible),
   }));
   return NextResponse.json({
     activity,

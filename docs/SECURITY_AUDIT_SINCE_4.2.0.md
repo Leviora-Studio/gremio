@@ -2,6 +2,9 @@
 
 Audit date: 2026-11-01. Starting checkout: `ef75a69`.
 
+The initial audit below is retained as historical evidence. The additional audit
+starting at `3796fd5` is recorded in the follow-up section at the end.
+
 ## Scope and method
 
 The scope includes the 4.2.0 release itself and subsequent changes through the
@@ -122,3 +125,80 @@ container and temporary Keycloak were stopped/removed after validation.
   browser identity checks use local synthetic OIDC providers.
 - No new production dependency, database schema change, external REST capability,
   push, pull request, publication or deployment is part of these fixes.
+
+## Follow-up audit starting at 3796fd5
+
+Date: 2026-11-01. The working tree was clean at the start. The comparison remains
+`v4.2.0^..HEAD`, including 4.2.0 itself. Existing audit fixes were rechecked rather
+than assumed correct. Related callers outside the changed hunks were traced when
+they participate in the same permission or data flow; the findings below do not
+claim that every affected line was first introduced in 4.2.0.
+
+### Additional findings and corrections
+
+| ID | Severity / impact | Reproduction and correction |
+| --- | --- | --- |
+| F01 | Medium, internal data disclosure | Card history rendered old disabled deadlines/assignees and historical filenames/archive paths. Archive pages also rendered disabled number/applicant fields, and statistics aggregated hidden amounts, priorities, deadlines and assignments. History now shares a conservative projection with REST; archive/statistics apply current field visibility before output. Stored history and values are preserved. The old production build failed the new complete-HTML history assertion; the corrected build passes for owners, writers and readers on desktop/mobile. |
+| F02 | Medium, internal data disclosure | Inventory item lists/details sent disabled optional metadata in client props despite hiding the controls. Disabled numbers/condition notes also remained visible in the inventory archive. Server projections now remove optional hidden item metadata before serialization/search, and the archive masks these values. Operational stock/condition/availability and separately authorized loan/defect histories retain their existing behavior. Pure projection tests and real HTTP/browser payload assertions cover the change. |
+| F03 | Medium, authorization / missing financial data | Finance source resolution constructed a partial Board without its inventory relation. Inventory coowners/readers could lose valid sources, while stale ordinary board grants could grant source data without inventory permission. Resolution now passes the complete Board to the existing live authorization helper. An initially failing DB regression covers coowners, readers, revocation and denied stale grants. |
+| F04 | Medium, authorization | Board enumeration could include system boards through stale ordinary grants or additional ordinary owners even though direct board access correctly denied them. This enumeration also feeds REST/MCP search and task overview queries. System-board candidates now require accessible inventory membership. The DB regression verifies that enumeration and source resolution agree with direct access. |
+| F05 | Medium, concurrency / workflow integrity | Document and card-reference mutations did not advance the meeting revision or serialize with closure/deletion. A pending closure could be bypassed by an upload, stale TOP edits remained accepted after document changes, and deletion could miss newly added files during cleanup. These writes now lock the meeting then the TOP, recheck access/open state and advance the common revision. Deletions capture document paths under the same lock and unlink after commit. The regression verifies stale edit rejection, an upload against an uncommitted closure and absence of orphan files. |
+| F06 | Low, archive reliability | The outer Nextcloud archive folder still used a character limit that could exceed the 255-byte component limit for Unicode titles. Sanitization now bounds both UTF-8 bytes and character length without splitting Unicode code points. The initially failing regression covers euro signs, emoji and accented text; existing path/collision/cloud-double tests remain green. |
+| F07 | Low, standalone container monitoring | Trivy's missing Dockerfile HEALTHCHECK observation from the first audit is resolved. The runtime image now checks its local health route with the configured port, matching the existing Compose timing. The final Trivy configuration scan has no findings. |
+| F08 | Low, configuration UI reliability | A component workflow intermittently reproduced a native React action reset reverting saved trigger checkboxes; waiting for success and a further 30 seconds did not restore them. Trigger-column, trigger-assignee and office-role forms now prevent native reset so their current configuration remains visible. The browser regression waits for settled submission and explicitly invokes a native form reset before asserting the retained selection. |
+
+### Review coverage
+
+- Read/write and ownership helpers, inventory system-board inheritance, office
+  moves, finance sources, bearer scopes/board restrictions and MCP consent/tools.
+- Public application/feedback/inventory submissions, idempotency, required email,
+  bounded uploads, token-type isolation and private data in public projections.
+- Meeting areas, confidential parent/child TOPs, proposals/history, financial
+  planning, references, independent document copies, closure and file cleanup.
+- Attachment folders/ZIP/cloud paths, generated instructions, PDF editing,
+  signatures, field visibility, archive and statistics output.
+- SSO/session expiry and revocation, local deactivation, SSE/live refresh,
+  SMTP/outbox privacy, receipt branding, migrations and dependency advisories.
+
+The standard suite covers actual REST/MCP handlers, budget atomicity, grants,
+public privacy, PDF behavior and three empty-database upgrades. Real production
+workflows use a separate temporary build, synthetic accounts, local OIDC and
+temporary uploads. No normal application database, real Nextcloud files or
+external email recipients were used.
+
+### Follow-up validation
+
+- Final full suite on Node 22.23.2: **142 passed, 0 failed, 0 skipped**, including
+  the three independently empty upgrade databases. The upload cleanup assertion
+  was additionally rerun against the isolated database.
+- TypeScript, lint, production build in a separate temporary copy and
+  `git diff --check`: passed. The existing Next lint deprecation notice remains.
+- Production-server browser/HTTP workflows: **11 passed** (access levels,
+  meetings, meeting finance, topic history, app live refresh, SMTP settings,
+  public workflows, MCP/OAuth, SSO, ownership/receipts and scoped receipts).
+- Component/browser workflows: **6 passed** (board views, finance plan, meeting
+  visibility, live refresh, public/budget workflows and home dashboard), including
+  the trigger-reset regression after its correction.
+- `npm audit --omit=dev --json`: **0 findings**. Full audit: **13 moderate
+  development-only entries**, all from the previously documented minimatch
+  advisory. No dependency changes or advisory suppression were applied.
+- Trivy 0.76.1 secret/configuration scans run locally, read-only and without
+  networking, using its embedded configuration checks. Current source excludes
+  Git internals, dependencies, build output, local uploads and DB data. The
+  committed patch history from 4.2.0 onward is scanned separately for secrets.
+  Final results: **0 secrets and 0 configuration findings**.
+
+The minimatch advisory was checked against the current primary
+[GitHub advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249). Its broad
+affected range still includes the development-only CommonJS 3.1.5 consumer;
+the described optimization code path is absent there. Upgrading that consumer
+to the incompatible minimatch 11 API remains unsafe without an upstream/tooling
+change. These alerts remain explicitly open; this report does not call the full
+dependency tree vulnerability-free.
+
+No new production dependency, schema migration, external API endpoint, commit,
+push, publication or deployment was made. External deployed infrastructure,
+container OS CVEs and a production penetration test are outside these local
+checks. The optional real-Keycloak and dedicated notification/activity checks
+from the first audit were not repeated; their relevant standard/HTTP regressions
+were rerun. A source audit and passing tests cannot prove absence of every bug.

@@ -6,6 +6,8 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boardStatuses, users } from "@/lib/db/schema";
 import { requireBoardAccess } from "@/lib/authz";
+import { getVisibleFieldKeys } from "@/lib/board-fields";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { getAssigneeIdsForCards } from "@/lib/assignees";
 import { getPriorities } from "@/lib/priorities";
 import { formatCents } from "@/lib/money";
@@ -66,8 +68,9 @@ export default async function BoardStatsPage({
   const { id } = await params;
   const boardId = Number(id);
   const { board } = await requireBoardAccess(boardId);
+  const visible = await getVisibleFieldKeys(board.id);
 
-  const rows = await db
+  const rows = (await db
     .select({
       id: cards.id,
       statusId: cards.statusId,
@@ -81,7 +84,7 @@ export default async function BoardStatsPage({
       doneSince: cards.doneSince,
     })
     .from(cards)
-    .where(eq(cards.boardId, boardId));
+    .where(eq(cards.boardId, boardId))).map(row => maskHiddenCardFields(row, visible));
 
   const statuses = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
@@ -92,7 +95,7 @@ export default async function BoardStatsPage({
   const priorities = await getPriorities();
 
   // Zugewiesene je Karte (n:m) — eine Karte zählt bei JEDEM Zugewiesenen mit.
-  const assigneeMap = await getAssigneeIdsForCards(rows.map((r) => r.id));
+  const assigneeMap = visible.has("assignee") ? await getAssigneeIdsForCards(rows.map((r) => r.id)) : new Map<number, number[]>();
   const assigneeIds = [...new Set([...assigneeMap.values()].flat())];
   const assigneeRows = assigneeIds.length
     ? await db
@@ -233,7 +236,7 @@ export default async function BoardStatsPage({
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
                 { label: "Karten gesamt", value: total },
-                { label: "Überfällig", value: overdue },
+                ...(visible.has("deadline") ? [{ label: "Überfällig", value: overdue }] : []),
                 { label: "Über Formular", value: fromForm },
                 { label: "Manuell angelegt", value: manual },
               ].map((kpi) => (
@@ -255,7 +258,7 @@ export default async function BoardStatsPage({
             </div>
           </Section>
 
-          <Section title="Nach Priorität">
+          {visible.has("priority") && <Section title="Nach Priorität">
             <div className="space-y-2">
               {byPriority.map((p) => (
                 <Bar
@@ -275,16 +278,16 @@ export default async function BoardStatsPage({
               ))}
               <Bar label="ohne Priorität" count={noPriority} max={maxPriority} />
             </div>
-          </Section>
+          </Section>}
 
-          <Section title="Zugewiesen">
+          {visible.has("assignee") && <Section title="Zugewiesen">
             <div className="space-y-2">
               {assigneeCounts.map((a) => (
                 <Bar key={a.label} label={a.label} count={a.count} max={maxAssignee} />
               ))}
               <Bar label="ohne Zuweisung" count={noAssignee} max={maxAssignee} />
             </div>
-          </Section>
+          </Section>}
 
           <Section title="Erledigt">
             <div className="mb-4 grid grid-cols-3 gap-4">
@@ -304,7 +307,7 @@ export default async function BoardStatsPage({
                 </div>
               ))}
             </div>
-            <h3 className="mb-2 text-sm font-medium text-slate-600">Je Nutzer</h3>
+            {visible.has("assignee") && <><h3 className="mb-2 text-sm font-medium text-slate-600">Je Nutzer</h3>
             {doneStats.length === 0 && doneNobody.total === 0 ? (
               <p className="text-sm text-slate-500">
                 Noch keine erledigten Karten.
@@ -354,7 +357,7 @@ export default async function BoardStatsPage({
                   )}
                 </tbody>
               </table>
-            )}
+            )}</>}
           </Section>
 
           <Section title="Neue Karten je Monat (letzte 6)">
@@ -368,22 +371,22 @@ export default async function BoardStatsPage({
           {(approvedSum > 0 || actualSum > 0) && (
             <Section title="Beträge">
               <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-md border border-slate-200 p-3">
+                {visible.has("approved_amount") && <div className="rounded-md border border-slate-200 p-3">
                   <div className="text-xl font-bold text-brand-700">
                     {formatCents(approvedSum)}
                   </div>
                   <div className="text-xs text-slate-500">
                     Summe genehmigter Beträge
                   </div>
-                </div>
-                <div className="rounded-md border border-slate-200 p-3">
+                </div>}
+                {visible.has("actual_amount") && <div className="rounded-md border border-slate-200 p-3">
                   <div className="text-xl font-bold text-brand-700">
                     {formatCents(actualSum)}
                   </div>
                   <div className="text-xs text-slate-500">
                     Summe tatsächlicher Ausgaben
                   </div>
-                </div>
+                </div>}
               </div>
             </Section>
           )}

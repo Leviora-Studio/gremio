@@ -4,6 +4,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useRetainedForm } from "@/components/useRetainedForm";
 
 type State = { error?: string; success?: string };
 
@@ -22,10 +23,11 @@ export function ArchiveTriggerForm({
 }) {
   const [state, formAction, pending] = useActionState(action, {} as State);
   const [selected, setSelected] = useState(initial);
+  const formRef = useRetainedForm();
 
   return (
     <div>
-      <form action={formAction} className="space-y-3">
+      <form ref={formRef} action={formAction} className="space-y-3">
         <fieldset disabled={pending} className="grid gap-2 sm:grid-cols-2">
           <legend className="label">Auslösende Spalten</legend>
           {statuses.map((s) => <label key={s.id} className="flex items-center gap-2 text-sm">

@@ -5,6 +5,7 @@
 
 import { useActionState, useState } from "react";
 import { Select } from "@/components/Select";
+import { useRetainedForm } from "@/components/useRetainedForm";
 import { saveOfficeRoleAction } from "@/app/intern/board/[id]/einstellungen/actions";
 
 export function OfficeRoleForm({ boardId, people, statuses, initial }: {
@@ -15,7 +16,8 @@ export function OfficeRoleForm({ boardId, people, statuses, initial }: {
 }) {
   const [enabled, setEnabled] = useState(initial.enabled);
   const [state, action, pending] = useActionState(saveOfficeRoleAction.bind(null, boardId), {});
-  return <form action={action} className="space-y-4">
+  const formRef = useRetainedForm();
+  return <form ref={formRef} action={action} className="space-y-4">
     <p className="text-sm text-slate-500">Die Bürokraft darf bei lesendem Board-Zugriff ausschließlich Karten aus den gewählten Ausgangsspalten in die gewählten Zielspalten verschieben. Karteninhalte, Kommentare und Anhänge bleiben unveränderbar. Vorhandene Schreibrechte aus direkten oder Gruppenfreigaben haben Vorrang.</p>
     <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="enabled" checked={enabled} disabled={pending} onChange={event => setEnabled(event.target.checked)} />Bürokraft aktivieren</label>
     <div className="max-w-md"><label className="label">Person mit Board-Zugriff</label>

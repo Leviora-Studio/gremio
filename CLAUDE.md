@@ -159,6 +159,7 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 - **Filter** (clientseitig): Textsuche (Titel/Antragsteller), Priorität, Zugewiesen, „nur überfällig" (Deadline < heute).
 - **Karten sortierbar** per Drag&Drop innerhalb/zwischen Spalten (`cards.position`); Reihenfolge wird persistiert.
 - **Kommentare** und **Aktivitäts-/Statushistorie** je Karte — nur in der internen Detailansicht, nicht auf der öffentlichen Statusseite.
+- **Ausgeblendete Felder:** Auch Archiv und Statistik beachten die aktuellen Kartenfelder. Die Historie zeigt keine alten Deadlines/Zuweisungen ausgeblendeter Felder und verwendet für Datei-/Archivereignisse allgemeine Texte ohne historische Dateinamen oder Pfade. Gespeicherte Werte und Historieneinträge bleiben erhalten.
 
 ### Zugriff & Verwaltung (Logik)
 - **Sehen** (`canAccessBoard`): `role='admin'` **oder** Eigentümer **oder** `board_access` mit eigener `user_id` **oder** mit einer `group_id` aus seinen Gruppen.
@@ -214,6 +215,8 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 > 8. **Trigger-Zuweisungen** — jeder Board-Trigger (Anweisungsdatum, Überweisungsdatum, Nachreichung, Rückmeldung, Done-Spalte, Nextcloud-Archiv) kann beim Auslösen optional **alle Zuweisungen entfernen** und/oder **zusätzlich Nutzer zuweisen** (siehe „Trigger-Zuweisungen").
 
 ### Trigger-Zuweisungen
+
+Trigger-Spalten, Trigger-Zuweisungen und Bürokraft-Einstellungen behalten ihre aktuelle Formularauswahl nach dem Speichern und bei Validierungsfehlern. Ein nativer Reset-Listener verhindert, dass React beim Abschluss einer Server Action Häkchen auf veraltete Anfangswerte zurücksetzt.
 In den Board-Einstellungen hat jeder Trigger zwei optionale Zuweisungs-Aktionen:
 **„Alle Zuweisungen entfernen"** (Haken) und **„Zusätzlich zuweisen zu"**
 (Nutzer mit Board-Zugriff; leer = niemand zusätzlich). Reihenfolge: erst
@@ -581,6 +584,8 @@ Beispiel: "Grillabend am FB5"
 
 ## Inventar- & Entleihsystem
 
+Interne Gegenstandslisten und -details filtern optionale ausgeblendete Metadaten vor der Übergabe an Client-Komponenten, einschließlich Suchdaten. Das betrifft Nummer, Seriennummer, Gruppen-/Kategorien-/Standortzuordnung, Zustandsnotiz, aktuelle Person/Frist, Preis, Kaufdatum, Händler und Notizen. Im Inventararchiv bleiben ausgeblendete Nummern und Zustandsnotizen ebenfalls verborgen. Operative Bestands-, Zustands- und Verfügbarkeitsdaten bleiben für die Ausleihsteuerung verfügbar; eigenständige Vorgangs- und Mängelhistorien behalten ihr bestehendes Rechtemodell.
+
 Eigenständiges Modul (seit 2.0.0) zur Verwaltung von Gegenständen und deren Ausleihe. **Inventar-Boards sind keine Kanban-Boards** — eigene Tabellen, eigene Listenansicht. Sie teilen sich mit den Kanban-Boards nur Nutzer, Gruppen und das **identische Zugriffsmodell**: Zugriff = Admin ∨ Eigentümer ∨ Freigabe an Nutzer/Gruppe (read/write, höchste Stufe gilt); Verwalten = Admin ∨ Eigentümer (`lib/inventory.ts`, gleiche Struktur wie `lib/authz/index.ts`). Jeder eingeloggte Nutzer darf ein Inventar-Board erstellen und ist dann dessen Eigentümer.
 
 Zwei Schalter bleiben **dem Admin vorbehalten**:
@@ -742,6 +747,7 @@ Bereitstellung am Ende **containerisiert** via `Dockerfile` + `docker-compose.ym
 Aus einem externen Security-Review bewusst so belassene Punkte — damit klar ist, dass sie geprüft und gewollt sind:
 
 - **Finanz-Sichtbarkeit am Eigentümer:** Welche Quell-Boards in eine Finanzübersicht einfließen, entscheidet der **Finanzboard-Eigentümer** (Spec „Freigabe wie Boards"). Wer eine Übersicht freigegeben bekommt, sieht damit Karten-Finanzdaten auch von Boards ohne eigenen Zugriff — bewusste Informations-Freigabe.
+- **Inventar als Finanzquelle:** Bei Leih-System-Boards wird der vollständige Board-Kontext geprüft. Maßgeblich sind ausschließlich die aktuellen Inventarfreigaben und Inventareigentümer, auch bei zusätzlichen Eigentümern. Alte normale Board-Freigaben/-Eigentümer gewähren weder Finanzquellenzugriff noch einen Eintrag in Board-Listen oder boardübergreifenden API-Suchen.
 - **Archivierte Karten zählen in der Finanzauswertung mit** (Done-Archiv blendet nur die Board-/Aufgaben-Ansicht aus). Für „tatsächliche Ausgaben" sollen abgeschlossene Anträge mitzählen.
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
 - **Board-Zugriffsmodell:** Leser sehen Inhalte; Nutzer mit Schreibrecht dürfen Karten/Anhänge bearbeiten und löschen sowie aktivierte Nummern und Triggerdaten ändern. Einstellungen bleiben Eigentümer/Admin vorbehalten. Manuelles Archivieren bleibt ausgeschlossen; Wiederherstellen erfordert Schreibrecht.
@@ -922,6 +928,8 @@ Die Tagesordnung besteht aus scheduled/treated/deferred/withdrawn TOPs. Vertagte
 **Zugriffsgrenze:** `meeting_boards` darf nur jemand mit Verwaltungsrecht an Sitzung UND Board anlegen/entfernen. Die Anbindung vergibt keine Board-Rechte. `meeting_topic_cards` darf nur jemand mit TOP-Schreibrecht und aktuellem Lesezugriff auf die Karte setzen. Gewöhnliche Kartenverknüpfungen verschieben keine Karten und verändern deren `meeting`-Feld nicht. Die ausdrückliche Finanzanträge-Einplanung ist der unten beschriebene gesonderte Schreibablauf. Sichtbare Referenzen werden bei jeder Anfrage anhand der bestehenden Board-/Inventarrechte gefiltert; ohne Board-Recht werden weder ID, Titel, Nummer noch Board-Name oder Quellanhänge serialisiert. Keine persistente Kopie von Kartentiteln in TOP-Titel; Finanz-Unter-TOPs zeigen eine aktuelle, berechtigungsgefilterte Projektion.
 
 `meeting_documents` speichert eigenständige Sitzungsunterlagen mit neuen Dateipfaden. Upload und Übernahme erfordern TOP-Schreibrecht und eine ausdrückliche Freigabe. Quellübernahme zusätzlich nur mit Board-Schreibrecht, vorhandener Kartenverknüpfung und sichtbarem Anhang; student_card ist ausgeschlossen. PDFs/PNG/JPEG bis zum bestehenden Uploadlimit sind zugelassen. Eine freigegebene Kopie bleibt nach Entzug der Board-Rechte oder Löschen der Quelldatei eigenständig verfügbar; TOP-/Sitzungsrechte werden bei jedem Download geprüft. Ändern von vertraulich auf offen erfordert eine zusätzliche Bestätigung für Inhalt UND Dateien. Dateiverarbeitung findet außerhalb von DB-Sperren statt.
+
+Dokument- und Kartenverknüpfungsänderungen sperren vor dem DB-Schreiben zuerst die offene Sitzung und anschließend den TOP, prüfen den Zugriff erneut und erhöhen dieselbe Sitzungsrevision wie Inhaltsänderungen. Dadurch werden alte TOP-Formulare nach einer Unterlagenänderung abgewiesen; ein paralleler Sitzungsabschluss, eine Weitergabe oder Löschung verhindert nachträgliche Uploads. Fehlgeschlagene Uploads entfernen ausschließlich ihre neu angelegte Datei. Beim Löschen eines TOPs/einer Sitzung wird die Liste zu entfernender Dateien innerhalb derselben DB-Sperre ermittelt und erst nach dem Commit physisch gelöscht.
 
 PDF-Export `/api/meetings/[id]/pdf` ist sitzungsgebunden: nur nicht vertrauliche eingeplante/behandelte TOPs, deren eigene Texte und freigegebene Dateinamen. Vertrauliche TOPs werden auch für Admins ausgelassen. Gewöhnliche Kartenreferenzen werden nicht expandiert; Finanz-Unter-TOPs ergänzen die unten beschriebenen Finanzangaben nach aktuellen Board-/Feldrechten des Exportierenden. Downloads `/api/meeting-document/[id]` und PDF-Export sind ausschließlich sessiongebunden, mit no-store/no-referrer; keine Erweiterung der Bearer-API oder MCP-Scopes. Neue Kernlogik: `lib/meetings/`; Migrationen `0073_standalone_meetings.sql` und `0074_meeting_areas.sql`. Die Bereichsmigration legt für jede bestehende Sitzung einen eigenen Bereich mit exakt ihren bisherigen Freigaben an; gleiche Bezeichnungen werden niemals automatisch zusammengeführt. TOPs, Dokumentpfade und IDs bleiben erhalten.
 

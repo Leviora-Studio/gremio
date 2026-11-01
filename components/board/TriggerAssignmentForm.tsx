@@ -5,6 +5,7 @@
 
 import { useActionState, useState } from "react";
 import { UserMultiTypeahead } from "@/components/antrag/UserMultiTypeahead";
+import { useRetainedForm } from "@/components/useRetainedForm";
 
 type State = { error?: string; success?: string };
 type U = { id: number; username: string; name?: string | null; avatarPath?: string | null };
@@ -32,10 +33,11 @@ export function TriggerAssignmentForm({
   const [state, formAction, pending] = useActionState(action, {} as State);
   const [clear, setClear] = useState(initialClear);
   const [selected, setSelected] = useState<U[]>(initialUsers);
+  const formRef = useRetainedForm();
 
   return (
     <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-      <form action={formAction} className="space-y-2">
+      <form ref={formRef} action={formAction} className="space-y-2">
         <p className="text-xs font-semibold text-slate-600">
           Zuweisungen beim Auslösen
         </p>

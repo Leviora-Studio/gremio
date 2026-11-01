@@ -243,3 +243,13 @@ menus and long-name area grants against real pages at the same four widths.
 
 The meeting visibility check also measures adjacent status/action heights and
 compact grant form controls, including the enlarged-text layout.
+
+The access-level production workflow also checks hidden historical values,
+archived card fields, field-dependent statistics and optional inventory metadata
+in complete HTML/client payloads for owners, writers and readers at desktop/mobile
+widths. `finance-source-access-db.test.ts` covers inventory coowners, live grants,
+revocation and stale ordinary grants on system boards, including finance sources
+and board lists. `meeting-document-concurrency-db.test.ts` holds an uncommitted
+meeting closure while uploading, then verifies denied writes, revision conflicts
+and cleanup of the new file. Both DB tests require an isolated
+`gremio_workflows_test_*` database and a test-only upload directory.

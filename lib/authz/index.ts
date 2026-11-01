@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { isResourceOwner, additionalOwnedIds, resourceOwners } from "@/lib/board-ownership";
-import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
@@ -168,7 +168,9 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
   return db
     .select()
     .from(boards)
-    .where(inArray(boards.id, ids))
+    // System boards inherit inventory rights exclusively. Ignore stale normal
+    // grants/owners even when they contributed an ID to the candidate set.
+    .where(and(inArray(boards.id, ids), or(isNull(boards.inventoryBoardId), invIds.length ? inArray(boards.inventoryBoardId, invIds) : undefined)))
     .orderBy(boards.name);
 }
 

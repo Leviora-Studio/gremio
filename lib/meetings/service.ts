@@ -19,6 +19,17 @@ export async function touchMeeting(tx: Tx, id: number, revision?: number, openOn
   const rows = await tx.update(meetings).set({ revision: sql`${meetings.revision} + 1` }).where(and(eq(meetings.id, id), revision == null ? undefined : eq(meetings.revision, revision), openOnly ? ne(meetings.state, "closed") : undefined)).returning({ id: meetings.id });
   if (!rows.length) throw new MeetingError("Die Sitzung wurde zwischenzeitlich geändert. Bitte neu laden.");
 }
+/** Serialize document/link changes with closure, transfer, TOP edits and deletion. */
+async function editTopic<T>(user: User, id: number, change: (tx: Tx, topic: typeof meetingTopics.$inferSelect) => Promise<T>): Promise<T> {
+  const { topic, meeting } = await requireTopic(user, id, true);
+  return db.transaction(async tx => {
+    if (meeting) await touchMeeting(tx, meeting.id);
+    const [current] = await tx.select().from(meetingTopics).where(eq(meetingTopics.id, id)).for("update");
+    if (!current || current.meetingId !== topic.meetingId) throw new MeetingError("Der TOP wurde zwischenzeitlich geändert. Bitte neu laden.");
+    await requireTopic(user, id, true);
+    return change(tx, current);
+  });
+}
 export async function manageSourceBoard(user: User, board: typeof boards.$inferSelect) {
   if (board.inventoryBoardId == null) return (await canManageBoard(user, board));
   const inventory = await getInventoryBoardById(board.inventoryBoardId);
@@ -241,8 +252,11 @@ export async function readableCard(user: User, cardId: number, write = false) {
 export async function linkTopicCard(user: User, topicId: number, cardId: number, remove = false) {
   await requireTopic(user, topicId, true);
   await readableCard(user, cardId);
-  if (remove) await db.delete(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, cardId)));
-  else await db.insert(meetingTopicCards).values({ topicId, cardId }).onConflictDoNothing();
+  await editTopic(user, topicId, async tx => {
+    await readableCard(user, cardId);
+    if (remove) await tx.delete(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, cardId)));
+    else await tx.insert(meetingTopicCards).values({ topicId, cardId }).onConflictDoNothing();
+  });
 }
 /** Only this filtered projection may reach a page or client. No locked-card metadata. */
 export async function visibleTopicLinks(user: User, topicId: number) {
@@ -267,8 +281,9 @@ export async function addMeetingDocument(user: User, topicId: number, file: File
   if (invalid || !file.size) throw new MeetingError(invalid || "Bitte eine Datei auswählen.");
   const saved = await saveNamedFile(`meeting-topics/${topicId}`, file);
   try {
-    await requireTopic(user, topicId, true);
-    await db.insert(meetingDocuments).values({ topicId, filename: saved.filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: user.id });
+    await editTopic(user, topicId, async tx => {
+      await tx.insert(meetingDocuments).values({ topicId, filename: saved.filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: user.id });
+    });
   } catch (error) { await deleteStoredFile(saved.relPath); throw error; }
 }
 export async function copyCardDocument(user: User, topicId: number, attachmentId: number, disclose: boolean) {
@@ -283,12 +298,13 @@ export async function copyCardDocument(user: User, topicId: number, attachmentId
   if (bytes.length > 25 * 1024 * 1024) throw new MeetingError("Datei zu groß.");
   const saved = await saveNamedBuffer(`meeting-topics/${topicId}`, attachment.filename, bytes, attachment.mime);
   try {
-    await requireTopic(user, topicId, true);
-    const { board: currentBoard } = await readableCard(user, attachment.cardId, true);
-    const [currentAttachment] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
-    const [currentLink] = await db.select().from(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, attachment.cardId)));
-    if (!currentLink || !currentAttachment || currentAttachment.path !== attachment.path || currentAttachment.kind === "student_card" || !isCardAttachmentVisible(currentAttachment, await getVisibleFieldKeys(currentBoard.id))) throw new MeetingError("Die Quelldatei wurde geändert oder ist nicht mehr freigegeben.");
-    await db.insert(meetingDocuments).values({ topicId, filename: saved.filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: user.id });
+    await editTopic(user, topicId, async tx => {
+      const { board: currentBoard } = await readableCard(user, attachment.cardId, true);
+      const [currentAttachment] = await tx.select().from(attachments).where(eq(attachments.id, attachmentId));
+      const [currentLink] = await tx.select().from(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, attachment.cardId)));
+      if (!currentLink || !currentAttachment || currentAttachment.path !== attachment.path || currentAttachment.kind === "student_card" || !isCardAttachmentVisible(currentAttachment, await getVisibleFieldKeys(currentBoard.id))) throw new MeetingError("Die Quelldatei wurde geändert oder ist nicht mehr freigegeben.");
+      await tx.insert(meetingDocuments).values({ topicId, filename: saved.filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: user.id });
+    });
   } catch (error) { await deleteStoredFile(saved.relPath); throw error; }
 }
 export async function topicDocuments(user: User, topicId: number) {
@@ -298,21 +314,30 @@ export async function topicDocuments(user: User, topicId: number) {
 export async function removeMeetingDocument(user: User, id: number) {
   const [doc] = await db.select().from(meetingDocuments).where(eq(meetingDocuments.id, id));
   if (!doc) throw new MeetingError("Datei nicht verfügbar.");
-  await requireTopic(user, doc.topicId, true);
-  await db.delete(meetingDocuments).where(eq(meetingDocuments.id, id));
+  await editTopic(user, doc.topicId, async tx => {
+    await tx.delete(meetingDocuments).where(and(eq(meetingDocuments.id, id), eq(meetingDocuments.topicId, doc.topicId)));
+  });
   await deleteStoredFile(doc.path);
 }
 export async function deleteTopic(user: User, id: number) {
-  const { topic, meeting } = await requireTopic(user, id, true);
-  const files = await db.select({ path: meetingDocuments.path }).from(meetingDocuments).where(eq(meetingDocuments.topicId, id));
-  await db.transaction(async tx => { if (meeting) await touchMeeting(tx, meeting.id); if(topic.isFinanceTopic){const [child]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.parentId,id),eq(meetingTopics.isFinanceItem,true))).limit(1);if(child)throw new MeetingError("Bitte zuerst die Finanzanträge-Unter-TOPs entfernen. Die Karten selbst bleiben dabei erhalten.");} await tx.delete(meetingTopics).where(eq(meetingTopics.id, topic.id)); });
+  const files = await editTopic(user, id, async (tx, topic) => {
+    if(topic.isFinanceTopic){const [child]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.parentId,id),eq(meetingTopics.isFinanceItem,true))).limit(1);if(child)throw new MeetingError("Bitte zuerst die Finanzanträge-Unter-TOPs entfernen. Die Karten selbst bleiben dabei erhalten.");}
+    const paths = await tx.select({ path: meetingDocuments.path }).from(meetingDocuments).where(eq(meetingDocuments.topicId, id));
+    await tx.delete(meetingTopics).where(eq(meetingTopics.id, id));
+    return paths;
+  });
   for (const file of files) await deleteStoredFile(file.path);
 }
 
 export async function deleteMeeting(user: User, id: number) {
   await requireMeeting(user, id, "manage");
-  const files = await db.select({ path: meetingDocuments.path }).from(meetingDocuments).innerJoin(meetingTopics, eq(meetingTopics.id, meetingDocuments.topicId)).where(eq(meetingTopics.meetingId, id));
-  await db.delete(meetings).where(eq(meetings.id, id));
+  const files = await db.transaction(async tx => {
+    await tx.select({ id: meetings.id }).from(meetings).where(eq(meetings.id, id)).for("update");
+    await requireMeeting(user, id, "manage");
+    const paths = await tx.select({ path: meetingDocuments.path }).from(meetingDocuments).innerJoin(meetingTopics, eq(meetingTopics.id, meetingDocuments.topicId)).where(eq(meetingTopics.meetingId, id));
+    await tx.delete(meetings).where(eq(meetings.id, id));
+    return paths;
+  });
   for (const file of files) await deleteStoredFile(file.path);
 }
 

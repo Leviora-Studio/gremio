@@ -21,3 +21,19 @@ export function maskHiddenCardFields<T extends object>(value: T, visible: Readon
   }
   return result as T;
 }
+
+/** Historical free-form details can retain disabled values and private paths. */
+export function visibleActivityDetail(event: { type: string; detail: string | null }, visible: ReadonlySet<string>): string | null {
+  if (event.type === "status" || event.type === "created") return event.detail;
+  if (event.type === "assignee") return visible.has("assignee") ? event.detail : null;
+  if (event.type === "deadline") return visible.has("deadline") ? event.detail : null;
+  const labels: Record<string, string> = {
+    attachment_added: "Datei hinzugefügt",
+    attachment_removed: "Datei entfernt",
+    attachment_folder_created: "Ordner erstellt",
+    attachment_organized: "Datei organisiert",
+    archive: "Archivierung abgeschlossen",
+    archive_failed: "Archivierung fehlgeschlagen",
+  };
+  return Object.hasOwn(labels, event.type) ? labels[event.type] : null;
+}
