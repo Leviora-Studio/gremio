@@ -12,7 +12,7 @@ import { absPath, deleteStoredFile, saveNamedBuffer, saveNamedFile, validateUplo
 import { canManageMeeting, meetingAccessLevel, MeetingError, requireArea, requireMeeting, requireTopic, visibleTopics } from "./access";
 import {scheduleFinancialCard,finishFinancialMove,type FinancialMove} from "./finance-status";
 import { agendaTopics } from "./agenda";
-import { meetingInput, parseBerlinDate, topicInput, topicStates } from "./validation";
+import { agendaSettingsInput, meetingInput, parseBerlinDate, topicInput, topicStates } from "./validation";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export async function touchMeeting(tx: Tx, id: number, revision?: number, openOnly = true) {
@@ -103,10 +103,11 @@ export async function createTopic(user: User, meetingId: number | null, raw: unk
       if (values.parentId!=null) throw new MeetingError("Vorschläge können nur als eigenständige TOPs eingereicht werden.");
       if (values.confidential) throw new MeetingError("Vertrauliche TOPs darf nur die Sitzungsverwaltung anlegen.");
       if (meeting.submissionDeadline && meeting.submissionDeadline < new Date()) throw new MeetingError("Die Einreichungsfrist ist abgelaufen.");
-      values = { ...values, state: "proposed", confidential: false, outcome: "" };
+      values = { ...values, state: "proposed", section: "public", confidential: false, outcome: "" };
     } else if (values.confidential && !canManageMeeting(user, meeting)) throw new MeetingError("Vertrauliche TOPs verwaltet nur die Sitzungsverwaltung.");
     if (cardId != null && !writer) throw new MeetingError("Kartenverknüpfungen erfordern Schreibzugriff auf die Tagesordnung.");
   }
+  if(meetingId==null)values={...values,section:"public"};
   await validateParent(user,meetingId,values.parentId);
   if(values.parentId!=null&&values.state==="proposed")values={...values,state:"scheduled"};
   if (cardId != null) await readableCard(user, cardId);
@@ -135,10 +136,10 @@ export async function saveTopic(user: User, id: number, raw: unknown, revision: 
   await finishFinancialMove(move);
 }
 /** Preserve content, parent, confidentiality and documents when accepting a proposal. */
-export async function scheduleTopic(user:User,id:number,revision:number) {
+export async function scheduleTopic(user:User,id:number,revision:number,section?:"public"|"non_public") {
   const {topic,meeting}=await requireTopic(user,id,true);
   if(!meeting||!["proposed","deferred"].includes(topic.state))throw new MeetingError("Dieser TOP kann nicht direkt eingeplant werden. Bitte neu laden.");
-  await saveTopic(user,id,{...topic,state:"scheduled"},revision,false);
+  await saveTopic(user,id,{...topic,section:section??topic.section,state:"scheduled"},revision,false);
 }
 export async function transferTopic(user: User, id: number, targetMeetingId: number, disclose: boolean): Promise<number> {
   const {topic,meeting}=await requireTopic(user,id);
@@ -210,15 +211,16 @@ async function syncPersonalCompletion(tx:Tx,origin:number|null){
   const [treated]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.state,"treated"))).limit(1);
   await tx.update(meetingTopics).set({state:treated?"treated":"proposed",...(active.length?{resolvedAt:null}:{})}).where(eq(meetingTopics.id,origin));
 }
-export async function setTopicStatus(user:User,id:number,state:string,revision:number){
+export async function setTopicStatus(user:User,id:number,state:string,revision:number,section?:"public"|"non_public"){
   if(!Object.prototype.hasOwnProperty.call(topicStates,state))throw new MeetingError("Ungültiger TOP-Status.");
   const {topic,meeting}=await requireTopic(user,id,true);
   if(!meeting)throw new MeetingError("Dieses Thema ist noch keiner Sitzung zugeordnet.");
+  if(section!==undefined&&!["public","non_public"].includes(section))throw new MeetingError("Ungültiger Tagesordnungsbereich.");
   let move:FinancialMove|undefined;
   await db.transaction(async tx=>{
     await touchMeeting(tx,meeting.id,revision);
     if(topic.isFinanceItem&&state==="scheduled"&&topic.state!=="scheduled"){if(topic.financeCardId==null)throw new MeetingError("Die Finanzantragskarte wurde gelöscht.");move=await scheduleFinancialCard(tx,user,topic.financeCardId,meeting,topic.parentId);}
-    await tx.update(meetingTopics).set({state:state as typeof topic.state}).where(eq(meetingTopics.id,id));
+    await tx.update(meetingTopics).set({state:state as typeof topic.state,...(section!==undefined?{section}:{})}).where(eq(meetingTopics.id,id));
     await syncPersonalCompletion(tx,topic.originTopicId);
   });
   await finishFinancialMove(move);
@@ -234,10 +236,10 @@ export async function reorderTopics(user: User, meetingId: number, ids: number[]
     const allowedIds=new Set(allowed.map(t=>t.id));
     const filtered=allowed.filter(row=>(row.parentId==null||allowedIds.has(row.parentId))&&!row.hiddenAfterTransfer);
     const shownIds=new Set(filtered.map(t=>t.id));
-    const editable = agendaTopics(filtered.map(row=>row.parentId!=null&&!shownIds.has(row.parentId)?{...row,parentId:null}:row));
+    const editable = agendaTopics(filtered.map(row=>row.parentId!=null&&!shownIds.has(row.parentId)?{...row,parentId:null}:row),meeting);
     if (editable.length !== ids.length || ids.some(id => !editable.some(row => row.id === id))) throw new MeetingError("Die Tagesordnung wurde geändert. Bitte neu laden.");
     const ordered=ids.map((id,index)=>({...editable.find(row=>row.id===id)!,position:index}));
-    if(agendaTopics(ordered).map(row=>row.id).join(",")!==ids.join(","))throw new MeetingError("Haupt-TOPs werden zusammen mit ihren Unter-TOPs sortiert. Unter-TOPs bleiben in ihrer Gruppe.");
+    if(agendaTopics(ordered,meeting).map(row=>row.id).join(",")!==ids.join(","))throw new MeetingError("Haupt-TOPs werden zusammen mit ihren Unter-TOPs sortiert. Unter-TOPs bleiben in ihrer Gruppe.");
     const slots=editable.map(row=>row.position).sort((a,b)=>a-b);
     for (const [index, id] of ids.entries()) await tx.update(meetingTopics).set({ position: slots[index] }).where(eq(meetingTopics.id, id));
   });
@@ -391,5 +393,15 @@ export async function resolvePersonalTopic(user:User,id:number){
     if(occurrences.some(t=>!t.transferred&&["proposed","scheduled"].includes(t.state))||occurrences[0]?.state!=="withdrawn")throw new MeetingError("Nur ein aktuell zurückgezogenes Thema ohne aktive Einplanung kann als erledigt markiert werden.");
     await tx.update(meetingTopics).set({resolvedAt:new Date()}).where(eq(meetingTopics.id,id));
     await tx.insert(meetingTopicActivity).values({originTopicId:id,topicId:occurrences[0].id,state:"resolved"});
+  });
+}
+
+export async function saveAgendaSettings(user: User, areaId: number, raw: unknown) {
+  await requireArea(user,areaId,"manage");
+  const parsed=agendaSettingsInput.safeParse(raw);
+  if(!parsed.success)throw new MeetingError("Bitte gültige Nummerierungen und eine Bereichsreihenfolge wählen.");
+  await db.transaction(async tx=>{
+    await tx.update(meetingAreas).set(parsed.data).where(eq(meetingAreas.id,areaId));
+    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,areaId));
   });
 }

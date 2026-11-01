@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { meetingDocuments, meetingTopics, type User } from "@/lib/db/schema";
 import { requireMeeting, visibleTopics } from "./access";
-import { agendaTopics } from "./agenda";
+import { agendaTopics, agendaSections, agendaSectionLabels } from "./agenda";
 import { topicKinds,topicStates } from "./validation";
 import { formatDateTime } from "@/lib/dates";
 import { winAnsiSafe, wrapText } from "@/lib/pdf";
@@ -18,7 +18,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
   const confidential = new Set(stored.filter(topic=>topic.confidential).map(topic=>topic.id));
   const storedParent = new Map(stored.map(topic=>[topic.id,topic.parentId]));
   const isConfidential = (topicId:number) => { const parentId = storedParent.get(topicId); return confidential.has(topicId) || parentId != null && confidential.has(parentId); };
-  const topics = agendaTopics((await visibleTopics(user,id)).filter(topic=>!topic.confidential&&!isConfidential(topic.id)));
+  const topics = agendaTopics((await visibleTopics(user,id)).filter(topic=>!topic.confidential&&!isConfidential(topic.id)),meeting);
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   let page = pdf.addPage([595.28,841.89]), y=780;
@@ -41,7 +41,11 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
   if(meeting.chair)line(`Sitzungsleitung: ${meeting.chair}`);
   line("Enthält die Tagesordnung und die für dich zugänglichen Finanzantragsdaten. Vertrauliche TOPs sind ausgenommen. Bei Weitergabe den Empfängerkreis beachten.");
   let elapsed=0;
-  for(const topic of topics) {
+  for(const section of agendaSections(meeting)) {
+    line(agendaSectionLabels[section],true,16);
+    const sectionTopics=topics.filter(topic=>topic.section===section);
+    if(!sectionTopics.length)line("Keine TOPs in diesem Bereich eingeplant.");
+  for(const topic of sectionTopics) {
     if(y<170){page=pdf.addPage([595.28,841.89]);y=780;}
     line(`TOP ${topic.number}: ${topic.title}`,true,topic.parentId==null?14:12);
     line(`${topicStates[topic.state]}${topic.transferred?" · Weitergegeben":""}`,true,10,undefined,["deferred","withdrawn"].includes(topic.state)?rgb(.7,.1,.1):undefined);
@@ -62,6 +66,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
     if(topic.motion){line("Beschlussvorschlag",true);line(topic.motion);}
     const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
     if(docs.length){line("Freigegebene Sitzungsunterlagen",true);for(const doc of docs)line(doc.filename);}
+  }
   }
   if(!topics.length)line("Noch keine freigegebenen TOPs eingeplant.");
   await requireMeeting(user,id);

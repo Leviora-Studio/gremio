@@ -1408,12 +1408,19 @@ export const emailOutbox = pgTable("email_outbox", {
 
 // Meeting areas own permissions; meetings never grant source-board access.
 export const meetingAreas = pgTable("meeting_areas", {
+  publicNumbering: text("public_numbering", { enum: ["arabic", "roman"] }).notNull().default("arabic"),
+  nonPublicNumbering: text("non_public_numbering", { enum: ["arabic", "roman"] }).notNull().default("roman"),
+  firstSection: text("first_section", { enum: ["public", "non_public"] }).notNull().default("public"),
   id: serial("id").primaryKey(), name: text("name").notNull(), description: text("description").notNull().default(""),
   financeBoardId: integer("finance_board_id").references(() => boards.id, { onDelete: "set null" }),
   financeSourceStatusIds: integer("finance_source_status_ids").array().notNull().default(sql`'{}'::integer[]`),
   financeTargetStatusId: integer("finance_target_status_id").references(() => boardStatuses.id, { onDelete: "set null" }),
   ownerId: integer("owner_id").notNull().references(() => users.id), createdAt: createdAt(),
-});
+}, t => ({
+  publicNumberingCheck: check("meeting_areas_public_numbering_check", sql`${t.publicNumbering} in ('arabic','roman')`),
+  nonPublicNumberingCheck: check("meeting_areas_non_public_numbering_check", sql`${t.nonPublicNumbering} in ('arabic','roman')`),
+  firstSectionCheck: check("meeting_areas_first_section_check", sql`${t.firstSection} in ('public','non_public')`),
+}));
 export const meetings = pgTable("meetings", {
   id: serial("id").primaryKey(),
   areaId: integer("area_id").notNull().references(() => meetingAreas.id),
@@ -1460,10 +1467,11 @@ export const meetingTopics = pgTable("meeting_topics", {
   kind: text("kind", { enum: ["information", "discussion", "decision"] }).notNull().default("discussion"),
   durationMinutes: integer("duration_minutes").notNull().default(10),
   confidential: boolean("confidential").notNull().default(false),
+  section: text("section", { enum: ["public", "non_public"] }).notNull().default("public"),
   state: text("state", { enum: ["proposed", "scheduled", "treated", "deferred", "withdrawn"] }).notNull().default("proposed"),
   outcome: text("outcome").notNull().default(""), position: integer("position").notNull().default(0),
   createdAt: createdAt(),
-}, t => ({ originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
+}, t => ({ sectionCheck: check("meeting_topics_section_check", sql`${t.section} in ('public','non_public')`), originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
   financeRoot: uniqueIndex("meeting_topics_finance_root_uq").on(t.meetingId).where(sql`${t.isFinanceTopic} = true and ${t.transferred} = false`),
   financeCard: uniqueIndex("meeting_topics_finance_card_uq").on(t.meetingId, t.financeCardId).where(sql`${t.transferred} = false`),
   financeRootCheck: check("meeting_topics_finance_root_check", sql`not ${t.isFinanceTopic} or (${t.parentId} is null and ${t.meetingId} is not null and not ${t.isFinanceItem})`),

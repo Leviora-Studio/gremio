@@ -23,7 +23,7 @@ function errorState(error: unknown): MeetingActionState {
   return { error: error instanceof MeetingError ? error.message : "Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen." };
 }
 function topicValues(form: FormData) {
-  return { parentId: form.get("parentId"), title: form.get("title"), description: form.get("description") ?? "", motion: form.get("motion") ?? "", presenter: form.get("presenter") ?? "", kind: form.get("kind") ?? "discussion", durationMinutes: form.get("durationMinutes") ?? 10, confidential: form.get("confidential") === "on", state: form.get("state") ?? "proposed", outcome: form.get("outcome") ?? "" };
+  return { section: form.get("section")??"public", parentId: form.get("parentId"), title: form.get("title"), description: form.get("description") ?? "", motion: form.get("motion") ?? "", presenter: form.get("presenter") ?? "", kind: form.get("kind") ?? "discussion", durationMinutes: form.get("durationMinutes") ?? 10, confidential: form.get("confidential") === "on", state: form.get("state") ?? "proposed", outcome: form.get("outcome") ?? "" };
 }
 export async function saveFinanceConfigurationAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
@@ -129,13 +129,13 @@ export async function confirmedRemoveDocumentAction(documentId:number):Promise<M
 export async function scheduleTopicAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
   try {
-    await service.scheduleTopic(user,topicId,revision(form));refresh();
+    await service.scheduleTopic(user,topicId,revision(form),form.has("section")?String(form.get("section")) as "public"|"non_public":undefined);refresh();
     return {success:"In die Tagesordnung übernommen."};
   }catch(error){return errorState(error);}
 }
 
-export async function setTopicStatusAction(topicId:number,state:string,rev:number):Promise<MeetingActionState>{
-  const user=await requireUser();try{await service.setTopicStatus(user,topicId,state,rev);refresh();return {success:"TOP-Status gespeichert."};}catch(error){return errorState(error);}
+export async function setTopicStatusAction(topicId:number,state:string,rev:number,section?:"public"|"non_public"):Promise<MeetingActionState>{
+  const user=await requireUser();try{await service.setTopicStatus(user,topicId,state,rev,section);refresh();return {success:"TOP-Status gespeichert."};}catch(error){return errorState(error);}
 }
 export async function transferTopicInlineAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();try{await service.transferTopic(user,topicId,id(form.get("meetingId")),form.get("confirmDisclosure")==="on");refresh();return {success:"Für die neue Sitzung vorgeschlagen."};}catch(error){return errorState(error);}
@@ -147,4 +147,9 @@ export async function resolvePersonalTopicAction(topicId:number,_previous:Meetin
 
 export async function proposePersonalTopicAction(topicId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();try{const personalId=await service.personalTopicForAction(user,topicId);await service.transferTopic(user,personalId,id(form.get("meetingId")),form.get("confirmDisclosure")==="on");refresh();return {success:"Für die neue Sitzung vorgeschlagen."};}catch(error){return errorState(error);}
+}
+
+export async function saveAgendaSettingsAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
+  const user=await requireUser();
+  try{await service.saveAgendaSettings(user,areaId,{publicNumbering:form.get("publicNumbering"),nonPublicNumbering:form.get("nonPublicNumbering"),firstSection:form.get("firstSection")});refresh();return {success:"Tagesordnungseinstellungen gespeichert."};}catch(error){return errorState(error);}
 }

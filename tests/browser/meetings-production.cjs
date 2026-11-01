@@ -118,7 +118,7 @@ async function assertMenuReachable(page) {
         for(const width of [1400,390]){await p.setViewportSize({width,height:1000});assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(width===390)assert.ok((await p.locator('h1').boundingBox()).width>250,'meeting title must keep mobile width');await p.screenshot({path:join(output,`workspace-${kind}-${width}.png`),fullPage:true});}
         await p.setViewportSize({width:1400,height:1000});await p.getByRole('tab',{name:/Vorschläge/}).click();await p.screenshot({path:join(output,`proposals-${kind}.png`),fullPage:true});
         assert.equal(await p.getByRole('button',{name:'Status für Reader proposal',exact:true}).count()>0,kind==='writer'&&!!proposalId);
-        if(kind==='writer'&&proposalId){await p.getByRole('button',{name:'Status für Reader proposal',exact:true}).first().click();await p.getByRole('option',{name:'Eingeplant',exact:true}).click();await p.waitForTimeout(500);assert.equal((await query('select state from meeting_topics where id=$1',[proposalId])).rows[0].state,'scheduled');await p.getByRole('tab',{name:/Tagesordnung/}).click();await p.getByRole('link',{name:/Reader proposal/}).waitFor();}
+        if(kind==='writer'&&proposalId){await p.getByRole('button',{name:'Status für Reader proposal',exact:true}).first().click();await p.getByRole('option',{name:'Einplanen: öffentlich',exact:true}).click();await p.waitForTimeout(500);assert.equal((await query('select state from meeting_topics where id=$1',[proposalId])).rows[0].state,'scheduled');await p.getByRole('tab',{name:/Tagesordnung/}).click();await p.getByRole('link',{name:/Reader proposal/}).waitFor();}
         await p.goto(`${base}/intern/sitzungen/top/${topicId}`);const html=await p.content();for(const secret of ['SECRET CARD TITLE','SECRET BOARD','SECRET APPLICANT'])assert.equal(html.includes(secret),false,secret+' must not leak through RSC');
         assert.equal((await p.getByRole('button',{name:/Shared fixture\.pdf/}).count()),1);
         const file=await ctx.request.get(`${base}/api/meeting-document/${document.id}`);assert.equal(file.status(),200);assert.equal(file.headers()['cache-control'],'private, no-store');assert.deepEqual(await file.body(),bytes);
@@ -131,6 +131,7 @@ async function assertMenuReachable(page) {
         if(kind==='reader') {
           await p.goto(`${base}/intern/sitzungen/${meetingId}`);await p.getByRole('button',{name:'+ TOP vorschlagen',exact:true}).click();await p.screenshot({path:join(output,'reader-proposal-dialog.png'),fullPage:true});
           assert.equal(await p.getByRole('button',{name:'Einplanen als',exact:true}).count(),0,'readers propose main TOPs only');
+          assert.equal(await p.getByRole('button',{name:'Tagesordnungsbereich',exact:true}).count(),0,'readers do not choose a section');
           await p.getByLabel('TOP-Titel',{exact:true}).fill('Reader proposal');await p.getByRole('button',{name:'Vorschlag einreichen',exact:true}).click();
           await p.waitForURL(/\/intern\/sitzungen\/top\/\d+$/);proposalId=Number(p.url().split('/').at(-1));
           assert.equal((await query('select parent_id from meeting_topics where id=$1',[proposalId])).rows[0].parent_id,null);
@@ -182,6 +183,44 @@ async function assertMenuReachable(page) {
       await page.getByRole('link',{name:`TOP ${expected}.1: Planned subtopic`,exact:true}).waitFor();
     }
     for(const width of [1400,390]){await page.setViewportSize({width,height:1000});await page.goto(`${base}/intern/sitzungen/${meetingId}`);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:join(output,`subtopics-${width}.png`),fullPage:true});}
+    // The planner chooses the section; confidentiality and reader access stay independent.
+    await page.setViewportSize({width:1400,height:1100});
+    await page.getByRole('button',{name:'Status für Shared agenda topic',exact:true}).click();
+    await page.getByRole('option',{name:'Einplanen: nicht öffentlich',exact:true}).click();
+    await page.getByRole('link',{name:'TOP I: Shared agenda topic',exact:true}).waitFor();
+    await page.getByRole('link',{name:'TOP I.1: Planned subtopic',exact:true}).waitFor();
+    assert.equal((await query('select section,confidential from meeting_topics where id=$1',[topicId])).rows[0].section,'non_public');
+    assert.equal((await query('select section,confidential from meeting_topics where id=$1',[topicId])).rows[0].confidential,false);
+    await page.getByRole('button',{name:'Status für Second shared topic',exact:true}).click();
+    await page.getByRole('option',{name:'Einplanen: nicht öffentlich',exact:true}).click();
+    const privateSection=page.getByRole('region',{name:'Nicht öffentlicher Teil',exact:true});
+    await privateSection.getByRole('link',{name:/Second shared topic/}).waitFor();
+    // Keyboard sorting moves the full nonpublic root group.
+    const beforeNonpublic=(await query("select id from meeting_topics where meeting_id=$1 and parent_id is null and section='non_public' order by position,id",[meetingId])).rows.map(row=>row.id);
+    await page.waitForTimeout(500);await privateSection.getByRole('button',{name:'TOP I verschieben',exact:true}).focus();
+    await page.keyboard.press('Space');await page.waitForTimeout(150);await page.keyboard.press('ArrowDown');await page.waitForTimeout(200);await page.keyboard.press('Space');
+    for(let i=0;i<30;i++){if((await query("select id from meeting_topics where meeting_id=$1 and parent_id is null and section='non_public' order by position,id limit 1",[meetingId])).rows[0].id!==beforeNonpublic[0])break;await new Promise(r=>setTimeout(r,100));}
+    assert.notEqual((await query("select id from meeting_topics where meeting_id=$1 and parent_id is null and section='non_public' order by position,id limit 1",[meetingId])).rows[0].id,beforeNonpublic[0]);
+    await page.goto(`${base}/intern/sitzungen/bereich/${areaId}/einstellungen`);
+    const agendaSettings=page.locator('form').filter({has:page.getByRole('button',{name:'Reihenfolge der Bereiche',exact:true})});
+    for(const [name,option] of [['Nummerierung öffentlicher Teil','Römisch (I, II, III)'],['Nummerierung nicht öffentlicher Teil','Arabisch (1, 2, 3)'],['Reihenfolge der Bereiche','Nicht öffentlich vor öffentlich']]){
+      await agendaSettings.getByRole('button',{name,exact:true}).click();await page.getByRole('option',{name:option,exact:true}).click();
+    }
+    await agendaSettings.getByRole('button',{name:'Speichern',exact:true}).click();await page.getByRole('status').filter({hasText:'Tagesordnungseinstellungen gespeichert.'}).waitFor();
+    await page.goto(`${base}/intern/sitzungen/${meetingId}`);
+    const regions=page.getByRole('region').filter({has:page.locator('h3')});
+    assert.equal(await regions.first().getAttribute('aria-label'),'Nicht öffentlicher Teil');
+    await page.getByRole('region',{name:'Nicht öffentlicher Teil',exact:true}).getByRole('button',{name:'TOP 1 verschieben',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Status für Shared agenda topic',exact:true}).click();await page.getByRole('option',{name:'Vertagt',exact:true}).click();
+    await page.getByRole('tab',{name:/Vertagt/}).click();await page.getByRole('link',{name:'Shared agenda topic',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Status für Shared agenda topic',exact:true}).click();await page.getByRole('option',{name:'Einplanen: nicht öffentlich',exact:true}).click();
+    await page.getByRole('tab',{name:/Tagesordnung/}).click();await privateSection.getByRole('link',{name:/Shared agenda topic/}).waitFor();
+    for(const width of [1400,390]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:join(output,`agenda-sections-${width}.png`),fullPage:true});}
+    await query("insert into meeting_area_access(area_id,user_id,access_level) values ($1,$2,'read')",[areaId,reader]);
+    const readerCtx=await browser.newContext();await readerCtx.addCookies([{name:'gremio_session',value:await sealData(sso.session(reader),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
+    const readerPage=await readerCtx.newPage();await readerPage.goto(`${base}/intern/sitzungen/${meetingId}`);
+    await readerPage.getByRole('region',{name:'Nicht öffentlicher Teil',exact:true}).getByRole('link',{name:/Shared agenda topic/}).waitFor();
+    assert.equal(await readerPage.getByText('SECRET PRIVATE TOP',{exact:true}).count(),0);await readerCtx.close();
     assert.deepEqual(errors,[]);console.log('Real area sharing, shared calendar, meeting creation, agenda, linking, explicit file copies, revocation, privacy, PDF viewer, non-PDF downloads, keyboard sorting and desktop/mobile verified. Screenshots: '+output);
   } catch(error) {
     if(browser){const p=browser.contexts().at(-1)?.pages().at(-1);if(p)await p.screenshot({path:join(output,'failure.png'),fullPage:true});console.log('Failure screenshot: '+output);}

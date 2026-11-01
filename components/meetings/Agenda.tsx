@@ -8,9 +8,9 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { reorderTopicsAction } from "@/app/intern/sitzungen/actions";
-import { agendaTopics } from "@/lib/meetings/agenda";
+import { agendaTopics, agendaSections, agendaSectionLabels, type AgendaSettings, type AgendaSection } from "@/lib/meetings/agenda";
 import { topicKinds,topicStates } from "@/lib/meetings/validation";
-type AgendaItem = { transferred?:boolean; isFinanceTopic?:boolean; documentCount?:number; parentId: number|null; position:number;state:string;id: number; title: string; durationMinutes: number; kind: keyof typeof topicKinds; confidential: boolean; presenter: string };
+type AgendaItem = { section?:AgendaSection; transferred?:boolean; isFinanceTopic?:boolean; documentCount?:number; parentId: number|null; position:number;state:string;id: number; title: string; durationMinutes: number; kind: keyof typeof topicKinds; confidential: boolean; presenter: string };
 function AgendaRow({ item, number, time, editable, actions }: { item: AgendaItem; number: string; time: string; editable: boolean; actions?:React.ReactNode }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !editable||item.transferred });
   return <li data-live-refresh-block={isDragging} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`flex flex-col items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row ${item.parentId!=null?"ml-4 border-l-4 sm:ml-8":""}`}>
@@ -25,7 +25,7 @@ function AgendaRow({ item, number, time, editable, actions }: { item: AgendaItem
     </div>
   </li>;
 }
-export function Agenda({ items, meetingId, revision, editable, startsAt, actions={} }: { items: AgendaItem[]; meetingId: number; revision: number; editable: boolean; startsAt: string | null; actions?:Record<number,React.ReactNode> }) {
+export function Agenda({ items, meetingId, revision, editable, startsAt, actions={}, settings={} }: { items: AgendaItem[]; meetingId: number; revision: number; editable: boolean; startsAt: string | null; actions?:Record<number,React.ReactNode>; settings?:AgendaSettings }) {
   const [rows,setRows] = useState(items), [error,setError] = useState(""), [saving,setSaving] = useState(false);
   const router = useRouter();
   useEffect(() => setRows(items), [items]);
@@ -34,13 +34,15 @@ export function Agenda({ items, meetingId, revision, editable, startsAt, actions
     if (!event.over || event.over.id === event.active.id || saving) return;
     const source=rows.find(row=>row.id===event.active.id),target=rows.find(row=>row.id===event.over!.id);
     if(!source||!target)return;
+    if(source.section!==target.section){setError("TOPs werden innerhalb ihres Bereichs sortiert. Den Bereich kannst du im TOP ändern.");return;}
     let next:AgendaItem[];
     if(source.parentId==null){
-      const roots=rows.filter(row=>row.parentId==null);let targetRoot=target.parentId??target.id;
+      const roots=rows.filter(row=>row.parentId==null&&row.section===source.section);let targetRoot=target.parentId??target.id;
       const sourceIndex=roots.findIndex(row=>row.id===source.id);
       if(targetRoot===source.id&&event.activatorEvent.type==="keydown")targetRoot=roots[Math.max(0,Math.min(roots.length-1,sourceIndex+(event.delta.y>=0?1:-1)))].id;
       if(targetRoot===source.id)return;
-      next=arrayMove(roots,sourceIndex,roots.findIndex(row=>row.id===targetRoot)).flatMap(root=>[root,...rows.filter(row=>row.parentId===root.id)]);
+      const moved=arrayMove(roots,sourceIndex,roots.findIndex(row=>row.id===targetRoot)).flatMap(root=>[root,...rows.filter(row=>row.parentId===root.id)]);
+      let index=0;next=rows.map(row=>row.section===source.section?moved[index++]:row);
     }else{
       if(source.parentId!==target.parentId){setError("Unter-TOPs werden innerhalb ihres Haupt-TOPs sortiert. Die Zuordnung kannst du im TOP ändern.");return;}
       const siblings=rows.filter(row=>row.parentId===source.parentId);
@@ -58,9 +60,11 @@ export function Agenda({ items, meetingId, revision, editable, startsAt, actions
   return <div data-live-refresh-block={saving} className="space-y-3">
     <p className="text-sm text-slate-500">{total} Minuten geplant. Zeiten beziehen sich auf die sichtbaren TOPs einschließlich Unter-TOPs.{editable && " Am Griff ziehen oder mit Leertaste und Pfeiltasten sortieren."}</p>
     {!rows.length && <p className="rounded border border-dashed p-6 text-sm text-slate-500">Noch keine Tagesordnungspunkte eingeplant.</p>}
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={end}><SortableContext items={rows.map(row=>row.id)} strategy={verticalListSortingStrategy}><ol className="space-y-3">
-      {agendaTopics(rows).map(item=>{ const time=startsAt?new Date(new Date(startsAt).getTime()+elapsed*60000).toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"}):"";elapsed+=item.durationMinutes;return <AgendaRow key={item.id} item={item} number={item.number} time={time} editable={editable&&!saving} actions={actions[item.id]}/>;})}
-    </ol></SortableContext></DndContext>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={end}><SortableContext items={agendaTopics(rows,settings).map(row=>row.id)} strategy={verticalListSortingStrategy}>
+      {agendaSections(settings).map(section=><section key={section} aria-label={agendaSectionLabels[section]} className="space-y-3"><h3 className="border-b border-slate-200 pb-2 pt-3 font-semibold">{agendaSectionLabels[section]}</h3><ol className="space-y-3">
+        {agendaTopics(rows,settings).filter(item=>item.section===section).map(item=>{ const time=startsAt?new Date(new Date(startsAt).getTime()+elapsed*60000).toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"}):"";elapsed+=item.durationMinutes;return <AgendaRow key={item.id} item={item} number={item.number} time={time} editable={editable&&!saving} actions={actions[item.id]}/>;})}
+      </ol>{!agendaTopics(rows,settings).some(item=>item.section===section)&&<p className="text-sm text-slate-500">Keine TOPs in diesem Bereich eingeplant.</p>}</section>)}
+    </SortableContext></DndContext>
     {startsAt && <p className="text-sm">Voraussichtliches Ende: {new Date(new Date(startsAt).getTime()+total*60000).toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"})} Uhr</p>}
     {saving && <p role="status" className="text-sm text-slate-500">Reihenfolge wird gespeichert …</p>}{error && <p role="alert" className="text-sm text-red-700">{error}</p>}
   </div>;

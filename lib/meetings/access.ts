@@ -32,7 +32,7 @@ export async function requireMeeting(user: User, id: number, mode: "read" | "wri
   const [meeting]=await db.select().from(meetings).where(eq(meetings.id,id));
   if(!meeting)throw new MeetingError("Kein Zugriff.");
   const area=await requireArea(user,meeting.areaId,mode);
-  return {...meeting,ownerId:area.ownerId,committee:area.name};
+  return {...meeting,ownerId:area.ownerId,committee:area.name,publicNumbering:area.publicNumbering,nonPublicNumbering:area.nonPublicNumbering,firstSection:area.firstSection};
 }
 export async function accessibleAreas(user: User) {
   if(!user.isActive)return [];
@@ -42,7 +42,7 @@ export async function accessibleMeetings(user: User) {
   const areas=await accessibleAreas(user);
   if(!areas.length)return [];
   const rows=await db.select().from(meetings).where(inArray(meetings.areaId,areas.map(a=>a.id))).orderBy(desc(meetings.startsAt),desc(meetings.id));
-  return rows.map(meeting=>{const area=areas.find(a=>a.id===meeting.areaId)!;return {...meeting,ownerId:area.ownerId,committee:area.name};});
+  return rows.map(meeting=>{const area=areas.find(a=>a.id===meeting.areaId)!;return {...meeting,ownerId:area.ownerId,committee:area.name,publicNumbering:area.publicNumbering,nonPublicNumbering:area.nonPublicNumbering,firstSection:area.firstSection};});
 }
 export async function requireTopic(user: User, id: number, edit = false) {
   if (!Number.isSafeInteger(id) || id < 1 || id > 2147483647) throw new MeetingError("Kein Zugriff.");
