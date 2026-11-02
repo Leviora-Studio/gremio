@@ -33,22 +33,34 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const loginStartedAt = Date.now();
     const tokens = await exchangeCode(oauth.redirectUri, code, oauth.verifier);
     const claims = await verifyIdToken(tokens.id_token, oauth.nonce);
     const result = await provisionUser(claims);
     if (!result.ok) return fail(result.error);
 
-    if (!tokens.refresh_token || tokens.scope && !tokens.scope.split(/\s+/).includes("offline_access")) return fail("sso_offline");
-    const identity = refreshIdentity(claims.sub,tokens.refresh_token);
-    const authExpiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
-    if (await checkSsoSession({userId:result.userId,refreshToken:tokens.refresh_token,...identity,authExpiresAt},claims.sub) !== "valid") return fail("sso_check");
+    // Offline access is optional. A regular refresh token is also usable, but
+    // remains subject to the provider's session lifetime and live revocation.
+    // Without one, never let the local session outlive the access token.
+    const refreshToken = tokens.refresh_token || undefined;
+    if (!refreshToken && (!tokens.access_token || typeof tokens.expires_in !== "number" || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0)) return fail("sso_check");
+    const identity = refreshToken ? refreshIdentity(claims.sub, refreshToken) : undefined;
+    const authExpiresAt = loginStartedAt + Math.min(SESSION_TTL_SECONDS, refreshToken ? SESSION_TTL_SECONDS : tokens.expires_in!) * 1000;
+    const credentials = {
+      refreshToken,
+      accessToken: refreshToken ? undefined : tokens.access_token,
+      ssoSubject: identity?.ssoSubject,
+      refreshTokenHash: identity?.refreshTokenHash,
+      authExpiresAt,
+    };
+    if (await checkSsoSession({userId:result.userId,...credentials},claims.sub) !== "valid") return fail("sso_check");
 
     session.userId = result.userId;
     session.sessionVersion = result.sessionVersion;
     session.idToken = tokens.id_token;
-    delete session.accessToken;
-    Object.assign(session,identity,{authExpiresAt});
-    session.refreshToken = tokens.refresh_token;
+    // Explicitly replace both token modes and bindings, including stale values
+    // from a previous login in this browser.
+    Object.assign(session, credentials);
     session.oauth = undefined;
     await saveSession(session);
 

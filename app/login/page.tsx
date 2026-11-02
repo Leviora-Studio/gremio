@@ -7,7 +7,6 @@ import { getCurrentUser } from "@/lib/auth";
 export const metadata = { title: "Login — Gremio" };
 
 const ERROR_MESSAGES: Record<string, string> = {
-  sso_offline: "Der SSO hat keine länger gültige Anmeldung freigegeben. Bitte die Gremio-Client-Konfiguration für offline_access prüfen lassen.",
   sso_check: "Die zentrale Anmeldung konnte nicht bestätigt werden. Bitte versuche es später erneut oder wende dich an die Administration.",
   inactive: "Dein Konto ist deaktiviert. Bitte wende dich an einen Administrator.",
   state: "Die Anmeldung ist abgelaufen. Bitte versuche es erneut.",

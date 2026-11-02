@@ -14,8 +14,8 @@ export interface SessionData {
   refreshTokenHash?: string;
   // OIDC id_token (für RP-initiated logout / end_session id_token_hint)
   idToken?: string;
-  // Access token retained only for legacy sessions; new logins keep the offline
-  // refresh token, revoked at logout (RFC 7009).
+  // Access token retained only when no refresh token is issued. Such sessions
+  // are bounded by its lifetime. Both token modes are revoked at logout.
   accessToken?: string;
   refreshToken?: string;
   // Transienter OIDC-Flow-State zwischen /login-Redirect und /callback

@@ -44,6 +44,10 @@ test("SSO introspection is cached for at most five minutes, fails closed on outa
   assert.equal(await checkSsoSession({...offline,refreshToken:"substituted-token"},"subject"),"invalid");
   context.__ssoValue={active:false};t.mock.timers.tick(SSO_CHECK_INTERVAL_MS);assert.equal(await checkSsoSession(offline,"subject"),"invalid","offline access never bypasses an SSO revocation");
   context.__ssoValue={active:true,sub:"subject",client_id:process.env.OIDC_CLIENT_ID};
+  const accessOnly={userId:1,accessToken:"short-lived-access",authExpiresAt:Date.now()+30_000};
+  assert.equal(await checkSsoSession(accessOnly,"subject"),"valid");
+  t.mock.timers.tick(30_000);
+  assert.equal(await checkSsoSession(accessOnly,"subject"),"invalid","cached SSO approval cannot outlive an access-only login deadline");
   t.mock.timers.tick(deadline-Date.now()-1);assert.equal(await checkSsoSession(offline,"subject"),"valid");t.mock.timers.tick(1);assert.equal(await checkSsoSession(offline,"subject"),"invalid","the 14-day deadline is absolute");
  }finally{t.mock.timers.reset();await rm(output,{recursive:true,force:true});}
 });

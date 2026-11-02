@@ -21,5 +21,10 @@ test("session cookie lasts 14 days and profile writes never extend the original 
   await loaded.exports.saveSession(session);assert.equal(state.__lifetimeOptions!.maxAge,SESSION_TTL_SECONDS);assert.ok(state.__lifetimeCookie!.length<4096);assert.equal(session.idToken,undefined);
   t.mock.timers.tick(12*60*60*1000);session.idToken="synthetic-id-token";await loaded.exports.saveSession(session);
   assert.equal(state.__lifetimeOptions!.maxAge,SESSION_TTL_SECONDS-12*60*60);const read=await loaded.exports.getSession();assert.equal(read.authExpiresAt,deadline);assert.equal(read.refreshToken,"synthetic-offline-token");
+  const accessDeadline=Date.now()+60_000;
+  Object.assign(read,{authExpiresAt:accessDeadline,accessToken:"synthetic-access-only",refreshToken:undefined});
+  await loaded.exports.saveSession(read);assert.equal(state.__lifetimeOptions!.maxAge,60);
+  t.mock.timers.tick(30_000);await loaded.exports.saveSession(read);
+  assert.equal(state.__lifetimeOptions!.maxAge,30);assert.equal(read.authExpiresAt,accessDeadline);
  }finally{t.mock.timers.reset();delete state.__lifetimeCookie;await rm(dir,{recursive:true,force:true});}
 });

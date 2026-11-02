@@ -107,7 +107,7 @@ export async function createApiTokenAction(
 /**
  * Profil (Name, Anzeige-Mail, Avatar) aus dem SSO neu ziehen — über den
  * UserInfo-Endpoint. Ein kurzlebiges Access-Token wird bei Bedarf über die
- * bestehende Offline-Berechtigung geholt; die 14-Tage-Frist bleibt unverändert.
+ * bestehende Refresh-Berechtigung geholt; die ursprüngliche Frist bleibt unverändert.
  */
 export async function resyncProfileAction(): Promise<{
   ok: boolean;

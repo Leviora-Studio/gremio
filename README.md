@@ -1,5 +1,14 @@
 # Gremio
 
+### 4.6.1: SSO-Login ohne verpflichtenden Offline-Zugriff
+
+Gültige SSO-Anmeldungen funktionieren wieder ohne `offline_access`. Normale
+Refresh-Tokens werden akzeptiert; ohne Refresh-Token ist die Gremio-Sitzung auf
+die bestätigte Access-Token-Laufzeit begrenzt. Die maximale Anmeldedauer bleibt
+14 Tage. Laufende SSO-Prüfungen spätestens alle fünf Minuten, lokale Kontensperren
+und Identitätsprüfungen bleiben erhalten; fehlgeschlagene Prüfungen erlauben
+keinen Zugriff. Für dieses Update sind keine neuen Datenbankmigrationen nötig.
+
 ### 4.6.0: Sitzungen, Tagesordnungen und geschützte Exporte
 
 Sitzungsbereiche bündeln Sitzungen mit Lese- und Schreibfreigaben, persönlichem
@@ -563,9 +572,9 @@ Unter **Admin Panel → Nutzer** können Admins Nutzer **deaktivieren** und **re
 
 Browser-Anmeldungen werden beim Login und danach bei aktiver Nutzung spätestens alle fünf Minuten über den OAuth-Introspection-Endpunkt des SSO bestätigt. Innerhalb dieser Frist kann eine ausschließlich im SSO vorgenommene Sperrung noch unbemerkt bleiben. Nach Ablauf der Frist werden weitere Anfragen erst nach erfolgreicher Prüfung zugelassen. Bei SSO-Ausfall gibt es dann ebenfalls keinen weiteren Zugriff; eine Wiederholung ist nach Wiederherstellung möglich. Offene geschützte Live-Streams werden erneut geprüft und bei Ablehnung geschlossen. Bereits geladene Inhalte können nicht zurückgeholt werden.
 
-Browser-Anmeldungen gelten fest für **14 Tage**. Die Fünf-Minuten-Frist ist ausschließlich der Abstand der Statusprüfungen. Beim ersten Login nach diesem Update ist eine neue Anmeldung mit Zustimmung zu `offline_access` nötig. Das Refresh-Token wird ausschließlich im verschlüsselten Browser-Cookie gespeichert; Profilaktionen verlängern die ursprüngliche Gremio-Frist nicht. Ein normaler Logout auf der SSO-Webseite beendet diese Offline-Berechtigung nicht. Gremio-Logout widerruft dagegen sein Refresh-Token.
+Browser-Anmeldungen gelten **höchstens 14 Tage**, zusätzlich begrenzt durch die Gültigkeit des vom SSO ausgestellten Tokens. `offline_access` wird für längere Anmeldungen angefragt, ist aber keine Login-Voraussetzung. Ein normales Refresh-Token wird ebenfalls akzeptiert; dann kann das Ende der zentralen SSO-Sitzung eine erneute Anmeldung nötig machen. Ohne Refresh-Token wird das Access-Token im verschlüsselten Cookie gespeichert und die Gremio-Sitzung auf dessen vom Token-Endpunkt bestätigte Laufzeit (`expires_in`, maximal 14 Tage) begrenzt. Ohne positive, endliche Laufzeit wird dieser Login abgelehnt. Profilaktionen verlängern die ursprüngliche Frist nicht. Gremio-Logout widerruft die gespeicherten Tokens.
 
-**SSO-Konfiguration:** Der vertrauliche Client muss `offline_access` (inklusive Nutzerberechtigung, bei Keycloak Rolle/optionaler Client-Scope) sowie Refresh-Tokens erlauben. Die Offline-Leerlauf-/Maximalfristen müssen mindestens 14 Tage abdecken. Discovery muss `introspection_endpoint` unter derselben Origin wie der interne/öffentliche Issuer liefern. Introspection mit Client-ID/Secret muss `active`, `client_id` und gegebenenfalls `exp` liefern und bei Nutzersperre, Löschung oder Widerruf der Offline-Berechtigung ablehnen. Ein vorhandenes `sub` muss passen; fehlt es, wird die beim verifizierten Login versiegelte Identitätsbindung verwendet. Keycloaks Offline-`exp:0` wird unterstützt. Bei älteren Cookies ohne Bindung muss zusätzlich UserInfo die Identität bestätigen. Andere Provider müssen diese Semantik separat verifizieren. Fehlende Offline-Berechtigung führt zu einer verständlichen Login-Fehlermeldung; fehlende Prüfbarkeit sperrt den Zugriff.
+**SSO-Konfiguration:** Der vertrauliche Client muss Introspection unterstützen. `offline_access` (inklusive Nutzerberechtigung, bei Keycloak Rolle/optionaler Client-Scope) und Refresh-Tokens sind für längere Anmeldungen empfohlen, aber optional. Für volle 14 Tage müssen die Offline-Leerlauf-/Maximalfristen mindestens 14 Tage abdecken. Ein normaler SSO-Web-Logout beendet eine erteilte Offline-Berechtigung üblicherweise nicht. Discovery muss `introspection_endpoint` unter derselben Origin wie der interne/öffentliche Issuer liefern. Introspection mit Client-ID/Secret muss `active`, `client_id` und gegebenenfalls `exp` liefern und bei Nutzersperre, Löschung oder Tokenwiderruf ablehnen. Ein vorhandenes `sub` muss passen; fehlt es beim Refresh-Token, wird die beim verifizierten Login versiegelte Identitätsbindung verwendet. Ohne diese Bindung muss zusätzlich UserInfo die Identität bestätigen. Keycloaks Offline-`exp:0` wird unterstützt. Andere Provider müssen diese Semantik separat verifizieren. Fehlende Prüfbarkeit sperrt den Zugriff.
 
 Die fünfminütige SSO-Prüfung gilt für Browser-Sitzungen. Separat ausgestellte API-/MCP-Tokens behalten ihren eigenen Lebenszyklus; ihre Nutzung wird weiterhin bei lokaler Deaktivierung gesperrt.
 
