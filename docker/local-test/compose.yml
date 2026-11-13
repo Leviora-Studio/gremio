@@ -1,0 +1,108 @@
+name: gremio-local-test
+
+x-gremio-env: &gremio-env
+  APP_BASE_URL: http://localhost:3010
+  PUBLIC_BASE_URL: http://localhost:3010
+  AUTH_SECRET: ${GREMIO_AUTH_SECRET:?Run start.sh first}
+  ENCRYPTION_KEY: ${GREMIO_ENCRYPTION_KEY:?Run start.sh first}
+  DATABASE_URL: postgres://gremio:${GREMIO_DB_PASSWORD}@gremio-db:5432/gremio_local_test
+  OIDC_ISSUER: http://localhost:3000
+  OIDC_INTERNAL_ISSUER: http://limen:3000
+  OIDC_CLIENT_ID: gremio-local-test
+  OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+  ADMIN_USER: demo-admin
+  UPLOAD_DIR: /app/uploads
+  AUTH_TRUST_HOST: "true"
+
+services:
+  gremio-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gremio
+      POSTGRES_PASSWORD: ${GREMIO_DB_PASSWORD}
+      POSTGRES_DB: gremio_local_test
+    volumes: [gremio-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U gremio -d gremio_local_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  limen-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: limen
+      POSTGRES_PASSWORD: ${LIMEN_DB_PASSWORD}
+      POSTGRES_DB: limen_local_test
+    volumes: [limen-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U limen -d limen_local_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  limen:
+    image: ghcr.io/leviora-studio/limen:${LIMEN_TAG:-latest}
+    platform: linux/amd64
+    environment:
+      NODE_ENV: production
+      APP_BASE_URL: http://localhost:3000
+      AUTH_SECRET: ${LIMEN_AUTH_SECRET}
+      ENCRYPTION_KEY: ${LIMEN_ENCRYPTION_KEY}
+      DATABASE_URL: postgres://limen:${LIMEN_DB_PASSWORD}@limen-db:5432/limen_local_test
+      ADMIN_USER: demo-admin
+      ADMIN_PASSWORD: ${DEMO_PASSWORD}
+      UPLOAD_DIR: /app/uploads
+      AUTH_TRUST_HOST: "true"
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: [limen-uploads:/app/uploads]
+    depends_on:
+      limen-db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  limen-seed:
+    image: ghcr.io/leviora-studio/limen:${LIMEN_TAG:-latest}
+    platform: linux/amd64
+    working_dir: /app
+    entrypoint: [node, /app/local-test-seed.cjs]
+    environment:
+      DATABASE_URL: postgres://limen:${LIMEN_DB_PASSWORD}@limen-db:5432/limen_local_test
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+    volumes: ["./seed-limen.cjs:/app/local-test-seed.cjs:ro"]
+    depends_on:
+      limen: {condition: service_healthy}
+
+  gremio:
+    build: {context: ../.., dockerfile: Dockerfile}
+    environment: *gremio-env
+    ports: ["127.0.0.1:3010:3000"]
+    volumes: [gremio-uploads:/app/uploads]
+    depends_on:
+      gremio-db: {condition: service_healthy}
+      limen-seed: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  gremio-seed:
+    build: {context: ../.., dockerfile: Dockerfile, target: builder}
+    user: "1001:1001"
+    environment: *gremio-env
+    command: [sh, -c, "node --import tsx scripts/seed.ts && node --import tsx scripts/seed-local-demo.ts"]
+    volumes: [gremio-uploads:/app/uploads]
+    depends_on:
+      gremio: {condition: service_healthy}
+
+volumes:
+  gremio-db:
+  limen-db:
+  gremio-uploads:
+  limen-uploads:

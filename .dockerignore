@@ -13,6 +13,7 @@ pgdata
 *.sqlite3
 .env
 .env*.local
+docker/local-test/.env.local
 npm-debug.log*
 Dockerfile
 .dockerignore

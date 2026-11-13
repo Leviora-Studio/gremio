@@ -1,5 +1,17 @@
 # Gremio
 
+### 4.6.2: Protokollvorlagen und kompakte Tagesordnung
+
+Die bisherigen Sitzungsdownloads heißen „Protokollvorlage als Word/PDF“. Ein
+zusätzliches Tagesordnungs-PDF enthält ausschließlich die nummerierten TOP-Titel
+einschließlich Unter-TOPs. Im Wordexport entfallen „Eingeplant“, TOP-Uhrzeiten und
+TOP-Art; Dauer und Verantwortlichkeit werden klar beschriftet. Die bestehenden
+Exportberechtigungen bleiben erhalten.
+
+Ein isolierter lokaler Docker-Stack mit Limen-SSO, eigenen Datenbanken und
+fiktiven Beispieldaten erleichtert manuelle Tests. Das Limen-Image läuft auf
+Apple Silicon per AMD64-Emulation. Es sind keine neuen Datenbankmigrationen nötig.
+
 ### 4.6.1: SSO-Login ohne verpflichtenden Offline-Zugriff
 
 Gültige SSO-Anmeldungen funktionieren wieder ohne `offline_access`. Normale
@@ -311,6 +323,11 @@ Personen-/Gruppenfreigabe gilt. Verwalten bleibt Eigentümer/Admin vorbehalten.
 
 ## Entwicklung
 
+Für einen isolierten lokalen Docker-Stack mit Limen-SSO, eigenen Datenbanken
+und fiktiven Beispieldaten siehe [docker/local-test/README.md](docker/local-test/README.md).
+`bash docker/local-test/start.sh` baut den aktuellen Gremio-Arbeitsstand und richtet
+den SSO-Client sowie die Beispielsitzung inklusive Wordvorlage ein.
+
 ```bash
 npm install
 cp .env.example .env          # Werte anpassen (siehe „Umgebungsvariablen")
@@ -552,11 +569,11 @@ Im persönlichen Themenspeicher werden Themen ohne Zielauswahl angelegt und per 
 
 Boards können in den Sitzungs-Einstellungen angebunden werden, wenn dieselbe Person beide Seiten verwalten darf. Die Anbindung erleichtert die Kartenauswahl und vergibt **keine Board-Rechte**. Wer nur die Sitzung sehen darf, sieht TOP-Inhalt und ausdrücklich freigegebene Sitzungsunterlagen, keine geschützten Kartendetails. Dateikopien aus Karten müssen ausdrücklich freigegeben werden, erfordern Board-Schreibrechte und bleiben anschließend eigenständig; Studierendenausweise sind ausgeschlossen.
 
-„Tagesordnung als PDF“ steht ausschließlich Eigentümern und Admins zur Verfügung und enthält auch vertrauliche TOPs. Die bestehende PDF-Gestaltung bleibt erhalten; Finanzangaben folgen weiterhin den aktuellen Board-/Feldrechten. Die normale Karten-/Anhangberechtigung gilt unverändert.
+„Protokollvorlage als PDF“ steht ausschließlich Eigentümern und Admins zur Verfügung und enthält auch vertrauliche TOPs. Zusätzlich liefert „Tagesordnung als PDF“ ausschließlich die Überschrift „Tagesordnungspunkte“ und die nummerierten TOP-Titel einschließlich eingerückter Unter-TOPs, ohne Beschreibungen oder weitere Metadaten. Dieser Export ist ebenfalls ausschließlich Eigentümern und Admins zugänglich. Die Protokollvorlage behält ihre ausführliche PDF-Gestaltung; Finanzangaben folgen weiterhin den aktuellen Board-/Feldrechten. Die normale Karten-/Anhangberechtigung gilt unverändert.
 
 Optional unter **Bereichseinstellungen → Wordexport** eine `.dotx`- oder `.docx`-Vorlage (max. 25 MB) hochladen. Danach die vorhandenen Absatzformatvorlagen für Fließtext, Bereichsüberschriften und öffentliche/nicht öffentliche Haupt- und Unter-TOPs zuordnen. Einen vorhandenen Musterbereich zum Ersetzen auswählen (das Endelement bleibt erhalten), alternativ einen einzelnen Absatz mit `{{TAGESORDNUNG}}` in der Vorlage verwenden oder am Dokumentende ergänzen. Das Original bleibt gespeichert; Logos, Kopf-/Fußzeilen, Tabellen und Vorlagenstile werden bewahrt. Unbekannte Abstimmungs- oder Anwesenheitsdaten bleiben zur manuellen Bearbeitung offen. Sehr komplexe Abschnittsstrukturen erfordern eine vorbereitete Platzhaltervorlage. Worddateien vor offiziellem Einsatz prüfen. Das Inhaltsverzeichnis in Word per Rechtsklick → „Felder aktualisieren“ → „Gesamtes Verzeichnis aktualisieren“ einschließlich der Seitenzahlen aktualisieren. Der Export fordert beim Öffnen keine automatische Feldaktualisierung an und benötigt keine zusätzliche Textverarbeitung auf dem Server.
 
-„Tagesordnung als Word“ erscheint nur mit hinterlegter Vorlage und nur für Eigentümer/Admins. Wie das PDF enthält die DOCX auch vertrauliche Inhalte und erfasste Ergebnisse/Notizen. Die Vorlagendownloads und Exporte benötigen eine aktive Session; API-Tokens reichen nicht aus. `fast-xml-parser` wird als direkte XML-Abhängigkeit verwendet. Migrationen bis einschließlich `0092` laufen beim Produktionsstart automatisch; im lokalen Dev-Betrieb vorher `npm run db:migrate` ausführen. SMTP-Einladungen, Kalenderdateien und ein Protokolleditor sind spätere Erweiterungen.
+„Protokollvorlage als Word“ erscheint nur mit hinterlegter Vorlage und nur für Eigentümer/Admins. Wie das PDF enthält die DOCX auch vertrauliche Inhalte und erfasste Ergebnisse/Notizen. Die Vorlagendownloads und Exporte benötigen eine aktive Session; API-Tokens reichen nicht aus. `fast-xml-parser` wird als direkte XML-Abhängigkeit verwendet. Migrationen bis einschließlich `0092` laufen beim Produktionsstart automatisch; im lokalen Dev-Betrieb vorher `npm run db:migrate` ausführen. SMTP-Einladungen, Kalenderdateien und ein Protokolleditor sind spätere Erweiterungen.
 
 Wordvorlagen dürfen keine Makros, ActiveX-/OLE-Objekte, eingebetteten Office-Pakete, HTML-Importe, DDE-/externen Datenfelder oder externen Ressourcen wie nachgeladene Bilder und Vorlagen enthalten. Bilder müssen eingebettet sein; gewöhnliche HTTP(S)-, E-Mail- und Telefon-Hyperlinks bleiben möglich. Diese Prüfung gilt auch beim Export bereits gespeicherter Vorlagen. Leere Sitzungsangaben leeren die dafür vorgesehenen Metadatenfelder, damit keine alten Musterorte oder -termine ausgegeben werden; unbekannte manuelle Vorlagenfelder bleiben erhalten.
 

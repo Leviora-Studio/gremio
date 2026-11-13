@@ -10,6 +10,15 @@ import { agendaTopics, agendaSections, agendaSectionLabels } from "./agenda";
 import { topicKinds,topicStates } from "./validation";
 import { formatDateTime } from "@/lib/dates";
 import { winAnsiSafe, wrapText } from "@/lib/pdf";
+import { renderAgendaListPdf } from "./agenda-pdf";
+
+export async function buildMeetingAgendaListPdf(user:User,id:number):Promise<Uint8Array>{
+  const meeting=await requireMeeting(user,id,"manage");
+  const topics=agendaTopics(await visibleTopics(user,id),meeting);
+  const output=await renderAgendaListPdf(topics);
+  await requireMeeting(user,id,"manage");
+  return output;
+}
 /** Owner/admin export includes confidential TOPs; financial fields still use live board permissions. */
 export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uint8Array> {
   const meeting = await requireMeeting(user,id,"manage");
@@ -29,7 +38,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
     }
     y-=7;
   }
-  line("Tagesordnung",true,22);line(meeting.title,true,15);
+  line("Protokollvorlage",true,22);line(meeting.title,true,15);
   if(meeting.committee)line(meeting.committee);
   line(meeting.startsAt?`Beginn: ${formatDateTime(meeting.startsAt)}`:"Termin noch offen");
   if(meeting.location)line(`Ort / Videokonferenz: ${meeting.location}`);

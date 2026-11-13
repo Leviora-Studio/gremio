@@ -24,7 +24,7 @@ const {unzipOffice,zip}=require('../../lib/zip.ts');const {wordTemplateFixture}=
   browser=await chromium.launch({executablePath:process.env.CHROME_PATH,headless:true});
   const ctx=await browser.newContext({viewport:{width:1400,height:1100}});await ctx.addCookies([{name:'gremio_session',value:await sealData(sso.session(owner),{password:process.env.AUTH_SECRET}),url:base,httpOnly:true,sameSite:'Lax'}]);
   const page=await ctx.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(`${base}/intern/sitzungen/${meetingId}`);assert.equal(await page.getByRole('link',{name:'Tagesordnung als Word',exact:true}).count(),0);assert.equal(await page.getByRole('link',{name:'Tagesordnung als PDF',exact:true}).count(),1);
+  await page.goto(`${base}/intern/sitzungen/${meetingId}`);assert.equal(await page.getByRole('link',{name:'Protokollvorlage als Word',exact:true}).count(),0);assert.equal(await page.getByRole('link',{name:'Protokollvorlage als PDF',exact:true}).count(),1);
   await page.goto(`${base}/intern/sitzungen/bereich/${areaId}/einstellungen`);
   const active=zip(unzipOffice(wordTemplateFixture()).map(file=>file.name==='word/document.xml'?{...file,data:Buffer.from(file.data.toString('utf8').replace('</w:body>','<w:p><w:fldSimple w:instr="DDEAUTO server topic item"/></w:p></w:body>'))}:file));
   await page.locator('input[name=template]').setInputFiles({name:'Unsafe.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',buffer:active});
@@ -60,7 +60,7 @@ const {unzipOffice,zip}=require('../../lib/zip.ts');const {wordTemplateFixture}=
   }
   for(const url of [`/api/meetings/${meetingId}/word`,`/api/meetings/${meetingId}/pdf`,`/api/meeting-areas/${areaId}/word-template`,`/api/meeting-document/1`]){const response=await fetch(base+url,{headers:{Authorization:'Bearer rejected-synthetic-token'}});assert.equal(response.status,401);assert.equal(response.headers.get('referrer-policy'),'no-referrer');}
   await page.getByRole('button',{name:'Wordvorlage entfernen',exact:true}).click();await page.getByRole('button',{name:'Wordvorlage hochladen',exact:true}).waitFor();
-  await page.goto(`${base}/intern/sitzungen/${meetingId}`);assert.equal(await page.getByRole('link',{name:'Tagesordnung als Word',exact:true}).count(),0);assert.equal((await ctx.request.get(`${base}/api/meetings/${meetingId}/pdf`)).status(),200);
+  await page.goto(`${base}/intern/sitzungen/${meetingId}`);assert.equal(await page.getByRole('link',{name:'Protokollvorlage als Word',exact:true}).count(),0);assert.equal((await ctx.request.get(`${base}/api/meetings/${meetingId}/pdf`)).status(),200);
   assert.deepEqual(errors,[]);console.log('PASS active template rejection, template upload, style mapping, original download, owner/admin-only Word/PDF, confidential contents, package preservation, no bearer access, removal and 1400/390px layouts. Artifacts: '+output);
  }catch(error){const p=browser?.contexts().at(-1)?.pages().at(-1);if(p)await p.screenshot({path:join(output,'failure.png'),fullPage:true});console.error(log.slice(-3000));throw error;}
  finally{await browser?.close();server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));await sso.close();if(meetingId)await query('delete from meetings where id=$1',[meetingId]);if(areaId)await query('delete from meeting_areas where id=$1',[areaId]);for(const id of people)await query('delete from users where id=$1',[id]);await pool.end();}

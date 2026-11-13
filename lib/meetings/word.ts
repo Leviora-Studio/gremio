@@ -9,7 +9,7 @@ import {MAX_UPLOAD_BYTES} from "@/lib/constants";
 import {env} from "@/lib/env";
 import {MeetingError,requireArea,requireMeeting,visibleTopics} from "./access";
 import {agendaTopics} from "./agenda";
-import {topicKinds,topicStates} from "./validation";
+import {topicStates} from "./validation";
 import {buildWordFromTemplate,inspectWordTemplate,validateWordConfiguration,type WordExportTopic,type WordExportLine} from "./word-template";
 import type {MeetingWordConfiguration} from "./word-template-types";
 
@@ -65,11 +65,13 @@ export async function buildMeetingAgendaWord(user:User,id:number):Promise<Buffer
   const meeting=await requireMeeting(user,id,"manage"),area=await requireArea(user,meeting.areaId,"manage");
   if(!area.wordTemplatePath||!area.wordConfiguration)throw new MeetingError("Für diesen Sitzungsbereich ist keine Wordvorlage hinterlegt.");
   const template=await readFile(absPath(area.wordTemplatePath));
-  const topics=agendaTopics(await visibleTopics(user,id),meeting),items:WordExportTopic[]=[];let elapsed=0;
+  const topics=agendaTopics(await visibleTopics(user,id),meeting),items:WordExportTopic[]=[];
   for(const topic of topics){
-    const time=meeting.startsAt?new Date(meeting.startsAt.getTime()+elapsed*60000).toLocaleTimeString("de-DE",{timeZone:"Europe/Berlin",hour:"2-digit",minute:"2-digit"}):"";
-    const lines:WordExportLine[]=[`${topicStates[topic.state]}${topic.transferred?" · Weitergegeben":""}${topic.confidential?" · Vertraulich":""}`,`${time?`${time} Uhr · `:""}${topic.durationMinutes} Minuten · ${topicKinds[topic.kind]}`];elapsed+=topic.durationMinutes;
-    if(topic.presenter)lines.push(`Verantwortlich: ${topic.presenter}`);
+    const status=[topic.state!=="scheduled"?topicStates[topic.state]:"",topic.transferred?"Weitergegeben":"",topic.confidential?"Vertraulich":""].filter(Boolean).join(" · ");
+    const lines:WordExportLine[]=[];
+    if(status)lines.push(status);
+    lines.push(`Angesetzte Dauer: ${topic.durationMinutes} Minuten`);
+    if(topic.presenter)lines.push(`Verantwortlich für TOP: ${topic.presenter}`);
     if(topic.isFinanceItem&&topic.financeDetails){const d=topic.financeDetails,href=new URL(`/intern/card/${d.cardId}`,env.APP_BASE_URL).href;lines.push({text:`Interne Karte: ${href}`,href},`Antragsteller: ${d.applicant}`,`Konto: ${d.account}`,`Haushaltstitel: ${d.budgetTitle}`,`Beantragter Betrag: ${d.amount||"—"}`);}
     if(topic.description)lines.push(topic.description);
     if(topic.motion?.trim())lines.push(`Beschlussvorschlag: ${topic.motion}`,{text:"Abstimmung: Dafür / Dagegen / Enthaltung",bold:true});
