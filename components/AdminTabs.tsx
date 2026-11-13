@@ -15,6 +15,7 @@ const tabs = [
   { href: "/admin/groups", label: "Gruppen" },
   { href: "/admin/boards", label: "Boards" },
   { href: "/admin/finanzboards", label: "Finanzboards" },
+  { href: "/admin/kassenbuecher", label: "Kassenbücher" },
   { href: "/admin/standorte", label: "Standorte" },
   { href: "/admin/umfragen", label: "Umfragen" },
   { href: "/admin/inventar", label: "Inventar" },

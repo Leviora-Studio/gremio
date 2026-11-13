@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import {
   accounts as accountsTable,
   boardStatuses,
+  financeBoardSources,
   financeBoardAccess,
   financeBoardAccounts,
   financeBoardExpenseAccounts,
@@ -24,6 +25,8 @@ import { Avatar } from "@/components/Avatar";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { RenameFinanceForm } from "@/components/finance/RenameFinanceForm";
+import { accessibleCashbooks } from "@/lib/cashbook/access";
+import { CashbookLinkForm, SourceAccountForm } from "@/components/finance/CashbookLinkForm";
 import { SourceExpiredStatusForm } from "@/components/finance/SourceExpiredStatusForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { FinancePlanEditor } from "@/components/finance/FinancePlanEditor";
@@ -51,6 +54,7 @@ export default async function FinanceSettingsPage({
   const { user, fb } = await requireFinanceManage(fbId);
 
   const accounts = await getAccounts();
+  const sourceAccounts = await db.select().from(financeBoardSources).where(eq(financeBoardSources.financeBoardId,fbId));
   // Betroffene Konten (n:m) dieses Finanzboards.
   const selectedAccounts = await db
     .select({ id: accountsTable.id, name: accountsTable.name })
@@ -98,7 +102,7 @@ export default async function FinanceSettingsPage({
   ];
   const sourceIds = new Set(sourceList.map((s) => s.id));
   const accessibleBoards = (await getAccessibleBoards(user)).filter(
-    (b) => !sourceIds.has(b.id),
+    (b) => !sourceIds.has(b.id) && (!fb.cashbookId || b.isApplicationBoard),
   );
 
   const access = await db
@@ -164,7 +168,7 @@ export default async function FinanceSettingsPage({
         {availableAccounts.length > 0 && (
           <form
             action={addFinanceAccountAction.bind(null, fbId)}
-            className="mt-3 flex items-end gap-2"
+            className="mt-3 flex flex-wrap items-end gap-2"
           >
             <Select
               name="accountId"
@@ -218,7 +222,7 @@ export default async function FinanceSettingsPage({
           {availableExpenseAccounts.length > 0 && (
             <form
               action={addFinanceExpenseAccountAction.bind(null, fbId)}
-              className="mt-3 flex items-end gap-2"
+              className="mt-3 flex flex-wrap items-end gap-2"
             >
               <Select
                 name="accountId"
@@ -239,6 +243,7 @@ export default async function FinanceSettingsPage({
         </CollapsibleSection>
       )}
 
+      <CollapsibleSection title="Kassenbuch"><CashbookLinkForm id={fbId} bookId={fb.cashbookId} books={(await accessibleCashbooks(user)).filter(b=>b.permission!=="office").map(b=>({id:b.id,name:b.name}))}/></CollapsibleSection>
       {/* Quell-Boards */}
       <CollapsibleSection title="Quell-Boards">
         <p className="mb-3 text-sm text-slate-500">
@@ -268,21 +273,22 @@ export default async function FinanceSettingsPage({
                   </SubmitButton>
                 </form>
               </div>
-              {s.ok && (
+              {s.ok && (<>
+                <SourceAccountForm id={fbId} boardId={s.id} accountId={sourceAccounts.find(row=>row.boardId===s.id)?.accountId??null} accounts={accounts}/>
                 <SourceExpiredStatusForm
                   financeBoardId={fbId}
                   boardId={s.id}
                   expiredStatusId={s.expiredStatusId}
                   statuses={sourceStatuses.filter((status) => status.boardId === s.id)}
                 />
-              )}
+              </>)}
             </div>
           ))}
         </div>
         {accessibleBoards.length > 0 && (
           <form
             action={addFinanceSourceAction.bind(null, fbId)}
-            className="mt-3 flex items-end gap-2"
+            className="mt-3 flex flex-wrap items-end gap-2"
           >
             <Select
               name="boardId"
@@ -295,6 +301,7 @@ export default async function FinanceSettingsPage({
                 })),
               ]}
             />
+            {fb.cashbookId && <Select portal searchable name="accountId" ariaLabel="Konto des Antragsboards" options={[{value:"",label:"Konto auswählen"},...accounts.map(a=>({value:String(a.id),label:a.name}))]}/>}
             <SubmitButton className="btn-secondary">Hinzufügen</SubmitButton>
           </form>
         )}

@@ -69,6 +69,7 @@ export async function sweepDoneColumns(now: Date = new Date()): Promise<number> 
           eq(cards.boardId, b.id),
           eq(cards.statusId, b.doneStatusId!),
           isNull(cards.archivedAt),
+          isNull(cards.lockedAt),
           isNotNull(cards.doneSince),
           lte(cards.doneSince, cutoff),
         ),

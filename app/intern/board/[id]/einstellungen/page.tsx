@@ -26,6 +26,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { Select } from "@/components/Select";
 import { Avatar } from "@/components/Avatar";
+import { LockColumnsForm } from "@/components/board/LockColumnsForm";
 import { RenameBoardForm } from "@/components/board/RenameBoardForm";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { BoardEmailSettings } from "@/components/board/BoardEmailSettings";
@@ -203,6 +204,7 @@ export default async function BoardSettingsPage({
         />
       </CollapsibleSection>
 
+      {board.isApplicationBoard && <CollapsibleSection title="Sperrspalten und Zahlungsabschluss"><LockColumnsForm boardId={boardId} statuses={statuses} completedStatusId={board.completedStatusId}/></CollapsibleSection>}
       <CollapsibleSection title="Email-Settings"><BoardEmailSettings boardId={boardId} /></CollapsibleSection>
 
       <CollapsibleSection title="Bürokraft aktivieren">

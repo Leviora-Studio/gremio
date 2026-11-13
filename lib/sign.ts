@@ -35,6 +35,7 @@ export type SignOptions = {
   reason?: string;
   location?: string;
   placement?: SignPlacement; // fehlt → unsichtbare (nur kryptografische) Signatur
+  additionalText?: { placement: SignPlacement; text: string }[];
   signatureImage?: Buffer; // optionales Unterschriftsbild (PNG/JPG), rein optisch
 };
 
@@ -241,4 +242,62 @@ export async function drawSignatureBox(
   page.pushOperators(popGraphicsState());
 
   return [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height];
+}
+
+/** Append changed objects without rewriting bytes covered by existing signatures. */
+async function appendPdfRevision(pdf: Buffer, mutate: (doc: PDFDocument) => Promise<void>): Promise<Buffer> {
+  const doc = await PDFDocument.load(pdf);
+  const before = new Map(doc.context.enumerateIndirectObjects().map(([ref, value]) => [ref.toString(), value.toString()]));
+  const previous = [...pdf.toString("latin1").matchAll(/startxref\s+(\d+)\s+%%EOF/g)].at(-1);
+  if (!previous) throw new Error("Die PDF-Querverweistabelle ist nicht lesbar.");
+  await mutate(doc);
+  await doc.flush();
+  const chunks: Buffer[]=[pdf,Buffer.from("\n")];let offset=pdf.length+1;
+  const xref:{number:number;generation:number;offset:number}[]=[];
+  for (const [ref,value] of doc.context.enumerateIndirectObjects()) {
+    if(before.get(ref.toString())===value.toString())continue;
+    const prefix=Buffer.from(`${ref.objectNumber} ${ref.generationNumber} obj\n`);
+    const data=Buffer.alloc(value.sizeInBytes());value.copyBytesInto(data,0);
+    const suffix=Buffer.from("\nendobj\n");xref.push({number:ref.objectNumber,generation:ref.generationNumber,offset});chunks.push(prefix,data,suffix);offset+=prefix.length+data.length+suffix.length;
+  }
+  const start=offset;
+  let table="xref\n";
+  for(const ref of xref.sort((a,b)=>a.number-b.number))table+=`${ref.number} 1\n${String(ref.offset).padStart(10,"0")} ${String(ref.generation).padStart(5,"0")} n \n`;
+  const info=doc.context.trailerInfo;
+  table+=`trailer\n<< /Size ${doc.context.largestObjectNumber+1} /Root ${info.Root} /Prev ${previous[1]}${info.Info?` /Info ${info.Info}`:""}${info.ID?` /ID ${info.ID}`:""} >>\nstartxref\n${start}\n%%EOF\n`;
+  chunks.push(Buffer.from(table));
+  return Buffer.concat(chunks);
+}
+
+async function drawAdditionalText(doc: PDFDocument, annotations: NonNullable<SignOptions["additionalText"]>) {
+  for (const annotation of annotations) {
+    const target = doc.getPages()[annotation.placement.page];
+    if (!target) throw new Error("Ungültiges Datumsfeld.");
+    const box = placeVisibleBox(target, annotation.placement, {width:1,height:1});
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const text = sanitizeWinAnsi(annotation.text);
+    let size = Math.min(11,box.height*.65);
+    while(size>4 && font.widthOfTextAtSize(text,size)>box.width-2)size-=.25;
+    target.pushOperators(pushGraphicsState(),concatTransformationMatrix(...box.matrix));
+    target.drawText(text,{x:1,y:Math.max(1,(box.height-size)/2),size,font});
+    target.pushOperators(popGraphicsState());
+  }
+}
+
+/** Prepare the second signer's place/date for preview while retaining the first signature. */
+export function appendPdfTextIncremental(pdf: Buffer, annotations: NonNullable<SignOptions["additionalText"]>): Promise<Buffer> {
+  return appendPdfRevision(pdf, doc => drawAdditionalText(doc, annotations));
+}
+
+/** Append a signature revision without rewriting bytes covered by an earlier signature. */
+export async function signPdfIncremental(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
+  const prepared = await appendPdfRevision(pdf, async doc => {
+    prepareAcroFormForSigning(doc);
+    await drawAdditionalText(doc, opts.additionalText ?? []);
+    const page = doc.getPages()[opts.placement?.page ?? 0];
+    if (!page) throw new Error("Ungültige Signaturseite.");
+    const rect = opts.placement ? await drawSignatureBox(doc, page, opts.placement, opts) : [0,0,0,0] as [number,number,number,number];
+    pdflibAddPlaceholder({ pdfPage:page, reason:opts.reason??"Zweite Unterschrift", contactInfo:"", name:opts.signerName,location:opts.location??"",signingTime:new Date(),widgetRect:rect,appName:"Gremio",signatureLength:30000 });
+  });
+  return new SignPdf().sign(prepared,new P12Signer(opts.p12,{passphrase:opts.passphrase}));
 }

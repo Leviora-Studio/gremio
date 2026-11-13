@@ -86,6 +86,7 @@ export type PdfEditorProps = {
   filename: string;
   attachmentId: number;
   editable: boolean;
+  signOnly?: boolean;
   hasCert: boolean;
   onClose: () => void;
   // Optional: abweichende Endpunkte (z. B. Inventar statt Karten-Anhang).
@@ -149,6 +150,7 @@ export default function PdfEditor({
   filename,
   attachmentId,
   editable,
+  signOnly = false,
   hasCert,
   onClose,
   fieldsUrl,
@@ -198,7 +200,7 @@ export default function PdfEditor({
 
   // Formularfelder laden (nur im Editier-Modus).
   useEffect(() => {
-    if (!editable) return;
+    if (!editable || signOnly) return;
     let active = true;
     fetch(fieldsUrl ?? `/api/attachment/${attachmentId}/fields`, { cache: "no-store" })
       .then((r) => {
@@ -248,7 +250,7 @@ export default function PdfEditor({
     return () => {
       active = false;
     };
-  }, [attachmentId, editable, fieldsUrl, reloadKey]);
+  }, [attachmentId, editable, signOnly, fieldsUrl, reloadKey]);
 
   // Neuer Text startet leer und fokussiert (kein Platzhalter, der erst
   // markiert und gelöscht werden muss); bleibt er leer, verschwindet er wieder.
@@ -485,13 +487,13 @@ export default function PdfEditor({
         {editable && (
           <>
             <span className="mx-1 hidden h-5 w-px bg-slate-300 sm:block" />
-            <button
+            {!signOnly && <button
               type="button"
               className={`${tool === "text" ? "btn-primary" : "btn-secondary"} btn-sm`}
               onClick={() => setTool((t) => (t === "text" ? "none" : "text"))}
             >
               ✎ Text
-            </button>
+            </button>}
             <button
               type="button"
               className={`${tool === "sign" ? "btn-primary" : "btn-secondary"} btn-sm`}

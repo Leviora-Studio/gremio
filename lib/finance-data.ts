@@ -13,6 +13,7 @@ import {
   type FinanceBoard,
 } from "@/lib/db/schema";
 import { resolveSourceBoards } from "@/lib/finance";
+import { cashbookFinanceProjection } from "@/lib/cashbook/finance";
 import { budgetTitles } from "@/lib/card-budget";
 
 export type PlanItem = typeof financePlanItems.$inferSelect;
@@ -27,6 +28,7 @@ export type ExpenseLeaf = {
 export type ExpenseRow = ExpenseLeaf & { children: ExpenseLeaf[] };
 
 export type AntragRow = {
+  breakdown?: {title:string;approved:number;paid:number;outstanding:number}[];
   id: number;
   number: string | null;
   budgetTitle: string | null;
@@ -207,6 +209,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
     }
   }
 
+  const ledgerProjection = fb.cashbookId ? await cashbookFinanceProjection(fb,accessibleIds,accountIds) : null;
   return {
     accountNames: accountRows.map((a) => a.name),
     expenseAccountNames: expenseAccountsOverridden
@@ -218,8 +221,8 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
     incomeTops,
     expenseTops,
     childrenOf,
-    cardRows,
-    live: buildRows(expenseTops, childrenOf, liveByTitle),
-    actual: buildRows(expenseTops, childrenOf, actualByTitle),
+    cardRows: ledgerProjection?.cardRows ?? cardRows,
+    live: buildRows(expenseTops, childrenOf, ledgerProjection?.live ?? liveByTitle),
+    actual: buildRows(expenseTops, childrenOf, ledgerProjection?.actual ?? actualByTitle),
   };
 }

@@ -48,6 +48,7 @@ export type KanbanCard = {
   applicant: string;
   priorityId: number | null;
   resubmitted: boolean;
+  pendingLock?: boolean;
   deadline: string | null;
   meeting: string | null;
   assignees: { id: number; name: string; avatarPath: string | null }[];
@@ -536,12 +537,13 @@ function SortableCard({
       className={clsx(
         "rounded-md border p-3 shadow-sm",
         canEdit ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer",
-        card.resubmitted
+        card.pendingLock ? "border-red-500 bg-red-50 ring-1 ring-red-400" : card.resubmitted
           ? "border-amber-400 bg-amber-50 hover:border-amber-500"
           : "border-slate-200 bg-white hover:border-brand-300",
         isDragging && "opacity-40",
       )}
     >
+      {card.pendingLock && <p className="mb-2 text-xs font-semibold text-red-700">Sperrbestätigung ausstehend</p>}
       <CardView card={card} visibleSet={visibleSet} priorityMap={priorityMap} />
     </div>
   );

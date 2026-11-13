@@ -32,8 +32,8 @@ const COLUMNS: {
   { key: "decisionRef", label: "Beschlussreferenz" },
   { key: "instructionDate", label: "Anweisung" },
   { key: "transferDate", label: "Überweisung" },
-  { key: "approvedAmount", label: "Genehmigt", numeric: true, right: true },
-  { key: "actualAmount", label: "Getätigt", numeric: true, right: true },
+  { key: "approvedAmount", label: "Noch offen (maximal)", numeric: true, right: true },
+  { key: "actualAmount", label: "Gezahlt", numeric: true, right: true },
 ];
 
 export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
@@ -133,7 +133,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
                     "—"
                   )}
                 </td>
-                <td className="py-2 pr-3">{c.budgetTitle}</td>
+                <td className="py-2 pr-3">{c.breakdown?c.breakdown.map(r=><div key={r.title} className="min-h-7">{r.title}</div>):c.budgetTitle}</td>
                 <td className="py-2 pr-3">
                   <Link
                     href={`/intern/card/${c.id}`}
@@ -147,10 +147,10 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
                 <td className="py-2 pr-3">{c.instructionDate ?? "—"}</td>
                 <td className="py-2 pr-3">{c.transferDate ?? "—"}</td>
                 <td className="py-2 pr-3 text-right">
-                  {c.approvedAmount != null ? formatCents(c.approvedAmount) : "—"}
+                  {c.breakdown?c.breakdown.map(r=><div className="min-h-7" key={r.title}>{formatCents(r.outstanding)}</div>):c.approvedAmount != null ? formatCents(c.approvedAmount) : "—"}
                 </td>
                 <td className="py-2 text-right">
-                  {c.actualAmount != null ? formatCents(c.actualAmount) : "—"}
+                  {c.breakdown?c.breakdown.map(r=><div className="min-h-7" key={r.title}>{formatCents(r.paid)}</div>):c.actualAmount != null ? formatCents(c.actualAmount) : "—"}
                 </td>
               </tr>
             ))}

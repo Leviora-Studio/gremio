@@ -131,7 +131,7 @@ function antraegeTable(data: FinanceData): Table {
   const rows: Row[] = [];
   let totApproved = 0;
   let totActual = 0;
-  for (const c of [...data.cardRows].sort((a, b) => (a.budgetTitle ?? "").localeCompare(b.budgetTitle ?? "", "de", { numeric: true }))) {
+  for (const c of [...data.cardRows.flatMap(c=>c.breakdown?c.breakdown.map(row=>({...c,budgetTitle:row.title,approvedAmount:row.outstanding,actualAmount:row.paid})): [c])].sort((a, b) => (a.budgetTitle ?? "").localeCompare(b.budgetTitle ?? "", "de", { numeric: true }))) {
       totApproved += c.approvedAmount ?? 0;
       totActual += c.actualAmount ?? 0;
       rows.push({
@@ -163,8 +163,8 @@ function antraegeTable(data: FinanceData): Table {
       { header: "Beschlussreferenz", width: 2.6 },
       { header: "Anweisung", width: 1.4 },
       { header: "Überweisung", width: 1.4 },
-      { header: "Genehmigt (€)", width: 1.6, money: true },
-      { header: "Getätigt (€)", width: 1.6, money: true },
+      { header: data.cardRows.some(c=>c.breakdown)?"Noch offen (maximal) (€)":"Genehmigt (€)", width: 1.6, money: true },
+      { header: data.cardRows.some(c=>c.breakdown)?"Gezahlt (€)":"Getätigt (€)", width: 1.6, money: true },
     ],
     rows,
   };
@@ -172,7 +172,7 @@ function antraegeTable(data: FinanceData): Table {
 
 // View 4b: Anträge — flache Liste, sortiert nach Antragsnummer (leere ans Ende).
 function antraegeByNumberTable(data: FinanceData): Table {
-  const sorted = [...data.cardRows].sort((a, b) => {
+  const sorted = [...data.cardRows.flatMap(c=>c.breakdown?c.breakdown.map(row=>({...c,budgetTitle:row.title,approvedAmount:row.outstanding,actualAmount:row.paid})): [c])].sort((a, b) => {
     const an = (a.number ?? "").trim();
     const bn = (b.number ?? "").trim();
     if (!an || !bn) return an === bn ? 0 : an ? -1 : 1; // leere Nummern ans Ende
@@ -214,8 +214,8 @@ function antraegeByNumberTable(data: FinanceData): Table {
       { header: "Beschlussreferenz", width: 2.6 },
       { header: "Anweisung", width: 1.4 },
       { header: "Überweisung", width: 1.4 },
-      { header: "Genehmigt (€)", width: 1.6, money: true },
-      { header: "Getätigt (€)", width: 1.6, money: true },
+      { header: data.cardRows.some(c=>c.breakdown)?"Noch offen (maximal) (€)":"Genehmigt (€)", width: 1.6, money: true },
+      { header: data.cardRows.some(c=>c.breakdown)?"Gezahlt (€)":"Getätigt (€)", width: 1.6, money: true },
     ],
     rows,
   };

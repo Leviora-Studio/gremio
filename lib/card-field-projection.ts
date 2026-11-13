@@ -28,6 +28,7 @@ export function visibleActivityDetail(event: { type: string; detail: string | nu
   if (event.type === "assignee") return visible.has("assignee") ? event.detail : null;
   if (event.type === "deadline") return visible.has("deadline") ? event.detail : null;
   const labels: Record<string, string> = {
+    locked: "Karte dauerhaft gesperrt",
     budget_plan: "Haushaltstitel-Einplanung aktualisiert",
     attachment_added: "Datei hinzugefügt",
     attachment_removed: "Datei entfernt",

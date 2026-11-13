@@ -35,13 +35,19 @@ test("application-board upgrade preserves complete existing cards, accounting po
     for (const table of tables) before.set(table, (await pool.query(`select * from ${table} t order by to_jsonb(t)::text`)).rows);
     const originalBoard = (await pool.query("select * from boards where id=$1", [board])).rows[0];
     await migrate(drizzle(pool), { migrationsFolder: "drizzle" });
-    for (const table of tables) assert.deepEqual((await pool.query(`select * from ${table} t order by to_jsonb(t)::text`)).rows, before.get(table), `${table} unchanged`);
+    for (const table of tables) {
+      const rows=(await pool.query(`select * from ${table} t order by to_jsonb(t)::text`)).rows;
+      for(const row of rows) {if(table==="cards"){assert.equal(row.public_status_id,row.status_id);delete row.locked_at;delete row.locked_by;delete row.public_status_id;}if(table==="board_statuses")delete row.is_lock_column;}
+      assert.deepEqual(rows, before.get(table), `${table} unchanged`);
+    }
     const upgradedBoard = (await pool.query("select * from boards where id=$1", [board])).rows[0];
     assert.equal(upgradedBoard.is_application_board, false);
     delete upgradedBoard.is_application_board;
+    delete upgradedBoard.completed_status_id;
     assert.deepEqual(upgradedBoard, originalBoard);
     assert.deepEqual((await pool.query("select * from card_budget_plans")).rows, []);
     await migrate(drizzle(pool), { migrationsFolder: "drizzle" });
-    assert.deepEqual((await pool.query("select * from cards order by id")).rows, before.get("cards"), "repeated migration preserves data");
+    const repeated=(await pool.query("select * from cards order by id")).rows.map(({locked_at,locked_by,public_status_id,...original})=>original);
+    assert.deepEqual(repeated, before.get("cards"), "repeated migration preserves data");
   } finally { await pool.end(); await rm(temporary, { recursive: true, force: true }); }
 });

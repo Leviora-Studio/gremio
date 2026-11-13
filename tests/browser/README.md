@@ -298,3 +298,52 @@ likewise seeds synthetic legacy positions instead of using the retired creation 
 `application-board-migration.test.ts` uses an empty isolated database supplied through
 `TEST_APPLICATION_BOARD_MIGRATION_DATABASE_URL` and compares complete legacy records
 before/after migration 0093; it skips when that separate URL is absent.
+
+`cashbook-production.cjs` runs with `node --import tsx` and requires a separate
+`GREMIO_TEST_BUILD_DIR`, an isolated `gremio_workflows_test_*` database, synthetic
+application secrets and the usual `PLAYWRIGHT_MODULE` / `CHROME_PATH`. It creates
+only synthetic users, certificates, cards, receipts and cashbook data. The real
+server checks admin-only creation, hidden navigation without access, configuration,
+pending public status, irreversible locking, receipt naming, application selection,
+PDF generation, sign-only viewing, both signatures, authorization, limited office
+access, ZIP downloads and mobile layout. Immutable ledger fixtures are retained in
+the isolated database; discard that database after testing rather than deleting
+individual posted rows. The ordinary local application database is never used.
+
+The cashbook workflow also configures the booking-number prefix `KÖT` with four
+digits, checks distinct original/correction numbers and verifies the booking-number
+column on mobile. `cashbook-number-migration.test.ts` requires an empty isolated
+`TEST_CASHBOOK_NUMBER_MIGRATION_URL` database; it verifies unchanged historical
+payment values, stable backfilled numbers and concurrent number allocation.
+
+The cashbook production fixture also verifies real HTTP requests: unrestricted
+owner Bearer tokens cannot download cashbook PDFs/ZIPs, while authorized web
+sessions can. Frozen-card PATCH/DELETE return 409 and the public status API
+keeps its existing shape with freeze-aware upload flags.
+
+`tests/application-api-freeze-db.test.ts` runs against an isolated migrated
+`gremio_workflows_test_*` database and temporary `gremio-cashbook-test-*` upload
+folder. It covers REST/MCP lock confirmation, revisioned planning, scope/live
+rights, receipt-only uploads, frozen assignments/comments/deletion, atomic
+rejection, public pending-status privacy, and absence of cashbook tools.
+
+The cashbook production fixture selects an alternate writer despite configured
+roles, fills the second signer's own place/date with the In-App date picker, checks
+the prepared PDF text before signing, and verifies that correction records appear
+in neither office task list and cannot be marked done. The isolated DB and CMS
+tests also cover invalid/stale preparation, frozen payment values, revoked rights,
+and cryptographic validity through the preparation and second signature revisions.
+
+Emergency flags are covered by the cashbook fixture: the typed confirmation must
+match MARKIEREN, office queue and detail warnings are red/textual, and completed
+instructions cannot be newly flagged. DB tests cover live rights, stale revisions,
+immutable flag metadata, unchanged booking values/files, and concurrent marking
+versus office completion. The number-migration upgrade fixture additionally checks
+that migration 0097 leaves every historical value intact and initializes flags to null.
+
+Consultation resolution is covered by the production fixture (office confirmation,
+writer access, denied reader control, hidden warnings in details/queues/table and
+unchanged office completion). DB checks exercise office access with a read grant,
+writer resolution, concurrent attempts, stale revisions and immutable resolution
+metadata. The upgrade fixture verifies migration 0098 retains existing flags and
+all historical values while initializing resolution metadata to null.

@@ -54,6 +54,140 @@ tags:
 security:
   - BearerAuth: []
 paths:
+  /api/v1/cards/{id}/lock:
+    post:
+      tags:
+        - Karten
+      operationId: lockApplicationCard
+      summary: Antrag dauerhaft sperren
+      description: Irreversible. Requires write scope, live board write access, active application board
+        and the current lock column. No unlock operation exists. After locking, only column/position
+        changes and new receipts are allowed. Cashbook functions are not exposed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: &a1
+            type: integer
+            minimum: 1
+            maximum: 2147483647
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - confirm
+                - expectedStatusId
+              properties:
+                confirm:
+                  const: true
+                expectedStatusId: *a1
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    const: true
+        "400": &a2
+          description: Ungültige Eingabe, fehlende Berechtigung oder nicht gefunden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+  /api/v1/cards/{id}/budget-plan:
+    get:
+      tags:
+        - Karten
+      operationId: getBudgetPlan
+      summary: Haushaltstitel-Einplanung lesen
+      description: Application boards only. Independent from accounting budgetPositions. No cashbook
+        records or payment details.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema: &a3
+                type: object
+                additionalProperties: false
+                required:
+                  - revision
+                  - allocations
+                properties:
+                  revision:
+                    type: integer
+                    minimum: 0
+                    maximum: 2147483646
+                  allocations:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required:
+                        - amountCents
+                        - budgetTitle
+                      properties:
+                        amountCents:
+                          type: integer
+                          minimum: 0
+                          maximum: 2000000000
+                        budgetTitle:
+                          type: string
+                          minLength: 1
+                          maxLength: 200
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
+    patch:
+      tags:
+        - Karten
+      operationId: updateBudgetPlan
+      summary: Haushaltstitel-Einplanung ersetzen
+      description: Write scope and live board write access. Full replacement with current revision; empty
+        allocations clears the plan. Locked cards and stale revisions return 409 without changes.
+        Amounts in integer cents.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *a3
+      responses:
+        "200":
+          description: Erfolgreich.
+          content:
+            application/json:
+              schema: *a3
+        "400": *a2
+        "401": *a2
+        "403": *a2
+        "404": *a2
+        "409": *a2
   /api/v1/cards:
     get:
       tags:
@@ -63,8 +197,8 @@ paths:
       description: Only live accessible and token-allowed boards. Always paginated. Hidden fields cannot
         match searches, filters or deadline sorting. accountId also matches budget positions.
         Unknown query parameters return 400.
-      parameters: &a21
-        - &a3
+      parameters: &a22
+        - &a4
           name: limit
           in: query
           required: false
@@ -73,7 +207,7 @@ paths:
             minimum: 1
             maximum: 100
             default: 50
-        - &a4
+        - &a5
           name: offset
           in: query
           required: false
@@ -82,7 +216,7 @@ paths:
             minimum: 0
             maximum: 1000000
             default: 0
-        - &a8
+        - &a9
           name: q
           in: query
           required: false
@@ -91,29 +225,26 @@ paths:
             maxLength: 200
           description: Literal substring search (case-insensitive) in title and visible number, applicant,
             notes and budget title; % and _ are literal.
-        - &a9
+        - &a10
           name: boardId
           in: query
           required: false
-          schema: &a1
-            type: integer
-            minimum: 1
-            maximum: 2147483647
+          schema: *a1
         - name: statusId
           in: query
           required: false
           schema: *a1
-        - &a10
+        - &a11
           name: priorityId
           in: query
           required: false
           schema: *a1
-        - &a11
+        - &a12
           name: accountId
           in: query
           required: false
           schema: *a1
-        - &a12
+        - &a13
           name: assigneeUserId
           in: query
           required: false
@@ -128,13 +259,13 @@ paths:
               - "true"
               - all
             default: "false"
-        - &a13
+        - &a14
           name: unassigned
           in: query
           required: false
           schema:
             type: boolean
-        - &a14
+        - &a15
           name: overdue
           in: query
           required: false
@@ -142,7 +273,7 @@ paths:
             type: boolean
           description: Deadline before today's date in Europe/Berlin, not in the board's done column and not
             archived. Hidden deadlines never match.
-        - &a15
+        - &a16
           name: deadlineBefore
           in: query
           required: false
@@ -150,7 +281,7 @@ paths:
             type: string
             format: date
           description: Exclusive upper bound.
-        - &a16
+        - &a17
           name: deadlineAfter
           in: query
           required: false
@@ -158,7 +289,7 @@ paths:
             type: string
             format: date
           description: Exclusive lower bound.
-        - &a17
+        - &a18
           name: sort
           in: query
           required: false
@@ -178,12 +309,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CardList"
-        "400": &a2
-          description: Ungültige Eingabe, fehlende Berechtigung oder nicht gefunden.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+        "400": *a2
         "401": *a2
         "403": *a2
         "404": *a2
@@ -201,8 +327,8 @@ paths:
           in: path
           required: true
           schema: *a1
-        - *a3
         - *a4
+        - *a5
         - name: q
           in: query
           required: false
@@ -236,7 +362,7 @@ paths:
                           type:
                             - string
                             - "null"
-                  pagination: &a5
+                  pagination: &a6
                     type: object
                     required:
                       - limit
@@ -342,8 +468,8 @@ paths:
           in: path
           required: true
           schema: *a1
-        - *a3
         - *a4
+        - *a5
       responses:
         "200":
           description: Erfolgreich.
@@ -359,7 +485,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Comment"
-                  pagination: *a5
+                  pagination: *a6
         "400": *a2
         "401": *a2
         "403": *a2
@@ -379,7 +505,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: &a6
+            schema: &a7
               type: object
               additionalProperties: false
               required:
@@ -427,7 +553,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: *a6
+            schema: *a7
       responses:
         "200":
           description: Erfolgreich.
@@ -488,8 +614,8 @@ paths:
           in: path
           required: true
           schema: *a1
-        - *a3
         - *a4
+        - *a5
       responses:
         "200":
           description: Erfolgreich.
@@ -505,7 +631,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Activity"
-                  pagination: *a5
+                  pagination: *a6
         "400": *a2
         "401": *a2
         "403": *a2
@@ -522,8 +648,8 @@ paths:
           in: path
           required: true
           schema: *a1
-        - *a3
         - *a4
+        - *a5
       responses:
         "200":
           description: Erfolgreich.
@@ -539,7 +665,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Attachment"
-                  pagination: *a5
+                  pagination: *a6
         "400": *a2
         "401": *a2
         "403": *a2
@@ -550,9 +676,11 @@ paths:
         - Anhänge
       operationId: uploadCardAttachment
       summary: Anhang hochladen
-      description: Write scope; enabled attachment field. Exactly one file and kind. Max 25 MiB, PDF
-        except student_card also PNG/JPEG. Named slots replace existing files; other appends.
-        Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.
+      description: Write scope; enabled attachment field. Exactly one file and kind, optionally
+        uploadPurpose=receipt with kind=other for automatically numbered receipts. Locked cards
+        accept only new receipts, never replacements. Max 25 MiB, PDF except student_card also
+        PNG/JPEG. Named slots replace existing files; other appends. Storage and rollback cleanup
+        follow the card lock. Inventory system boards are read-only.
       parameters:
         - name: id
           in: path
@@ -572,6 +700,10 @@ paths:
                 file:
                   type: string
                   format: binary
+                uploadPurpose:
+                  const: receipt
+                  description: Only with kind=other; automatic receipt filename, also allowed after irreversible
+                    locking.
                 kind:
                   type: string
                   enum:
@@ -702,7 +834,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiInfo"
-        "401": &a7
+        "401": &a8
           description: "Kein oder ungültiger API-Token. Der Header `Authorization: Bearer …` fehlt, ist
             fehlerhaft, der Token wurde widerrufen oder das Konto ist deaktiviert."
           content:
@@ -739,7 +871,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Board"
-        "401": *a7
+        "401": *a8
   /api/v1/boards/{id}:
     get:
       tags:
@@ -770,8 +902,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardDetail"
-        "401": *a7
-        "404": &a18
+        "401": *a8
+        "404": &a19
           description: Board nicht gefunden — **oder** der Nutzer hat keinen Zugriff darauf, **oder** der
             Token ist auf andere Boards beschränkt. Bewusst identisch, damit die Existenz fremder
             Boards nicht preisgegeben wird.
@@ -822,9 +954,8 @@ paths:
               - "false"
               - "true"
               - all
-        - *a3
         - *a4
-        - *a8
+        - *a5
         - *a9
         - *a10
         - *a11
@@ -834,6 +965,7 @@ paths:
         - *a15
         - *a16
         - *a17
+        - *a18
       responses:
         "200":
           description: Karten des Boards.
@@ -858,12 +990,12 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: &a19
+                    assigneeUserIds: &a20
                       - 7
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
-        "400": &a20
+        "400": &a21
           description: "Ungültige Eingabe: kaputtes JSON, unbekanntes Body-Feld, Schema-Verstoß, ein am Board
             **deaktiviertes** Feld, eine nicht zum Board gehörende `statusId`, eine unbekannte
             `priorityId`/`accountId`, ein Nutzer ohne Board-Zugriff oder `archived: true` (manuelles
@@ -884,8 +1016,8 @@ paths:
                   summary: Feld am Board deaktiviert
                   value:
                     error: Feld 'budgetTitle' ist auf diesem Board nicht aktiviert.
-        "401": *a7
-        "404": *a18
+        "401": *a8
+        "404": *a19
     post:
       tags:
         - Karten
@@ -927,7 +1059,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: &a22
+                card: &a23
                   id: 42
                   budgetMode: single
                   budgetRevision: 0
@@ -942,14 +1074,14 @@ paths:
                   applicant: Max Mustermann
                   number: A_0042_2026
                   priorityId: 3
-                  assigneeUserIds: *a19
+                  assigneeUserIds: *a20
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
                 budgetPositions: []
-        "400": *a20
-        "401": *a7
-        "403": &a23
+        "400": *a21
+        "401": *a8
+        "403": &a24
           description: "Schreibzugriff verweigert: Der Token hat nur Lese-Rechte (`scope=read`) oder dem
             Nutzer fehlt live das Board-Schreibrecht."
           content:
@@ -961,8 +1093,8 @@ paths:
                   summary: Token nur lesend
                   value:
                     error: Dieser Token hat nur Lese-Rechte (scope=read).
-        "404": *a18
-        "409": &a25
+        "404": *a19
+        "409": &a26
           description: "Leihvorgang-Board: Dessen Karten werden ausschließlich über das Inventar verwaltet,
             die API ist dort nur lesend."
           content:
@@ -971,7 +1103,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: "Leihvorgang-Board: Karten werden über das Inventar verwaltet (API nur lesend)."
-        "413": &a26
+        "413": &a27
           description: Request-Body größer als 1 MB (1.000.000 Byte). Die Grenze gilt beim Lesen, auch ohne
             `Content-Length` (chunked/HTTP-2).
           content:
@@ -994,7 +1126,7 @@ paths:
 
         **Berechtigung:** jeder gültige Token; die Ergebnismenge folgt den Board-Zugriffen des
         Nutzers.
-      parameters: *a21
+      parameters: *a22
       responses:
         "200":
           description: Zugewiesene Karten.
@@ -1019,13 +1151,13 @@ paths:
                     applicant: Max Mustermann
                     number: A_0042_2026
                     priorityId: 3
-                    assigneeUserIds: *a19
+                    assigneeUserIds: *a20
                     deadline: 2026-02-01
                     approvedAmountCents: 25000
                     notes: null
                     boardName: Antragsboard
-        "400": *a20
-        "401": *a7
+        "400": *a21
+        "401": *a8
   /api/v1/cards/{id}:
     get:
       tags:
@@ -1069,14 +1201,14 @@ paths:
                   applicant: Max Mustermann
                   number: A_0042_2026
                   priorityId: 3
-                  assigneeUserIds: *a19
+                  assigneeUserIds: *a20
                   deadline: 2026-02-01
                   approvedAmountCents: 25000
                   notes: null
                   boardName: Antragsboard
                 budgetPositions: []
-        "401": *a7
-        "404": &a24
+        "401": *a8
+        "404": &a25
           description: Karte nicht gefunden — **oder** kein Zugriff auf ihr Board, **oder** der Token ist auf
             andere Boards beschränkt.
           content:
@@ -1149,14 +1281,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardEnvelope"
               example:
-                card: *a22
+                card: *a23
                 budgetPositions: []
-        "400": *a20
-        "401": *a7
-        "403": *a23
-        "404": *a24
-        "409": *a25
-        "413": *a26
+        "400": *a21
+        "401": *a8
+        "403": *a24
+        "404": *a25
+        "409": *a26
+        "413": *a27
     delete:
       tags:
         - Karten
@@ -1193,10 +1325,10 @@ paths:
                     const: true
               example:
                 ok: true
-        "401": *a7
-        "403": *a23
-        "404": *a24
-        "409": *a25
+        "401": *a8
+        "403": *a24
+        "404": *a25
+        "409": *a26
 components:
   securitySchemes:
     BearerAuth:
@@ -1278,7 +1410,7 @@ components:
                         - checkbox
                     value:
                       type: string
-    Pagination: *a5
+    Pagination: *a6
     Comment:
       type: object
       required:
@@ -1352,6 +1484,15 @@ components:
             - annex_b
             - student_card
             - other
+        uploadPurpose:
+          type:
+            - string
+            - "null"
+          enum:
+            - general
+            - resubmission
+            - receipt
+            - null
         filename:
           type: string
         mime:
@@ -1491,6 +1632,13 @@ components:
             - admin
             - member
           description: Rolle des Token-Nutzers bezogen auf dieses Board.
+        isApplicationBoard:
+          type: boolean
+        completedStatusId:
+          type:
+            - integer
+            - "null"
+          description: Spalte vollständig abgeschlossener Anträge.
         doneStatusId:
           type:
             - integer
@@ -1528,6 +1676,10 @@ components:
         position:
           type: integer
           format: int32
+        isLockColumn:
+          type: boolean
+          description: Öffentlicher Status wird bei ungesperrten Anträgen erst nach ausdrücklicher Sperre
+            bestätigt.
         isArchiveTrigger:
           type: boolean
           description: Erreicht eine Karte diese Spalte, greift die Nextcloud-Archivierung.
@@ -1611,6 +1763,21 @@ components:
         statusId:
           type: integer
           format: int32
+        lockedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Dauerhaft eingefroren; nur statusId/position und neue Quittungen bleiben schreibbar.
+        lockedBy:
+          type:
+            - integer
+            - "null"
+        publicStatusId:
+          type:
+            - integer
+            - "null"
+          description: Zuletzt bestätigter öffentlicher Status; null bedeutet Bestätigung ausstehend.
         statusName:
           type: string
         boardName:
@@ -1800,7 +1967,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Card"
-        pagination: *a5
+        pagination: *a6
     BudgetPositionWrite:
       type: object
       additionalProperties: false

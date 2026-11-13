@@ -659,6 +659,41 @@
       "when": 1793559600000,
       "tag": "0093_application_board_budget_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793563200000,
+      "tag": "0094_irreversible_card_locks",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1793566800000,
+      "tag": "0095_cashbooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793570400000,
+      "tag": "0096_cashbook_booking_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793574000000,
+      "tag": "0097_cashbook_emergency_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1793577600000,
+      "tag": "0098_cashbook_flag_resolution",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ export type AttachmentLinkProps = {
   src: string;
   /** Bearbeiten/Signieren erlaubt (intern, eingeloggt). Öffentlich = false. */
   editable?: boolean;
+  signOnly?: boolean;
   /** Hat der Nutzer ein Signatur-Zertifikat hinterlegt? */
   hasCert?: boolean;
   /** Anzeigetext (Standard: Dateiname). */
@@ -35,6 +36,7 @@ export function AttachmentLink({
   mime,
   src,
   editable = false,
+  signOnly = false,
   hasCert = false,
   label,
   className,
@@ -70,6 +72,7 @@ export function AttachmentLink({
         filename={filename}
         mime={mime}
         attachmentId={id}
+        signOnly={signOnly}
         editable={editable}
         hasCert={hasCert}
         fieldsUrl={fieldsUrl}

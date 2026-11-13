@@ -138,11 +138,11 @@ export async function applyTriggerAssignments(
 ): Promise<void> {
   if (!kinds.length) return;
   const [card] = await db
-    .select({ boardId: cards.boardId })
+    .select({ boardId: cards.boardId, lockedAt: cards.lockedAt })
     .from(cards)
     .where(eq(cards.id, cardId))
     .limit(1);
-  if (!card) return;
+  if (!card || card.lockedAt) return;
   const configs = await getTriggerAssignmentConfigs(card.boardId);
   const active = TRIGGER_KINDS.filter((k) => {
     const c = configs.get(k);

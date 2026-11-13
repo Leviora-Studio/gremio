@@ -728,12 +728,12 @@ Bereits ausgegebene Links unter dem bisherigen \`APP_BASE_URL\`-Origin bleiben g
           "Welche Aktionen die öffentliche Webansicht gerade anbietet. Dieser Endpunkt stellt nur den Status bereit — die Aktionen selbst laufen über die Weboberfläche.",
         required: ["canUploadDocuments", "submitMode"],
         properties: {
-          canResubmit: { type: "boolean", description: "Nachreichung aktuell freigeschaltet (Anträge). Kann gleichzeitig mit canReceipt wahr sein." },
-          canReceipt: { type: "boolean", description: "Quittungen aktuell freigeschaltet (Anträge); Archiv-Sperre hat Vorrang." },
+          canResubmit: { type: "boolean", description: "Nachreichung aktuell freigeschaltet (Anträge); nach dauerhafter Sperre immer false. Kann gleichzeitig mit canReceipt wahr sein." },
+          canReceipt: { type: "boolean", description: "Quittungen aktuell freigeschaltet (Anträge); bei dauerhaft gesperrten Anträgen auch ohne Quittungs-Trigger, Archiv-Sperre hat Vorrang." },
           canUploadDocuments: {
             type: "boolean",
             description:
-              "Dürfen weitere Dateien hinzugefügt werden? Bei archivierten Vorgängen `false`. Für Feedback immer `false`.",
+              "Dürfen allgemeine Dateien hinzugefügt werden? Bei archivierten oder dauerhaft gesperrten Vorgängen `false`. Quittungen getrennt über canReceipt prüfen. Für Feedback immer `false`.",
           },
           submitMode: {
             type: ["string", "null"],

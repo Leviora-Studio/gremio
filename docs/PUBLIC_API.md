@@ -15,8 +15,10 @@ vollständige genehmigte Kartensumme. Konten und Einzelpositionen bleiben intern
 `availableActions.canResubmit` und `availableActions.canReceipt` bilden die zwei
 unabhängigen Freigaben ab und können gleichzeitig wahr sein. Das bestehende
 `submitMode` bleibt rückwärtskompatibel (Nachreichung hat dort Vorrang). Quittungen
-sind nur in aktuell ausgewählten Quellspalten mit gültiger gemeinsamer Zielspalte
-freigeschaltet, nicht historisch. Eine Archiv-Trigger-Spalte sperrt alle öffentlichen
+sind vor einer dauerhaften Sperre nur in aktuell ausgewählten Quellspalten mit
+gültiger gemeinsamer Zielspalte freigeschaltet, nicht historisch. Nach dauerhafter
+Sperre bleiben ausschließlich Quittungen ergänzbar; `canResubmit` und
+`canUploadDocuments` sind dann false, `canReceipt` bleibt außerhalb des Archivs true. Eine Archiv-Trigger-Spalte sperrt alle öffentlichen
 Uploads und abschließenden Einreichungen.
 
 Die beiden Freigabefelder und der Gesamtbetrag sind bei Antragsantworten immer
@@ -587,3 +589,14 @@ Containerstart automatisch angewendet und ist rein additiv.
 **Client-Anpassung erforderlich:** Neue Antrags- und Feedback-Einreichungen benötigen jetzt `email`, auch wenn Bestätigungen ausgeschaltet sind. Fehlende oder ungültige Adressen ergeben `400`. Die Adresse gehört zum Idempotenz-Fingerprint; eine geänderte Adresse mit demselben Schlüssel ergibt `409`. Bestehende Einreichungen behalten ihre Links und benötigen keine nachträgliche Adresse.
 
 Der Admin aktiviert Bestätigungen unter `/admin/email` je öffentlichem Ziel-Board und Einreichungsart (Finanzantrag, Feedback oder Inventaranfrage). SMTP muss ebenfalls aktiviert sein. Die Einreichungsantwort bleibt unverändert. Versand erfolgt nach dem Commit aus einer dauerhaften Warteschlange; SMTP-Ausfälle verhindern keine Einreichung. Die Mail enthält den persönlichen Status-Link und ausschließlich die erzeugte Eingangsbestätigung als PDF, keine hochgeladenen Dateien oder internen Notizen. Die Kontaktadresse erscheint in keiner öffentlichen Antwort. Ein E-Mail-Empfang beweist keine Berechtigung an anderen Anträgen.
+
+### Bestätigter Status und gesperrte Anträge
+
+Bei konfigurierten Sperrspalten veröffentlicht ein noch unbestätigter interner
+Spaltenwechsel keinen neuen öffentlichen Status. Erst die endgültige Sperrbestätigung
+übernimmt ihn. Weitere Spaltenwechsel bereits gesperrter Karten werden sofort
+sichtbar. Die bestehenden `availableActions`-Felder berücksichtigen die Sperre:
+Allgemeine Nachträge sind nicht mehr möglich, Quittungen bleiben außerhalb von
+Archivstatus zulässig. Ohne Receipt-Zielspalte wird ihre Einreichung ohne weiteren
+Statuswechsel bestätigt. Interne Sperrmetadaten, Kassenbuchdaten, Bankverbindungen
+und Buchungsunterlagen werden nicht in den öffentlichen Vertrag aufgenommen.

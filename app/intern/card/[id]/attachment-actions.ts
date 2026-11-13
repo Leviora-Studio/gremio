@@ -23,7 +23,7 @@ async function access(cardId: number) {
   const user = await requireUser();
   if (!validId(cardId)) notFound();
   const [card] = await db.select().from(cards).where(eq(cards.id, cardId));
-  if (!card) notFound();
+  if (!card || card.lockedAt) notFound();
   const [board] = await db.select().from(boards).where(eq(boards.id, card.boardId));
   if (!board || !await canEditBoard(user, board)) notFound();
   return { user, card, visible: await getVisibleFieldKeys(board.id) };

@@ -454,3 +454,43 @@ Sitzungs-/Boardrechte und ist keine neue Bearer-/MCP-Funktion.
 Das Board-Metadatenfeld `visibleFields` kann auch `submitter_email` enthalten.
 Die Kontaktadresse bleibt ein internes UI-Feld und wird über REST/MCP weder
 ausgegeben noch als Karten-Schreibfeld akzeptiert.
+
+### Dauerhaft gesperrte Antragskarten
+
+Die sessiongebundene Weboberfläche kann Antragskarten nach ausdrücklicher
+Bestätigung dauerhaft sperren. Auch API-/MCP-Schreibrechte heben diese Sperre
+nicht auf: Inhalte, Zuordnungen, Kommentare, bestehende Anhänge, Haushaltspositionen
+und Löschung sind danach geschützt. Spaltenwechsel bleiben nach den vorhandenen
+Board- und Tokenrechten möglich. Der interne Kartenstatus kann vor der
+Sperrbestätigung vom noch bestätigten öffentlichen Status abweichen.
+`POST /api/v1/cards/{id}/lock` sperrt mit `{ "confirm": true,
+"expectedStatusId": 123 }` ausdrücklich und unwiderruflich. Erforderlich sind ein
+aktives Antragsboard, die aktuelle Sperrspalte, Schreib-Token und aktuelles
+Board-Schreibrecht. Es gibt keinen Weg zum Entsperren. `card.lockedAt`, `lockedBy`
+und `publicStatusId` sind ausschließlich lesbare Metadaten; Board/Spalten liefern
+`isApplicationBoard`, `completedStatusId` und `isLockColumn`.
+
+`GET /api/v1/cards/{id}/budget-plan` liefert `{ revision, allocations }` mit
+`{ amountCents, budgetTitle }` je Zeile. PATCH ersetzt diese separate Einplanung
+vollständig mit der zuletzt gelesenen Revision; `allocations: []` entfernt sie.
+Die Buchhaltungspositionen und Kartenbeträge werden dabei nicht verändert.
+Sperren und veraltete Revisionen ergeben 409 ohne Teiländerungen.
+
+Quittungen werden über den bestehenden Multipart-Upload mit `kind=other` und
+`uploadPurpose=receipt` ergänzt und automatisch nach dem Q-Schema benannt.
+`uploadPurpose` wird in der internen Anhangsliste mitgeliefert. Alle anderen
+Uploads, Kommentare, Zuweisungen und Löschungen gesperrter Karten werden
+abgewiesen; bestehende Dateien bleiben erhalten. Kombinierte Kartenänderungen
+werden einschließlich expliziter Zuweisungen atomar geprüft.
+
+MCP bietet dieselben drei neuen Antragsmethoden (`lock_application_card`,
+`get_budget_plan`, `update_budget_plan`) und den Quittungszweck beim bestehenden
+`upload_attachment`. Token-Scope, Board-Beschränkung und aktuelle Rechte gelten
+unverändert. Der öffentliche Vertrag erhält keine dieser internen Methoden.
+
+**Kassenbücher bleiben vollständig außerhalb der Bearer-API und von MCP:** keine
+Erstellung, Abfrage, Bearbeitung, Freigabe, Buchung, Signatur oder Korrektur.
+Die für die Oberfläche notwendigen Datei-/ZIP-Routen unter `/api/cashbook/`
+verlangen eine aktive Webanmeldung und eigene Kassenbuchrechte; weder persönliche
+API-Tokens noch MCP-Zugänge ersetzen diese Sitzung. Sie sind keine REST-Funktionen
+für externe Clients und werden in keiner OpenAPI- oder MCP-Liste angeboten.

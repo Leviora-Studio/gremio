@@ -23,6 +23,7 @@ export type PdfViewerModalProps = {
   mime: string;
   attachmentId: number;
   editable: boolean;
+  signOnly?: boolean;
   hasCert: boolean;
   fieldsUrl?: string;
   saveAction?: PdfEditorProps["saveAction"];
@@ -39,6 +40,7 @@ export function PdfViewerModal({
   mime,
   attachmentId,
   editable,
+  signOnly = false,
   hasCert,
   fieldsUrl,
   saveAction,
@@ -102,6 +104,7 @@ export function PdfViewerModal({
             src={src}
             filename={filename}
             attachmentId={attachmentId}
+            signOnly={signOnly}
             editable={editable}
             hasCert={hasCert}
             onClose={requestClose}

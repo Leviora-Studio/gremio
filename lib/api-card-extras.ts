@@ -29,6 +29,8 @@ import {
   deleteStoredFile,
   saveAntragFile,
   validateUpload,
+  nextReceiptIndex,
+  receiptFileName,
 } from "@/lib/attachments";
 import {
   isCardAttachmentVisible,
@@ -40,6 +42,8 @@ import {
   MAX_UPLOAD_BYTES,
   type AttachmentKind,
 } from "@/lib/constants";
+
+import { CardFrozenError, requireMutableCard } from "@/lib/card-freeze";
 
 export async function apiJson(req: Request, max = 1000000): Promise<unknown> {
   const result = await readLimitedBody(req, max);
@@ -154,47 +158,53 @@ export async function commentsApi(
       : commentSchema.safeParse(await apiJson(req, 40000));
   if (parsed && !parsed.success)
     return apiError(400, "Kommentar muss 1 bis 5000 Zeichen enthalten.");
-  if (req.method === "POST" && parsed?.success) {
-    const [comment] = await db
-      .insert(cardComments)
-      .values({
-        cardId: r.card.id,
-        userId: r.ctx.user.id,
-        body: parsed.data.body,
-      })
-      .returning();
-    return NextResponse.json({ comment }, { status: 201 });
-  }
-  const cid = parseApiId(commentId ?? "");
-  if (!cid) return apiError(404, "Kommentar nicht gefunden.");
-  const [comment] = await db
-    .select()
-    .from(cardComments)
-    .where(and(eq(cardComments.id, cid), eq(cardComments.cardId, r.card.id)));
-  if (!comment) return apiError(404, "Kommentar nicht gefunden.");
-  // Editing is author-only; deletion follows the existing author/board-manager rule.
-  if (
-    comment.userId !== r.ctx.user.id &&
-    (req.method !== "DELETE" || !(await canManageBoard(r.ctx.user, r.board)))
-  )
-    return apiError(403, "Keine Berechtigung für diesen Kommentar.");
-  if (req.method === "DELETE") {
-    await db
-      .delete(cardComments)
+  try { return await db.transaction(async tx => {
+    await requireMutableCard(tx, r.card.id);
+    if (req.method === "POST" && parsed?.success) {
+      const [comment] = await tx
+        .insert(cardComments)
+        .values({
+          cardId: r.card.id,
+          userId: r.ctx.user.id,
+          body: parsed.data.body,
+        })
+        .returning();
+      return NextResponse.json({ comment }, { status: 201 });
+    }
+    const cid = parseApiId(commentId ?? "");
+    if (!cid) return apiError(404, "Kommentar nicht gefunden.");
+    const [comment] = await tx
+      .select()
+      .from(cardComments)
       .where(and(eq(cardComments.id, cid), eq(cardComments.cardId, r.card.id)));
-    return NextResponse.json({ ok: true });
-  }
-  if (!parsed?.success) return apiError(400, "Ungültiger Kommentar.");
-  const [updated] = await db
-    .update(cardComments)
-    .set({ body: parsed.data.body })
-    .where(
-      and(eq(cardComments.id, cid), eq(cardComments.userId, r.ctx.user.id)),
+    if (!comment) return apiError(404, "Kommentar nicht gefunden.");
+    // Editing is author-only; deletion follows the existing author/board-manager rule.
+    if (
+      comment.userId !== r.ctx.user.id &&
+      (req.method !== "DELETE" || !(await canManageBoard(r.ctx.user, r.board)))
     )
-    .returning();
-  return updated
-    ? NextResponse.json({ comment: updated })
-    : apiError(404, "Kommentar nicht gefunden.");
+      return apiError(403, "Keine Berechtigung für diesen Kommentar.");
+    if (req.method === "DELETE") {
+      await tx
+        .delete(cardComments)
+        .where(and(eq(cardComments.id, cid), eq(cardComments.cardId, r.card.id)));
+      return NextResponse.json({ ok: true });
+    }
+    if (!parsed?.success) return apiError(400, "Ungültiger Kommentar.");
+    const [updated] = await tx
+      .update(cardComments)
+      .set({ body: parsed.data.body })
+      .where(
+        and(eq(cardComments.id, cid), eq(cardComments.userId, r.ctx.user.id)),
+      )
+      .returning();
+    return updated
+      ? NextResponse.json({ comment: updated })
+      : apiError(404, "Kommentar nicht gefunden.");
+  }); } catch (error) {
+    if (error instanceof CardFrozenError) return apiError(409, error.message);
+    throw error;
+  }
 }
 
 export async function activityApi(req: Request, id: string) {
@@ -229,6 +239,7 @@ function attachmentMetadata(a: typeof attachments.$inferSelect) {
     id: a.id,
     cardId: a.cardId,
     kind: a.kind,
+    uploadPurpose: a.uploadPurpose,
     filename: a.filename,
     mime: a.mime,
     size: a.size,
@@ -244,6 +255,7 @@ export async function storeApiAttachment(
   userId: number,
   kind: AttachmentKind,
   file: File,
+  purpose?: "receipt",
 ) {
   const saved = await saveAntragFile(cardId, file);
   const oldPaths: string[] = [];
@@ -251,11 +263,18 @@ export async function storeApiAttachment(
   try {
     result = await db.transaction(async (tx) => {
       const [card] = await tx
-        .select({ id: cards.id })
+        .select()
         .from(cards)
         .where(eq(cards.id, cardId))
         .for("update");
       if (!card) throw new Error("Card removed");
+      if (card.lockedAt && purpose !== "receipt") throw new CardFrozenError();
+      if (purpose === "receipt" && kind !== "other") throw new Error("Receipt requires other slot");
+      let filename = saved.filename;
+      if (purpose === "receipt") {
+        const existing = await tx.select({ filename: attachments.filename }).from(attachments).where(eq(attachments.cardId, cardId));
+        filename = receiptFileName(card.number, nextReceiptIndex(card.number, existing.map(a => a.filename)), saved.filename);
+      }
       let folderId: number | null = null;
       if (kind !== "other") {
         const old = await tx
@@ -272,7 +291,8 @@ export async function storeApiAttachment(
         .values({
           cardId,
           kind,
-          filename: saved.filename,
+          filename,
+          ...(purpose ? { uploadPurpose: purpose } : {}),
           folderId,
           path: saved.relPath,
           mime: saved.mime,
@@ -362,14 +382,19 @@ export async function attachmentsApi(
       );
     }
     if (
-      [...data.keys()].some((k) => k !== "file" && k !== "kind") ||
+      [...data.keys()].some((k) => k !== "file" && k !== "kind" && k !== "uploadPurpose") ||
       data.getAll("file").length !== 1 ||
-      data.getAll("kind").length !== 1
+      data.getAll("kind").length !== 1 ||
+      data.getAll("uploadPurpose").length > 1
     )
-      return apiError(400, "Genau file und kind erforderlich.");
+      return apiError(400, "file und kind sowie optional uploadPurpose=receipt erforderlich.");
     const kind = z
       .enum(["finance_request", "annex_a", "annex_b", "student_card", "other"])
       .safeParse(data.get("kind"));
+    const purpose = data.get("uploadPurpose");
+    if (purpose != null && (purpose !== "receipt" || data.get("kind") !== "other"))
+      return apiError(400, "Quittungen benötigen kind=other und uploadPurpose=receipt.");
+    if (r.card.lockedAt && purpose !== "receipt") return apiError(409, new CardFrozenError().message);
     const file = data.get("file");
     if (!kind.success || !(file instanceof File))
       return apiError(400, "Ungültige Datei oder Kategorie.");
@@ -384,7 +409,7 @@ export async function attachmentsApi(
       return NextResponse.json(
         {
           attachment: attachmentMetadata(
-            await storeApiAttachment(r.card.id, r.ctx.user.id, kind.data, file),
+            await storeApiAttachment(r.card.id, r.ctx.user.id, kind.data, file, purpose === "receipt" ? "receipt" : undefined),
           ),
         },
         { status: 201 },

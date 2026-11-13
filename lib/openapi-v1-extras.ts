@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { MAX_AMOUNT_CENTS } from "@/lib/money";
+
 // Extension contracts are composed into the canonical internal OpenAPI document.
 const integerId = { type: "integer", minimum: 1, maximum: 2147483647 } as const;
 const pathId = (name = "id") => ({
@@ -105,6 +107,16 @@ const envelope = (key: string, schema: object) => ({
   properties: { [key]: schema },
 });
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+const budgetPlan = {
+  type: "object", additionalProperties: false, required: ["revision", "allocations"],
+  properties: {
+    revision: { type: "integer", minimum: 0, maximum: 2147483646 },
+    allocations: { type: "array", maxItems: 100, items: {
+      type: "object", additionalProperties: false, required: ["amountCents", "budgetTitle"],
+      properties: { amountCents: { type: "integer", minimum: 0, maximum: MAX_AMOUNT_CENTS }, budgetTitle: { type: "string", minLength: 1, maxLength: 200 } },
+    } },
+  },
+};
 const commentWrite = {
   type: "object",
   additionalProperties: false,
@@ -185,6 +197,7 @@ export const extraSchemas = {
           "other",
         ],
       },
+      uploadPurpose: { type: ["string", "null"], enum: ["general", "resubmission", "receipt", null] },
       filename: { type: "string" },
       mime: { type: "string" },
       size: { type: "integer" },
@@ -199,6 +212,26 @@ export const extraSchemas = {
   },
 } as const;
 export const extraPaths = {
+  "/api/v1/cards/{id}/lock": {
+    post: {
+      tags: ["Karten"], operationId: "lockApplicationCard", summary: "Antrag dauerhaft sperren",
+      description: "Irreversible. Requires write scope, live board write access, active application board and the current lock column. No unlock operation exists. After locking, only column/position changes and new receipts are allowed. Cashbook functions are not exposed.",
+      parameters: [pathId()], requestBody: body({ type: "object", additionalProperties: false, required: ["confirm", "expectedStatusId"], properties: { confirm: { const: true }, expectedStatusId: integerId } }),
+      responses: responses({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+    },
+  },
+  "/api/v1/cards/{id}/budget-plan": {
+    get: {
+      tags: ["Karten"], operationId: "getBudgetPlan", summary: "Haushaltstitel-Einplanung lesen",
+      description: "Application boards only. Independent from accounting budgetPositions. No cashbook records or payment details.",
+      parameters: [pathId()], responses: responses(budgetPlan),
+    },
+    patch: {
+      tags: ["Karten"], operationId: "updateBudgetPlan", summary: "Haushaltstitel-Einplanung ersetzen",
+      description: "Write scope and live board write access. Full replacement with current revision; empty allocations clears the plan. Locked cards and stale revisions return 409 without changes. Amounts in integer cents.",
+      parameters: [pathId()], requestBody: body(budgetPlan), responses: responses(budgetPlan),
+    },
+  },
   "/api/v1/cards": {
     get: {
       tags: ["Karten"],
@@ -345,7 +378,7 @@ export const extraPaths = {
       operationId: "uploadCardAttachment",
       summary: "Anhang hochladen",
       description:
-        "Write scope; enabled attachment field. Exactly one file and kind. Max 25 MiB, PDF except student_card also PNG/JPEG. Named slots replace existing files; other appends. Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.",
+        "Write scope; enabled attachment field. Exactly one file and kind, optionally uploadPurpose=receipt with kind=other for automatically numbered receipts. Locked cards accept only new receipts, never replacements. Max 25 MiB, PDF except student_card also PNG/JPEG. Named slots replace existing files; other appends. Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.",
       parameters: [pathId()],
       requestBody: {
         required: true,
@@ -357,6 +390,7 @@ export const extraPaths = {
               required: ["file", "kind"],
               properties: {
                 file: { type: "string", format: "binary" },
+                uploadPurpose: { const: "receipt", description: "Only with kind=other; automatic receipt filename, also allowed after irreversible locking." },
                 kind: {
                   type: "string",
                   enum: [

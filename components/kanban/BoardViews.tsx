@@ -122,7 +122,7 @@ export function BoardViews({ view, cards, statuses, visible, priorities, prefere
   }
   function title(card: KanbanCard) {
     return <><Link className="font-medium text-brand-700 hover:underline" href={`/intern/card/${card.id}`}>{card.title}</Link>
-      {card.resubmitted && <span className="ml-2 inline-block whitespace-nowrap rounded bg-amber-100 px-1 text-xs text-amber-800">Nachgereicht</span>}</>;
+      {card.pendingLock && <span className="ml-2 inline-block rounded bg-red-100 px-1 text-xs text-red-800">Sperrbestätigung ausstehend</span>}{card.resubmitted && <span className="ml-2 inline-block whitespace-nowrap rounded bg-amber-100 px-1 text-xs text-amber-800">Nachgereicht</span>}</>;
   }
   function statusSelect(card: KanbanCard) {
     const allowedTargets = statuses.filter(status => canEdit || status.id === card.statusId || officeCanMove(officeMoveRules, card.statusId, status.id));
@@ -161,7 +161,7 @@ export function BoardViews({ view, cards, statuses, visible, priorities, prefere
     setMonth(new Date(Date.UTC(year, monthNumber - 1 + delta, 1)).toISOString().slice(0, 7));
   }
   function calendarCard(card: KanbanCard) {
-    return <div key={card.id} className="min-w-0 rounded border border-slate-200 bg-white p-2 text-xs [overflow-wrap:anywhere]">
+    return <div key={card.id} className={`min-w-0 rounded border p-2 text-xs [overflow-wrap:anywhere] ${card.pendingLock?"border-red-500 bg-red-50":"border-slate-200 bg-white"}`}>
       {visible.includes("number") && card.number && <div className="text-slate-500">{card.number}</div>}
       {title(card)}<div className="mt-1 text-slate-500">{value(card, "status")}</div>
     </div>;
@@ -191,7 +191,7 @@ export function BoardViews({ view, cards, statuses, visible, priorities, prefere
             <span aria-hidden="true">{open ? "▾" : "▸"}</span>{status.name}{searchActive && hiddenGroups.includes(status.id) && <span className="text-xs font-normal text-slate-500">Durch Suche/Filter eingeblendet</span>}<span className="ml-auto rounded bg-slate-200 px-2 text-sm">{items.length}</span>
           </button></h2>
           <div id={`board-status-${status.id}`} hidden={!open}>
-            {items.length === 0 ? empty : <ul className="divide-y divide-slate-100">{items.map(card => <li key={card.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+            {items.length === 0 ? empty : <ul className="divide-y divide-slate-100">{items.map(card => <li key={card.id} className={`flex flex-wrap items-center justify-between gap-3 p-3 ${card.pendingLock?"bg-red-50 ring-1 ring-inset ring-red-400":""}`}>
               <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                 {visible.includes("number") && card.number && <span className="mr-2 text-xs text-slate-500">{card.number}</span>}{title(card)}
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">{["applicant", "submitter_email", "assignee", "priority", "deadline", "meeting"].filter(k => visible.includes(k) && value(card, k)).map(k =>
@@ -235,7 +235,7 @@ export function BoardViews({ view, cards, statuses, visible, priorities, prefere
           if (av == null || av === "") return bv == null || bv === "" ? 0 : 1;
           if (bv == null || bv === "") return -1;
           return (typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv), "de", { numeric: true })) * (descending ? -1 : 1);
-        }).map(card => <tr key={card.id}>
+        }).map(card => <tr key={card.id} className={card.pendingLock?"bg-red-50 outline outline-1 -outline-offset-1 outline-red-400":""}>
           {tableColumns.map(key => key === "title" ? <td key={key} className="min-w-52 p-3">{title(card)}</td> : key === "status" ? <td key={key} className="min-w-56 p-3">{statusSelect(card)}</td> : <td key={key} className={`whitespace-nowrap p-3 ${key === "deadline" && card.deadline && card.deadline < todayInBerlin() ? "font-medium text-red-700" : ""}`}>{display(card, key)}</td>)}
         </tr>)}</tbody>
       </table>{cards.length === 0 && empty}</div>

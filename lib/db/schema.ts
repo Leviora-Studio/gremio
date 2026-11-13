@@ -1,3 +1,4 @@
+import type { CashbookConfig, CashbookPayment, CashbookFile, CashbookRole } from "@/lib/cashbook-types";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
@@ -95,6 +96,7 @@ export const boards = pgTable("boards", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  completedStatusId: integer("completed_status_id").references((): AnyPgColumn => boardStatuses.id, { onDelete: "set null" }),
   isApplicationBoard: boolean("is_application_board").notNull().default(false),
   ownerId: integer("owner_id")
     .notNull()
@@ -194,6 +196,7 @@ export const boardStatuses = pgTable(
       .references(() => boards.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     position: integer("position").notNull().default(0),
+    isLockColumn: boolean("is_lock_column").notNull().default(false),
     isArchiveTrigger: boolean("is_archive_trigger").notNull().default(false),
     isReceiptTrigger: boolean("is_receipt_trigger").notNull().default(false),
     // Erreicht eine Karte diese Spalte, wird das Anweisungsdatum auto-gesetzt.
@@ -346,6 +349,9 @@ export const cards = pgTable(
     locationId: integer("location_id").references(() => locations.id, {
       onDelete: "set null",
     }),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: integer("locked_by").references(() => users.id, { onDelete: "restrict" }),
+    publicStatusId: integer("public_status_id").references(() => boardStatuses.id, { onDelete: "restrict" }),
     title: text("title").notNull(),
     applicant: text("applicant").notNull(),
     submitterEmail: text("submitter_email"),
@@ -607,6 +613,7 @@ export const priorities = pgTable("priorities", {
 // Finanzübersichten ("Finanzboards")
 // ---------------------------------------------------------------------------
 export const financeBoards = pgTable("finance_boards", {
+  cashbookId: integer("cashbook_id").references((): AnyPgColumn => cashbooks.id, { onDelete: "restrict" }),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -689,6 +696,7 @@ export const financeBoardSources = pgTable(
     boardId: integer("board_id")
       .notNull()
       .references(() => boards.id, { onDelete: "cascade" }),
+    accountId: integer("account_id").references(() => accounts.id, { onDelete: "restrict" }),
     // Cards in this source column are excluded only from live expenses.
     expiredStatusId: integer("expired_status_id").references(
       () => boardStatuses.id,
@@ -1545,3 +1553,26 @@ export const receiptBranding = pgTable("receipt_branding", {
   organization: text("organization").notNull().default(""),
   logoPng: text("logo_png"),
 },t=>({singleton:check("receipt_branding_singleton",sql`${t.id}=1`)}));
+
+
+// Cashbook content is session-bound; no bearer API expansion.
+export const cashbooks = pgTable("cashbooks", {
+ id: serial("id").primaryKey(), name:text("name").notNull(), ownerId:integer("owner_id").notNull().references(()=>users.id,{onDelete:"restrict"}),
+ config:jsonb("config").$type<CashbookConfig>().notNull(), revision:integer("revision").notNull().default(0), nextNumber:integer("next_number").notNull().default(1), nextBookingNumber:integer("next_booking_number").notNull().default(1), createdAt:createdAt(),
+});
+export const cashbookAccess = pgTable("cashbook_access", {
+ id:serial("id").primaryKey(),cashbookId:integer("cashbook_id").notNull().references(()=>cashbooks.id,{onDelete:"restrict"}),userId:integer("user_id").references(()=>users.id,{onDelete:"restrict"}),groupId:integer("group_id").references(()=>groups.id,{onDelete:"restrict"}),accessLevel:text("access_level").notNull(),
+});
+export const cashbookEntries = pgTable("cashbook_entries", {
+ bookingNumber:text("booking_number"),
+ flagResolvedAt:timestamp("flag_resolved_at",{withTimezone:true}),flagResolvedBy:integer("flag_resolved_by").references(()=>users.id,{onDelete:"restrict"}),
+ flaggedAt:timestamp("flagged_at",{withTimezone:true}),flaggedBy:integer("flagged_by").references(()=>users.id,{onDelete:"restrict"}),flagReason:text("flag_reason"),
+ id:serial("id").primaryKey(),cashbookId:integer("cashbook_id").notNull().references(()=>cashbooks.id,{onDelete:"restrict"}), creatorId:integer("creator_id").notNull().references(()=>users.id,{onDelete:"restrict"}),
+ state:text("state").notNull().default("draft"),revision:integer("revision").notNull().default(0),data:jsonb("data").$type<CashbookPayment>().notNull(),role:text("role").$type<CashbookRole>().notNull(),secondSignerId:integer("second_signer_id").references(()=>users.id,{onDelete:"restrict"}),
+ files:jsonb("files").$type<CashbookFile[]>().notNull().default([]),firstSignedAt:timestamp("first_signed_at",{withTimezone:true}),secondSignedAt:timestamp("second_signed_at",{withTimezone:true}),
+ authorizedAt:timestamp("authorized_at",{withTimezone:true}),bookingDate:text("booking_date"),officeDone:boolean("office_done").notNull().default(false),
+ correctsId:integer("corrects_id").references(():AnyPgColumn=>cashbookEntries.id,{onDelete:"restrict"}),correctionReason:text("correction_reason"),createdAt:createdAt(),
+},t=>({bookingNumberUnique:uniqueIndex("cashbook_booking_number_unique").on(t.cashbookId,t.bookingNumber),bookingNumberState:check("cashbook_booking_number_state",sql`(${t.state}='posted') = (${t.bookingNumber} is not null)`),flagResolutionConsistent:check("cashbook_flag_resolution_consistent",sql`(${t.flagResolvedAt} is null and ${t.flagResolvedBy} is null) or (${t.flagResolvedAt} is not null and ${t.flagResolvedBy} is not null and ${t.flaggedAt} is not null and ${t.flagResolvedAt}>=${t.flaggedAt})`),emergencyFlagConsistent:check("cashbook_emergency_flag_consistent",sql`(${t.flaggedAt} is null and ${t.flaggedBy} is null and ${t.flagReason} is null) or (${t.flaggedAt} is not null and ${t.flaggedBy} is not null and ${t.state}='posted' and ${t.correctsId} is null and (${t.flagReason} is null or length(${t.flagReason})<=4000))`)}));
+export const cashbookActivity=pgTable("cashbook_activity",{
+ id:serial("id").primaryKey(),cashbookId:integer("cashbook_id").notNull().references(()=>cashbooks.id,{onDelete:"restrict"}),entryId:integer("entry_id").references(()=>cashbookEntries.id,{onDelete:"restrict"}),userId:integer("user_id").notNull().references(()=>users.id,{onDelete:"restrict"}),type:text("type").notNull(),detail:jsonb("detail").$type<Record<string,unknown>>().notNull(),createdAt:createdAt(),
+});

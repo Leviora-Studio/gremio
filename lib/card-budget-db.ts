@@ -34,6 +34,7 @@ export async function budgetDisplayForCards(cardIds: number[]) {
 export async function guardBudgetCardUpdate(tx: Tx, cardId: number, update: Partial<typeof cards.$inferInsert>) {
   const [fresh] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
   if (!fresh) throw new BudgetValidationError("Karte nicht gefunden.");
+  if (fresh.lockedAt && Object.keys(update).some(key=>!["statusId","position","updatedAt","doneSince"].includes(key))) throw new BudgetValidationError("Diese Karte ist dauerhaft gesperrt. Nur Spaltenwechsel bleiben möglich.");
   if (Object.keys(BUDGET_FIELDS).some((key) => key in update)) {
     if (fresh.budgetMode === "positions") throw new BudgetValidationError("Beträge, Haushaltstitel und Konten werden über die Haushaltspositionen bearbeitet; Gesamtsummen sind automatisch berechnet.");
     update.budgetRevision = fresh.budgetRevision + 1;
@@ -42,6 +43,7 @@ export async function guardBudgetCardUpdate(tx: Tx, cardId: number, update: Part
 }
 
 export async function writeBudgetPositions(tx: Tx, card: Card, input: unknown, revision: number, visible: Set<string>) {
+  if (card.lockedAt) throw new BudgetValidationError("Diese Karte ist dauerhaft gesperrt.");
   if (revision !== card.budgetRevision) throw new BudgetValidationError("Die Haushaltsdaten wurden inzwischen geändert. Bitte vor dem Speichern neu laden; dein Entwurf bleibt erhalten.");
   const parsed = budgetPositionsInputSchema.safeParse(input);
   if (!parsed.success) throw new BudgetValidationError(parsed.error.issues[0]?.message ?? "Ungültige Positionen. Jede Position benötigt ein Konto.");

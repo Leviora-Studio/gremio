@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { postedCardBookings } from "@/lib/cashbook/projection";
+import { formatCents } from "@/lib/money";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
@@ -28,6 +30,8 @@ import { getCardAssignees } from "@/lib/assignees";
 import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
+import { CardLockControls } from "@/components/antrag/CardLockControls";
+import { ReceiptSection } from "@/components/antrag/ReceiptSection";
 import { BudgetPlanEditor } from "@/components/antrag/BudgetPlanEditor";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import { loadBudgetSnapshot } from "@/lib/card-budget-db";
@@ -72,7 +76,8 @@ export default async function AntragDetailPage({
 
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board))) notFound();
-  const canEdit = await canEditBoard(user, board);
+  const canMove = await canEditBoard(user, board);
+  const canEdit = canMove && !card.lockedAt;
   const officeMoveRules = canEdit || card.archivedAt != null ? null : await getOfficeMoveRules(user, board);
   const budget = await loadBudgetSnapshot(card.id);
   card = budget.card;
@@ -113,7 +118,7 @@ export default async function AntragDetailPage({
     return a ? { id: a.id, filename: a.filename, mime: a.mime, folderId: a.folderId } : null;
   };
   const otherVisible = visibleAtts
-    .filter((a) => a.kind === "other")
+    .filter((a) => a.kind === "other" && a.uploadPurpose !== "receipt")
     .map((a) => ({
       id: a.id,
       filename: a.filename,
@@ -185,6 +190,7 @@ export default async function AntragDetailPage({
         ? `${publicBaseUrl()}/feedback/status/${card.token}`
         : `${publicBaseUrl()}/status/${card.token}`;
   const manage = (await canManageBoard(user, board));
+  const bookings = await postedCardBookings(card.id);
   const [budgetPlan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, card.id)) : [];
 
   const comments = await db
@@ -257,7 +263,7 @@ export default async function AntragDetailPage({
           </>
         )}
         <div className="sm:col-span-2"><a href={`/intern/sitzungen?card=${card.id}`} className="text-brand-600 hover:underline">Für eine Sitzung vorschlagen</a></div>
-        {canEdit && statusLink && (
+        {canMove && statusLink && (
           <div className="sm:col-span-2">
             <span className="text-slate-500">Status-Link:</span>{" "}
             <a href={statusLink} className="break-all text-brand-600 hover:underline" target="_blank" rel="noopener">
@@ -268,15 +274,16 @@ export default async function AntragDetailPage({
         <div className="sm:col-span-2">
           <label className="label">Status</label>
           <div>
-            {canEdit || statuses.some(status => officeCanMove(officeMoveRules, card.statusId, status.id)) ? <StatusSelect
+            {canMove || statuses.some(status => officeCanMove(officeMoveRules, card.statusId, status.id)) ? <StatusSelect
               cardId={card.id}
-              statuses={statuses.filter(status => canEdit || status.id === card.statusId || officeCanMove(officeMoveRules, card.statusId, status.id)).map((s) => ({ id: s.id, name: s.name }))}
+              statuses={statuses.filter(status => canMove || status.id === card.statusId || officeCanMove(officeMoveRules, card.statusId, status.id)).map((s) => ({ id: s.id, name: s.name }))}
               current={card.statusId}
             /> : <span className="text-sm">{statuses.find(s => s.id === card.statusId)?.name}</span>}
           </div>
         </div>
       </section>
 
+      <CardLockControls statusId={card.statusId} cardId={card.id} locked={!!card.lockedAt} pending={board.isApplicationBoard && !!statuses.find(s => s.id === card.statusId)?.isLockColumn} canEdit={canMove} />
       {/* Felder (Auto-Speichern) */}
       <section className="card p-5">
         <h2 className="mb-2 text-lg font-semibold">Felder</h2>
@@ -413,6 +420,9 @@ export default async function AntragDetailPage({
         )}
       </section>
 
+      <ReceiptSection cardId={card.id} canEdit={canEdit} canUpload={canMove} items={visibleAtts.filter(a => a.uploadPurpose === "receipt").map(a => ({id:a.id,filename:a.filename,mime:a.mime}))} />
+
+      {bookings.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold">Im Kassenbuch vorhandene Buchungen</h2><p className="text-sm text-slate-500">Lesende Übersicht. Zum Öffnen des Vorgangs sind zusätzliche Kassenbuchrechte erforderlich.</p>{bookings.map(entry=><Link className="block rounded-lg border border-slate-200 p-3 text-sm hover:border-brand-400" key={entry.id} href={`/intern/kassenbuch/vorgang/${entry.id}`}><strong>{entry.bookingNumber ? `${entry.bookingNumber} · ` : ""}{formatCents(entry.data.amount)} · HT {entry.data.budgetTitle}</strong><span className="block">{entry.data.holder} · {entry.data.purpose||"Kein Verwendungszweck"}</span><span className="block text-slate-500">Anweisung erteilt: {entry.authorizedAt?fmt(entry.authorizedAt):"—"} · Buchungstag: {entry.bookingDate||"Noch nicht festgelegt"}{entry.correctsId?` · Korrektur zu #${entry.correctsId}`:""}</span></Link>)}</section>}
       {/* Kommentare */}
       <section className="card space-y-4 p-5">
         <h2 className="text-lg font-semibold">Kommentare</h2>

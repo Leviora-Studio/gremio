@@ -21,6 +21,7 @@ import { getOfficeMoveRules, canMoveBoardCard, canEditBoard } from "@/lib/authz"
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import type { Board, Card } from "@/lib/db/schema";
 import { serializeApiCardDetail } from "@/lib/api-card-response";
+import { CardFrozenError } from "@/lib/card-freeze";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -113,6 +114,10 @@ export async function DELETE(
     );
   }
 
-  await deleteCardViaApi(r.card.id);
+  try { await deleteCardViaApi(r.card.id); }
+  catch (error) {
+    if (error instanceof CardFrozenError) return apiError(409, error.message);
+    throw error;
+  }
   return NextResponse.json({ ok: true });
 }

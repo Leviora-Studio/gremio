@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { accessibleCashbooks } from "@/lib/cashbook/access";
 import Link from "next/link";
 import type { User } from "@/lib/db/schema";
 import { logoutAction } from "@/lib/auth/actions";
 import { Avatar } from "./Avatar";
 import { BottomNav } from "./BottomNav";
 
-export function Nav({ user }: { user: User }) {
+export async function Nav({ user }: { user: User }) {
   // Anzeigename aus dem SSO (konstant), Fallback auf Benutzername.
+  const hasCashbook = (await accessibleCashbooks(user)).length > 0;
   const displayName = user.name?.trim() || user.username;
   return (
     <>
@@ -59,6 +61,7 @@ export function Nav({ user }: { user: User }) {
           >
             Boards
           </Link>
+          {hasCashbook && <Link href="/intern/kassenbuch" className="font-medium text-slate-600 hover:text-brand-600">Kassenbuch</Link>}
           <Link href="/intern/sitzungen" className="font-medium text-slate-600 hover:text-brand-600">Sitzungen</Link>
           <Link
             href="/finanzen"
@@ -106,6 +109,7 @@ export function Nav({ user }: { user: User }) {
 
       {/* Mobil (< md): untere Tab-Leiste im App-Stil. */}
       <BottomNav
+        hasCashbook={hasCashbook}
         role={user.role}
         displayName={displayName}
         avatarSrc={avatarUrl(user)}

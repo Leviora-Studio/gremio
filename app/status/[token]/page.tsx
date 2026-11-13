@@ -157,7 +157,7 @@ export default async function StatusPage({
             weiteren Dateien mehr hinzugefügt werden.
           </p>
         )}
-          <PublicGate allowed={!isArchived} className="space-y-4">
+          <PublicGate allowed={antrag.canUploadDocuments} className="space-y-4">
             <p className="text-sm text-slate-500">
               Hier kannst du allgemeine Dateien und Nachträge als PDF hochladen. Bitte lade hier keine Quittungen hoch. Nutze dafür den Bereich ‚Quittung einreichen‘, sobald dieser freigeschaltet ist. Bereits hochgeladene Dateien bleiben erhalten und können hier nicht gelöscht werden.
             </p>

@@ -42,6 +42,7 @@ import { doneSinceForStatus } from "@/lib/done-archive";
 import { budgetPositionsInputSchema } from "@/lib/card-budget";
 import { limitArrayLength } from "@/lib/zod-limits";
 import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions } from "@/lib/card-budget-db";
+import { CardFrozenError, requireMutableCard } from "@/lib/card-freeze";
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 /** Echtes Kalenderdatum (nicht nur Format) — weist z. B. 2026-99-99 ab. */
@@ -307,9 +308,7 @@ export async function loadApiCard(
 /** Karte samt Anhängen löschen (Dateien werden mit entfernt). */
 export async function deleteCardViaApi(cardId: number): Promise<void> {
   const paths = await db.transaction(async (tx) => {
-    const [card] = await tx.select({ id: cards.id }).from(cards)
-      .where(eq(cards.id, cardId)).for("update");
-    if (!card) return [];
+    await requireMutableCard(tx, cardId);
     const atts = await tx.select({ path: attachments.path }).from(attachments)
       .where(eq(attachments.cardId, cardId));
     await tx.delete(cards).where(eq(cards.id, cardId));
@@ -422,6 +421,7 @@ export async function updateCardViaApi(
   input: CardWriteInput,
 ): Promise<ApiResult<Card>> {
   const fullWrite = await canEditBoard(user, board);
+  if (card.lockedAt && Object.keys(input).some(key => !["statusId", "position"].includes(key))) return fail(409, new CardFrozenError().message);
   const statusOnly = Object.keys(input).length === 1 && typeof input.statusId === "number";
   if (!fullWrite && (!statusOnly || !(await canMoveBoardCard(user, board, card, input.statusId!)))) return fail(403, "Nur ausdrücklich erlaubte Statuswechsel sind zulässig.");
   if ("title" in input && (!input.title || !input.title.trim()))
@@ -457,7 +457,7 @@ export async function updateCardViaApi(
       .where(eq(boardStatuses.id, card.statusId))
       .limit(1);
     oldStatusName = old?.name ?? "?";
-    update.resubmittedAt = null; // Statuswechsel hebt „Nachgereicht" auf
+    if (!card.lockedAt) update.resubmittedAt = null; // Statuswechsel hebt „Nachgereicht" auf
     // newStatusId statt target.id: target kann (TOCTOU – Spalte zwischenzeitlich
     // gelöscht) undefined sein; newStatusId ist garantiert gesetzt.
     update.doneSince = doneSinceForStatus(
@@ -481,6 +481,7 @@ export async function updateCardViaApi(
   const visible = input.budgetPositions ? await getVisibleFieldKeys(board.id) : null;
   try { await db.transaction(async (tx) => {
     const fresh = await guardBudgetCardUpdate(tx, card.id, update);
+    if (fresh.lockedAt && Object.keys(input).some(key => !["statusId", "position"].includes(key))) throw new CardFrozenError();
     if (!fullWrite && (!(await canMoveBoardCard(user, board, fresh, input.statusId!, tx)) || fresh.statusId !== card.statusId)) throw new OfficeMoveDenied();
     if (input.budgetPositions) await writeBudgetPositions(tx, fresh, input.budgetPositions, input.budgetRevision!, visible!);
     if (Object.keys(update).length > 0) {
@@ -489,7 +490,14 @@ export async function updateCardViaApi(
     if (wantsReposition) {
       await repositionCard(tx, board.id, targetStatusId, card.id, input.position);
     }
+    if (assigneeUserIds !== undefined) {
+      const { added, removed } = await setCardAssignees(card.id, assigneeUserIds, tx);
+      const nameOf = (id: number) => members.find(m => m.id === id)?.username ?? "?";
+      const detail = assigneeActivityDetail(added.map(nameOf), removed.map(nameOf));
+      if (detail) await tx.insert(cardActivity).values({ cardId: card.id, userId: user.id, type: "assignee", detail });
+    }
   }); } catch (e) {
+    if (e instanceof CardFrozenError) return fail(409, e.message);
     if (e instanceof OfficeMoveDenied) return fail(403, "Dieser Statuswechsel ist nicht mehr erlaubt. Bitte neu laden.");
     if (e instanceof BudgetValidationError) return fail(400, e.message);
     throw e;
@@ -503,20 +511,13 @@ export async function updateCardViaApi(
       `${oldStatusName} → ${moveTo.name}`,
     );
     await maybeSetTriggerDates(card.id, moveTo.id);
-    // Vor explizit übergebenen assigneeUserIds (unten): die Anfrage hat Vorrang.
-    await applyStatusTriggerAssignments(card.id, moveTo.id);
+    // Explicit assignments are committed with the move and take precedence.
+    if (assigneeUserIds === undefined) await applyStatusTriggerAssignments(card.id, moveTo.id);
     // Nur auf System-/Leihboards den verknüpften Vorgang ableiten.
     if (board.inventoryBoardId != null) {
       await syncLoanFromCard(card.id, moveTo.id);
     }
     await maybeArchive(card.id);
-  }
-  if (assigneeUserIds) {
-    const { added, removed } = await setCardAssignees(card.id, assigneeUserIds);
-    const nameOf = (id: number) =>
-      members.find((m) => m.id === id)?.username ?? "?";
-    const detail = assigneeActivityDetail(added.map(nameOf), removed.map(nameOf));
-    if (detail) await logActivity(card.id, user.id, "assignee", detail);
   }
   if ("deadline" in update && (update.deadline ?? null) !== (card.deadline ?? null)) {
     await logActivity(

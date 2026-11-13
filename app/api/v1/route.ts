@@ -24,6 +24,9 @@ export async function GET(req: Request) {
       boards: ctx.boardIds ? [...ctx.boardIds] : "all",
     },
     endpoints: {
+      "POST /api/v1/cards/{id}/lock": "Antrag ausdrücklich und dauerhaft sperren",
+      "GET /api/v1/cards/{id}/budget-plan": "Haushaltstitel-Einplanung lesen",
+      "PATCH /api/v1/cards/{id}/budget-plan": "Haushaltstitel-Einplanung ersetzen (mit revision)",
       "GET /api/v1/cards": "Karten boardübergreifend suchen und paginieren",
       "GET /api/v1/boards/{id}/users": "Zuweisbare Nutzer suchen",
       "GET /api/v1/boards/{id}/accounts": "Kontenauswahl",

@@ -79,6 +79,7 @@ export async function savePdfEditsAction(
     .where(eq(cards.id, att.cardId))
     .limit(1);
   if (!card) return { ok: false, error: "Karte nicht gefunden." };
+  if (card.lockedAt) return { ok: false, error: "Diese Karte ist dauerhaft gesperrt." };
   const board = await getBoardById(card.boardId);
   if (!board || !(await canEditBoard(user, board))) {
     return { ok: false, error: "Kein Zugriff auf dieses Board." };

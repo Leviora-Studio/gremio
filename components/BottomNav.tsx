@@ -69,10 +69,12 @@ const TABS: {
 
 export function BottomNav({
   role,
+  hasCashbook = false,
   displayName,
   avatarSrc,
 }: {
   role: Role;
+  hasCashbook?: boolean;
   displayName: string;
   avatarSrc: string | null;
 }) {
@@ -109,6 +111,7 @@ export function BottomNav({
   }, [moreOpen]);
 
   const moreActive =
+    pathname.startsWith("/intern/kassenbuch") ||
     pathname.startsWith("/intern/sitzungen") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/vorlagen") ||
@@ -116,6 +119,7 @@ export function BottomNav({
     pathname.startsWith("/intern/konto");
 
   const moreLinks = [
+    ...(hasCashbook ? [{href:"/intern/kassenbuch",label:"Kassenbuch"}] : []),
     { href: "/intern/sitzungen", label: "Sitzungen" },
     { href: "/intern/inventar", label: "Inventar" },
     ...(role === "admin" || role === "template_manager"

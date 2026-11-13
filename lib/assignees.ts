@@ -88,12 +88,13 @@ export async function getAssigneeIdsForCards(
 export async function setCardAssignees(
   cardId: number,
   userIds: number[],
+  transaction?: Parameters<Parameters<typeof db.transaction>[0]>[0],
 ): Promise<{ added: number[]; removed: number[] }> {
   const target = [...new Set(userIds)];
   // Lesen + Löschen + Einfügen atomar, sonst könnten zwei gleichzeitige
   // Speichervorgänge auf derselben Karte verschränken und einen Endzustand
   // erzeugen, der zu keiner der beiden Anfragen passt.
-  return db.transaction(async (tx) => {
+  const write = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     const current = (
       await tx
         .select({ userId: cardAssignees.userId })
@@ -121,5 +122,6 @@ export async function setCardAssignees(
         .onConflictDoNothing();
     }
     return { added, removed };
-  });
+  };
+  return transaction ? write(transaction) : db.transaction(write);
 }

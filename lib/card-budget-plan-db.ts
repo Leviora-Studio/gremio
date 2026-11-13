@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boards, cards, cardBudgetPlans, cardActivity, type User } from "@/lib/db/schema";
 import { canEditBoard } from "@/lib/authz";
 import { BudgetPlanError, parseBudgetPlan } from "./card-budget-plan";
+import { requireMutableCard } from "./card-freeze";
 
 /** Separate from accounting positions: planning never changes card amounts or account allocations. */
 export async function writeBudgetPlan(user: User, cardId: number, revision: number, input: unknown) {
@@ -20,8 +21,8 @@ export async function writeBudgetPlan(user: User, cardId: number, revision: numb
     if (!board?.isApplicationBoard || board.inventoryBoardId != null || !await canEditBoard(user, board)) {
       throw new BudgetPlanError("Zum Einplanen ist Schreibzugriff auf ein aktives Antragsboard erforderlich.");
     }
-    const [card] = await tx.select({ id: cards.id }).from(cards).where(and(eq(cards.id, cardId), eq(cards.boardId, board.id))).for("update");
-    if (!card) throw new BudgetPlanError("Karte wurde geändert. Bitte neu laden.");
+    const card = await requireMutableCard(tx, cardId);
+    if (card.boardId !== board.id) throw new BudgetPlanError("Karte wurde geändert. Bitte neu laden.");
     const [current] = await tx.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, cardId));
     if ((current?.revision ?? 0) !== revision) throw new BudgetPlanError("Die Einplanung wurde zwischenzeitlich geändert. Bitte neu laden; dein Entwurf bleibt erhalten.");
     const nextRevision = revision + 1;

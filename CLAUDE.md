@@ -1153,3 +1153,286 @@ prüft Rechte, konkurrierende Revisionen, Deaktivieren/Reaktivieren, unveränder
 Kartenwerte und berechtigungsgefilterte Beschlüsse. `tests/card-budget-plan.test.ts`
 prüft Eingaben und Textvariablen. `tests/browser/workflows.cjs` prüft den neuen Editor
 und die Bearbeitung bestehender Positionen auf Desktop und Mobilgeräten.
+
+## Dauerhafte Kartensperren und Zahlungsabschluss
+
+Migration `0094_irreversible_card_locks.sql` ergänzt mehrere `is_lock_column`-Spalten
+je Antragsboard, `boards.completed_status_id` sowie `cards.locked_at`, `locked_by`
+und `public_status_id`. Die neue Einstellung „Sperrspalten und Zahlungsabschluss“
+ist nur für aktivierte Antragsboards verfügbar. Der Zahlungsabschluss ist von der
+bisherigen automatischen Done-Archivierung unabhängig.
+
+Ein interner Wechsel in eine Sperrspalte bleibt zunächst ein ausstehender Wechsel:
+Kanban, Liste, Tabelle, Kalender und Kartendetail kennzeichnen die fehlende
+Bestätigung rot. Öffentlich bleibt der bisher bestätigte Status sichtbar. Auf der
+Kartendetailseite können Schreibberechtigte über einen In-App-Bestätigungsdialog
+endgültig sperren. Erst diese Transaktion veröffentlicht den aktuellen Status.
+Neue Karten direkt in einer Sperrspalte haben bis zur Bestätigung keinen
+bestätigten öffentlichen Status. Alte Karten werden beim Update nicht gesperrt;
+ihr bisheriger Status bleibt unverändert öffentlich.
+
+Die Sperre ist nicht aufhebbar, auch nicht durch Eigentümer/Admins oder einen
+Spaltenwechsel. Datenbanktrigger schützen Kartenfelder, Haushaltspositionen,
+Einplanungen, Zuweisungen, Kommentare, bestehende Dateien und Ordner einschließlich
+Löschung. Spaltenwechsel samt Reihenfolge und technischem Änderungszeitpunkt bleiben
+möglich. Bereits gesperrte Karten veröffentlichen weitere Spaltenwechsel unmittelbar.
+Automatische Feld-/Zuweisungstrigger, Nextcloud-Archivierung und Done-Archivierung
+verändern eingefrorene Karten nicht. Neue Dateien dürfen ausschließlich als Quittung
+hinzukommen. Der eigene Quittungsbereich verwendet intern dasselbe fortlaufende
+`<Antragsnummer>_Q<n>.pdf`-Namensschema wie öffentlich. Bestehende öffentlich als
+Quittung markierte Anhänge erscheinen dort ohne Änderung ihrer Bytes. Gesperrte
+öffentliche Anträge erlauben keine allgemeinen Nachträge; Quittungen bleiben nach
+den Archivierungsregeln möglich. Ohne Receipt-Zielspalte bestätigt die öffentliche
+Quittungseinreichung den Upload ohne Statuswechsel.
+
+## Kassenbuch
+
+Migration `0095_cashbooks.sql` ergänzt eigenständige Kassenbücher, Nutzer-/Gruppen-
+Freigaben, Vorgänge und einen unveränderlichen Aktivitätsverlauf. Nur aktive Admins
+können ein Kassenbuch erstellen. Der Navigationspunkt erscheint nur bei eigener
+Zuweisung, Lese-/Schreibfreigabe oder Bürozuweisung; die Erstellung ist zusätzlich
+vom Adminbereich aus erreichbar. Schreibende Gruppenfreigaben gewinnen gegenüber
+lesenden direkten Freigaben. Eigentümer verwalten Einstellungen und Freigaben.
+Bürozugriff allein erlaubt ausschließlich das Lesen bereits gebuchter Vorgänge
+und die organisatorische Erledigt-Markierung. Keine externe API-/MCP-Erweiterung.
+
+Einstellungen enthalten je eine schreibberechtigte Person für Sprecher/in und
+Finanzreferent/in, optional genau eine Bürokraft, mehrere zugängliche Antragsboards,
+eine eigene atomare Geschäftsbedarfsnummerierung nach dem bestehenden
+Antragsnummernformat sowie eine PDF-Vorlage mit Feldzuordnung. Geschäftsbedarfsnummern
+werden erst beim Speichern verbindlich reserviert; die vorherige Anzeige ist eine
+Vorschau. PDF-Felder für Betrag, Kontoinhaber, IBAN, Bank, Verwendungszweck und beide
+rollenabhängigen Ort-/Datumsfelder werden zugeordnet. Die Verwendungszweckvorlage
+kombiniert Freitext mit ausdrücklich erlaubten Variablen und einer Live-Vorschau;
+leere optionale Zwecke hinterlassen keine zusätzlichen Leerzeichen.
+
+Vorgänge erfassen ausschließlich Auszahlungen. Eine Buchung bezieht sich auf einen
+bereits gesperrten Antrag mit ausgewählten vorhandenen Quittungen oder auf
+Geschäftsbedarf mit eigenen fortlaufend benannten Quittungsuploads. Daten umfassen
+Betrag in Cent, Haushaltstitel, Kontoinhaber, geprüfte IBAN, Bank, optionalen
+Verwendungszweck und Ort/Datum. Pflichtangaben werden serverseitig geprüft.
+Bei hinterlegter eigener Rolle entfällt die Rollenfrage; andernfalls muss sie
+gewählt werden. Quellenrechte werden bei Auswahl und Speicherung erneut geprüft.
+Die Quittungsauswahl zeigt jede Datei mit fest ausgerichteter Checkbox und separatem
+„Ansehen“-Button. Die geschützte, schreibgeschützte In-App-PDF-Vorschau lässt sich
+vor der Auswahl öffnen; das Ansehen verändert die Auswahl nicht.
+
+Beim Speichern eines antragsbezogenen Entwurfs werden das Antrags-PDF und die
+ausgewählten Quittungen in den eigenen Kassenbuchbereich kopiert. Die
+Formularerstellung ergänzt ein ausgefülltes, geglättetes PDF. Frühere Formulare und Unterschriften bleiben als frühere Stände
+erhalten. Änderungen oder Regenerierung entwerten die bisherigen Unterschrifts-
+Freigaben. Der In-App-PDF-Viewer erlaubt nur Ansicht und Signatur; Freitext-/Feld-
+Änderungen werden zusätzlich serverseitig abgewiesen. Die zweite Signatur hängt eine
+inkrementelle PDF-Revision an, ohne die Bytes der ersten Signatur umzuschreiben.
+Die zweite Person muss vorher ihren eigenen Ort und ihr Datum eingeben. Eine
+separate Vorbereitung ergänzt ausschließlich dieses rollenabhängige PDF-Feld an
+den bei Formularerstellung gespeicherten Positionen, ebenfalls inkrementell.
+Diese vorbereitete Version ist vor der zweiten Unterschrift sichtbar. Die Angaben
+werden als Signaturmetadaten an den PDF-Ständen und im Aktivitätsverlauf gespeichert;
+die eingefrorenen Buchungsdaten und die erste Unterschrift bleiben unverändert.
+Erneutes Vorbereiten vor der Unterschrift verwendet immer die erste signierte Datei,
+sodass frühere Ort-/Datumsangaben nicht übereinander gedruckt werden. Nach der zweiten
+Unterschrift können diese Angaben nicht mehr bearbeitet werden. Beide digitalen
+Signaturen bleiben kryptografisch prüfbar. Dateien tragen SHA-256-Prüfsummen und
+werden bei geschütztem Download sowie ZIP-Download überprüft.
+
+`draft` → `submitted` erfordert die erste Unterschrift und eine andere aktuell
+schreibberechtigte Person. Eine gültige hinterlegte zweite Rolle wird vorausgewählt.
+Mit „Anderer Person zuweisen“ kann beim Vorlegen auch eine andere aktuell
+schreibberechtigte Person gewählt werden. Die ausdrückliche Auswahl hat Vorrang;
+Selbstzuweisungen, lesende oder entzogene Freigaben werden serverseitig abgewiesen. Vorgelegte Inhalte sind eingefroren; nur die
+zugewiesene zweite Person kann unterschreiben, nach beiden Unterschriften
+verbindlich anweisen oder mit Pflichtkommentar zurückgeben. Rückgabe öffnet den
+Entwurf für die ursprüngliche Person und entwertet beide Signaturfreigaben.
+Jede Änderung und Übergabe schreibt in derselben Transaktion ein Ereignis mit
+Person, Zeitpunkt und Vorher-/Nachher-Werten. Revisionen verhindern verlorene
+Paralleländerungen; Dateioperationen liegen außerhalb der Datenbanksperren.
+
+`posted`-Vorgänge erscheinen in der Tabelle und bleiben durch Datenbanktrigger
+unveränderlich. Ein Buchungstag kann genau einmal ergänzt werden. Der unabhängige
+Bürostatus kann beliebig zwischen offen/erledigt wechseln, ohne Buchungswerte zu
+ändern. Schreib-/Leseberechtigte sehen die Unterschriftsbereiche und offene erteilte
+Anweisungen; die reine Bürokraft sieht offene und erledigte Anweisungen.
+Korrekturbuchungen erscheinen in keiner Büro-Aufgabenliste, auch nicht unter
+„Anweisung erteilt“ für die übrigen Berechtigten. Sie erhalten keine Büroaufgabe;
+das Abhaken einer Korrektur wird auch serverseitig abgewiesen. Die Tabelle
+hat feste fachliche Spalten mit lokaler, nutzerbezogener Sichtbarkeit, Reihenfolge
+und Sortierung. Korrekturen entstehen nach Warnung, Pflichtbegründung, Vorher-/Nachher-
+Prüfung und Eingabe von `BESTÄTIGEN` direkt als neue gebuchte Datensätze; keine erneute
+Unterschriftsrunde. `corrects_id` verkettet jeden Folgestand eindeutig. Originale,
+frühere Korrekturen und deren Unterlagen bleiben erhalten. Die Summierung verwendet
+nur den jeweils jüngsten Stand einer Kette, während die Tabelle alle Stände zeigt.
+
+Finanzübersichten können ein Kassenbuch und je Quell-Antragsboard ein Konto zuordnen.
+Der Eigentümer benötigt weiterhin Kassenbuch-Lesezugriff. Tatsächliche Ausgaben
+verwenden die effektiven Buchungen des Kassenbuchs einschließlich Geschäftsbedarf.
+Für noch nicht abgeschlossene Anträge ersetzen die eingeplanten Beträge je Titel
+die zugehörigen gebuchten Beträge in der Live-Ansicht; nach Zahlungsabschluss gelten
+deren Buchungen. Frühere Einzel-/Positionswerte bleiben als Rückfall erhalten,
+wenn keine neue Einplanung vorhanden ist. Die Antragsübersicht und Exporte zeigen
+je Titel gezahlte und maximal noch offene Beträge (Einplanung minus Buchungen;
+negative Werte weisen auf eine Überschreitung hin). Ohne Kassenbuchverknüpfung
+bleibt die bisherige Ausgabenberechnung erhalten. Die Kartenansicht zeigt
+zugehörige gebuchte Vorgänge auch für Board-Lesende; das Öffnen des Kassenbuch-
+Vorgangs und seiner Dateien erfordert weiterhin eigene Kassenbuchrechte.
+
+Prüfungen: `tests/cashbook-validation.test.ts`, `tests/cashbook-signatures.test.ts`
+(kryptografische Prüfung beider CMS-Signaturen mit synthetischen Zertifikaten),
+`tests/cashbook-db.test.ts`, der erweiterte Bestandsschutztest
+`tests/application-board-migration.test.ts` sowie
+`tests/browser/cashbook-production.cjs` mit separatem Build, isolierter Datenbank,
+synthetischem SSO und temporären Dateien. App-Live-Updates übertragen keine
+Kassenbuchdaten, IDs oder Kontoinformationen und schützen offene Eingabeentwürfe.
+
+## Eindeutige Kassenbuch-Buchungsnummern
+
+Migration `0096_cashbook_booking_numbers.sql` ergänzt eine unabhängige
+Buchungsnummer je verbindlich gebuchtem Vorgang. Kassenbucheinstellungen →
+Buchungsnummer enthält Kürzel (auch Umlaute) und Mindeststellenzahl (1–12), mit
+Live-Vorschau, z. B. `KÖT-0001`. Die Antrags- und Geschäftsbedarfsnummern bleiben
+davon unabhängig. Die Vergabe erfolgt atomar beim Übergang zu `posted` bzw. beim
+Anlegen einer direkten Korrekturbuchung. Entwürfe reservieren keine Buchungsnummer.
+Der eigene Kassenbuchzähler wird nie durch Einstellungsänderungen zurückgesetzt;
+bei Überschreiten der Stellenzahl wächst die Nummer, ohne Ziffern abzuschneiden.
+Ein Unique-Index sichert die Eindeutigkeit innerhalb des Kassenbuchs. Einmal
+vergebene Nummern bleiben unveränderlich, auch wenn Kürzel oder Stellenzahl später
+geändert werden. Jede Korrektur erhält eine eigene Nummer und behält ihre
+Verknüpfung zum Original.
+
+Die Buchungsnummer erscheint als sortierbare Tabellenspalte sowie in Vorgangsdetails,
+gebuchten Warteschlangeneinträgen und Buchungsreferenzen an Karten. Bereits vorhandene
+gebuchte Einträge werden beim Update in der Reihenfolge Anweisungszeitpunkt/ID
+nachnummeriert (`B-0001`, `B-0002`, …); bestehende Buchungsdaten, Zeitpunkte und
+Unterlagen werden dabei nicht verändert. Der Zähler setzt hinter diesen Nummern
+fort. Die Migration läuft vollständig transaktional. Nach der Ergänzung schützen
+die normalen Unveränderlichkeitstrigger auch die vergebenen Nummern.
+
+`tests/cashbook-number-migration.test.ts` prüft Bestandsschutz, Nachnummerierung,
+Kürzelwechsel und parallele Vergaben mit einer leeren isolierten Datenbank über
+`TEST_CASHBOOK_NUMBER_MIGRATION_URL`. Ergänzte Validierungs-, Datenbank- und
+Browserprüfungen decken `KÖT` mit vier Stellen, eigene Korrekturbuchungsnummern und
+die Anzeige in der Buchungsübersicht ab.
+
+
+## Eigenständige Kassenbuch-Dateiablage
+
+`lib/cashbook/source-files.ts` archiviert beim Speichern eines antragsbezogenen
+Entwurfs die Datei aus dem sichtbaren Feld `finance_request` und ausschließlich die
+ausgewählten sichtbaren Quittungen. Fehlt ein freigegebenes Antrags-PDF, wird der
+Speichervorgang mit einer verständlichen Meldung abgewiesen. Andere Anhänge,
+insbesondere Studierendenausweise, werden nicht automatisch übernommen.
+
+Alle folgenden Pfade sind relativ zu `UPLOAD_DIR` (lokaler Docker-Stack:
+`/app/uploads`, Volume `gremio-local-test_gremio-uploads`):
+
+- Antrags-PDF: `cashbooks/<Kassenbuch-ID>/applications/<Karten-ID>/<Anhang-ID>/<SHA256>.pdf`
+- Ausgewählte Quittung: `cashbooks/<Kassenbuch-ID>/receipts/<Karten-ID>/<Anhang-ID>/<SHA256>.pdf`
+- Anweisungsformulare, signierte Fassungen und direkt hochgeladene
+  Geschäftsbedarfsquittungen: `cashbooks/<Kassenbuch-ID>/<Vorgangs-ID>/<UUID>-<Dateiname>`
+- Anweisungsformularvorlage: `cashbooks/<Kassenbuch-ID>/templates/<UUID>-Anweisungsvorlage.pdf`
+
+Die Antragsboard-Originale verbleiben unverändert in ihrer bisherigen Ablage unter
+`cards/`. Archivdateien bestehen aus neu geschriebenen Bytes mit eigenem Inode;
+es gibt keine symbolischen oder harten Verknüpfungen zu den Board-Originalen.
+Ein temporärer, vollständig geschriebener und synchronisierter Kassenbuch-Inode
+wird atomar unter dem endgültigen Namen veröffentlicht; die temporäre Bezeichnung
+wird danach entfernt. Vorhandene Ziele werden niemals überschrieben. Parallele
+Erstkopien verifizieren dieselbe SHA-256-Datei und erzeugen keine doppelten Ziele.
+
+Buchungen desselben Kassenbuchs dürfen dieselbe bereits archivierte Anhang-ID
+wiederverwenden. Dabei wird die archivierte Prüfsumme geprüft; die Board-Datei
+muss nicht erneut gelesen werden. Andere Kassenbücher erhalten eigene physische
+Kopien. Kopien werden dem Vorgang sofort zugeordnet und über dessen geschützte
+Dateiansicht und ZIP bereitgestellt. Formular-Regenerierung verwendet diese
+Kassenbuchkopien, statt die Originaldateien erneut zu kopieren. Vor Vorlage und
+Anweisung werden alle aktuellen Unterlagen geprüft. Frühe Fassungen und schon
+bestehende alte Ablagepfade bleiben erhalten; Änderungen einer Auswahl markieren
+frühere Unterlagen lediglich als früheren Stand. Gemeinsame Archivdateien werden
+bei einem fehlgeschlagenen Speicherversuch nicht gelöscht, da parallele Vorgänge
+sie bereits verwenden könnten. Sämtliche Dateioperationen erfolgen außerhalb von
+Datenbanksperren.
+
+Der erweiterte `tests/cashbook-db.test.ts` prüft sofortiges Anhängen, identische
+Bytes bei unterschiedlichen Original-/Archiv-Inodes, parallele Erstkopien,
+Wiederverwendung im selben Kassenbuch, getrennte Ablagen verschiedener Kassenbücher,
+Prüfsummenfehler und erfolgreiche Buchungen nach physischem Entfernen der
+synthetischen Board-Originale. Echte Antragsdateien werden in Tests nicht verändert.
+
+### Application API / MCP freeze enforcement
+
+The internal API/MCP expose irreversible application-card locking (explicit confirm
+and expected lock-column ID), revisioned budget planning, and receipt uploads via
+`kind=other, uploadPurpose=receipt`. Lock metadata is read-only. Frozen content,
+comments, assignments, accounting rows, existing files and card deletion are rejected.
+Explicit assignment replacements commit atomically with card changes. Database
+triggers remain the final race protection. A card created in a lock column keeps a
+null public status through subsequent edits until explicitly locked.
+
+Cashbooks have no Bearer API or MCP tools, including read operations. Only
+session-bound UI actions and file/ZIP delivery with live cashbook authorization
+exist. Do not register cashbook services with internal/public API or MCP discovery.
+
+Administrators can create cashbooks from the dedicated **Kassenbücher** tab at
+`/admin/kassenbuecher`; the admin overview tile points to the same page. This page
+requires the admin role in its own handler and lists only cashbooks already
+accessible to that account. Creation reuses the existing session-bound action.
+
+## Notfallmarkierung offener Anweisungen
+
+Migration `0097_cashbook_emergency_flags.sql` ergänzt ausschließlich optionale
+Markierungsmetadaten. Bestehende Buchungen, Unterlagen und Signaturen bleiben
+unverändert; vorhandene Datensätze erhalten keine Markierung. Schreibberechtigte
+können eine bereits erteilte Originalanweisung nur vor ihrer Büro-Erledigung und
+nach exakter Eingabe von `MARKIEREN` einmal als falsch kennzeichnen. Ein Hinweis
+an die Bürokraft ist optional. Korrekturbuchungen und Entwürfe sind ausgeschlossen.
+
+Die Warnung erscheint rot und mit „Rücksprache erforderlich“ in Aufgabenlisten,
+Buchungsübersicht und Vorgangsdetails. Zeit, Person und Hinweis werden gemeinsam
+mit einem unveränderlichen Aktivitätsereignis gespeichert. Buchungswerte, Summen
+und Dateien werden nicht geändert oder storniert. Nach Rücksprache kann die
+Bürokraft ihren normalen Ablauf fortsetzen. Migration
+`0098_cashbook_flag_resolution.sql` ergänzt eine einmalige Klärung mit Zeitpunkt
+und Person: Schreibberechtigte sowie die aktuell zugewiesene Bürokraft können über
+„Rücksprache geklärt“ und einen In-App-Bestätigungsdialog den roten Hinweis in
+Aufgabenlisten, Tabelle und Vorgangsdetails ausblenden. Die ursprüngliche
+Markierung und die Klärung bleiben unveränderlich im Aktivitätsverlauf erhalten.
+Lesende Freigaben allein erlauben keine Klärung; die Bürozuweisung erlaubt sie auch
+bei zusätzlicher Lesefreigabe. Buchungsdaten und Büro-Erledigung bleiben unverändert. Datenbanktrigger verhindern das Entfernen/Ändern einer bestehenden
+Markierung und das erstmalige Markieren bereits erledigter Anweisungen. Markierung
+und Büro-Erledigung prüfen dieselbe Revision unter derselben Zeilensperre.
+Die Funktion ist ausschließlich sessiongebundene Oberfläche, keine API-/MCP-Funktion.
+
+The cashbook header contains an **Entwürfe** button with the live count beside
+**Buchung anlegen**. It opens the existing drafts in an In-App modal and replaces
+the collapsible draft queue. Read access remains sufficient to view drafts;
+office-only accounts do not receive the button or any draft data.
+
+The cashbook ledger uses plain text headers without sort icons, subtle row dividers,
+right-aligned tabular amounts, compact German date display, and grouped IBAN text.
+These are display-only formats. The current sorting is stated in text above the
+table; clicking a header still toggles sorting. **Ansicht einstellen** opens the
+In-App modal with separate sorting controls and a sortable column list with six-dot drag handles for
+visibility/order, plus show-all and reset actions. Existing per-user/per-book
+local view preferences are retained and validated when loaded. Column ordering
+uses the existing dnd-kit pointer/keyboard sensors, not numeric position inputs. Emergency warning
+rows remain visibly red and labeled. No booking data or API contract changes.
+
+Receipt selection displays **available** and **selected** counts separately; zero
+selected receipts does not mean zero files were found. No selected application
+and an application without selectable receipts have distinct explanations. The
+candidate list uses the same board-field visibility boundary as source archiving
+and lists only explicitly categorized PDF receipts, without inferring from names.
+
+Cashbook ledger rows open the corresponding entry across the full row, including
+cell padding. Values have no individual link hover/underline styling. One plain
+anchor in the first visible cell retains native keyboard/link navigation; keyboard
+focus outlines the row. Selecting text for copying does not navigate.
+
+Kassenbuch-Verlaufstabellen unterscheiden tatsächliche Änderungen (Vorher/Nachher)
+von neu erfassten Angaben (Angabe/Wert). Fehlende Felder in einem gespeicherten
+Änderungsausschnitt bedeuten unverändert und werden niemals als Löschung angezeigt;
+das gilt auch rückwirkend für bestehende Ereignisse, ohne den Verlauf umzuschreiben.
+Leere Zeichenfolgen, null und leere Listen erzeugen keine scheinbaren Änderungen.
+Echte Leerungen werden als „Nicht angegeben“ angezeigt; fehlt ein früherer Wert im
+Protokoll tatsächlich, wird er nicht als leer behauptet. Der Bürostatus heißt
+„Noch zu erledigen“ bzw. „Erledigt“; Datumswerte erscheinen im deutschen Format.

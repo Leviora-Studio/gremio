@@ -72,6 +72,7 @@ async function loadCard(cardId: number, write = true) {
   if (!card) notFound();
   const board = await getBoardById(card.boardId);
   if (!board || !(await (write ? canEditBoard(user, board) : canAccessBoard(user, board)))) notFound();
+  if (write && card.lockedAt) throw new Error("Diese Karte ist dauerhaft gesperrt.");
   return { user, board, card };
 }
 
@@ -392,10 +393,10 @@ export async function setCardStatusAction(
       ...(statusChanged
         ? {
             position: newPosition,
-            resubmittedAt: null,
+            ...(card.lockedAt ? {} : { resubmittedAt: null }),
             // Eine archivierte Karte wird durch den Statuswechsel wieder aktiv
             // (sonst „Phantom"-Karte mit neuem Status, die ausgeblendet bleibt).
-            archivedAt: null,
+            ...(card.lockedAt ? {} : { archivedAt: null }),
             doneSince: doneSinceForStatus(
               board.doneStatusId,
               statusId,

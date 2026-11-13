@@ -631,6 +631,8 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
             enum: ["owner", "admin", "member"],
             description: "Rolle des Token-Nutzers bezogen auf dieses Board.",
           },
+          isApplicationBoard: { type: "boolean" },
+          completedStatusId: { type: ["integer", "null"], description: "Spalte vollständig abgeschlossener Anträge." },
           doneStatusId: {
             type: ["integer", "null"],
             format: "int32",
@@ -654,6 +656,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           id: { type: "integer", format: "int32" },
           name: { type: "string" },
           position: { type: "integer", format: "int32" },
+          isLockColumn: { type: "boolean", description: "Öffentlicher Status wird bei ungesperrten Anträgen erst nach ausdrücklicher Sperre bestätigt." },
           isArchiveTrigger: {
             type: "boolean",
             description: "Erreicht eine Karte diese Spalte, greift die Nextcloud-Archivierung.",
@@ -711,6 +714,9 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           id: { type: "integer", format: "int32" },
           boardId: { type: "integer", format: "int32" },
           statusId: { type: "integer", format: "int32" },
+          lockedAt: { type: ["string", "null"], format: "date-time", description: "Dauerhaft eingefroren; nur statusId/position und neue Quittungen bleiben schreibbar." },
+          lockedBy: { type: ["integer", "null"] },
+          publicStatusId: { type: ["integer", "null"], description: "Zuletzt bestätigter öffentlicher Status; null bedeutet Bestätigung ausstehend." },
           statusName: { type: "string" },
           boardName: {
             type: "string",

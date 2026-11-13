@@ -26,7 +26,7 @@ export async function scheduleFinancialCard(tx:Tx,user:User,cardId:number,meetin
  const moved=card.statusId!==target.id;
  const [last]=moved?await tx.select({position:sql<number>`coalesce(max(${cards.position}),-1)+1`}).from(cards).where(and(eq(cards.boardId,board.id),eq(cards.statusId,target.id),isNull(cards.archivedAt))):[];
  const [field]=await tx.select({visible:boardCardFields.visible}).from(boardCardFields).where(and(eq(boardCardFields.boardId,board.id),eq(boardCardFields.fieldKey,"meeting")));
- await tx.update(cards).set({...(moved?{statusId:target.id,position:last.position,resubmittedAt:null,doneSince:doneSinceForStatus(board.doneStatusId,target.id,card.doneSince)}:{}),...(field?.visible?{meeting:berlinInputDate(meeting.startsAt).slice(0,10)}:{}),updatedAt:new Date()}).where(eq(cards.id,card.id));
+ await tx.update(cards).set({...(moved?{statusId:target.id,position:last.position,...(card.lockedAt?{}:{resubmittedAt:null}),doneSince:doneSinceForStatus(board.doneStatusId,target.id,card.doneSince)}:{}),...(!card.lockedAt&&field?.visible?{meeting:berlinInputDate(meeting.startsAt).slice(0,10)}:{}),updatedAt:new Date()}).where(eq(cards.id,card.id));
  if(moved){const [source]=await tx.select({name:boardStatuses.name}).from(boardStatuses).where(eq(boardStatuses.id,card.statusId));await tx.insert(cardActivity).values({cardId:card.id,userId:user.id,type:"status",detail:`${source?.name??"?"} → ${target.name} (Sitzungsplanung)`});}
  return {cardId:card.id,targetId:target.id,moved};
 }

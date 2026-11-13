@@ -29,12 +29,12 @@ export async function maybeSetTriggerDates(
     await db
       .update(cards)
       .set({ instructionDate: today })
-      .where(and(eq(cards.id, cardId), isNull(cards.instructionDate)));
+      .where(and(eq(cards.id, cardId), isNull(cards.instructionDate), isNull(cards.lockedAt)));
   }
   if (st.transfer) {
     await db
       .update(cards)
       .set({ transferDate: today })
-      .where(and(eq(cards.id, cardId), isNull(cards.transferDate)));
+      .where(and(eq(cards.id, cardId), isNull(cards.transferDate), isNull(cards.lockedAt)));
   }
 }

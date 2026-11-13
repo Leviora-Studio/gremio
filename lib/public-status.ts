@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, boards, boardStatuses, cards } from "@/lib/db/schema";
 import {
@@ -174,7 +174,8 @@ export async function getApplicationStatusByToken(
       .select({
         id: cards.id,
         boardId: cards.boardId,
-        statusId: cards.statusId,
+        statusId: sql<number>`${cards.publicStatusId}`,
+        lockedAt: cards.lockedAt,
         number: cards.number,
         approvedAmountCents: cards.approvedAmount,
         title: cards.title,
@@ -183,12 +184,12 @@ export async function getApplicationStatusByToken(
         updatedAt: cards.updatedAt,
         resubmittedAt: cards.resubmittedAt,
         applicantNote: cards.applicantNote,
-        statusName: boardStatuses.name,
+        statusName: sql<string>`coalesce(${boardStatuses.name}, 'Bestätigung ausstehend')`,
         isArchiveTrigger: boardStatuses.isArchiveTrigger,
         isReceiptTrigger: boardStatuses.isReceiptTrigger,
       })
       .from(cards)
-      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+      .leftJoin(boardStatuses, eq(boardStatuses.id, sql`${cards.publicStatusId}`))
       .where(eq(cards.token, token))
       .limit(1);
   } catch (e) {
@@ -217,8 +218,10 @@ export async function getApplicationStatusByToken(
   // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.
   const archived = !!row.isArchiveTrigger;
   const target = board?.receiptToStatusId == null ? [] : await db.select({ id: boardStatuses.id }).from(boardStatuses).where(and(eq(boardStatuses.id, board.receiptToStatusId), eq(boardStatuses.boardId, row.boardId)));
-  const { canResubmit, canReceipt } = publicGates(archived, !!row.isReceiptTrigger, row.statusId, board ?? { resubmitStatusId: null, receiptToStatusId: null }, target.length > 0);
+  const publicAccess = publicGates(archived, !!row.isReceiptTrigger, row.statusId, board ?? { resubmitStatusId: null, receiptToStatusId: null }, target.length > 0);
 
+  const canResubmit = !row.lockedAt && publicAccess.canResubmit;
+  const canReceipt = !archived && (!!row.lockedAt || publicAccess.canReceipt);
   const atts = await db
     .select()
     .from(attachments)
@@ -272,7 +275,7 @@ export async function getApplicationStatusByToken(
     applicantNote: row.applicantNote,
     archived,
     // Exakt die Bedingung der Webansicht: Uploads entfallen erst mit dem Archiv.
-    canUploadDocuments: !archived,
+    canUploadDocuments: !archived && !row.lockedAt,
     submitMode: canResubmit ? "resubmission" : canReceipt ? "receipt" : null,
     documents,
   };

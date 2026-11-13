@@ -111,7 +111,7 @@ async function archiveLocked(cardId: number): Promise<void> {
     .from(cards)
     .where(eq(cards.id, cardId))
     .limit(1);
-  if (!card || card.nextcloudLink) return; // nicht gefunden oder bereits archiviert
+  if (!card || card.lockedAt || card.nextcloudLink) return; // nicht gefunden oder bereits archiviert
 
   // Eine offene Retry-Markierung räumen, sobald die Archivierung nicht (mehr)
   // anwendbar ist (Archiv aus/entfernt, oder Karte hat die Trigger-Spalte

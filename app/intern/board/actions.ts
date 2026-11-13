@@ -95,7 +95,7 @@ export async function moveCardAction(
         .set({
           statusId,
           updatedAt: new Date(),
-          resubmittedAt: null,
+          ...(fresh.lockedAt ? {} : { resubmittedAt: null }),
           doneSince: doneSinceForStatus(board.doneStatusId, statusId, fresh.doneSince),
         })
         .where(eq(cards.id, cardId));

@@ -3,6 +3,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import { CardFrozenError } from "@/lib/card-freeze";
 import { BudgetPlanError } from "@/lib/card-budget-plan";
 import { writeBudgetPlan } from "@/lib/card-budget-plan-db";
 
@@ -14,6 +15,6 @@ export async function saveBudgetPlanAction(cardId: number, revision: number, inp
     revalidatePath("/intern/sitzungen", "layout");
     return { revision: nextRevision };
   } catch (error) {
-    return { error: error instanceof BudgetPlanError ? error.message : "Einplanung konnte nicht gespeichert werden." };
+    return { error: (error instanceof BudgetPlanError || error instanceof CardFrozenError) ? error.message : "Einplanung konnte nicht gespeichert werden." };
   }
 }

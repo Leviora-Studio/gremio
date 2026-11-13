@@ -263,14 +263,17 @@ export async function addFinanceSourceAction(
   id: number,
   formData: FormData,
 ): Promise<void> {
-  const { user } = await requireFinanceManage(id);
+  const { user, fb } = await requireFinanceManage(id);
   const boardId = Number(formData.get("boardId"));
   if (!boardId) return;
   const board = await getBoardById(boardId);
   if (!board || !(await canAccessBoard(user, board))) return; // nur eigene Boards
+  const accountId = Number(formData.get("accountId")) || null;
+  if (fb.cashbookId && (!board.isApplicationBoard || !accountId)) throw new Error("Bitte ein Antragsboard und ein zugehöriges Konto auswählen.");
+  if (accountId && !(await db.select({id:accounts.id}).from(accounts).where(eq(accounts.id,accountId))).length) throw new Error("Das Konto ist nicht verfügbar.");
   await db
     .insert(financeBoardSources)
-    .values({ financeBoardId: id, boardId })
+    .values({ financeBoardId: id, boardId, accountId })
     .onConflictDoNothing();
   rev(id);
 }

@@ -110,6 +110,8 @@ export async function serializeBoard(board: Board, user: User) {
     } : {}),
     role,
     doneStatusId: board.doneStatusId,
+    isApplicationBoard: board.isApplicationBoard,
+    completedStatusId: board.completedStatusId,
     createdAt: board.createdAt,
   };
 }
@@ -120,6 +122,7 @@ export function serializeStatus(s: BoardStatus, canManage = false) {
     name: s.name,
     position: s.position,
     isArchiveTrigger: s.isArchiveTrigger,
+    isLockColumn: s.isLockColumn,
     // Der Anweisungs-Trigger ist im Web nur in den (verwalter-exklusiven)
     // Board-Einstellungen sichtbar — daher nur für Verwalter ausgeben.
     ...(canManage ? {
@@ -150,6 +153,9 @@ export function serializeCard(
     budgetRevision: c.budgetRevision,
     boardId: c.boardId,
     statusId: c.statusId,
+    lockedAt: c.lockedAt,
+    lockedBy: c.lockedBy,
+    publicStatusId: c.publicStatusId,
     ...(extra?.statusName !== undefined ? { statusName: extra.statusName } : {}),
     ...(extra?.boardName !== undefined ? { boardName: extra.boardName } : {}),
     position: c.position,

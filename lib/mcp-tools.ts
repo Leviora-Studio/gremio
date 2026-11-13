@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { NextResponse } from "next/server";
 import { authorizedApiRequest } from "@/lib/api-context";
+import { lockCardApi, budgetPlanApi, lockCardSchema, budgetPlanWriteSchema } from "@/lib/api-application-cards";
 import { cardWriteSchema } from "@/lib/api-cards";
 import {
   boardCatalog,
@@ -67,6 +68,23 @@ type Definition = {
   download?: boolean;
 };
 export const mcpTools: Definition[] = [
+  {
+    name: "lock_application_card",
+    description: "Antrag unwiderruflich einfrieren. Nur auf ausdrücklichen Nutzerwunsch; confirm=true und aktuelle Sperrspalte erforderlich. Danach nur Spaltenwechsel und neue Quittungen.",
+    method: "POST", path: "/api/v1/cards/{id}/lock",
+    schema: z.object({ id, data: lockCardSchema }).strict(),
+    run: (req, a) => lockCardApi(req, String(a.id)),
+  },
+  {
+    name: "get_budget_plan", description: "Haushaltstitel-Einplanung eines Antrags lesen; unabhängig von Haushaltspositionen. Beträge in Cent.",
+    method: "GET", path: "/api/v1/cards/{id}/budget-plan",
+    schema: z.object({ id }).strict(), run: (req, a) => budgetPlanApi(req, String(a.id)),
+  },
+  {
+    name: "update_budget_plan", description: "Einplanung vollständig ersetzen. Aktuelle revision erforderlich; leere allocations entfernen die Einplanung. Gesperrte Anträge bleiben unveränderbar.",
+    method: "PATCH", path: "/api/v1/cards/{id}/budget-plan",
+    schema: z.object({ id, data: budgetPlanWriteSchema }).strict(), run: (req, a) => budgetPlanApi(req, String(a.id)),
+  },
   {
     name: "get_api_info",
     description: "Aktuellen Nutzer und die live gültige Freigabe anzeigen.",
@@ -251,7 +269,7 @@ export const mcpTools: Definition[] = [
   {
     name: "upload_attachment",
     description:
-      "Anhang hochladen (Base64, max. 25 MiB). Benannte Slots werden ersetzt; other fügt eine PDF hinzu. student_card erlaubt PDF/PNG/JPEG; andere Kategorien PDF. Kein Dateipfad und keine externe URL.",
+      "Anhang hochladen (Base64, max. 25 MiB). Benannte Slots werden ersetzt; other fügt eine PDF hinzu. student_card erlaubt PDF/PNG/JPEG; andere Kategorien PDF. Quittungen mit kind=other und uploadPurpose=receipt werden automatisch nummeriert und sind die einzigen erlaubten Uploads auf gesperrten Karten. Kein Dateipfad und keine externe URL.",
     method: "POST",
     path: "/api/v1/cards/{id}/attachments",
     upload: true,
@@ -265,6 +283,7 @@ export const mcpTools: Definition[] = [
           "student_card",
           "other",
         ]),
+        uploadPurpose: z.literal("receipt").optional(),
         filename: z.string().min(1).max(255),
         mime: z.enum(["application/pdf", "image/png", "image/jpeg"]),
         dataBase64: z
@@ -335,6 +354,7 @@ export async function callMcpTool(
       }),
     );
     form.set("kind", String(a.kind));
+    if (a.uploadPurpose !== undefined) form.set("uploadPurpose", String(a.uploadPurpose));
     body = form;
   } else if (a.data !== undefined) {
     body = JSON.stringify(a.data);

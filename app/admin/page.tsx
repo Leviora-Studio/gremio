@@ -41,6 +41,7 @@ export default async function AdminOverview() {
   ];
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <Link href="/admin/kassenbuecher" className="card block p-5 font-semibold hover:border-brand-400">Kassenbücher verwalten / erstellen</Link>
       {stats.map((s) => {
         const inner = (
           <div className="card p-5">
