@@ -288,3 +288,13 @@ survives saving another settings section. Run only with an isolated migrated DB.
 optional survey email (including email-free POST), named warnings for missing
 routing fields, locked required card fields, editable optional attachments and
 repair by saving board fields. SMTP stays disabled; no external mail is sent.
+
+Application-board budget planning is covered by `workflows.cjs` at desktop/mobile
+widths: dynamic amount/title rows, incomplete drafts, retained drafts after conflicts,
+save/retry, confirmed removal, read-only display, and removal of the former position
+creation controls. Legacy positions are seeded explicitly to verify continued editing
+without converting or discarding existing accounting values. `workflows-production.cjs`
+likewise seeds synthetic legacy positions instead of using the retired creation button.
+`application-board-migration.test.ts` uses an empty isolated database supplied through
+`TEST_APPLICATION_BOARD_MIGRATION_DATABASE_URL` and compares complete legacy records
+before/after migration 0093; it skips when that separate URL is absent.

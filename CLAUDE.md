@@ -1109,3 +1109,47 @@ Area settings opt into `MeetingActionForm.preserveValues` to prevent React's aut
 Public routing checks the explicitly required card fields before assigning or enabling a location/feedback area. It never silently enables fields. Locations require applicant, submitter_email, finance_request and student_card; optional annex_a/annex_b remain configurable. Feedback requires notes, not email or applicant. Inventory tracking boards require applicant, submitter_email and notes; tracking cards copy the existing borrower contact to the private card email field. Inventory date/quantity/ID requirements stay in the inventory request model. Any linked route (also disabled) locks its required fields until detached. Routing and field updates serialize on the board row; activation rechecks the same target and mandatory fields. Admin editors name missing fields and link to board settings; field settings show locked controls and explain the association. Existing inconsistent boards show a named warning and can be repaired by saving the required fields. No schema migration is needed.
 
 Die bisherigen ausführlichen Downloads heißen „Protokollvorlage als PDF“ (`/api/meetings/[id]/pdf`) und „Protokollvorlage als Word“ (`/api/meetings/[id]/word`), mit entsprechend benannten Download-Dateien. Zusätzlich liefert „Tagesordnung als PDF“ über `/api/meetings/[id]/agenda-pdf` nur die Überschrift „Tagesordnungspunkte“ und eine Liste der nummerierten TOP-Titel einschließlich eingerückter Unter-TOPs in der bestehenden Tagesordnungsreihenfolge. Keine Sitzungsmetadaten, TOP-Details, Status, Zeiten oder Finanzangaben werden ergänzt. Auch dieser Export enthält vertrauliche TOP-Titel, verlangt Verwaltungsrecht und eine aktive Session und setzt private/no-store, no-referrer und nosniff; Bearer-API und MCP bleiben unverändert. `agenda-pdf.ts` rendert ausschließlich Nummer, Titel und Hierarchie und unterstützt Zeilen- und Seitenumbrüche.
+
+## Antragsboards: Haushaltstitel für Beschlüsse einplanen
+
+Migration `0093_application_board_budget_plans.sql` ergänzt `boards.is_application_board`
+(Standard aus) und `card_budget_plans` mit einer geordneten Liste aus Centbetrag und
+Haushaltstitel sowie einer eigenen Revision. Eigentümer/Admins aktivieren die Option
+unter Board-Einstellungen → Allgemein. Auf jeder Karte dieses Boards öffnet
+„Haushaltstitel einplanen“ einen Editor mit Betrag und Haushaltstitel pro Zeile,
+„Weiteren Titel hinzufügen“, bestätigtem Entfernen und ausdrücklichem gemeinsamen
+Speichern. Wie bei bisherigen Haushaltspositionen sind bis zu 100 Zeilen möglich.
+Null Euro ist zulässig; unvollständige Zeilen werden nicht stillschweigend verworfen.
+Lesende sehen gespeicherte Einplanungen ohne Schreibaktionen. Schreiben erfordert
+live Board-Schreibrecht und ein aktives Antragsboard; veraltete Revisionen werden
+abgewiesen, der lokale Entwurf bleibt erhalten. Deaktivieren blendet die Einplanung
+aus, löscht sie aber nicht. Leihboards unterstützen diese Option nicht.
+
+Diese **Beschlussplanung ist unabhängig von der Finanzbuchhaltung**: Sie verändert
+weder beantragte/genehmigte/tatsächliche Kartenbeträge noch Kontozuordnungen oder
+`card_budget_positions`. Die Migration löscht oder konvertiert keine Bestandswerte.
+Der bisherige Web-Einstieg „Weiteren Haushaltstitel hinzufügen“ entfällt vollständig,
+auch in vorhandenen Positionslisten. Bereits gespeicherte Finanzpositionen bleiben
+sichtbar und mit dem bisherigen revisionssicheren Budget-Writer bearbeitbar.
+Einzelwerte und bestehende REST-/MCP-Verträge bleiben erhalten.
+
+Unter Sitzungsbereichseinstellungen → Finanzanträge bietet die Beschlussvorlage bei
+aktivem Antragsboard drei zusätzliche Einfügevariablen an:
+`{{planned_budget}}` (alle Betrag/Titel-Paare in Reihenfolge, z. B.
+„100,00 € aus Titel 1200 und 250,50 € aus Titel 1300“),
+`{{planned_budget_total}}` (Gesamtsumme) und `{{planned_budget_titles}}` (Titelliste).
+Wiederholte Titel bleiben als getrennte Paare erhalten. Die Boardoption gibt diese
+eigenständigen Planungsdaten frei; die Sichtbarkeit vorhandener Finanzfelder wird
+dadurch nicht verändert. Wie bisher bleiben im TOP nur Platzhalter gespeichert;
+Anzeige und PDF-/Wordexport lösen aktuelle Werte nach erneuter Board-Zugriffsprüfung
+auf. Fehlender Zugriff oder deaktivierte Option liefert „Nicht freigegeben“, eine
+leere Einplanung „—“. Öffentliche APIs/Statusseiten und Bearer-/MCP-Schnittstellen
+erhalten keine neuen Planungsdaten oder Schreibmöglichkeiten.
+
+Prüfungen: `tests/application-board-migration.test.ts` benötigt eine leere isolierte
+Datenbank über `TEST_APPLICATION_BOARD_MIGRATION_DATABASE_URL` und vergleicht
+vollständige Bestandszeilen vor/nach dem Update. `tests/card-budget-plan-db.test.ts`
+prüft Rechte, konkurrierende Revisionen, Deaktivieren/Reaktivieren, unveränderte
+Kartenwerte und berechtigungsgefilterte Beschlüsse. `tests/card-budget-plan.test.ts`
+prüft Eingaben und Textvariablen. `tests/browser/workflows.cjs` prüft den neuen Editor
+und die Bearbeitung bestehender Positionen auf Desktop und Mobilgeräten.

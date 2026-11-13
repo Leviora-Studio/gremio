@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
+import { BudgetPlanEditor } from "../../components/antrag/BudgetPlanEditor";
 import { BudgetPositionsEditor } from "../../components/antrag/BudgetPositionsEditor";
 import { PublicUploadForm } from "../../components/PublicUploadForm";
 import { PublicSubmitForm } from "../../components/PublicSubmitForm";
@@ -10,9 +11,12 @@ import { TriggerAssignmentForm } from "../../components/board/TriggerAssignmentF
 import { AntraegeTable } from "../../components/finance/AntraegeTable";
 import type { BudgetPosition } from "../../lib/card-budget";
 function Fixture() {
-  const [active, setActive] = useState(false);
+  const [active, setActive] = useState(true);
   const [allowed, setAllowed] = useState(true);
-  const [loadedBudget, setLoadedBudget] = useState<{ rows: BudgetPosition[]; revision: number }>({ rows: [], revision: 0 });
+  const [loadedBudget, setLoadedBudget] = useState<{ rows: BudgetPosition[]; revision: number }>({ rows: [
+    { id: "11111111-1111-4111-8111-111111111111", budgetTitle: "12345", description: null, accountId: null as unknown as number, requestedAmount: 20000, approvedAmount: 15000, actualAmount: 13000 },
+    { id: "22222222-2222-4222-8222-222222222222", budgetTitle: null, description: null, accountId: 2, requestedAmount: null, approvedAmount: null, actualAmount: null },
+  ], revision: 0 });
   const [budgetMount, setBudgetMount] = useState(0);
   useEffect(() => {
     const refresh = (event: Event) => setLoadedBudget((event as CustomEvent).detail);
@@ -30,7 +34,9 @@ function Fixture() {
     </PublicUploadScope>
     <div className="flex gap-2"><button onClick={() => render(n => n+1)}>Live-Aktualisierung</button><button onClick={() => setAllowed(false)}>Gate sperren</button></div>
     <button onClick={() => { setLoadedBudget({ rows: (window as any).budgetSaves.at(-1).map((row: BudgetPosition, position: number) => ({ ...row, cardId: 1, position })), revision: (window as any).budgetSaves.length }); setBudgetMount(n => n + 1); }}>Gespeicherte Positionen neu laden</button>
-    <section aria-label="Budget" className="card p-4"><BudgetPositionsEditor key={budgetMount} cardId={1} initial={loadedBudget.rows} revision={loadedBudget.revision} accounts={[{ id: 1, name: "Konto A" }, { id: 2, name: "Konto B" }]} visible={["budget_title", "account", "requested_amount", "approved_amount", "actual_amount"]} active={active} onActive={setActive} beforeStart={async () => true} /></section>
+    <section aria-label="Budget" className="card p-4"><BudgetPositionsEditor key={budgetMount} cardId={1} initial={loadedBudget.rows} revision={loadedBudget.revision} accounts={[{ id: 1, name: "Konto A" }, { id: 2, name: "Konto B" }]} visible={["budget_title", "account", "requested_amount", "approved_amount", "actual_amount"]} active={active} onActive={setActive} /></section>
+    <BudgetPlanEditor cardId={1} initial={[]} revision={0} readOnly={false} />
+    <section aria-label="Read-only plan"><BudgetPlanEditor cardId={2} initial={[{amount:12345,budgetTitle:"Legacy-safe"}]} revision={1} readOnly /></section>
     <AntraegeTable rows={[{ id: 1, number: "A01", title: "Zwei Positionen", applicant: "Test", budgetTitle: "12345, 12344", decisionRef: null, instructionDate: null, transferDate: null, approvedAmount: 35000, actualAmount: 31000, accountId: null }]} />
   </main>;
 }

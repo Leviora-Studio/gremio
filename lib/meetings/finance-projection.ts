@@ -2,10 +2,11 @@
 // Copyright (C) 2026 Leviora Studio
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { accounts, boards, cards, cardBudgetPositions, type User } from "@/lib/db/schema";
+import { accounts, boards, cards, cardBudgetPlans, cardBudgetPositions, type User } from "@/lib/db/schema";
 import { canAccessBoard } from "@/lib/authz";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import {financeMotionFields,renderFinanceMotion} from "./finance-motion";
+import { budgetPlanMotionValues } from "@/lib/card-budget-plan";
 import { formatCents } from "@/lib/money";
 
 export type FinanceDetails = { cardId:number; applicant:string; account:string; budgetTitle:string; amount:string };
@@ -18,15 +19,21 @@ export async function projectFinanceTopics<T extends {title:string;isFinanceItem
   for(const board of [...new Map(rows.map(r=>[r.board.id,r.board])).values()]) {
     if(!await canAccessBoard(user,board))continue;
     const fields=await getVisibleFieldKeys(board.id);
+    if (board.isApplicationBoard) fields.add("planned_budget");
     for(const {card} of rows.filter(r=>r.board.id===board.id)) {
       const positions=card.budgetMode==="positions"?await db.select().from(cardBudgetPositions).where(eq(cardBudgetPositions.cardId,card.id)):[];
       const accountIds=fields.has("account")?(positions.length?positions.map(p=>p.accountId):card.accountId?[card.accountId]:[]):[];
       const accountRows=accountIds.length?await db.select({name:accounts.name}).from(accounts).where(inArray(accounts.id,accountIds)):[];
+      const [plan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, card.id)) : [];
+      const planValues = budgetPlanMotionValues(plan?.allocations ?? []);
       const values:Record<string,string>={};
       for(const field of financeMotionFields){
         let value="";
         if(field.field&&!fields.has(field.field)){values[field.key]="Nicht freigegeben";continue;}
         switch(field.key){
+          case "planned_budget":
+          case "planned_budget_total":
+          case "planned_budget_titles":value=planValues[field.key];break;
           case "title":value=card.title;break;
           case "number":value=card.number??"";break;
           case "applicant":value=card.applicant;break;

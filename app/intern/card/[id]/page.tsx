@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   cards,
+  cardBudgetPlans,
   attachments,
   attachmentFolders,
   boardCardFields,
@@ -27,6 +28,7 @@ import { getCardAssignees } from "@/lib/assignees";
 import { centsToInput } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
+import { BudgetPlanEditor } from "@/components/antrag/BudgetPlanEditor";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import { loadBudgetSnapshot } from "@/lib/card-budget-db";
 import { maskHiddenCardFields, visibleActivityDetail } from "@/lib/card-field-projection";
@@ -183,6 +185,7 @@ export default async function AntragDetailPage({
         ? `${publicBaseUrl()}/feedback/status/${card.token}`
         : `${publicBaseUrl()}/status/${card.token}`;
   const manage = (await canManageBoard(user, board));
+  const [budgetPlan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, card.id)) : [];
 
   const comments = await db
     .select({
@@ -320,6 +323,8 @@ export default async function AntragDetailPage({
         />
         </fieldset>
       </section>
+
+      {board.isApplicationBoard && <BudgetPlanEditor cardId={card.id} initial={budgetPlan?.allocations ?? []} revision={budgetPlan?.revision ?? 0} readOnly={!canEdit} />}
 
       {/* Anhänge */}
       <section className="card space-y-4 p-5">

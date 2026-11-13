@@ -66,7 +66,8 @@ export async function renameBoardAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  const { board } = await requireBoardManage(boardId);
+  if (board.inventoryBoardId != null) return { error: "Leihboards werden über das Inventar verwaltet." };
   const parsed = nameSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -76,7 +77,7 @@ export async function renameBoardAction(
   }
   await db
     .update(boards)
-    .set({ name: parsed.data.name, description: parsed.data.description ?? null })
+    .set({ name: parsed.data.name, description: parsed.data.description ?? null, isApplicationBoard: formData.get("isApplicationBoard") === "on" })
     .where(eq(boards.id, boardId));
   rev(boardId);
   return { success: "Gespeichert." };

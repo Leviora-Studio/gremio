@@ -15,7 +15,9 @@ export async function saveFinanceConfiguration(user:User,areaId:number,boardId:n
   const previous=await requireArea(user,areaId,"manage");
   if(sourceIds.length>200||sourceIds.some(id=>!Number.isSafeInteger(id)||id<1)||new Set(sourceIds).size!==sourceIds.length)throw new MeetingError("Ungültige Spaltenauswahl.");
   const template=motionTemplate===undefined?undefined:sanitizeMultiLine(motionTemplate);
-  if(template!==undefined&&!validFinanceMotion(template,boardId==null||template===previous.financeMotionTemplate&&boardId===previous.financeBoardId?new Set(financeMotionFields.map(f=>f.field)):await getVisibleFieldKeys(boardId)))throw new MeetingError("Bitte höchstens 10.000 Zeichen und nur verfügbare Kartenfeld-Platzhalter verwenden.");
+  const visible = boardId == null ? new Set<string>() : await getVisibleFieldKeys(boardId);
+  if (boardId != null && (await getBoardById(boardId))?.isApplicationBoard) visible.add("planned_budget");
+  if(template!==undefined&&!validFinanceMotion(template,boardId==null||template===previous.financeMotionTemplate&&boardId===previous.financeBoardId?new Set(financeMotionFields.map(f=>f.field)):visible))throw new MeetingError("Bitte höchstens 10.000 Zeichen und nur verfügbare Kartenfeld-Platzhalter verwenden.");
   if(boardId!=null) {
     const board=await getBoardById(boardId);
     if(!board||board.inventoryBoardId!=null||!await canManageBoard(user,board))throw new MeetingError("Die Anbindung erfordert Verwaltungsrechte auf dem Antragsboard.");

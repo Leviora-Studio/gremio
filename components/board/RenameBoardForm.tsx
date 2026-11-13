@@ -10,17 +10,19 @@ export function RenameBoardForm({
   boardId,
   name,
   description,
+  isApplicationBoard,
 }: {
   boardId: number;
   name: string;
   description: string | null;
+  isApplicationBoard: boolean;
 }) {
   const [state, action, pending] = useActionState(
     renameBoardAction.bind(null, boardId),
     {} as State,
   );
   return (
-    <form action={action} noValidate className="space-y-3">
+    <form action={action} onReset={event => event.preventDefault()} noValidate className="space-y-3">
       <div>
         <label className="label">Name</label>
         <input name="name" defaultValue={name} className="input" required />
@@ -33,6 +35,13 @@ export function RenameBoardForm({
           className="input"
           rows={2}
         />
+      </div>
+      <div>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="isApplicationBoard" defaultChecked={isApplicationBoard} className="mt-1" />
+          <span>Antragsboard: Haushaltstitel auf Karten einplanen</span>
+        </label>
+        <p className="mt-1 text-xs text-slate-500">Erfasst Beträge und Haushaltstitel für Beschlussvorschläge. Bestehende Finanzbeträge bleiben unabhängig davon. Beim Deaktivieren bleiben Einplanungen erhalten.</p>
       </div>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className="btn-primary">

@@ -199,6 +199,7 @@ export default async function BoardSettingsPage({
           boardId={boardId}
           name={board.name}
           description={board.description}
+          isApplicationBoard={board.isApplicationBoard}
         />
       </CollapsibleSection>
 

@@ -95,6 +95,7 @@ export const boards = pgTable("boards", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  isApplicationBoard: boolean("is_application_board").notNull().default(false),
   ownerId: integer("owner_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
@@ -406,8 +407,14 @@ export const cards = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Budget rows are authoritative in positions mode. Legacy card amounts are
-// server-maintained totals; legacy account/title are null in that mode.
+// Independent motion planning; never used as accounting allocations or totals.
+export const cardBudgetPlans = pgTable("card_budget_plans", {
+  cardId: integer("card_id").primaryKey().references(() => cards.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull().default(0),
+  allocations: jsonb("allocations").$type<{ amount: number; budgetTitle: string }[]>().notNull().default([]),
+}, (t) => ({ array: check("card_budget_plans_array", sql`jsonb_typeof(${t.allocations}) = 'array'`) }));
+
+// Budget rows are authoritative in positions mode; legacy amounts are maintained totals.
 export const cardBudgetPositions = pgTable("card_budget_positions", {
   id: text("id").primaryKey(),
   cardId: integer("card_id").notNull().references(() => cards.id, { onDelete: "cascade" }),

@@ -414,7 +414,7 @@ export function CardEditor({
       <BudgetPositionsEditor cardId={cardId} initial={budgetPositions} revision={budgetRevision} accounts={accounts} visible={visible} active={positionsActive} onDirtyChange={setBudgetDirty} onActive={(active, single) => {
         if (single) valuesRef.current = { ...valuesRef.current, budgetTitle: single.budgetTitle, accountId: single.accountId, requestedAmount: centsToInput(single.requestedAmount), approvedAmount: centsToInput(single.approvedAmount), actualAmount: centsToInput(single.actualAmount) };
         setPositionsActive(active);
-      }} beforeStart={async () => { if (timer.current) clearTimeout(timer.current); return doSave(); }} />
+      }} />
     </div>
   );
 }

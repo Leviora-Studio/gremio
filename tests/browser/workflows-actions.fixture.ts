@@ -21,3 +21,13 @@ export async function saveBudgetPositionsAction(_id: number, rows: any[], revisi
   } })), 0);
   return { ok: true, rows, revision: revision + 1, totals: budgetTotals(rows), single: canReturnToSingle(rows) };
 }
+
+export async function saveBudgetPlanAction(_id: number, revision: number, input: unknown) {
+  const { parseBudgetPlan } = await import("../../lib/card-budget-plan");
+  try {
+    const allocations = parseBudgetPlan(input);
+    if (w.planFailNext) { w.planFailNext = false; return { error: "Einplanung wurde zwischenzeitlich geändert. Bitte neu laden." }; }
+    w.savedPlan = allocations;
+    return { revision: revision + 1 };
+  } catch (error) { return { error: (error as Error).message }; }
+}
