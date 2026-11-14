@@ -111,9 +111,11 @@ const budgetPlan = {
   type: "object", additionalProperties: false, required: ["revision", "allocations"],
   properties: {
     revision: { type: "integer", minimum: 0, maximum: 2147483646 },
+    confirmAccountChange: { type:"boolean", const:true, description:"Explicit confirmation of account changes." },
+    correction: { type:"object", additionalProperties:false, required:["reason","confirmation"], properties:{reason:{type:"string",minLength:1,maxLength:4000},confirmation:{type:"string",const:"BESTÄTIGEN"}} },
     allocations: { type: "array", maxItems: 100, items: {
       type: "object", additionalProperties: false, required: ["amountCents", "budgetTitle"],
-      properties: { amountCents: { type: "integer", minimum: 0, maximum: MAX_AMOUNT_CENTS }, budgetTitle: { type: "string", minLength: 1, maxLength: 200 } },
+      properties: { accountId: { type:["integer","null"], minimum:1, maximum:2147483647 }, amountCents: { type: "integer", minimum: 0, maximum: MAX_AMOUNT_CENTS }, budgetTitle: { type: "string", minLength: 1, maxLength: 200 } },
     } },
   },
 };
@@ -228,7 +230,7 @@ export const extraPaths = {
     },
     patch: {
       tags: ["Karten"], operationId: "updateBudgetPlan", summary: "Haushaltstitel-Einplanung ersetzen",
-      description: "Write scope and live board write access. Full replacement with current revision; empty allocations clears the plan. Locked cards and stale revisions return 409 without changes. Amounts in integer cents.",
+      description: "Write scope and live board write access. Full replacement with current revision; empty allocations clears the plan. Account changes require confirmAccountChange:true. Locked cards require correction.reason and correction.confirmation=BESTÄTIGEN. Invalid or stale writes return 409 without changes. Each allocation contains amount in integer cents, accountId and budgetTitle.",
       parameters: [pathId()], requestBody: body(budgetPlan), responses: responses(budgetPlan),
     },
   },

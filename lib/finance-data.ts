@@ -28,6 +28,7 @@ export type ExpenseLeaf = {
 export type ExpenseRow = ExpenseLeaf & { children: ExpenseLeaf[] };
 
 export type AntragRow = {
+  href?: string;
   breakdown?: {title:string;approved:number;paid:number;outstanding:number}[];
   id: number;
   number: string | null;

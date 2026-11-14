@@ -17,9 +17,10 @@ import {
   feedbackAreas,
   inventoryBoards,
   locations,
+  users,
   type InventoryBoard,
 } from "@/lib/db/schema";
-import { CARD_FIELD_KEYS } from "@/lib/constants";
+import { CARD_FIELD_KEYS, LEGACY_FINANCE_FIELD_KEYS, ATTACHMENT_FIELD_KEYS } from "@/lib/constants";
 import { deleteStoredFile } from "@/lib/attachments";
 
 // Standard-Spalten eines automatisch erzeugten Leihvorgang-Boards.
@@ -86,7 +87,8 @@ export async function createLoanBoardForInventory(
 
 /**
  * Neues Board aus einem Template: kopiert dessen Spalten (inkl. Archiv-Trigger),
- * setzt alle Kartenfelder sichtbar und legt die (deaktivierte) Archiv-Zeile an.
+ * setzt aktuelle Kartenfelder sichtbar (ohne alte Einzelfelder für Finanzen)
+ * und legt die (deaktivierte) Archiv-Zeile an.
  * Ohne (gültige) templateId entsteht ein Board ohne Spalten.
  */
 export async function createBoardFromTemplate(
@@ -94,7 +96,14 @@ export async function createBoardFromTemplate(
   name: string,
   description: string | null,
   templateId: number | null,
+  application?: { attachmentFields: string[] },
 ): Promise<number> {
+  if (application) {
+    const [creator] = await db.select().from(users).where(eq(users.id, ownerId));
+    if (!creator?.isActive || creator.role !== "admin") throw new Error("Nur Administrationskonten dürfen Antragsboards erstellen.");
+    const allowed = ["finance_request","annex_a","annex_b","student_card","receipts"];
+    if (application.attachmentFields.some(key=>!allowed.includes(key)) || new Set(application.attachmentFields).size!==application.attachmentFields.length) throw new Error("Ungültige Anhangstypen.");
+  }
   const templateStatuses = templateId
     ? await db
         .select()
@@ -106,7 +115,7 @@ export async function createBoardFromTemplate(
   return db.transaction(async (tx) => {
     const [board] = await tx
       .insert(boards)
-      .values({ name, description: description ?? null, ownerId })
+      .values({ name, description: description ?? null, ownerId, isApplicationBoard: !!application, attachmentFields: application?.attachmentFields ?? [] })
       .returning();
 
     for (let index = 0; index < templateStatuses.length; index++) {
@@ -120,6 +129,8 @@ export async function createBoardFromTemplate(
     }
 
     for (let i = 0; i < CARD_FIELD_KEYS.length; i++) {
+      if (LEGACY_FINANCE_FIELD_KEYS.includes(CARD_FIELD_KEYS[i])) continue;
+      if (ATTACHMENT_FIELD_KEYS.includes(CARD_FIELD_KEYS[i] as (typeof ATTACHMENT_FIELD_KEYS)[number]) && CARD_FIELD_KEYS[i] !== "other_pdfs" && !application?.attachmentFields.includes(CARD_FIELD_KEYS[i])) continue;
       await tx.insert(boardCardFields).values({
         boardId: board.id,
         fieldKey: CARD_FIELD_KEYS[i],

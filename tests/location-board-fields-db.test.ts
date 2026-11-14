@@ -50,13 +50,14 @@ test("application routing locks form fields; internal email edits respect permis
     context.__locationFieldTestUser = admin;
     const rejected=await api.locations.setLocationTargetAction(location.id,{},target());
     assert.match(rejected.error,/E-Mail-Adresse/);assert.deepEqual(await visible(),[],"assignment must not silently enable fields");
+    await db.insert(schema.boardCardFields).values(["finance_request","student_card","annex_a","annex_b"].map(fieldKey=>({boardId:board.id,fieldKey,visible:true}))).onConflictDoNothing();
     await api.fields.setCardFieldsAction(board.id,{},allFields);
     assert.ok((await api.locations.setLocationTargetAction(location.id,{},target())).success);
     assert.deepEqual(await getLocationRequiredFieldKeys(board.id),[...APPLICATION_REQUIRED_CARD_FIELD_KEYS],"inactive linked routes also lock required fields");
     assert.ok((await api.fields.setCardFieldsAction(board.id,{},new FormData())).error);
     const requiredOnly=form(Object.fromEntries(APPLICATION_REQUIRED_CARD_FIELD_KEYS.map(key=>[`field_${key}`,"on"])));
-    assert.ok((await api.fields.setCardFieldsAction(board.id,{},requiredOnly)).success,"optional uploads remain configurable");
-    assert.deepEqual(await visible(),[...APPLICATION_REQUIRED_CARD_FIELD_KEYS].sort());
+    assert.ok((await api.fields.setCardFieldsAction(board.id,{},requiredOnly)).success,"fixed upload areas stay unchanged");
+    assert.deepEqual(await visible(),[...APPLICATION_REQUIRED_CARD_FIELD_KEYS,"annex_a","annex_b"].sort());
     assert.ok((await api.locations.toggleLocationEnabledAction(location.id)).success);
     assert.ok((await api.fields.setCardFieldsAction(board.id,{},new FormData())).error);
     await api.locations.setLocationTargetAction(second.id,{},target());
@@ -64,6 +65,7 @@ test("application routing locks form fields; internal email edits respect permis
     await api.locations.toggleLocationEnabledAction(location.id);
     assert.ok((await api.fields.setCardFieldsAction(board.id,{},new FormData())).error,"disabled location still protects fields");
     assert.ok((await api.locations.setLocationTargetAction(second.id,{},target(other.id,otherStatus.id))).error);
+    await db.insert(schema.boardCardFields).values(["finance_request","student_card","annex_a","annex_b"].map(fieldKey=>({boardId:other.id,fieldKey,visible:true}))).onConflictDoNothing();
     await api.fields.setCardFieldsAction(other.id,{},allFields);
     await api.locations.setLocationTargetAction(second.id,{},target(other.id,otherStatus.id));
     assert.ok((await api.fields.setCardFieldsAction(board.id,{},new FormData())).error,"first disabled location still linked");
@@ -122,7 +124,9 @@ test("application routing locks form fields; internal email edits respect permis
     await db.update(schema.locations).set({ enabled: true,targetBoardId:board.id,targetStatusId:status.id }).where(eq(schema.locations.id, location.id));
     await db.delete(schema.boardCardFields).where(and(eq(schema.boardCardFields.boardId, board.id), eq(schema.boardCardFields.fieldKey, "submitter_email")));
     const migration = await readFile(join(process.cwd(), "drizzle/0087_application_card_fields.sql"), "utf8");
-    for (const statement of migration.split("--> statement-breakpoint")) await pool.query(statement);
+    // Replay this historical upgrade only against its pre-upgrade fixture,
+    // never against later boards with deliberately unconfigured upload slots.
+    for (const statement of migration.split("--> statement-breakpoint")) await pool.query(statement.replace("FROM boards b\nON CONFLICT", "FROM boards b\nWHERE b.id = $1\nON CONFLICT").replace("WHERE EXISTS", "WHERE b.id = $1 AND EXISTS"),[board.id]);
     assert.deepEqual(await visible(), [...APPLICATION_CARD_FIELD_KEYS].sort());
   } finally {
     delete context.__locationFieldTestUser;

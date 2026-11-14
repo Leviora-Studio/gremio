@@ -6,13 +6,16 @@
 import { startTransition, useActionState, useState, type FormEvent } from "react";
 import { Select } from "@/components/Select";
 import { FileInput } from "@/components/FileInput";
+import type {PublicApplicationLocation} from "@/lib/public-application-submission";
 import { submitAntragAction, type SubmitState } from "@/app/actions";
 
 export function PublicAntragForm({
   locations,
   guard,
+  financeModule=false,
 }: {
-  locations: { id: number; name: string }[];
+  locations: PublicApplicationLocation[];
+  financeModule?:boolean;
   guard: { ts: string; sig: string };
 }) {
   const [state, action, pending] = useActionState(
@@ -21,6 +24,10 @@ export function PublicAntragForm({
   );
   // Clientseitig fehlende Pflichtangaben (für eine klare „bitte ergänzen"-Meldung).
   const [missing, setMissing] = useState<string[]>([]);
+  const [locationId,setLocationId]=useState("");
+  const selected=locations.find(location=>String(location.id)===locationId);
+  const enabledSlots=selected?.attachmentFields??(financeModule?[]:["finance_request","student_card","annex_a","annex_b"]);
+  const requiredSlots=selected?.requiredAttachmentFields??(financeModule?[]:["finance_request","student_card"]);
   const aktuellerGuard = state.guard ?? guard;
 
   // Bewusst KEIN <form action={action}>: React 19 setzt das Formular nach einer
@@ -42,8 +49,8 @@ export function PublicAntragForm({
     if (!hasText("locationId")) need.push("Standort");
     if (!hasText("title")) need.push("Antragsgegenstand");
     if (!hasText("applicant")) need.push("Antragsteller");
-    if (!hasFile("finance_request")) need.push("Finanzantrag (PDF)");
-    if (!hasFile("student_card")) need.push("Studierendenausweis");
+    if (requiredSlots.includes("finance_request")&&!hasFile("finance_request")) need.push("Finanzantrag (PDF)");
+    if (requiredSlots.includes("student_card")&&!hasFile("student_card")) need.push("Studierendenausweis");
 
     setMissing(need);
     if (need.length > 0) return; // nichts absenden, nichts verwerfen
@@ -81,6 +88,9 @@ export function PublicAntragForm({
           <label className="label">Standort *</label>
           <Select
             name="locationId"
+            ariaLabel="Standort"
+            value={locationId}
+            onChange={value=>{setLocationId(value);setMissing([]);}}
             placeholder="Bitte wählen…"
             options={locations.map((l) => ({
               value: String(l.id),
@@ -88,10 +98,10 @@ export function PublicAntragForm({
             }))}
           />
         </div>
-        <p className="text-sm text-slate-500">
+        {!financeModule&&<p className="text-sm text-slate-500">
           Anträge ab 500 Euro müssen an den Großen StuRa gestellt werden,
           Anträge unter 500 Euro an den entsprechenden Standort.
-        </p>
+        </p>}
       </div>
 
       <div>
@@ -126,28 +136,29 @@ export function PublicAntragForm({
         />
       </div>
 
-      <div>
+      {financeModule&&!selected&&<p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Bitte zuerst einen Standort auswählen. Danach werden die benötigten Unterlagen angezeigt.</p>}
+      {enabledSlots.includes("finance_request")&&<div>
         <label className="label">Finanzantrag (PDF) *</label>
         <FileInput name="finance_request" accept="application/pdf,.pdf" />
-      </div>
+      </div>}
 
-      <div>
+      {enabledSlots.includes("student_card")&&<div>
         <label className="label">Studierendenausweis (PDF, PNG, JPG) *</label>
         <FileInput
           name="student_card"
           accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
         />
-      </div>
+      </div>}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div>
+        {enabledSlots.includes("annex_a")&&<div>
           <label className="label">Anlage A (PDF, optional)</label>
           <FileInput name="annex_a" accept="application/pdf,.pdf" />
-        </div>
-        <div>
+        </div>}
+        {enabledSlots.includes("annex_b")&&<div>
           <label className="label">Anlage B (PDF, optional)</label>
           <FileInput name="annex_b" accept="application/pdf,.pdf" />
-        </div>
+        </div>}
       </div>
 
       {/* Clientseitige „bitte ergänzen"-Meldung — Eingaben bleiben erhalten. */}

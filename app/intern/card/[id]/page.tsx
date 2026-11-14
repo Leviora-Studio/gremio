@@ -32,10 +32,11 @@ import { formatDateTime } from "@/lib/dates";
 import { publicBaseUrl } from "@/lib/public-api";
 import { CardLockControls } from "@/components/antrag/CardLockControls";
 import { ReceiptSection } from "@/components/antrag/ReceiptSection";
+import { CardActivity } from "@/components/antrag/CardActivity";
 import { BudgetPlanEditor } from "@/components/antrag/BudgetPlanEditor";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import { loadBudgetSnapshot } from "@/lib/card-budget-db";
-import { maskHiddenCardFields, visibleActivityDetail } from "@/lib/card-field-projection";
+import { maskHiddenCardFields } from "@/lib/card-field-projection";
 import { CommentForm } from "@/components/antrag/CommentForm";
 import { StatusSelect } from "@/components/antrag/StatusSelect";
 import { AttachmentSlot, WeitereAttachments, AttachmentFolders } from "@/components/antrag/Attachments";
@@ -101,6 +102,7 @@ export default async function AntragDetailPage({
     .orderBy(asc(boardCardFields.position));
   const visible = visibleRows.map((r) => r.fieldKey);
   const visibleSet = new Set(visible);
+  if (board.attachmentFields == null || board.attachmentFields.includes("receipts")) visibleSet.add("receipts");
   const priorities = await getPriorities();
   const accounts = await getAccounts();
 
@@ -220,7 +222,7 @@ export default async function AntragDetailPage({
     .from(cardActivity)
     .leftJoin(users, eq(users.id, cardActivity.userId))
     .where(eq(cardActivity.cardId, card.id))
-    .orderBy(desc(cardActivity.createdAt));
+    .orderBy(desc(cardActivity.createdAt), desc(cardActivity.id));
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -331,7 +333,7 @@ export default async function AntragDetailPage({
         </fieldset>
       </section>
 
-      {board.isApplicationBoard && <BudgetPlanEditor cardId={card.id} initial={budgetPlan?.allocations ?? []} revision={budgetPlan?.revision ?? 0} readOnly={!canEdit} />}
+      {board.isApplicationBoard && <BudgetPlanEditor cardId={card.id} initial={budgetPlan?.allocations ?? []} revision={budgetPlan?.revision ?? 0} accounts={accounts} defaultAccountId={board.defaultAccountId} locked={!!card.lockedAt} readOnly={!await canEditBoard(user,board)} />}
 
       {/* Anhänge */}
       <section className="card space-y-4 p-5">
@@ -420,7 +422,7 @@ export default async function AntragDetailPage({
         )}
       </section>
 
-      <ReceiptSection cardId={card.id} canEdit={canEdit} canUpload={canMove} items={visibleAtts.filter(a => a.uploadPurpose === "receipt").map(a => ({id:a.id,filename:a.filename,mime:a.mime}))} />
+      {(board.attachmentFields == null || board.attachmentFields.includes("receipts")) && <ReceiptSection cardId={card.id} canEdit={canEdit} canUpload={canMove} items={visibleAtts.filter(a => a.uploadPurpose === "receipt").map(a => ({id:a.id,filename:a.filename,mime:a.mime}))} />}
 
       {bookings.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold">Im Kassenbuch vorhandene Buchungen</h2><p className="text-sm text-slate-500">Lesende Übersicht. Zum Öffnen des Vorgangs sind zusätzliche Kassenbuchrechte erforderlich.</p>{bookings.map(entry=><Link className="block rounded-lg border border-slate-200 p-3 text-sm hover:border-brand-400" key={entry.id} href={`/intern/kassenbuch/vorgang/${entry.id}`}><strong>{entry.bookingNumber ? `${entry.bookingNumber} · ` : ""}{formatCents(entry.data.amount)} · HT {entry.data.budgetTitle}</strong><span className="block">{entry.data.holder} · {entry.data.purpose||"Kein Verwendungszweck"}</span><span className="block text-slate-500">Anweisung erteilt: {entry.authorizedAt?fmt(entry.authorizedAt):"—"} · Buchungstag: {entry.bookingDate||"Noch nicht festgelegt"}{entry.correctsId?` · Korrektur zu #${entry.correctsId}`:""}</span></Link>)}</section>}
       {/* Kommentare */}
@@ -465,38 +467,7 @@ export default async function AntragDetailPage({
         </div>
       </section>
 
-      {/* Aktivität (rein intern) */}
-      <section className="card space-y-3 p-5">
-        <h2 className="text-lg font-semibold">Aktivität</h2>
-        {activity.length === 0 ? (
-          <p className="text-sm text-slate-500">Noch keine Aktivität.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {activity.map((a) => (
-              <li
-                key={a.id}
-                className="flex flex-wrap items-start gap-x-2 gap-y-1 text-slate-600 sm:items-center"
-              >
-                <Avatar
-                  username={a.username ?? "System"}
-                  src={
-                    a.userId && a.avatarPath ? `/api/avatar/${a.userId}` : null
-                  }
-                  size={20}
-                  className="mt-0.5 shrink-0 sm:mt-0"
-                />
-                <span className="shrink-0 font-medium text-slate-700">
-                  {a.username ?? "System"}
-                </span>
-                <span className="min-w-0 flex-1 break-words">{visibleActivityDetail(a, visibleSet) ?? "Karte aktualisiert"}</span>
-                <span className="basis-full pl-7 text-xs text-slate-400 sm:ml-auto sm:basis-auto sm:pl-0">
-                  {fmt(a.createdAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <CardActivity activity={activity} visibleFields={visibleSet} applicationBoard={board.isApplicationBoard} />
 
       {/* Löschen */}
       {canEdit && <section className="card border-red-200 p-4">

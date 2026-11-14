@@ -50,7 +50,7 @@ function readZipEntries(buffer) {
     ownerId=(await query("insert into users(username,role) values ($1,'admin') returning id",[suffix])).rows[0].id;
     await query('update users set sub=$1 where id=$2',['synthetic:'+ownerId,ownerId]);
     const accs=(await query("insert into accounts(name) values ($1),($2) returning id",[suffix+'-A',suffix+'-B'])).rows; accountIds.push(...accs.map(a=>a.id));
-    boardId=(await query("insert into boards(name,owner_id,default_account_id) values ($1,$2,$3) returning id",[suffix,ownerId,accs[1].id])).rows[0].id;
+    boardId=(await query("insert into boards(name,owner_id,default_account_id,legacy_finance_fields) values ($1,$2,$3,true) returning id",[suffix,ownerId,accs[1].id])).rows[0].id;
     const statuses=(await query("insert into board_statuses(board_id,name,is_receipt_trigger,position) values ($1,'Quittungen offen',true,0),($1,'Eingereicht',false,1) returning id",[boardId])).rows;
     await query('update boards set resubmit_status_id=$1,receipt_to_status_id=$2 where id=$3',[statuses[0].id,statuses[1].id,boardId]);
     for(const key of ['budget_title','account','requested_amount','approved_amount','actual_amount','other_pdfs']) await query('insert into board_card_fields(board_id,field_key,visible) values ($1,$2,true)',[boardId,key]);

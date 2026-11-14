@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { createHash, randomBytes } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 
 // Minimaler, abhängigkeitsfreier XLSX-Writer: mehrere Blätter, Spaltenbreiten,
@@ -11,11 +12,12 @@ import { deflateRawSync } from "node:zlib";
 export type XlsxCell = string | number | null;
 export type XlsxRowStyle = "section" | "total" | "top" | "sub";
 export type XlsxRow = { cells: XlsxCell[]; style?: XlsxRowStyle };
-export type XlsxColumn = { header: string; money?: boolean; width?: number };
+export type XlsxColumn = { header: string; money?: boolean; date?: "date"|"datetime"; width?: number };
 export type XlsxSheet = {
   name: string;
   columns: XlsxColumn[];
   rows: XlsxRow[];
+  protected?: boolean;
 };
 
 // --- CRC32 ------------------------------------------------------------------
@@ -88,10 +90,20 @@ function colsXml(columns: XlsxColumn[]): string {
   return cols ? `<cols>${cols}</cols>` : "";
 }
 
-function sheetXml(sheet: XlsxSheet): string {
+type PasswordVerifier={hashValue:string;saltValue:string;spinCount:number};
+/** OOXML SHA-512 password verifier. The random export password is never persisted. */
+function passwordVerifier(password:Buffer):PasswordVerifier{
+  const salt=randomBytes(16),spinCount=100000,iterator=Buffer.alloc(4);
+  let key=createHash("sha512").update(salt).update(password).digest();
+  for(let i=0;i<spinCount;i++){iterator.writeUInt32LE(i);key=createHash("sha512").update(key).update(iterator).digest();}
+  return {hashValue:key.toString("base64"),saltValue:salt.toString("base64"),spinCount};
+}
+function sheetXml(sheet: XlsxSheet, verifier?:PasswordVerifier): string {
   const out: string[] = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+    `<dimension ref="A1:${colRef(Math.max(0,sheet.columns.length-1))}${sheet.rows.length+1}"/>`,
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>',
     colsXml(sheet.columns),
     "<sheetData>",
   ];
@@ -109,11 +121,13 @@ function sheetXml(sheet: XlsxSheet): string {
       row.style === "section" ||
       row.style === "total" ||
       row.style === "top";
-    out.push(`<row r="${rnum}">`);
+    const lineCount=Math.max(1,...row.cells.map((value,index)=>String(value??"").split(/\r?\n/).reduce((sum,line)=>sum+Math.max(1,Math.ceil(line.length/Math.max(8,(sheet.columns[index]?.width??16)-2))),0)));
+    const height=isHeader?30:Math.min(409,Math.max(20,lineCount*15+5));
+    out.push(`<row r="${rnum}" ht="${height}" customHeight="1">`);
     sheet.columns.forEach((col, ci) => {
       const v = row.cells[ci];
       const ref = colRef(ci) + rnum;
-      const s = cellStyle(isHeader, row.style, !!col.money);
+      const s = !isHeader && col.date ? col.date === "datetime" ? 10 : 9 : cellStyle(isHeader, row.style, !!col.money);
       const sAttr = s ? ` s="${s}"` : "";
       if (v == null || v === "") {
         if (fillEmpty && s) out.push(`<c r="${ref}"${sAttr}/>`);
@@ -129,18 +143,21 @@ function sheetXml(sheet: XlsxSheet): string {
     });
     out.push("</row>");
   });
-  out.push("</sheetData></worksheet>");
+  out.push("</sheetData>");
+  if(verifier)out.push(`<sheetProtection sheet="1" objects="1" scenarios="1" formatCells="1" formatColumns="1" formatRows="1" insertColumns="1" insertRows="1" insertHyperlinks="1" deleteColumns="1" deleteRows="1" selectLockedCells="0" selectUnlockedCells="0" sort="0" autoFilter="0" pivotTables="1" algorithmName="SHA-512" hashValue="${verifier.hashValue}" saltValue="${verifier.saltValue}" spinCount="${verifier.spinCount}"/>`);
+  out.push(`<autoFilter ref="A1:${colRef(Math.max(0,sheet.columns.length-1))}${sheet.rows.length+1}"/>`);
+  out.push("</worksheet>");
   return out.join("");
 }
 
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00\\ &quot;€&quot;"/></numFmts>
+<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0.00\\ &quot;€&quot;"/><numFmt numFmtId="165" formatCode="dd.mm.yyyy"/><numFmt numFmtId="166" formatCode="dd.mm.yyyy hh:mm"/></numFmts>
 <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
 <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor rgb="FFD9E1F2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDF2FB"/><bgColor rgb="FFEDF2FB"/></patternFill></fill></fills>
 <borders count="3"><border/><border><top style="thin"><color rgb="FF000000"/></top></border><border><left style="thin"><color rgb="FF9BA6B8"/></left><right style="thin"><color rgb="FF9BA6B8"/></right><top style="thin"><color rgb="FF9BA6B8"/></top></border></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="9">
+<cellXfs count="11">
 <xf/>
 <xf fontId="1" applyFont="1"/>
 <xf numFmtId="164" applyNumberFormat="1"/>
@@ -150,6 +167,8 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="164" fontId="1" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
 <xf fontId="1" fillId="3" borderId="2" applyFont="1" applyFill="1" applyBorder="1"/>
 <xf numFmtId="164" fontId="1" fillId="3" borderId="2" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>
+<xf numFmtId="165" applyNumberFormat="1"/>
+<xf numFmtId="166" applyNumberFormat="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -208,8 +227,15 @@ export function buildXlsx(sheets: XlsxSheet[]): Uint8Array {
   const add = (name: string, content: string) =>
     files.push({ name, data: Buffer.from(content, "utf8") });
 
-  sheets.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)));
-  add("xl/styles.xml", STYLES_XML);
+  const locked=sheets.some(sheet=>sheet.protected);
+  // 24 random bytes encode to exactly 32 base64url characters for each export.
+  const password=locked?Buffer.from(randomBytes(24).toString("base64url"),"utf16le"):null;
+  let structure="";
+  try{
+    sheets.forEach((sheet,index)=>add(`xl/worksheets/sheet${index+1}.xml`,sheetXml(sheet,sheet.protected&&password?passwordVerifier(password):undefined)));
+    if(password){const verifier=passwordVerifier(password);structure=`<workbookProtection lockStructure="1" workbookAlgorithmName="SHA-512" workbookHashValue="${verifier.hashValue}" workbookSaltValue="${verifier.saltValue}" workbookSpinCount="${verifier.spinCount}"/>`;}
+  }finally{password?.fill(0);}
+  add("xl/styles.xml", STYLES_XML.replace(/<xf([^/>]*)\/>/g, '<xf$1 applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'));
 
   const sheetTags = sheets
     .map(
@@ -219,7 +245,7 @@ export function buildXlsx(sheets: XlsxSheet[]): Uint8Array {
     .join("");
   add(
     "xl/workbook.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetTags}</sheets></workbook>`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${structure}<bookViews><workbookView/></bookViews><sheets>${sheetTags}</sheets></workbook>`,
   );
 
   const rels =

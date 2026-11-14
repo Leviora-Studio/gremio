@@ -124,8 +124,8 @@ test("extended API and OAuth/MCP enforce live rights, privacy, file safety and t
   const bs = await db
     .insert(boards)
     .values([
-      { name: `${suffix}-board`, ownerId: owner.id },
-      { name: `${suffix}-secret-board`, ownerId: owner.id },
+      { name: `${suffix}-board`, ownerId: owner.id, legacyFinanceFields:true },
+      { name: `${suffix}-secret-board`, ownerId: owner.id, legacyFinanceFields:true },
     ])
     .returning();
   const [board, secretBoard] = bs;

@@ -6,11 +6,11 @@ import { sanitizeSingleLine } from "./text";
 
 export class BudgetPlanError extends Error {}
 
-export type BudgetPlanAllocation = { amount: number; budgetTitle: string };
-export type BudgetPlanDraft = { amount: string; budgetTitle: string };
+export type BudgetPlanAllocation = { amount: number; budgetTitle: string; accountId?:number|null };
+export type BudgetPlanDraft = { amount: string; budgetTitle: string; accountId?:number|null };
 
 /** Validate the entire draft before writing; blank or partial rows are never silently dropped. */
-export function parseBudgetPlan(input: unknown): BudgetPlanAllocation[] {
+export function parseBudgetPlan(input: unknown, defaultAccountId?:number|null): BudgetPlanAllocation[] {
   if (!Array.isArray(input) || input.length > MAX_BUDGET_POSITIONS) {
     throw new BudgetPlanError(`Bitte höchstens ${MAX_BUDGET_POSITIONS} Haushaltstitel einplanen.`);
   }
@@ -22,7 +22,9 @@ export function parseBudgetPlan(input: unknown): BudgetPlanAllocation[] {
     const budgetTitle = sanitizeSingleLine(row.budgetTitle);
     if (amount == null || amount > MAX_AMOUNT_CENTS) throw new BudgetPlanError(`Zeile ${index + 1}: Bitte einen gültigen Betrag eingeben.`);
     if (!budgetTitle || budgetTitle.length > 200) throw new BudgetPlanError(`Zeile ${index + 1}: Haushaltstitel mit höchstens 200 Zeichen erforderlich.`);
-    return { amount, budgetTitle };
+    const accountId = Object.hasOwn(row,"accountId") ? row.accountId : defaultAccountId;
+    if (accountId != null && (!Number.isSafeInteger(accountId) || accountId<1 || accountId>2147483647)) throw new BudgetPlanError(`Zeile ${index+1}: Bitte ein gültiges Konto auswählen.`);
+    return { amount, budgetTitle, ...(accountId !== undefined ? {accountId} : {}) };
   });
 }
 

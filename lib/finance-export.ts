@@ -19,7 +19,7 @@ export const VIEW_TITLES: Record<string, string> = {
 };
 
 const HT = { header: "Haushaltstitel", width: 1.5 };
-const dash = (s: string | null | undefined) => (s && s.trim() ? s : "—");
+const dash = (s: string | null | undefined) => (s && s.trim() ? s : null);
 
 // View 1: Haushaltsplan — Einnahmen/Ausgaben getrennt, Abschnitts-Summen,
 // Unterpunkte eingerückt, abschließender Saldo. (Offizielles Format.)
@@ -136,10 +136,10 @@ function antraegeTable(data: FinanceData): Table {
       totActual += c.actualAmount ?? 0;
       rows.push({
         cells: [
-          c.number ?? "—",
+          c.number ?? null,
           dash(c.budgetTitle),
           c.title,
-          c.applicant || "—",
+          c.applicant || null,
           dash(c.decisionRef),
           dash(c.instructionDate),
           dash(c.transferDate),
@@ -154,15 +154,15 @@ function antraegeTable(data: FinanceData): Table {
   });
 
   return {
-    title: "Anträge nach Haushaltstitel (vollständige Kartensummen)",
+    title: "Anträge nach Haushaltstitel",
     columns: [
       { header: "Antragsnr.", width: 1.9 },
       HT,
       { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },
       { header: "Beschlussreferenz", width: 2.6 },
-      { header: "Anweisung", width: 1.4 },
-      { header: "Überweisung", width: 1.4 },
+      { header: "Anweisung", width: 1.4, date: "date" },
+      { header: "Überweisung", width: 1.4, date: "date" },
       { header: data.cardRows.some(c=>c.breakdown)?"Noch offen (maximal) (€)":"Genehmigt (€)", width: 1.6, money: true },
       { header: data.cardRows.some(c=>c.breakdown)?"Gezahlt (€)":"Getätigt (€)", width: 1.6, money: true },
     ],
@@ -187,10 +187,10 @@ function antraegeByNumberTable(data: FinanceData): Table {
     totActual += c.actualAmount ?? 0;
     rows.push({
       cells: [
-        c.number ?? "—",
+        c.number ?? null,
         dash(c.budgetTitle),
         c.title,
-        c.applicant || "—",
+        c.applicant || null,
         dash(c.decisionRef),
         dash(c.instructionDate),
         dash(c.transferDate),
@@ -212,8 +212,8 @@ function antraegeByNumberTable(data: FinanceData): Table {
       { header: "Titel", width: 3.2 },
       { header: "Antragsteller", width: 2.4 },
       { header: "Beschlussreferenz", width: 2.6 },
-      { header: "Anweisung", width: 1.4 },
-      { header: "Überweisung", width: 1.4 },
+      { header: "Anweisung", width: 1.4, date: "date" },
+      { header: "Überweisung", width: 1.4, date: "date" },
       { header: data.cardRows.some(c=>c.breakdown)?"Noch offen (maximal) (€)":"Genehmigt (€)", width: 1.6, money: true },
       { header: data.cardRows.some(c=>c.breakdown)?"Gezahlt (€)":"Getätigt (€)", width: 1.6, money: true },
     ],

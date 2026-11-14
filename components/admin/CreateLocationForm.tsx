@@ -4,11 +4,11 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { createLocationAction, type State } from "@/app/admin/standorte/actions";
+import { createLocationAction, createFinanceLocationAction, type State } from "@/app/admin/standorte/actions";
 
-export function CreateLocationForm() {
+export function CreateLocationForm({module="locations"}:{module?:"locations"|"finance"}) {
   const [state, action, pending] = useActionState(
-    createLocationAction,
+    module==="finance"?createFinanceLocationAction:createLocationAction,
     {} as State,
   );
   const ref = useRef<HTMLFormElement>(null);
@@ -24,8 +24,8 @@ export function CreateLocationForm() {
       className="card flex flex-wrap items-end gap-2 p-4"
     >
       <div className="flex-1">
-        <label className="label">Neuer Standort</label>
-        <input name="name" className="input" placeholder="Standort-Name" required />
+        <label htmlFor={`new-${module}-location`} className="label">Neuer Standort</label>
+        <input id={`new-${module}-location`} name="name" className="input" placeholder="Standort-Name" required />
       </div>
       <button type="submit" disabled={pending} className="btn-primary">
         {"Anlegen"}

@@ -24,7 +24,7 @@ test("financial agenda planning is atomic, permission-filtered, revision-safe an
   assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
   const suffix=randomUUID();
   const [owner,reader,writer]=await db.insert(s.users).values(["owner","reader","writer"].map(role=>({username:`finance-agenda-${role}-${suffix}`}))).returning();
-  const [board,foreign]=await db.insert(s.boards).values([{name:"Financial applications",ownerId:owner.id},{name:"Unrelated",ownerId:owner.id}]).returning();
+  const [board,foreign]=await db.insert(s.boards).values([{name:"Financial applications",ownerId:owner.id,legacyFinanceFields:true},{name:"Unrelated",ownerId:owner.id}]).returning();
   const [source,target,other]=await db.insert(s.boardStatuses).values([{boardId:board.id,name:"Incoming"},{boardId:board.id,name:"Scheduled",isInstructionTrigger:true},{boardId:foreign.id,name:"Other"}]).returning();
   const [account]=await db.insert(s.accounts).values({name:`Finance fixture ${suffix}`}).returning();
   const [area]=await db.insert(s.meetingAreas).values({name:"Committee",ownerId:owner.id}).returning();

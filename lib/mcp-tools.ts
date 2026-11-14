@@ -81,7 +81,7 @@ export const mcpTools: Definition[] = [
     schema: z.object({ id }).strict(), run: (req, a) => budgetPlanApi(req, String(a.id)),
   },
   {
-    name: "update_budget_plan", description: "Einplanung vollständig ersetzen. Aktuelle revision erforderlich; leere allocations entfernen die Einplanung. Gesperrte Anträge bleiben unveränderbar.",
+    name: "update_budget_plan", description: "Einplanung vollständig ersetzen. Aktuelle revision erforderlich; leere allocations entfernen die Einplanung. Je Zeile Betrag, Konto und Titel. Abweichende Konten erfordern confirmAccountChange:true. Bei gesperrten Anträgen ausschließlich als Korrektureintrag mit correction.reason und correction.confirmation=BESTÄTIGEN.",
     method: "PATCH", path: "/api/v1/cards/{id}/budget-plan",
     schema: z.object({ id, data: budgetPlanWriteSchema }).strict(), run: (req, a) => budgetPlanApi(req, String(a.id)),
   },

@@ -16,6 +16,7 @@ export function Modal({
   portal = false,
   manageFocus = false,
   keepMounted = false,
+  maxWidth = "max-w-2xl",
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,6 +32,7 @@ export function Modal({
   portal?: boolean;
   manageFocus?: boolean;
   keepMounted?: boolean;
+  maxWidth?: "max-w-2xl" | "max-w-4xl" | "max-w-6xl";
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -75,7 +77,7 @@ export function Modal({
         role="dialog"
         aria-modal={open ? "true" : undefined}
         aria-labelledby={titleId}
-        className="w-full max-w-2xl rounded-lg bg-white shadow-xl"
+        className={`w-full ${maxWidth} rounded-lg bg-white shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">

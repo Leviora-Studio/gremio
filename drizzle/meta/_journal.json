@@ -694,6 +694,27 @@
       "when": 1793577600000,
       "tag": "0098_cashbook_flag_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1793581200000,
+      "tag": "0099_accounted_budget_plan_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1793584800000,
+      "tag": "0100_new_board_finance_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1793588400000,
+      "tag": "0101_application_board_modules",
+      "breakpoints": true
     }
   ]
 }

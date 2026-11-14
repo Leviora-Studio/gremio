@@ -61,7 +61,7 @@ export function CreateBoardForm({
         Board erstellen
       </button>
       <p className="text-xs text-slate-500">
-        Die Spalten kommen aus dem gewählten Template. Du bist Eigentümer und
+        Normale Boards haben einen allgemeinen Dateibereich. Antragsboards erstellt die Administration im Admin Panel. Die Spalten kommen aus dem gewählten Template. Du bist Eigentümer und
         kannst danach alles in den Board-Einstellungen anpassen.
       </p>
     </form>

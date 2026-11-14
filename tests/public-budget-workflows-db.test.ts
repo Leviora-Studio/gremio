@@ -22,7 +22,7 @@ test("atomic multi-account budgets, public sums, account-specific expenses, guar
   const suffix = `budget-test-${randomUUID()}`;
   const [owner] = await db.insert(users).values({ username: suffix, role: "admin" }).returning();
   const accs = await db.insert(accounts).values([{ name: `${suffix}-A` }, { name: `${suffix}-B` }]).returning();
-  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id }).returning();
+  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id, legacyFinanceFields:true }).returning();
   let financeId: number | undefined;
   try {
     const [status] = await db.insert(boardStatuses).values({ boardId: board.id, name: "Open" }).returning();
@@ -107,7 +107,7 @@ test("atomic multi-account budgets, public sums, account-specific expenses, guar
 test("public gates overlap; parallel receipts have unique names, general names survive, archive wins and quota is atomic", async () => {
   const suffix = `public-workflow-${randomUUID()}`;
   const [owner] = await db.insert(users).values({ username: suffix }).returning();
-  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id }).returning();
+  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id, legacyFinanceFields:true }).returning();
   try {
     const statuses = await db.insert(boardStatuses).values([0,1,2,3].map(position => ({ boardId: board.id, name: String(position), position, isReceiptTrigger: position < 3 }))).returning();
     assert.ok((await setBoardTriggerSources(board.id, "receipt", [2147483647])).error);

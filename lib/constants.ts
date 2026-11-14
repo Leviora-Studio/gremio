@@ -81,10 +81,14 @@ export const CARD_FIELD_KEYS = [
   "annex_b",
   "student_card",
   "other_pdfs",
+  "receipts",
   "notes",
   "applicant_note",
 ] as const;
 export type CardFieldKey = (typeof CARD_FIELD_KEYS)[number];
+
+/** Optional single-value finance fields retained exclusively on legacy boards. */
+export const LEGACY_FINANCE_FIELD_KEYS: readonly CardFieldKey[] = ["account", "budget_title", "approved_amount", "actual_amount", "instruction_date", "transfer_date"];
 
 // Anhang-Slots (eigener Bereich, nicht im Felder-Grid sortierbar)
 export const ATTACHMENT_FIELD_KEYS = [
@@ -93,6 +97,7 @@ export const ATTACHMENT_FIELD_KEYS = [
   "annex_b",
   "student_card",
   "other_pdfs",
+  "receipts",
 ] as const;
 
 // Editierbare Felder (im Felder-Grid, Reihenfolge pro Board einstellbar)
@@ -126,6 +131,7 @@ export const CARD_FIELD_LABELS: Record<CardFieldKey, string> = {
   annex_b: ATTACHMENT_KIND_LABELS.annex_b,
   student_card: ATTACHMENT_KIND_LABELS.student_card,
   other_pdfs: "Dateien (PDF)",
+  receipts: "Quittungen",
   notes: "Notizen",
   applicant_note: "Hinweis für Antragsteller",
 };

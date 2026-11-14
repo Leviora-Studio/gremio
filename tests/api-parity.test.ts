@@ -36,7 +36,7 @@ test("REST handlers preserve app parity: budgets, assignments, triggers, field v
   const people = await db.insert(users).values(["owner", "member", "outside"].map((name) => ({ username: `${suffix}-${name}` }))).returning();
   const [owner, member, outside] = people;
   const accs = await db.insert(accounts).values(["A", "B"].map((name) => ({ name: `${suffix}-${name}` }))).returning();
-  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id }).returning();
+  const [board] = await db.insert(boards).values({ name: suffix, ownerId: owner.id, legacyFinanceFields:true }).returning();
   const params = (id: number | string) => ({ params: Promise.resolve({ id: String(id) }) });
   const token = async (userId: number, scope: "read" | "write" = "write", restricted = false) => {
     const generated = generateApiToken();

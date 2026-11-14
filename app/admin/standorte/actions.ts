@@ -25,10 +25,7 @@ const nameSchema = z.object({
     .pipe(z.string().min(1, "Name erforderlich.").max(80)),
 });
 
-export async function createLocationAction(
-  _prev: State,
-  formData: FormData,
-): Promise<State> {
+async function createModuleLocation(module:"locations"|"finance", formData:FormData):Promise<State> {
   await requireAdmin();
   const parsed = nameSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
@@ -37,7 +34,7 @@ export async function createLocationAction(
   const exists = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(eq(locations.name, parsed.data.name))
+    .where(and(eq(locations.name, parsed.data.name),eq(locations.module,module)))
     .limit(1);
   if (exists.length) return { error: "Standort-Name bereits vergeben." };
 
@@ -45,6 +42,7 @@ export async function createLocationAction(
   try {
     await db.insert(locations).values({
       name: parsed.data.name,
+      module,
       enabled: false,
       position: (row?.m ?? -1) + 1,
     });
@@ -58,8 +56,13 @@ export async function createLocationAction(
     throw e;
   }
   revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
   return { success: `Standort „${parsed.data.name}" angelegt.` };
 }
+
+export async function createLocationAction(_previous:State,form:FormData):Promise<State>{return createModuleLocation("locations",form);}
+export async function createFinanceLocationAction(_previous:State,form:FormData):Promise<State>{return createModuleLocation("finance",form);}
 
 export async function renameLocationAction(
   locationId: number,
@@ -71,10 +74,12 @@ export async function renameLocationAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Ungültig." };
   }
+  const [currentLocation]=await db.select().from(locations).where(eq(locations.id,locationId));
+  if(!currentLocation)return {error:"Standort nicht gefunden."};
   const clash = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(eq(locations.name, parsed.data.name))
+    .where(and(eq(locations.name, parsed.data.name),eq(locations.module,currentLocation.module)))
     .limit(1);
   if (clash[0] && clash[0].id !== locationId) {
     return { error: "Standort-Name bereits vergeben." };
@@ -91,6 +96,8 @@ export async function renameLocationAction(
     throw e;
   }
   revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
   return { success: "Umbenannt." };
 }
 
@@ -99,6 +106,8 @@ export async function deleteLocationAction(locationId: number): Promise<void> {
   // cards.location_id ist ON DELETE SET NULL → bestehende Karten bleiben erhalten.
   await db.delete(locations).where(eq(locations.id, locationId));
   revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
 }
 
 export async function setLocationTargetAction(
@@ -119,6 +128,8 @@ export async function setLocationTargetAction(
       .set({ targetBoardId: null, targetStatusId: null, enabled: false })
       .where(eq(locations.id, locationId));
     revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
     return { success: "Ziel entfernt (Standort deaktiviert)." };
   }
   const boardId = Number(boardStr);
@@ -137,12 +148,15 @@ export async function setLocationTargetAction(
   // Karten von dort mit 404 ab (lib/public-status.ts). Ein dorthin gerouteter
   // Antrag würde zwar angelegt, sein Status-Link führte aber sofort ins Leere —
   // die REST-API lehnt das Anlegen dort aus demselben Grund mit 409 ab.
+  const [sourceLocation] = await db.select().from(locations).where(eq(locations.id,locationId));
+  if(!sourceLocation)return {error:"Standort nicht gefunden."};
   const [zielBoard] = await db
-    .select({ inventoryBoardId: boards.inventoryBoardId })
+    .select()
     .from(boards)
     .where(eq(boards.id, boardId))
     .limit(1);
   if (!zielBoard) return { error: "Ungültiges Ziel-Board." };
+  if(sourceLocation.module==="finance"&&!zielBoard.isApplicationBoard)return {error:"Im Finanzanträge-Formular sind nur Antragsboards als Ziel erlaubt."};
   if (zielBoard.inventoryBoardId != null) {
     return {
       error:
@@ -160,7 +174,7 @@ export async function setLocationTargetAction(
   try {
     const result=await db.transaction(async (tx) => {
       await lockLocationBoard(tx, boardId);
-      const missing=await missingBoardFields(boardId,APPLICATION_REQUIRED_CARD_FIELD_KEYS,tx);
+      const missing=await missingBoardFields(boardId,sourceLocation.module==="finance"?APPLICATION_REQUIRED_CARD_FIELD_KEYS.filter(key=>!["finance_request","student_card"].includes(key)||zielBoard.attachmentFields==null||zielBoard.attachmentFields.includes(key)):APPLICATION_REQUIRED_CARD_FIELD_KEYS,tx);
       if(missing.length)return {error:missingBoardFieldsMessage(missing)};
       await tx.update(locations)
         .set({ targetBoardId: boardId, targetStatusId: statusId })
@@ -177,6 +191,8 @@ export async function setLocationTargetAction(
     throw e;
   }
   revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
   return { success: "Ziel gespeichert." };
 }
 
@@ -202,7 +218,10 @@ export async function toggleLocationEnabledAction(
   const geaendert = await db.transaction(async (tx) => {
     if (!loc.enabled && loc.targetBoardId){
       await lockLocationBoard(tx, loc.targetBoardId);
-      const missing=await missingBoardFields(loc.targetBoardId,APPLICATION_REQUIRED_CARD_FIELD_KEYS,tx);
+      const [targetBoard]=await tx.select().from(boards).where(eq(boards.id,loc.targetBoardId));
+      if(loc.module==="finance"&&!targetBoard?.isApplicationBoard)return {error:"Bitte ein Antragsboard als Ziel wählen."};
+      const required=loc.module==="finance"?APPLICATION_REQUIRED_CARD_FIELD_KEYS.filter(key=>!["finance_request","student_card"].includes(key)||targetBoard?.attachmentFields==null||targetBoard.attachmentFields.includes(key)):APPLICATION_REQUIRED_CARD_FIELD_KEYS;
+      const missing=await missingBoardFields(loc.targetBoardId,required,tx);
       if(missing.length)return {error:missingBoardFieldsMessage(missing)};
     }
     const updated = await tx
@@ -222,6 +241,8 @@ export async function toggleLocationEnabledAction(
     return updated;
   });
   revalidatePath("/admin/standorte");
+  revalidatePath("/admin/finanzantraege-formular");
+  revalidatePath("/");
   if("error" in geaendert)return geaendert;
   if (!geaendert.length) {
     return {

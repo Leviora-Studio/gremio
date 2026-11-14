@@ -14,7 +14,7 @@ after(() => pool.end());
 test("budget plans require live write access, reject stale revisions, preserve accounting and filter motion reads", async () => {
   assert.match(new URL(process.env.DATABASE_URL!).pathname, /^\/gremio_workflows_test_/);
   const [owner, reader, writer, outsider] = await db.insert(s.users).values(["owner", "reader", "writer", "outsider"].map(role => ({ username: `budget-plan-${role}-${randomUUID()}` }))).returning();
-  const [board] = await db.insert(s.boards).values({ name: "Planning", ownerId: owner.id, isApplicationBoard: true }).returning();
+  const [board] = await db.insert(s.boards).values({ name: "Planning", ownerId: owner.id, isApplicationBoard: true, legacyFinanceFields:true }).returning();
   const [status] = await db.insert(s.boardStatuses).values({ boardId: board.id, name: "Incoming" }).returning();
   const [account] = await db.insert(s.accounts).values({ name: `Original-${randomUUID()}` }).returning();
   const [card] = await db.insert(s.cards).values({ boardId: board.id, statusId: status.id, title: "Motion", applicant: "Original", token: randomUUID(), budgetTitle: "Legacy", accountId: account.id, requestedAmount: 12345, approvedAmount: 10000, actualAmount: 0 }).returning();
@@ -37,13 +37,9 @@ test("budget plans require live write access, reject stale revisions, preserve a
     assert.deepEqual((await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId, card.id)))[0], saved);
     const results = await Promise.allSettled([writeBudgetPlan(owner, card.id, 1, input), writeBudgetPlan(writer, card.id, 1, [])]);
     assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
-    await db.update(s.boards).set({ isApplicationBoard: false }).where(eq(s.boards.id, board.id));
+    await assert.rejects(db.update(s.boards).set({ isApplicationBoard: false }).where(eq(s.boards.id, board.id)));
     const [retained] = await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId, card.id));
     assert.equal(retained.revision, 2);
-    await assert.rejects(writeBudgetPlan(owner, card.id, 2, []), /aktives Antragsboard/);
-    assert.doesNotMatch((await projectFinanceTopics(owner, [topic]))[0].motion!, /1200|1300|350/);
-    await db.update(s.boards).set({ isApplicationBoard: true }).where(eq(s.boards.id, board.id));
-    assert.deepEqual((await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId, card.id)))[0], retained);
     await db.delete(s.cards).where(eq(s.cards.id, card.id));
     assert.equal((await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId, card.id))).length, 0);
     assert.doesNotMatch((await projectFinanceTopics(owner, [topic]))[0].motion!, /1200|1300|350/);

@@ -205,6 +205,7 @@ export async function getApplicationStatusByToken(
       resubmitStatusId: boards.resubmitStatusId,
       receiptToStatusId: boards.receiptToStatusId,
       inventoryBoardId: boards.inventoryBoardId,
+      attachmentFields: boards.attachmentFields,
     })
     .from(boards)
     .where(eq(boards.id, row.boardId))
@@ -221,7 +222,7 @@ export async function getApplicationStatusByToken(
   const publicAccess = publicGates(archived, !!row.isReceiptTrigger, row.statusId, board ?? { resubmitStatusId: null, receiptToStatusId: null }, target.length > 0);
 
   const canResubmit = !row.lockedAt && publicAccess.canResubmit;
-  const canReceipt = !archived && (!!row.lockedAt || publicAccess.canReceipt);
+  const canReceipt = !archived && (board?.attachmentFields==null||board.attachmentFields.includes("receipts")) && (!!row.lockedAt || publicAccess.canReceipt);
   const atts = await db
     .select()
     .from(attachments)

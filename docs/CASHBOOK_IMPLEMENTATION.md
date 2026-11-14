@@ -84,3 +84,57 @@ produce changes, while explicit clearing remains visible. After-only events use
 an Angabe/Wert table without implying that the previous value was empty. Office
 completion uses meaningful labels. Historical records are rendered with these
 rules without changing their stored content.
+
+## Planning accounts and unified signing
+
+Signature place/date are collected immediately before each signature. Signieren
+prepares the current file and opens the In-App viewer directly; bookkeeping editors
+and details omit those fields. Legacy payment JSON stays intact. New signature
+metadata is attached to retained PDF versions. The second signer still appends an
+incremental revision so the first signature remains cryptographically valid.
+Correction links display ledger booking numbers.
+
+Migration 0099 retains all existing board finance fields and enriches planning
+rows with their original card/default account. New boards omit legacy account, budget-title and
+approved-amount fields. Planning account switches require confirmation. Frozen
+plans can only be revised via a reasoned append-only correction with two dialogs
+and typed BESTÄTIGEN, using the same secured writer for UI/REST/MCP. All other card
+fields remain frozen. Finance merges configured sources with every linked ledger
+application once and calculates maximum outstanding amounts per budget title.
+
+## Read-only exports
+
+The ledger offers Excel/PDF exports to readers, writers and managers. An office
+assignment without a read grant cannot export the whole ledger. Both download
+routes require a current browser session; bearer tokens and MCP cannot use them.
+Exporting performs no writes to entries, activities or archived files.
+
+Excel always includes all posted originals and corrections and all eleven ledger
+columns. Drafts/submitted instructions are outside the ledger. Every download
+uses a fresh discarded 32-character random password, SHA-512 salted sheet and
+workbook-structure protection, and locked cells. The ZIP is readable without an
+opening password. Excel AutoFilter is enabled. Sorting locked cells is unsupported
+by Excel, so users choose up to three sort criteria in the Gremio dialog before
+exporting. Sheet protection prevents ordinary edits, not technical tampering with
+the underlying file.
+
+PDF uses the shared In-App selection dialog: text search, typed amount/date/text
+filters, sorting and selected columns. Every page repeats scope, creation time,
+filter/sort description, row counts and headers. Long data wraps across pages.
+Finance views share the same controls, preserve their current authorization
+projection and export every row/column to Excel. Filtered or sorted PDFs omit
+structural/total rows and explain that omission, avoiding stale totals.
+
+`tests/export.test.ts` covers selection validation, complete hierarchical sorting,
+protection XML, fresh verifiers, numeric money/dates and PDF scope/wrapping. The
+cashbook production fixture tests real downloads, grants and revocation,
+office-only and bearer denial, unchanged entries, mobile dialogs, and all five
+finance export views. Native Excel was additionally checked with synthetic data:
+the file opens without a password, edits are blocked, and AutoFilter works.
+
+PDF presentation uses fixed A4 portrait/landscape or A3 landscape paper, a
+structured export-scope panel, repeated headers, alternating row shading, aligned
+amounts and a page footer. Normal rows stay together. Long prose in narrow cells
+is printed in full directly beneath its own entry; oversized rows have labeled
+continuations. IBAN grouping is display-only. No values or export permissions
+change. Pure export tests verify page dimensions, complete text and row grouping.

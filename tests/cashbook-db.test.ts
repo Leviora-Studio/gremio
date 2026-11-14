@@ -31,7 +31,7 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     await mkdir(folder, { recursive: true });
     const credentials = cert();
     const [owner, second, office, reader] = await db.insert(s.users).values(["owner", "second", "office", "reader"].map(role => ({ username: `cashbook-${role}-${randomUUID()}`, role: role === "owner" ? "admin" as const : "user" as const, certP12Enc: credentials.p12Enc, certPassEnc: credentials.passEnc }))).returning();
-    const [board] = await db.insert(s.boards).values({ name: "Applications", ownerId: owner.id, isApplicationBoard: true }).returning();
+    const [board] = await db.insert(s.boards).values({ name: "Applications", ownerId: owner.id, isApplicationBoard: true, legacyFinanceFields:true }).returning();
     const [incoming, accepted, completed] = await db.insert(s.boardStatuses).values([{ boardId: board.id, name: "Incoming" }, { boardId: board.id, name: "Accepted", isLockColumn: true }, { boardId: board.id, name: "Completed" }]).returning();
     await db.update(s.boards).set({ completedStatusId: completed.id }).where(eq(s.boards.id, board.id));
     const [account] = await db.insert(s.accounts).values({ name: `Cashbook account ${randomUUID()}` }).returning();
@@ -40,7 +40,7 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     const applicationBytes=Buffer.from(await applicationDoc.save());await writeFile(join(folder,"application.pdf"),applicationBytes);
     await db.insert(s.attachments).values({cardId:card.id,kind:"finance_request",filename:"Application.pdf",path:"application.pdf",mime:"application/pdf",size:applicationBytes.length,uploadedBy:owner.id});
     await db.insert(s.boardCardFields).values(["finance_request","other_pdfs"].map(fieldKey=>({boardId:board.id,fieldKey,visible:true})));
-    await db.insert(s.cardBudgetPlans).values({ cardId: card.id, allocations: [{ amount: 10000, budgetTitle: "1200" }, { amount: 20000, budgetTitle: "1300" }] });
+    await db.insert(s.cardBudgetPlans).values({ cardId: card.id, allocations: [{ amount: 10000, budgetTitle: "1200", accountId:account.id }, { amount: 20000, budgetTitle: "1300", accountId:account.id }] });
     await db.update(s.cards).set({ statusId: accepted.id }).where(eq(s.cards.id, card.id));
     assert.equal((await db.select().from(s.cards).where(eq(s.cards.id, card.id)))[0].publicStatusId, incoming.id, "pending lock retains public status");
     await assert.rejects(lockApplicationCard(reader, card.id, accepted.id));
@@ -128,7 +128,14 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     const rev = async () => (await current()).revision;
     await assert.rejects(markCashbookInstructionIncorrect(owner,id,await rev(),"MARKIEREN"));
     await assert.rejects(transitionCashbook(owner, id, await rev(), "submit", {}));
-    await generateCashbookPdf(owner, id, await rev());
+    const originalPaymentData=(await current()).data;
+    await generateCashbookPdf(owner,id,await rev());
+    await assert.rejects(signCashbookPdf(owner,id,await rev(),{page:0,xRatio:.1,yRatio:.8,wRatio:.3,hRatio:.1}),/Ort/);
+    await generateCashbookPdf(owner, id, await rev(), {place:"Köthen",date:"2026-11-14"});
+    assert.deepEqual((await current()).data,originalPaymentData,"signature details never rewrite payment data");
+    const ownForm=(await current()).files.find(file=>file.kind==="form"&&!file.obsolete)!;
+    assert.equal(ownForm.signatureDetails?.date,"2026-11-14");
+    assert.match((await extractPdfText(await readFile(join(folder,ownForm.path)))).text,/Köthen, 14\.11\.2026/);
     const placement = { page: 0, xRatio: .1, yRatio: .8, wRatio: .3, hRatio: .1 };
     await signCashbookPdf(owner, id, await rev(), placement);
     await transitionCashbook(owner, id, await rev(), "submit", {});
@@ -138,7 +145,7 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     await assert.rejects(transitionCashbook(second, id, await rev(), "return", { comment: "" }));
     await transitionCashbook(second, id, await rev(), "return", { comment: "Please correct the amount." });
     await saveCashbookDraft(owner, bookId, id, await rev(), { ...payment, amount: 5000 }, "speaker");
-    await generateCashbookPdf(owner, id, await rev());
+    await generateCashbookPdf(owner, id, await rev(), {place:"Köthen",date:"2026-11-14"});
     await signCashbookPdf(owner, id, await rev(), placement);
     await transitionCashbook(owner, id, await rev(), "submit", {});
     await assert.rejects(transitionCashbook(owner, id, await rev(), "authorize", {}));
@@ -238,7 +245,7 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     await assert.rejects(generateCashbookPdf(owner, b1, 0), /Quittung/);
     const businessReceipt = await storeCashbookFile(bookId, b1, receiptBytes, `${firstBusiness.data.number}_Q1.pdf`, "receipt");
     await db.update(s.cashbookEntries).set({ files: [businessReceipt] }).where(eq(s.cashbookEntries.id, b1));
-    await generateCashbookPdf(owner, b1, 0);
+    await generateCashbookPdf(owner, b1, 0, {place:"Köthen",date:"2026-11-14"});
     await signCashbookPdf(owner, b1, 1, placement);
     const [bookConfig] = await db.select().from(s.cashbooks).where(eq(s.cashbooks.id, bookId));
     await saveCashbookConfig(owner, bookId, bookConfig.revision, { ...bookConfig.config, speakerId: null, financeId: null });

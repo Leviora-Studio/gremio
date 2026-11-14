@@ -29,6 +29,7 @@ async function lockedWorkflow(tx: Tx, cardId: number) {
   const gates = publicGates(!!status?.isArchiveTrigger, !!status?.isReceiptTrigger, card.publicStatusId ?? 0, board, statuses.some((s) => s.id === board.receiptToStatusId));
   if (!gates.canUploadDocuments) throw new PublicWorkflowError("Dieser Antrag ist bereits archiviert. Es können keine Dateien mehr eingereicht werden.");
   if (card.lockedAt) { gates.canResubmit = false; gates.canReceipt = !status?.isArchiveTrigger; }
+  if (board.attachmentFields!=null && !board.attachmentFields.includes("receipts")) gates.canReceipt=false;
   return { card, board, gates };
 }
 

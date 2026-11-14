@@ -136,6 +136,24 @@ paths:
                     type: integer
                     minimum: 0
                     maximum: 2147483646
+                  confirmAccountChange:
+                    type: boolean
+                    const: true
+                    description: Explicit confirmation of account changes.
+                  correction:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - reason
+                      - confirmation
+                    properties:
+                      reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 4000
+                      confirmation:
+                        type: string
+                        const: BESTÄTIGEN
                   allocations:
                     type: array
                     maxItems: 100
@@ -146,6 +164,12 @@ paths:
                         - amountCents
                         - budgetTitle
                       properties:
+                        accountId:
+                          type:
+                            - integer
+                            - "null"
+                          minimum: 1
+                          maximum: 2147483647
                         amountCents:
                           type: integer
                           minimum: 0
@@ -165,8 +189,10 @@ paths:
       operationId: updateBudgetPlan
       summary: Haushaltstitel-Einplanung ersetzen
       description: Write scope and live board write access. Full replacement with current revision; empty
-        allocations clears the plan. Locked cards and stale revisions return 409 without changes.
-        Amounts in integer cents.
+        allocations clears the plan. Account changes require confirmAccountChange:true. Locked cards
+        require correction.reason and correction.confirmation=BESTÄTIGEN. Invalid or stale writes
+        return 409 without changes. Each allocation contains amount in integer cents, accountId and
+        budgetTitle.
       parameters:
         - name: id
           in: path
@@ -1734,6 +1760,7 @@ components:
               - annex_b
               - student_card
               - other_pdfs
+              - receipts
               - notes
               - applicant_note
     Card:

@@ -30,7 +30,7 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   assert.match(env.UPLOAD_DIR, /^\/(private\/)?tmp\/gremio-cashbook-test-/);
   const tag = randomUUID();
   const [owner, writer, reader, outsider] = await db.insert(s.users).values(["owner", "writer", "reader", "outside"].map(name => ({ username: `${tag}-${name}` }))).returning();
-  const [board, other] = await db.insert(s.boards).values([{ name: tag, ownerId: owner.id, isApplicationBoard: true }, { name: tag, ownerId: owner.id }]).returning();
+  const [board, other] = await db.insert(s.boards).values([{ name: tag, ownerId: owner.id, isApplicationBoard: true, legacyFinanceFields:true }, { name: tag, ownerId: owner.id }]).returning();
   const [incoming, accepted, archived] = await db.insert(s.boardStatuses).values([{ boardId: board.id, name: "Incoming" }, { boardId: board.id, name: "Accepted", isLockColumn: true, isReceiptTrigger: true }, { boardId: board.id, name: "Archive", isArchiveTrigger: true }]).returning();
   await db.insert(s.boardAccess).values([{ boardId: board.id, userId: writer.id, accessLevel: "write" }, { boardId: board.id, userId: reader.id, accessLevel: "read" }]);
   await db.insert(s.boardCardFields).values(["notes", "number", "assignee", "finance_request", "other_pdfs", "account", "budget_title", "approved_amount"].map(fieldKey => ({ boardId: board.id, fieldKey, visible: true })));
@@ -108,6 +108,15 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   assert.equal((await PATCH(request(write, "PATCH", { statusId: archived.id }), params(card.id))).status, 200);
   assert.equal((await getApplicationStatusByToken(card.token))?.canReceipt, false);
   await assert.rejects(insertPublicAttachment(card.id, "receipt", { filename: "x.pdf", relPath: "never-written.pdf", mime: "application/pdf", size: 1 }));
+  const correction = {revision:1,allocations:[{amountCents:9000,budgetTitle:"1300",accountId:account.id}],confirmAccountChange:true,correction:{reason:"Update the approved allocation",confirmation:"BESTÄTIGEN"}};
+  assert.equal((await budgetPlanApi(request(read,"PATCH",correction),String(card.id))).status,403);
+  assert.equal((await budgetPlanApi(request(readGrant,"PATCH",correction),String(card.id))).status,403);
+  assert.equal((await budgetPlanApi(request(restricted,"PATCH",correction),String(card.id))).status,404);
+  assert.equal((await budgetPlanApi(request(write,"PATCH",{...correction,correction:{reason:"",confirmation:"BESTÄTIGEN"}}),String(card.id))).status,400);
+  assert.equal((await budgetPlanApi(request(write,"PATCH",correction),String(card.id))).status,200);
+  const nextCorrection={...correction,revision:2,allocations:[{amountCents:8500,budgetTitle:"1300",accountId:account.id}]};
+  assert.equal((await callMcpTool(mcp(),"update_budget_plan",{id:card.id,data:nextCorrection})).isError,false);
+  assert.equal((await PATCH(request(write,"PATCH",{title:"Still frozen"}),params(card.id))).status,409);
   await db.delete(s.boardAccess).where(eq(s.boardAccess.userId, writer.id));
   assert.equal((await callMcpTool(mcp(), "get_card", { id: card.id })).isError, true, "MCP context cannot retain revoked board access");
   assert.equal((await GET(request(write), params(card.id))).status, 404);

@@ -471,10 +471,10 @@ und `publicStatusId` sind ausschließlich lesbare Metadaten; Board/Spalten liefe
 `isApplicationBoard`, `completedStatusId` und `isLockColumn`.
 
 `GET /api/v1/cards/{id}/budget-plan` liefert `{ revision, allocations }` mit
-`{ amountCents, budgetTitle }` je Zeile. PATCH ersetzt diese separate Einplanung
+`{ amountCents, accountId, budgetTitle }` je Zeile. PATCH ersetzt diese separate Einplanung
 vollständig mit der zuletzt gelesenen Revision; `allocations: []` entfernt sie.
 Die Buchhaltungspositionen und Kartenbeträge werden dabei nicht verändert.
-Sperren und veraltete Revisionen ergeben 409 ohne Teiländerungen.
+Gesperrte Karten erlauben ausschließlich einen begründeten Korrektureintrag für die Einplanung; andere gesperrte Schreibvorgänge und veraltete Revisionen ergeben 409 ohne Teiländerungen.
 
 Quittungen werden über den bestehenden Multipart-Upload mit `kind=other` und
 `uploadPurpose=receipt` ergänzt und automatisch nach dem Q-Schema benannt.
@@ -494,3 +494,46 @@ Die für die Oberfläche notwendigen Datei-/ZIP-Routen unter `/api/cashbook/`
 verlangen eine aktive Webanmeldung und eigene Kassenbuchrechte; weder persönliche
 API-Tokens noch MCP-Zugänge ersetzen diese Sitzung. Sie sind keine REST-Funktionen
 für externe Clients und werden in keiner OpenAPI- oder MCP-Liste angeboten.
+
+### Konten und Korrektureinträge der Einplanung
+
+`GET/PATCH /api/v1/cards/{id}/budget-plan` enthält je Zeile `amountCents`,
+`budgetTitle` und `accountId`. Fehlt `accountId` beim Schreiben, wird das
+Standardkonto des Boards verwendet (bei Altboards ersatzweise das Kartenkonto).
+Ein vorhandenes Konto ist für jede neue/aktualisierte Zeile Pflicht. Kontowechsel
+gegenüber dem bisherigen Stand oder Standardkonto erfordern
+`confirmAccountChange: true`.
+
+Eine gesperrte Karte darf ihre Einplanung ausschließlich mit
+`correction: { "reason": "Begründung", "confirmation": "BESTÄTIGEN" }`
+und aktueller `revision` korrigieren. Der normale Karten-PATCH, die alten
+Budgetpositionen und alle sonstigen Kartendetails bleiben gesperrt. Original und
+jede Korrektur bleiben mit Person, Zeitpunkt, Begründung und vollständigen
+Vorher-/Nachher-Werten erhalten. `update_budget_plan` im MCP verwendet denselben
+Vertrag und dieselben Schreibrechte, Scopes und Boardeinschränkungen.
+
+Neue Boards besitzen keine optionalen Einzelfelder `account`, `budget_title`,
+`approved_amount`, `actual_amount`, `instruction_date` und `transfer_date` mehr. Bestehende Boards behalten diese Felder und ihre bisherigen
+Werte und Funktionen. Das Standardkonto bleibt bei allen Boards einstellbar.
+Die öffentliche API erhält keine Konten-, Planungs- oder Korrekturdaten hinzu.
+
+### Session-bound exports
+
+`GET /intern/kassenbuch/{id}/export` and the existing
+`GET /finanzen/{id}/export` are browser-session downloads, not bearer API or MCP
+methods. They require current read access; an office-only cashbook assignment is
+insufficient. XLSX always contains the complete ledger/view, with optional
+pre-export sorting and random-password sheet protection. PDF accepts validated
+filters, sort criteria and column selection. Neither download mutates data or
+expands the external API contracts. The public API remains unchanged.
+
+### Fixed board types and attachment areas
+
+New application boards are created by admins in the session-bound Admin Panel.
+Ordinary board creation cannot create or convert application boards. Board type
+and configured special attachment areas are fixed at creation. Existing board
+values and attachment areas survive upgrades. Only the general file area remains
+toggleable; receipt uploads require the independent receipts area, even when
+other_pdfs is disabled. Internal REST/MCP uploads use the same field projection
+and database guards and cannot add unconfigured attachment types. No new bearer
+or MCP methods are introduced for board or public-module administration.

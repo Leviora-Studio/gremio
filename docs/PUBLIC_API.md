@@ -100,8 +100,8 @@ Dieselben Feldnamen wie im öffentlichen Formular:
 | `title` | Text | ✅ | max. 200 Zeichen |
 | `applicant` | Text | ✅ | max. 200 Zeichen |
 | `email` | Text | ✅ | gültige E-Mail-Adresse, max. 254 Zeichen; bleibt intern |
-| `finance_request` | Datei | ✅ | PDF |
-| `student_card` | Datei | ✅ | PDF, PNG, JPG |
+| `finance_request` | Datei | Laut `requiredAttachmentFields`, im bisherigen Modul immer | PDF |
+| `student_card` | Datei | Laut `requiredAttachmentFields`, im bisherigen Modul immer | PDF, PNG, JPG |
 | `annex_a` | Datei | ❌ | PDF |
 | `annex_b` | Datei | ❌ | PDF |
 
@@ -600,3 +600,22 @@ Allgemeine Nachträge sind nicht mehr möglich, Quittungen bleiben außerhalb vo
 Archivstatus zulässig. Ohne Receipt-Zielspalte wird ihre Einreichung ohne weiteren
 Statuswechsel bestätigt. Interne Sperrmetadaten, Kassenbuchdaten, Bankverbindungen
 und Buchungsunterlagen werden nicht in den öffentlichen Vertrag aufgenommen.
+
+## Alternative Formularmodule und Datei-Slots
+
+Die Administration kann zwischen „Standorte“ und „Finanzanträge-Formular“ wechseln.
+Es ist höchstens eines aktiv. `/locations` liefert ausschließlich Standorte des
+aktiven Moduls; während beide deaktiviert sind, ist die Liste leer und neue
+Einreichungen werden abgewiesen. Gespeicherte Statuslinks und bestehende Anträge
+bleiben davon unabhängig nutzbar. Nach einem Modulwechsel müssen Clients die
+Standortliste neu laden; alte Standort-IDs dürfen nicht weiterverwendet werden.
+
+Im Finanzanträge-Modul enthält jeder Standort optional `attachmentFields` mit den
+eingerichteten Upload-Slots und `requiredAttachmentFields` mit den Pflicht-Slots.
+Es werden ausschließlich die bekannten Werte `finance_request`, `student_card`,
+`annex_a`, `annex_b` verwendet; Pflicht-Slots sind Finanzantrag und/oder Ausweis,
+wenn bei der Boarderstellung ausgewählt. Nicht aufgeführte Uploads sind unzulässig.
+Fehlen die beiden Eigenschaften beim bisherigen Modul, gilt unverändert: alle
+vier Slots sind verfügbar, Finanzantrag und Studierendenausweis sind Pflicht.
+Die öffentlichen Metadaten enthalten weder Board-IDs noch Konten oder interne
+Details. Die Einreichung prüft aktive Modulzuordnung und Routing auch beim Commit.

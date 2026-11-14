@@ -11,6 +11,7 @@ import {
   check,
   foreignKey,
   integer,
+  bigint,
   index,
   jsonb,
   pgTable,
@@ -19,6 +20,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -98,6 +100,8 @@ export const boards = pgTable("boards", {
   description: text("description"),
   completedStatusId: integer("completed_status_id").references((): AnyPgColumn => boardStatuses.id, { onDelete: "set null" }),
   isApplicationBoard: boolean("is_application_board").notNull().default(false),
+  attachmentFields: jsonb("attachment_fields").$type<string[] | null>(),
+  legacyFinanceFields: boolean("legacy_finance_fields").notNull().default(false),
   ownerId: integer("owner_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
@@ -317,11 +321,12 @@ export const boardTriggerAssignees = pgTable(
 // locations — Standorte & Formular-Routing (target_* NICHT cascade)
 // ---------------------------------------------------------------------------
 export const locations = pgTable("locations", {
+  module: text("module").notNull().default("locations"),
   receiptBrandingEnabled: boolean("receipt_branding_enabled").notNull().default(false),
   receiptOrganization: text("receipt_organization").notNull().default(""),
   receiptLogoPng: text("receipt_logo_png"),
   id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   enabled: boolean("enabled").notNull().default(false),
   position: integer("position").notNull().default(0),
   targetBoardId: integer("target_board_id").references(() => boards.id, {
@@ -331,6 +336,12 @@ export const locations = pgTable("locations", {
     () => boardStatuses.id,
     { onDelete: "restrict" },
   ),
+},table=>({moduleName:unique("locations_module_name_unique").on(table.module,table.name)}));
+
+export const applicationFormModules = pgTable("application_form_modules", {
+  id: integer("id").primaryKey().default(1),
+  activeModule: text("active_module").$type<"locations" | "finance" | null>().default("locations"),
+  revision: integer("revision").notNull().default(0),
 });
 
 // ---------------------------------------------------------------------------
@@ -417,8 +428,16 @@ export const cards = pgTable(
 export const cardBudgetPlans = pgTable("card_budget_plans", {
   cardId: integer("card_id").primaryKey().references(() => cards.id, { onDelete: "cascade" }),
   revision: integer("revision").notNull().default(0),
-  allocations: jsonb("allocations").$type<{ amount: number; budgetTitle: string }[]>().notNull().default([]),
+  allocations: jsonb("allocations").$type<{ amount: number; budgetTitle: string; accountId?:number|null }[]>().notNull().default([]),
 }, (t) => ({ array: check("card_budget_plans_array", sql`jsonb_typeof(${t.allocations}) = 'array'`) }));
+
+export const cardBudgetPlanCorrections = pgTable("card_budget_plan_corrections", {
+  id:serial("id").primaryKey(), cardId:integer("card_id").notNull().references(()=>cards.id,{onDelete:"restrict"}),
+  revision:integer("revision").notNull(), beforeAllocations:jsonb("before_allocations").$type<{amount:number;budgetTitle:string;accountId?:number|null}[]>().notNull(),
+  afterAllocations:jsonb("after_allocations").$type<{amount:number;budgetTitle:string;accountId?:number|null}[]>().notNull(),
+  reason:text("reason").notNull(),userId:integer("user_id").notNull().references(()=>users.id,{onDelete:"restrict"}),createdAt:createdAt(),
+  transactionId:bigint("transaction_id",{mode:"number"}).notNull().default(sql`txid_current()`),
+},t=>({revisionUnique:uniqueIndex("card_budget_plan_corrections_revision_unique").on(t.cardId,t.revision)}));
 
 // Budget rows are authoritative in positions mode; legacy amounts are maintained totals.
 export const cardBudgetPositions = pgTable("card_budget_positions", {

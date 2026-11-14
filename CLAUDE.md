@@ -1114,16 +1114,16 @@ Die bisherigen ausführlichen Downloads heißen „Protokollvorlage als PDF“ (
 
 Migration `0093_application_board_budget_plans.sql` ergänzt `boards.is_application_board`
 (Standard aus) und `card_budget_plans` mit einer geordneten Liste aus Centbetrag und
-Haushaltstitel sowie einer eigenen Revision. Eigentümer/Admins aktivieren die Option
-unter Board-Einstellungen → Allgemein. Auf jeder Karte dieses Boards öffnet
+Haushaltstitel sowie einer eigenen Revision. Seit Migration 0101 erstellt ausschließlich
+die Administration Antragsboards direkt unter Admin → Antragsboards; der Boardtyp
+ist anschließend unveränderlich. Auf jeder Karte dieses Boards öffnet
 „Haushaltstitel einplanen“ einen Editor mit Betrag und Haushaltstitel pro Zeile,
 „Weiteren Titel hinzufügen“, bestätigtem Entfernen und ausdrücklichem gemeinsamen
 Speichern. Wie bei bisherigen Haushaltspositionen sind bis zu 100 Zeilen möglich.
 Null Euro ist zulässig; unvollständige Zeilen werden nicht stillschweigend verworfen.
 Lesende sehen gespeicherte Einplanungen ohne Schreibaktionen. Schreiben erfordert
 live Board-Schreibrecht und ein aktives Antragsboard; veraltete Revisionen werden
-abgewiesen, der lokale Entwurf bleibt erhalten. Deaktivieren blendet die Einplanung
-aus, löscht sie aber nicht. Leihboards unterstützen diese Option nicht.
+abgewiesen, der lokale Entwurf bleibt erhalten. Leihboards unterstützen diese Option nicht.
 
 Diese **Beschlussplanung ist unabhängig von der Finanzbuchhaltung**: Sie verändert
 weder beantragte/genehmigte/tatsächliche Kartenbeträge noch Kontozuordnungen oder
@@ -1210,7 +1210,7 @@ Vorgänge erfassen ausschließlich Auszahlungen. Eine Buchung bezieht sich auf e
 bereits gesperrten Antrag mit ausgewählten vorhandenen Quittungen oder auf
 Geschäftsbedarf mit eigenen fortlaufend benannten Quittungsuploads. Daten umfassen
 Betrag in Cent, Haushaltstitel, Kontoinhaber, geprüfte IBAN, Bank, optionalen
-Verwendungszweck und Ort/Datum. Pflichtangaben werden serverseitig geprüft.
+Verwendungszweck. Ort/Datum werden erst unmittelbar vor der jeweiligen Unterschrift erfasst; alte Buchungsdaten bleiben unverändert gespeichert. Pflichtangaben werden serverseitig geprüft.
 Bei hinterlegter eigener Rolle entfällt die Rollenfrage; andernfalls muss sie
 gewählt werden. Quellenrechte werden bei Auswahl und Speicherung erneut geprüft.
 Die Quittungsauswahl zeigt jede Datei mit fest ausgerichteter Checkbox und separatem
@@ -1436,3 +1436,167 @@ Leere Zeichenfolgen, null und leere Listen erzeugen keine scheinbaren Änderunge
 Echte Leerungen werden als „Nicht angegeben“ angezeigt; fehlt ein früherer Wert im
 Protokoll tatsächlich, wird er nicht als leer behauptet. Der Bürostatus heißt
 „Noch zu erledigen“ bzw. „Erledigt“; Datumswerte erscheinen im deutschen Format.
+
+## Konten je Einplanung und Korrekturen gesperrter Anträge
+
+Migration `0099_accounted_budget_plan_corrections.sql` ergänzt je Planungszeile
+`accountId`, ohne Beträge, Titel, Reihenfolge oder Revision zu ändern. Altwerte
+bekommen ihr bisheriges Kartenkonto, ersatzweise das damalige Standardkonto;
+fehlende Konten bleiben als unbekannt erhalten und müssen vor neuen Änderungen
+explizit ausgewählt werden. Alle bestehenden Boards erhalten unveränderlich
+`legacy_finance_fields=true`; neue Boards haben den Wert false und bieten die
+optional sichtbaren Kartenfelder Konto, Haushaltstitel, genehmigter Betrag, tatsächliche
+Ausgaben, Anweisungsdatum und Überweisungsdatum nicht mehr an.
+Standardkonten bleiben unabhängig davon in den Boardeinstellungen verfügbar.
+
+Der Planungseditor zeigt Betrag, Konto und Haushaltstitel. Neue Zeilen verwenden
+das Standardkonto. Jede Kontoänderung verlangt einen In-App-Bestätigungsdialog;
+der gemeinsame Writer validiert vorhandene Konten und die Bestätigung erneut.
+Bei gesperrten Karten erfordert die Planung einen Korrektureintrag: Info-Dialog,
+zweispaltiger alter/neuer Stand, Begründung, abschließende Änderungsübersicht und
+exakte Eingabe BESTÄTIGEN. Alle anderen Kartendetails bleiben gesperrt.
+`card_budget_plan_corrections` enthält die vollständigen unveränderlichen Stände
+mit Person, Zeit, Revision und Begründung. Ein DB-Trigger erlaubt die Aktualisierung
+der gesperrten Einplanung nur mit dem passenden, in derselben Transaktion angelegten
+Korrektureintrag. Aktivitätseinträge zeigen die Kontonamen und Vorher/Nachher-Werte.
+Konten mit Referenzen aus Plänen oder Korrekturen sind gegen Löschung geschützt.
+Interne API und MCP verwenden denselben Writer; die öffentliche API bleibt gleich.
+
+Die Finanz-Antragsübersicht zeigt die Vereinigung zugänglicher konfigurierter
+Quellkarten und aller mit Buchungen des verknüpften Kassenbuchs verbundenen Anträge,
+auch außerhalb der Quellboards, mit genau einer Zeile pro Antrag. Die Live-Prognose filtert eingeplante
+Beträge nach Konto. In der Antragsübersicht werden bei kassenbuchverknüpften Anträgen
+alle genehmigten Titel berücksichtigt und je Haushaltstitel um die effektiven Zahlungen
+(unter Berücksichtigung von Korrekturketten) vermindert; der maximal offene Betrag
+fällt nicht unter null. Fehlende Boardrechte erlauben nur Nummer/Zahlungsdaten
+aus dem Kassenbuch, keine zusätzlichen internen Angaben der Quellkarte. Fehlt die
+Quellkarte, bleibt der Antrag anhand der archivierten Buchungsnummer zugeordnet.
+Nur konfigurierte Quellkarten ersetzen tatsächliche Ausgaben durch ihre Planung
+in der Live-Prognose; Buchungen außerhalb dieser Quellen bleiben tatsächlich.
+
+## Einheitlicher Unterschriftsablauf im Kassenbuch
+
+Ort und Datum gehören zur Unterschrift. Sie erscheinen weder im Buchungseditor,
+noch in Buchungsdetails oder im Korrekturbuchungseditor. Vor beiden Unterschriften
+werden sie separat abgefragt. Der Button Signieren bereitet das jeweilige PDF vor
+und öffnet es direkt im vorhandenen In-App-Signaturviewer; es gibt keinen separaten
+Übernehmen-Schritt. Erste Vorbereitung erzeugt ein neues Formular mit den eigenen
+Angaben (einschließlich Ort-/Datumsvariablen im Verwendungszweck); zweite Vorbereitung
+ergänzt ausschließlich das rollenabhängige Ort-/Datumsfeld inkrementell. Die erste
+Signatur bleibt dabei kryptografisch gültig. Signaturdaten liegen an den PDF-Ständen
+und im Aktivitätsverlauf, ohne die Buchungswerte zu ändern. Ohne vorherige gültige
+Vorbereitung lässt der Server keine neue Signatur zu. Bereits gespeicherte
+Altbuchungen und Signaturen bleiben unverändert erhalten. Korrekturverweise in der
+Kassenbuchtabelle und den verknüpften Detailständen zeigen die Buchungsnummer.
+
+## Kassenbuch- und Finanzexporte
+
+Kassenbuch sowie alle fünf Finanzansichten verwenden denselben In-App-Exportdialog.
+Excel enthält stets alle Einträge und Spalten der jeweiligen Ansicht, unabhängig
+von ausgeblendeten Spalten oder Tabellenfiltern. Im Kassenbuch sind das sämtliche
+verbindlich gebuchten Original- und Korrekturbuchungen, keine Entwürfe oder nur
+vorgelegten Anweisungen. Mehrstufiges Sortieren erfolgt vor dem Export in Gremio;
+Finanzabschnitte, Summen und zugehörige Unterpunkte bleiben zusammen.
+
+Jeder XLSX-Export erhält ein neues kryptografisch zufälliges 32-stelliges Passwort
+für Blatt- und Strukturenschutz (SHA-512, zufälliges Salz, 100.000 Iterationen).
+Das Passwort wird verworfen, weder gespeichert noch ausgegeben. Alle Zellen sind
+gesperrt; AutoFilter bleibt nutzbar. Die Datei benötigt kein Öffnungspasswort.
+Excel erlaubt das direkte Sortieren gesperrter Datenzellen nicht; deshalb wählt
+man die Sortierung vorher in Gremio. Blattschutz verhindert normale Bearbeitung,
+ist jedoch kein kryptografischer Manipulationsnachweis der weitergegebenen Datei.
+
+PDF erlaubt Textsuche, bis zu zehn kombinierte typgerechte Filter, drei
+Sortierkriterien und eine Spaltenauswahl. Dokumentkopf und Folgeseiten nennen
+Erstellzeit, Filter, Sortierung, Datenzeilenzahl und ausgewählte Spalten. Lange
+Inhalte werden umgebrochen. Bei gefilterten oder neu sortierten Finanzlisten
+entfallen Abschnitts-/Gesamtsummen mit ausdrücklichem Hinweis, damit unveränderte
+Summen nicht fälschlich als Summe der Auswahl erscheinen.
+
+Downloads sind rein lesende, sessiongebundene Routen: Finanzansichten unter
+`/finanzen/[id]/export`, Kassenbuch unter `/intern/kassenbuch/[id]/export`.
+Mindestens eigener Lesezugriff ist erforderlich; die Bürozuweisung allein reicht
+nicht für den vollständigen Kassenbuchexport. Finanzexporte verwenden dieselbe
+Rechteprojektion wie die Ansicht. Bearer-API und MCP bleiben ohne Export- oder
+andere Kassenbuchfunktionen. Exporte ändern keine Buchung und speichern keine
+Dateikopie auf dem Server. Antworten sind privat und nicht cachebar.
+
+## Übersichtliche Antragskorrekturen und Historie
+
+Die Korrektur gesperrter Einplanungen verwendet einen breiten In-App-Dialog: links
+der unveränderliche Ausgangsstand, rechts neue Positionen mit Betrag, Titel und
+Konto. Auf kleinen Bildschirmen stehen die Bereiche untereinander. Begründung und
+Prüfschritt bleiben Pflicht; die abschließende Übersicht zeigt ausschließlich
+geänderte Angaben vor der Eingabe BESTÄTIGEN. Die Schreib- und Sperrlogik bleibt
+unverändert.
+
+Der Karten-Aktivitätsverlauf trennt Ereignis, Person und Zeitpunkt. Einplanungen
+zeigen ihre Begründung und einen aufklappbaren Vorher-/Nachher-Vergleich. Auch
+bestehende Textprotokolle werden so dargestellt, ohne gespeicherte Ereignisse
+umzuschreiben. Die aktuelle Feld-/Datenschutzprojektion wird vor der Darstellung
+angewandt; ausgeblendete Details werden nicht in Überschriften verraten.
+
+Migration 0100 entfernt irrtümlich angelegte Konfigurationen der drei alten
+Einzelfelder ausschließlich bei Boards mit `legacy_finance_fields=false`. Alte
+Boards behalten Konfiguration und Werte. Auch bei neuen Boards bleiben gespeicherte
+Kartenwerte, Einplanungen und Korrekturen unverändert erhalten. Erstellung,
+Einstellungsformular, Schreibaktion und DB-Trigger schließen die drei Felder
+für neue Boards aus. Das Standardkonto und die neue Einplanung bleiben verfügbar.
+
+## PDF-Layout für Finanz- und Kassenbuchexporte
+
+Die gemeinsame PDF-Ausgabe verwendet feste Papierformate: bis vier Spalten A4
+hochkant, fünf/sechs Spalten A4 quer und ab sieben Spalten A3 quer. Kopfbereich mit
+Gremio-Kennung, Titel, Untertitel und Erstellzeit; ein abgesetzter Auswahlbereich
+ordnet Filter, Sortierung, Datenumfang und Spalten. Tabellenköpfe und Auswahl
+werden auf Folgeseiten wiederholt. Dezente Zeilenhintergründe und Trennlinien,
+rechtsbündige Geldbeträge, hervorgehobene Summen und eingerückte Unterpositionen
+verbessern die Lesbarkeit. IBANs werden nur für die Darstellung gruppiert.
+
+Normale mehrzeilige Einträge bleiben beim Seitenwechsel zusammen; große
+Einzelzeilen haben ausdrücklich markierte Fortsetzungen. Lange Freitexte in
+schmalen Spalten erscheinen vollständig als beschrifteter Detailtext direkt
+unter dem zugehörigen Eintrag statt als extrem hohe schmale Zelle. Es werden
+keine Werte gekürzt oder aus dem Export entfernt. Fußzeilen enthalten Titel und
+Seitenzählung. Excel, Datenumfang und Zugriffsregeln bleiben unverändert.
+
+## Boardtypen, feste Anhangsbereiche und alternative Formularmodule
+
+Migration 0101 erhält alle bestehenden Boardtypen und Anhangseinstellungen
+(`attachment_fields=null` als Bestandsmodus). Neue normale Boards kann jedes
+aktive Konto erstellen; sie haben ausschließlich den allgemeinen Dateibereich.
+Neue Antragsboards erstellt nur die Administration unter `/admin/antragsboards`.
+Dabei werden Finanzantrag, Anlage A, Anlage B, Studierendenausweis und Quittungen
+einmalig ausgewählt, zunächst alle vorausgewählt. `attachment_fields` und Boardtyp
+sind danach per DB-Trigger unveränderlich. Konfiguration und Datei-Writer schützen
+nicht eingerichtete Typen auch bei direkten API-/MCP-Schreibversuchen. In den
+Kartenfeldern ist ausschließlich „Dateien (PDF)“ als Anhang umschaltbar; besondere
+Anhangsbereiche bleiben unverändert. Quittungen folgen ihrem eigenen Bereich und
+sind unabhängig vom allgemeinen Dateischalter. Neue Boards haben zudem keine
+sechs alten Finanz-/Zahlungsfelder; gespeicherte Werte und Altboardfelder bleiben.
+
+`locations.module` trennt die bisherigen Standorte (`locations`) vom neuen
+Finanzanträge-Formular (`finance`). Beide Module haben eigene Standortlisten,
+Routing und Empfangsbestätigungs-Gestaltung; identische Standortnamen sind zwischen
+den Modulen zulässig. Im neuen Modul sind ausschließlich Antragsboards als Ziele
+zulässig. Die Standortauswahl bleibt öffentlich vorhanden. Beide Konfigurationen
+können unabhängig vorbereitet werden und bleiben bei Modulwechseln erhalten.
+
+Der Singleton `application_form_modules` enthält genau einen aktiven Modulwert
+oder null sowie eine Revision. Das Update startet mit dem bisherigen Modul aktiv.
+Admin → Standorte und Admin → Finanzanträge-Formular bieten den Modulschalter:
+Deaktivieren erfordert DEAKTIVIEREN, Aktivieren BESTÄTIGEN. Aktivierung erfordert
+zuvor explizites Deaktivieren des anderen Moduls und mindestens einen aktiven
+Standort mit gültigem Ziel. Revisionsprüfung und Zeilensperre verhindern parallele
+Doppelaktivierung. Während beide aus sind, werden keine neuen Anträge angenommen.
+Bestehende Statuslinks, Anhänge und Nachreichungsabläufe bleiben verfügbar.
+
+Browserformular und öffentliche API verwenden dieselbe aktive Standortauswahl und
+Einreichungsprüfung. Neue Modul-Standorte liefern zusätzlich die verfügbaren und
+erforderlichen Datei-Slots, damit das Formular nur eingerichtete Typen zeigt.
+Finanzantrag/Studierendenausweis sind nur Pflicht, wenn für das neue Antragsboard
+ausgewählt; beim bisherigen Modul bleibt der alte Vertrag bestehen. Nicht
+eingerichtete Uploads werden abgewiesen. Die Einreichung prüft Modul und Routing
+unter Sperren erneut, nachdem Dateien außerhalb der Transaktion vorbereitet wurden.
+Ein Wechsel währenddessen legt keine Karte an und räumt ausschließlich neue
+Dateikopien auf. Keine neuen öffentlichen oder Bearer-/MCP-Endpunkte.

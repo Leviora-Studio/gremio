@@ -32,6 +32,7 @@ export function isCardAttachmentVisible(
   ) {
     return true;
   }
+  if (attachment.kind === "other" && attachment.uploadPurpose === "receipt") return visible.has("receipts");
   const field = CARD_ATTACHMENT_FIELD[attachment.kind as AttachmentKind];
   return !!field && visible.has(field);
 }

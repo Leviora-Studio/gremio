@@ -20,7 +20,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  ATTACHMENT_FIELD_KEYS,
   CARD_FIELD_LABELS,
   type CardFieldKey,
 } from "@/lib/constants";
@@ -80,11 +79,13 @@ export function CardFieldsForm({
   visibility,
   fieldOrder,
   requiredFields = [],
+  fixedAttachmentFields = [],
 }: {
   boardId: number;
   visibility: Record<string, boolean>;
   fieldOrder: string[];
   requiredFields?: readonly string[];
+  fixedAttachmentFields?: readonly string[];
 }) {
   const [state, dispatch, pending] = useActionState(
     setCardFieldsAction.bind(null, boardId),
@@ -93,7 +94,7 @@ export function CardFieldsForm({
   const [order, setOrder] = useState<string[]>(fieldOrder);
 
   // Sichtbarkeit aller (ab-)wählbaren Felder als kontrollierter Zustand.
-  const allKeys = [...fieldOrder, ...ATTACHMENT_FIELD_KEYS];
+  const allKeys = [...fieldOrder, "other_pdfs"];
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(allKeys.map((k) => [k, requiredFields.includes(k) || (visibility[k] ?? true)])),
   );
@@ -181,9 +182,10 @@ export function CardFieldsForm({
       </div>
 
       <div>
-        <p className="mb-2 text-sm font-medium text-slate-700">Anhänge</p>
+        <p className="mb-2 text-sm font-medium text-slate-700">Dateien</p>
+        <p className="mb-3 text-sm text-slate-500">{fixedAttachmentFields.length ? `Feste Anhangsbereiche: ${fixedAttachmentFields.map(key=>CARD_FIELD_LABELS[key as CardFieldKey]??key).join(", ")}. Diese Auswahl bleibt erhalten.` : "Dieses Board hat keine besonderen Anhangsbereiche."} Nur allgemeine Dateien können hier ein- oder ausgeschaltet werden.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {ATTACHMENT_FIELD_KEYS.map((key) => (
+          {(["other_pdfs"] as const).map((key) => (
             <label key={key} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

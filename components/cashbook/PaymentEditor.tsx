@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useCashbookDraft } from "./DraftContext";
 import { ReceiptPicker } from "./ReceiptPicker";
 import { Select } from "@/components/Select";
-import { DatePicker } from "@/components/DatePicker";
 import { centsToInput, parseEuroToCents } from "@/lib/money";
 import { paymentFields, type CashbookPayment, type CashbookRole } from "@/lib/cashbook-types";
 import { draftCashbookAction, generateCashbookAction } from "@/app/intern/kassenbuch/actions";
@@ -24,7 +23,7 @@ export function PaymentFields({ value, onChange, disabled = false }: {
     onChange: (value: CashbookPayment) => void;
     disabled?: boolean;
 }) { const [amount, setAmount] = useState(centsToInput(value.amount)); useEffect(() => { if (value.amount >= 0 && parseEuroToCents(amount) !== value.amount)
-    setAmount(centsToInput(value.amount)); }, [value.amount, amount]); return <fieldset disabled={disabled} className="grid min-w-0 gap-4 sm:grid-cols-2">{paymentFields.map(field => <label key={field.key} className="min-w-0 text-sm">{field.label}{field.key === "date" ? <DatePicker value={value.date} onChange={date => onChange({ ...value, date })} portal/> : field.key === "amount" ? <input className="input mt-1" inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); onChange({ ...value, amount: parseEuroToCents(e.target.value) ?? -1 }); }}/> : <input className="input mt-1" maxLength={field.key === "purpose" ? 1000 : 200} value={value[field.key]} onChange={e => onChange({ ...value, [field.key]: e.target.value })}/>}</label>)}</fieldset>; }
+    setAmount(centsToInput(value.amount)); }, [value.amount, amount]); return <fieldset disabled={disabled} className="grid min-w-0 gap-4 sm:grid-cols-2">{paymentFields.map(field => <label key={field.key} className="min-w-0 text-sm">{field.label}{field.key === "amount" ? <input className="input mt-1" inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); onChange({ ...value, amount: parseEuroToCents(e.target.value) ?? -1 }); }}/> : <input className="input mt-1" maxLength={field.key === "purpose" ? 1000 : 200} value={value[field.key]} onChange={e => onChange({ ...value, [field.key]: e.target.value })}/>}</label>)}</fieldset>; }
 export function PaymentEditor({ bookId, entryId, revision, initial, role: initialRole, candidates, previewNumber, hasForm = false }: {
     hasForm?: boolean;
     bookId: number;

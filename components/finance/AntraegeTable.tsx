@@ -124,7 +124,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
                 <td className="py-2 pr-3 font-medium">
                   {c.number ? (
                     <Link
-                      href={`/intern/card/${c.id}`}
+                      href={c.href ?? `/intern/card/${c.id}`}
                       className="text-brand-700 hover:underline"
                     >
                       {c.number}
@@ -136,7 +136,7 @@ export function AntraegeTable({ rows }: { rows: AntragRow[] }) {
                 <td className="py-2 pr-3">{c.breakdown?c.breakdown.map(r=><div key={r.title} className="min-h-7">{r.title}</div>):c.budgetTitle}</td>
                 <td className="py-2 pr-3">
                   <Link
-                    href={`/intern/card/${c.id}`}
+                    href={c.href ?? `/intern/card/${c.id}`}
                     className="text-brand-600 hover:underline"
                   >
                     {c.title}

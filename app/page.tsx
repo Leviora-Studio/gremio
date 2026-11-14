@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { formDocuments } from "@/lib/db/schema";
 import { makeFormGuard } from "@/lib/antispam";
 import { listPublicLocations } from "@/lib/public-application-submission";
+import {getApplicationModuleState} from "@/lib/application-form-modules";
 import { PublicAntragForm } from "@/components/PublicAntragForm";
 import { PublicNav } from "@/components/PublicNav";
 
@@ -16,6 +17,7 @@ export default async function Home() {
   // geroutet. Ein Standort ohne gültiges Ziel darf gar nicht erst zur Auswahl
   // stehen — die Einreichung würde ihn ohnehin abweisen.
   const enabled = await listPublicLocations();
+  const moduleState=await getApplicationModuleState();
   const docs = await db
     .select({ id: formDocuments.id, filename: formDocuments.filename })
     .from(formDocuments)
@@ -35,11 +37,11 @@ export default async function Home() {
 
       {enabled.length === 0 ? (
         <div className="card p-6 text-slate-600">
-          Aktuell ist keine Antragstellung möglich (kein Standort aktiviert).
+          Aktuell ist keine Antragstellung möglich.
         </div>
       ) : (
         <div className="card p-6">
-          <PublicAntragForm locations={enabled} guard={guard} />
+          <PublicAntragForm locations={enabled} guard={guard} financeModule={moduleState.activeModule==="finance"} />
         </div>
       )}
 

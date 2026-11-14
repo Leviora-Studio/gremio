@@ -1,29 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
-
-/** Excel-/PDF-Download-Links für eine Finanz-View. */
-export function ExportButtons({
-  fbId,
-  view,
-  label = "Export:",
-  className = "mb-3 flex items-center gap-2",
-}: {
-  fbId: number;
-  view: string;
-  label?: string;
-  /** Wrapper-Klassen überschreibbar (z.B. ohne mb-3, wenn in einer Zeile gruppiert). */
-  className?: string;
-}) {
-  const base = `/finanzen/${fbId}/export?view=${view}`;
-  return (
-    <div className={className}>
-      <span className="text-xs uppercase text-slate-400">{label}</span>
-      <a href={`${base}&format=xlsx`} className="btn-secondary btn-sm">
-        Excel
-      </a>
-      <a href={`${base}&format=pdf`} className="btn-secondary btn-sm">
-        PDF
-      </a>
-    </div>
-  );
+import {ExportControls} from "@/components/export/ExportControls";
+import type {ExportColumn} from "@/lib/export-selection";
+export function ExportButtons({fbId,view,columns,label="Export:",className="mb-3 flex flex-wrap items-center gap-2"}:{fbId:number;view:string;columns:ExportColumn[];label?:string;className?:string}){
+ return <ExportControls endpoint={`/finanzen/${fbId}/export?view=${encodeURIComponent(view)}`} columns={columns} grouped={["plan","live","actual"].includes(view)} label={label} className={className}/>;
 }

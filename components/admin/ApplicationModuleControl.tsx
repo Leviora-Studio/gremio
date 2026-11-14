@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Leviora Studio
+"use client";
+import {useState} from "react";
+import {useRouter} from "next/navigation";
+import {Modal} from "@/components/Modal";
+import {changeApplicationModuleAction} from "@/app/admin/standorte/module-actions";
+import {type ApplicationModule} from "@/lib/application-form-module-types";
+const labels={locations:"Standorte",finance:"Finanzanträge-Formular"};
+export function ApplicationModuleControl({module,activeModule,revision}:{module:ApplicationModule;activeModule:ApplicationModule|null;revision:number}){
+ const router=useRouter(),active=module===activeModule,blocked=activeModule!=null&&!active;
+ const [open,setOpen]=useState(false),[word,setWord]=useState(""),[pending,setPending]=useState(false),[error,setError]=useState("");
+ const expected=active?"DEAKTIVIEREN":"BESTÄTIGEN";
+ async function save(){setPending(true);setError("");try{const result=await changeApplicationModuleAction(module,!active,revision,word);if(result.error){setError(result.error);return;}setOpen(false);router.refresh();}catch{setError("Das Modul konnte nicht geändert werden.");}finally{setPending(false);}}
+ return <section className="card space-y-3 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Modul {labels[module]}</h3><p className="mt-1 text-sm text-slate-500">{active?"Aktiv – dieses Modul steuert das öffentliche Antragsformular.":"Deaktiviert – die Konfiguration bleibt für einen späteren Wechsel erhalten."}</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${active?"bg-emerald-50 text-emerald-700":"bg-slate-100 text-slate-500"}`}>{active?"Aktiv":"Deaktiviert"}</span></div>{blocked&&<p className="text-sm text-amber-700">Zuerst das Modul „{labels[activeModule!]}“ in dessen Reiter deaktivieren. Es kann immer nur ein Modul aktiv sein.</p>}<button className={active?"btn-danger":"btn-primary"} disabled={blocked||pending} onClick={()=>{setWord("");setError("");setOpen(true);}}>{active?"Modul deaktivieren":"Modul aktivieren"}</button><Modal portal manageFocus open={open} onClose={()=>{if(!pending)setOpen(false);}} title={active?"Modul deaktivieren":"Modul aktivieren"}><div className="space-y-4"><p className="text-sm text-slate-600">{active?"Die öffentliche Antragstellung über dieses Modul wird deaktiviert. Standorte, Routing, Karten und Dateien bleiben erhalten. Anschließend kannst du das andere Modul aktivieren.":"Dieses Modul wird für das öffentliche Antragsformular verwendet. Die Konfiguration des bisherigen Moduls bleibt erhalten."}</p><label className="block text-sm">Zur Bestätigung {expected} eingeben<input className="input mt-2" autoComplete="off" disabled={pending} value={word} onChange={event=>setWord(event.target.value)}/></label>{error&&<p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-3"><button className="btn-secondary" disabled={pending} onClick={()=>setOpen(false)}>Abbrechen</button><button className={active?"btn-danger":"btn-primary"} disabled={pending||word!==expected} onClick={()=>void save()}>{pending?"Wird gespeichert …":active?"Modul deaktivieren":"Modul aktivieren"}</button></div></div></Modal></section>;
+}

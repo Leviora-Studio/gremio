@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Leviora Studio
+import {test,after} from "node:test";
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {eq} from "drizzle-orm";
+import {db,pool} from "../lib/db";
+import * as s from "../lib/db/schema";
+import {createBoardFromTemplate} from "../lib/boards";
+import {writeBudgetPlan} from "../lib/card-budget-plan-db";
+import {lockApplicationCard} from "../lib/card-lock";
+import {createCashbook} from "../lib/cashbook/service";
+import {cashbookFinanceProjection} from "../lib/cashbook/finance";
+after(()=>pool.end());
+test("new boards use per-title accounts and frozen plans require immutable, justified corrections",async()=>{
+ assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
+ const [owner,writer,reader]=await db.insert(s.users).values(["owner","writer","reader"].map(name=>({username:`planning-correction-${name}-${randomUUID()}`,role:name==="owner"?"admin" as const:"user" as const}))).returning();
+ const [account,otherAccount]=await db.insert(s.accounts).values([{name:`Default planning account ${randomUUID()}`},{name:`Different planning account ${randomUUID()}`}]).returning();
+ const boardId=await createBoardFromTemplate(owner.id,"New planning board",null,null,{attachmentFields:["receipts"]});
+ const [newBoard]=await db.select().from(s.boards).where(eq(s.boards.id,boardId));assert.equal(newBoard.legacyFinanceFields,false);
+ const fields=await db.select().from(s.boardCardFields).where(eq(s.boardCardFields.boardId,boardId));assert.ok(fields.every(field=>!["account","budget_title","approved_amount","actual_amount","instruction_date","transfer_date"].includes(field.fieldKey)));
+ for(const fieldKey of ["account","budget_title","approved_amount","actual_amount","instruction_date","transfer_date"])await assert.rejects(db.insert(s.boardCardFields).values({boardId,fieldKey,visible:true}));
+ await assert.rejects(db.update(s.boards).set({legacyFinanceFields:true}).where(eq(s.boards.id,boardId)));
+ await db.update(s.boards).set({defaultAccountId:account.id}).where(eq(s.boards.id,boardId));
+ await db.insert(s.boardAccess).values([{boardId,userId:writer.id,accessLevel:"write"},{boardId,userId:reader.id,accessLevel:"read"}]);
+ const [status]=await db.insert(s.boardStatuses).values({boardId,name:"Accepted",isLockColumn:true}).returning();
+ const [card]=await db.insert(s.cards).values({boardId,statusId:status.id,title:"Preserve all details",applicant:"Original applicant",notes:"Immutable note",token:randomUUID()}).returning();
+ const input=[{amount:"100",budgetTitle:"1200"}];
+ assert.equal(await writeBudgetPlan(writer,card.id,0,input),1);
+ const [saved]=await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId,card.id));assert.equal(saved.allocations[0].accountId,account.id);
+ await assert.rejects(writeBudgetPlan(writer,card.id,1,[{...input[0],accountId:otherAccount.id}]),/bestätigen/);
+ await assert.rejects(writeBudgetPlan(writer,card.id,1,[{...input[0],accountId:2147483647}],{confirmAccountChange:true}),/vorhandenes Konto/);
+ await lockApplicationCard(owner,card.id,status.id);
+ const [frozen]=await db.select().from(s.cards).where(eq(s.cards.id,card.id));
+ await assert.rejects(writeBudgetPlan(writer,card.id,1,[{amount:"90",budgetTitle:"1200",accountId:account.id}]));
+ await assert.rejects(db.update(s.cardBudgetPlans).set({allocations:[],revision:2}).where(eq(s.cardBudgetPlans.cardId,card.id)));
+ const corrected=[{amount:"90",budgetTitle:"1300",accountId:otherAccount.id}];
+ const options={confirmAccountChange:true,correction:{reason:"Correct the funding allocation",confirmation:"BESTÄTIGEN"}};
+ for(const bad of [{...options,correction:{reason:"",confirmation:"BESTÄTIGEN"}},{...options,correction:{reason:"Reason",confirmation:"bestätigen"}}])await assert.rejects(writeBudgetPlan(writer,card.id,1,corrected,bad));
+ await assert.rejects(writeBudgetPlan(reader,card.id,1,corrected,options),/Schreibzugriff/);
+ assert.equal(await writeBudgetPlan(writer,card.id,1,corrected,options),2);
+ const [correction]=await db.select().from(s.cardBudgetPlanCorrections).where(eq(s.cardBudgetPlanCorrections.cardId,card.id));
+ assert.deepEqual(correction.beforeAllocations,saved.allocations);assert.equal(correction.afterAllocations[0].amount,9000);assert.equal(correction.userId,writer.id);
+ await assert.rejects(db.update(s.cardBudgetPlanCorrections).set({reason:"tampered"}).where(eq(s.cardBudgetPlanCorrections.id,correction.id)));
+ await assert.rejects(db.delete(s.cardBudgetPlanCorrections).where(eq(s.cardBudgetPlanCorrections.id,correction.id)));
+ await assert.rejects(db.delete(s.accounts).where(eq(s.accounts.id,account.id)));
+ const [afterCard]=await db.select().from(s.cards).where(eq(s.cards.id,card.id));const {updatedAt:_a,...a}=afterCard,{updatedAt:_b,...b}=frozen;assert.deepEqual(a,b);
+ const activity=await db.select().from(s.cardActivity).where(eq(s.cardActivity.cardId,card.id));const event=activity.find(row=>row.type==="budget_plan_correction");assert.match(event!.detail!,/Correct the funding allocation/);assert.match(event!.detail!,/Vorher:[\s\S]*100,00[\s\S]*Nachher:[\s\S]*90,00/);
+ const race=await Promise.allSettled([writeBudgetPlan(writer,card.id,2,[{...corrected[0],amount:"80"}],options),writeBudgetPlan(owner,card.id,2,[{...corrected[0],amount:"70"}],options)]);assert.equal(race.filter(result=>result.status==="fulfilled").length,1);
+ // Immutable fixtures stay exclusively in this disposable database.
+});
+test("finance shows the union of configured applications and ledger sources once, with per-title outstanding payments",async()=>{
+ const [owner]=await db.insert(s.users).values({username:`finance-union-${randomUUID()}`,role:"admin"}).returning();
+ const [account,other]=await db.insert(s.accounts).values([{name:`Included ${randomUUID()}`},{name:`Excluded ${randomUUID()}`}]).returning();
+ const [board,outside]=await db.insert(s.boards).values([{ownerId:owner.id,name:"Source",isApplicationBoard:true},{ownerId:owner.id,name:"Outside configured sources"}]).returning();
+ const [status,outStatus]=await db.insert(s.boardStatuses).values([{boardId:board.id,name:"Open"},{boardId:outside.id,name:"Moved"}]).returning();
+ const [card,external]=await db.insert(s.cards).values([{boardId:board.id,statusId:status.id,title:"Configured",applicant:"A",token:randomUUID(),number:"AN-A"},{boardId:outside.id,statusId:outStatus.id,title:"Still visible",applicant:"B",token:randomUUID(),number:"AN-B"}]).returning();
+ await db.insert(s.cardBudgetPlans).values([{cardId:card.id,allocations:[{amount:10000,budgetTitle:"1200",accountId:account.id},{amount:3000,budgetTitle:"1300",accountId:other.id}]},{cardId:external.id,allocations:[{amount:9000,budgetTitle:"1400",accountId:account.id}]}]);
+ const bookId=await createCashbook(owner,"Union ledger");const [finance]=await db.insert(s.financeBoards).values({name:"Union",ownerId:owner.id,cashbookId:bookId}).returning();
+ await db.insert(s.financeBoardSources).values({financeBoardId:finance.id,boardId:board.id,accountId:account.id});
+ const payment={business:false,receiptIds:[],amount:2000,budgetTitle:"1200",holder:"Synthetic",iban:"DE89370400440532013000",bank:"Bank",purpose:"",place:"",date:""};
+ await db.insert(s.cashbookEntries).values([{cashbookId:bookId,creatorId:owner.id,role:"speaker",state:"posted",authorizedAt:new Date(),data:{...payment,cardId:card.id,number:"AN-A"}},{cashbookId:bookId,creatorId:owner.id,role:"speaker",state:"posted",authorizedAt:new Date(),data:{...payment,cardId:external.id,number:"AN-B",budgetTitle:"1400",amount:4000}}]);
+ const projection=await cashbookFinanceProjection(finance,[board.id],[account.id]);assert.equal(projection.cardRows.length,2);assert.equal(new Set(projection.cardRows.map(row=>row.id)).size,2);
+ assert.equal(projection.cardRows.find(row=>row.id===card.id)!.breakdown![0].outstanding,8000);assert.equal(projection.cardRows.find(row=>row.id===external.id)!.breakdown![0].outstanding,5000);
+ assert.equal(projection.cardRows.find(row=>row.id===card.id)!.breakdown!.find(row=>row.title==="1300")!.outstanding,3000);
+ assert.equal(projection.live.get("1200"),10000);assert.equal(projection.live.get("1300"),undefined);assert.equal(projection.actual.get("1400"),4000);
+ const moved=await cashbookFinanceProjection(finance,[],[account.id]);assert.equal(moved.cardRows.length,2);assert.equal(moved.cardRows.find(row=>row.id===external.id)!.actualAmount,4000);
+});

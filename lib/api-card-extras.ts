@@ -226,7 +226,7 @@ export async function activityApi(req: Request, id: string) {
     userId: row.userId,
     type: row.type,
     createdAt: row.createdAt,
-    detail: visibleActivityDetail(row, visible),
+    detail: visibleActivityDetail(row, visible, r.board.isApplicationBoard),
   }));
   return NextResponse.json({
     activity,
@@ -398,7 +398,7 @@ export async function attachmentsApi(
     const file = data.get("file");
     if (!kind.success || !(file instanceof File))
       return apiError(400, "Ungültige Datei oder Kategorie.");
-    if (!visible.has(CARD_ATTACHMENT_FIELD[kind.data]))
+    if (!visible.has(purpose === "receipt" ? "receipts" : CARD_ATTACHMENT_FIELD[kind.data]))
       return apiError(400, "Anhangfeld ist deaktiviert.");
     const error = validateUpload(
       file,

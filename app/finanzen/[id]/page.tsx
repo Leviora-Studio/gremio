@@ -11,6 +11,8 @@ import { loadFinanceData, type PlanItem } from "@/lib/finance-data";
 import { formatCents } from "@/lib/money";
 import { FinanceTabs } from "@/components/finance/FinanceTabs";
 import { ExpenseTree } from "@/components/finance/ExpenseTree";
+import { buildFinanceTable } from "@/lib/finance-export";
+import { exportColumns } from "@/lib/export-selection";
 import { ExportButtons } from "@/components/finance/ExportButtons";
 import { AntraegeTable } from "@/components/finance/AntraegeTable";
 
@@ -25,6 +27,8 @@ export default async function FinanceBoardPage({
   const canEdit = await canEditFinanceBoard(user, fb);
   const manage = (await canManageFinanceBoard(user, fb));
 
+  const financeData = await loadFinanceData(fb);
+  const columnsFor = (view:string) => exportColumns(buildFinanceTable(view,financeData));
   const {
     accountNames,
     expenseAccountNames,
@@ -37,7 +41,7 @@ export default async function FinanceBoardPage({
     cardRows,
     live,
     actual,
-  } = await loadFinanceData(fb);
+  } = financeData;
 
   // Hinweis in den Ausgaben-Tabs, wenn ein abweichender Konten-Override gilt.
   const expenseNote = expenseAccountsOverridden ? (
@@ -181,12 +185,14 @@ export default async function FinanceBoardPage({
                   <ExportButtons
                     fbId={fbId}
                     view="antraege"
+                    columns={columnsFor("antraege")}
                     label="Nach Haushaltstitel:"
                     className="flex items-center gap-2"
                   />
                   <ExportButtons
                     fbId={fbId}
                     view="antraege_nr"
+                    columns={columnsFor("antraege_nr")}
                     label="Nach Antragsnummer:"
                     className="flex items-center gap-2"
                   />
@@ -200,7 +206,7 @@ export default async function FinanceBoardPage({
             label: "Live-Ausgaben",
             content: (
               <>
-                <ExportButtons fbId={fbId} view="live" />
+                <ExportButtons fbId={fbId} view="live" columns={columnsFor("live")} />
                 {expenseNote}
                 <ExpenseTree
                   rows={live.rows}
@@ -215,7 +221,7 @@ export default async function FinanceBoardPage({
             label: "Tatsächliche Ausgaben",
             content: (
               <>
-                <ExportButtons fbId={fbId} view="actual" />
+                <ExportButtons fbId={fbId} view="actual" columns={columnsFor("actual")} />
                 {expenseNote}
                 <ExpenseTree
                   rows={actual.rows}
@@ -230,7 +236,7 @@ export default async function FinanceBoardPage({
             label: "Haushaltsplan",
             content: (
               <>
-                <ExportButtons fbId={fbId} view="plan" />
+                <ExportButtons fbId={fbId} view="plan" columns={columnsFor("plan")} />
                 {planView}
               </>
             ),

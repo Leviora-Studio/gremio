@@ -8,6 +8,9 @@ import { useEffect, useState } from "react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import {ExportControls} from "@/components/export/ExportControls";
+import {cashbookExportColumns} from "@/lib/cashbook/export";
+import {exportColumns} from "@/lib/export-selection";
 import { Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { hasOpenCashbookFlag, type CashbookPayment } from "@/lib/cashbook-types";
@@ -41,11 +44,12 @@ export type LedgerRow = {
   authorizedAt: string | null;
   bookingDate: string | null;
   correctsId: number | null;
+  correctsNumber: string | null;
 };
 
 function cellValue(row: LedgerRow, key: ColumnKey): string | number {
   if (key === "bookingNumber") return row.bookingNumber ?? "";
-  if (key === "correction") return row.correctsId ? `Korrektur zu #${row.correctsId}` : "Original";
+  if (key === "correction") return row.correctsId ? `Korrektur zu ${row.correctsNumber ?? "unbekannter Buchung"}` : "Original";
   if (key === "authorizedAt") return row.authorizedAt ?? "";
   if (key === "bookingDate") return row.bookingDate ?? "";
   return row.data[key];
@@ -143,7 +147,7 @@ export function LedgerTable({ bookId, rows, userId }: { bookId: number; rows: Le
         <h2 className="text-lg font-semibold">Gebuchte Anweisungen</h2>
         <p className="mt-1 text-sm text-slate-500">{rows.length} {rows.length === 1 ? "Buchung" : "Buchungen"}</p>
       </div>
-      <button type="button" className="btn-secondary" onClick={() => setSettingsOpen(true)}>Ansicht einstellen</button>
+      <div className="flex flex-wrap items-center gap-3"><ExportControls endpoint={`/intern/kassenbuch/${bookId}/export`} columns={exportColumns({title:"Kassenbuch",columns:cashbookExportColumns,rows:[]})}/><button type="button" className="btn-secondary" onClick={() => setSettingsOpen(true)}>Ansicht einstellen</button></div>
     </div>
     <div className="border-y border-slate-100 bg-slate-50/50 px-5 py-2.5 text-xs text-slate-500" aria-live="polite">
       Sortiert nach <span className="font-medium text-slate-700">{sortLabel}</span>, {view.sort.direction === 1 ? "aufsteigend" : "absteigend"}

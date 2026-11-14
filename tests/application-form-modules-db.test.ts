@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Leviora Studio
+import {after,test} from "node:test";
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {eq} from "drizzle-orm";
+import {PDFDocument} from "pdf-lib";
+import {db,pool} from "../lib/db";
+import * as s from "../lib/db/schema";
+import {createBoardFromTemplate} from "../lib/boards";
+import {getApplicationModuleState,setApplicationModule} from "../lib/application-form-modules";
+import {listPublicLocations,submitPublicApplication} from "../lib/public-application-submission";
+import {getVisibleFieldKeys} from "../lib/board-fields";
+import {isCardAttachmentVisible} from "../lib/card-attachment-visibility";
+import {storeApiAttachment} from "../lib/api-card-extras";
+import {getApplicationStatusByToken} from "../lib/public-status";
+import {insertPublicAttachment} from "../lib/public-workflow";
+after(()=>pool.end());
+
+test("application boards are admin-created with immutable attachment areas; public modules switch explicitly and never overlap",async()=>{
+ assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
+ assert.match(process.env.UPLOAD_DIR!,/^\/private\/tmp\/gremio-cashbook-test-/);
+ const suffix=randomUUID();
+ const [admin,writer]=await db.insert(s.users).values([{username:`modules-admin-${suffix}`,role:"admin"},{username:`modules-writer-${suffix}`}]).returning();
+ const normalId=await createBoardFromTemplate(writer.id,"Normal",null,null);
+ const [normal]=await db.select().from(s.boards).where(eq(s.boards.id,normalId));
+ assert.equal(normal.isApplicationBoard,false);assert.deepEqual(normal.attachmentFields,[]);
+ const normalFields=await getVisibleFieldKeys(normalId);
+ for(const key of ["account","budget_title","approved_amount","actual_amount","instruction_date","transfer_date","finance_request","student_card","annex_a","annex_b","receipts"])assert.equal(normalFields.has(key),false,key);
+ assert.equal(normalFields.has("other_pdfs"),true);
+ await assert.rejects(createBoardFromTemplate(writer.id,"Forbidden",null,null,{attachmentFields:["receipts"]}),/Administrationskonten/);
+ await assert.rejects(createBoardFromTemplate(admin.id,"Invalid",null,null,{attachmentFields:["other_pdfs"]}));
+ const appId=await createBoardFromTemplate(admin.id,"Application",null,null,{attachmentFields:["finance_request","receipts"]});
+ const [app]=await db.select().from(s.boards).where(eq(s.boards.id,appId));assert.equal(app.isApplicationBoard,true);
+ const fields=await getVisibleFieldKeys(appId);assert.equal(fields.has("finance_request"),true);assert.equal(fields.has("student_card"),false);assert.equal(fields.has("receipts"),true);
+ await assert.rejects(db.update(s.boards).set({isApplicationBoard:true}).where(eq(s.boards.id,normalId)));
+ await assert.rejects(db.update(s.boards).set({attachmentFields:[]}).where(eq(s.boards.id,appId)));
+ await assert.rejects(db.update(s.boardCardFields).set({visible:false}).where(eq(s.boardCardFields.fieldKey,"finance_request")));
+ await assert.rejects(db.insert(s.boardCardFields).values({boardId:normalId,fieldKey:"student_card",visible:true}));
+ await assert.rejects(db.update(s.boardCardFields).set({fieldKey:"unconfigured_area"}).where(eq(s.boardCardFields.fieldKey,"finance_request")));
+ await assert.rejects(db.delete(s.boardCardFields).where(eq(s.boardCardFields.fieldKey,"finance_request")));
+ await db.update(s.boardCardFields).set({visible:false}).where(eq(s.boardCardFields.fieldKey,"other_pdfs"));
+ assert.equal(isCardAttachmentVisible({kind:"other",uploadPurpose:"receipt"},await getVisibleFieldKeys(appId)),true,"receipts are independent of general files");
+ const [normalStatus,appStatus]=await db.insert(s.boardStatuses).values([{boardId:normalId,name:"Inbox"},{boardId:appId,name:"Inbox"}]).returning();
+ const [oldBoard]=await db.insert(s.boards).values({name:"Legacy",ownerId:admin.id,legacyFinanceFields:true}).returning();
+ const [oldStatus]=await db.insert(s.boardStatuses).values({boardId:oldBoard.id,name:"Inbox"}).returning();
+ await db.insert(s.boardCardFields).values(["applicant","submitter_email","finance_request","student_card"].map(fieldKey=>({boardId:oldBoard.id,fieldKey,visible:true})));
+ const [oldLocation]=await db.insert(s.locations).values({name:`Campus ${suffix}`,enabled:true,targetBoardId:oldBoard.id,targetStatusId:oldStatus.id}).returning();
+ const [newLocation]=await db.insert(s.locations).values({name:oldLocation.name,module:"finance",enabled:true,targetBoardId:appId,targetStatusId:appStatus.id}).returning();
+ await assert.rejects(db.insert(s.locations).values({name:`Forbidden ${suffix}`,module:"finance",targetBoardId:normalId,targetStatusId:normalStatus.id}));
+ const pdf=await PDFDocument.create();pdf.addPage();const bytes=await pdf.save(),file=()=>new File([Uint8Array.from(bytes).buffer],"test.pdf",{type:"application/pdf"});
+ const raw={email:"synthetic@example.org",title:"Module submission",applicant:"Synthetic",files:{finance_request:file()}};
+ const initial=await getApplicationModuleState();assert.equal(initial.activeModule,"locations");
+ try{
+  assert.ok((await listPublicLocations()).some(row=>row.id===oldLocation.id));assert.ok(!(await listPublicLocations()).some(row=>row.id===newLocation.id));
+  await assert.rejects(setApplicationModule(writer,"locations",false,initial.revision,"DEAKTIVIEREN"),/Administrationskonten/);
+  await assert.rejects(setApplicationModule(admin,"finance",true,initial.revision,"BESTÄTIGEN"),/zuerst/);
+  await assert.rejects(setApplicationModule(admin,"locations",false,initial.revision,"deaktivieren"));
+  await setApplicationModule(admin,"locations",false,initial.revision,"DEAKTIVIEREN");
+  assert.deepEqual(await listPublicLocations(),[]);
+  assert.equal((await submitPublicApplication({...raw,locationId:oldLocation.id},{activityDetail:"Test"})).ok,false);
+  let state=await getApplicationModuleState();
+  await setApplicationModule(admin,"finance",true,state.revision,"BESTÄTIGEN");
+  const listed=await listPublicLocations();assert.ok(!listed.some(row=>row.id===oldLocation.id));
+  assert.deepEqual(listed.find(row=>row.id===newLocation.id),{id:newLocation.id,name:newLocation.name,attachmentFields:["finance_request"],requiredAttachmentFields:["finance_request"]});
+  const forbidden=await submitPublicApplication({...raw,locationId:newLocation.id,files:{...raw.files,student_card:file()}},{activityDetail:"Forbidden"});assert.equal(forbidden.ok,false);
+  const beforeRace=await db.select({id:s.cards.id}).from(s.cards);
+  const active=await getApplicationModuleState();
+  class SwitchingFile extends File {async arrayBuffer(){await setApplicationModule(admin,"finance",false,active.revision,"DEAKTIVIEREN");return super.arrayBuffer();}}
+  const interrupted=await submitPublicApplication({...raw,locationId:newLocation.id,files:{finance_request:new SwitchingFile([Uint8Array.from(bytes).buffer],"stale.pdf",{type:"application/pdf"})}},{activityDetail:"Stale form"});
+  assert.equal(interrupted.ok,false);if(!interrupted.ok&&"message" in interrupted)assert.match(interrupted.message,/umgestellt/);
+  assert.deepEqual(await db.select({id:s.cards.id}).from(s.cards),beforeRace,"a switch during file preparation cannot create a card");
+  await setApplicationModule(admin,"finance",true,(await getApplicationModuleState()).revision,"BESTÄTIGEN");
+  const result=await submitPublicApplication({...raw,locationId:newLocation.id},{activityDetail:"Finance module submission"});assert.equal(result.ok,true);if(!result.ok)throw Error(JSON.stringify(result));
+  const stored=await db.select().from(s.attachments).where(eq(s.attachments.cardId,result.cardId));assert.deepEqual(stored.map(row=>row.kind),["finance_request"]);
+  await storeApiAttachment(result.cardId,admin.id,"other",file(),"receipt");
+  await assert.rejects(storeApiAttachment(result.cardId,admin.id,"student_card",file()));
+  const [plain]=await db.insert(s.cards).values({boardId:normalId,statusId:normalStatus.id,title:"Normal",applicant:"",token:randomUUID()}).returning();
+  await assert.rejects(storeApiAttachment(plain.id,writer.id,"other",file(),"receipt"));
+  await assert.rejects(insertPublicAttachment(plain.id,"receipt",{filename:"x.pdf",relPath:"synthetic-only.pdf",mime:"application/pdf",size:1}));
+  state=await getApplicationModuleState();await setApplicationModule(admin,"finance",false,state.revision,"DEAKTIVIEREN");
+  assert.deepEqual(await listPublicLocations(),[]);assert.ok(await getApplicationStatusByToken(result.token),"existing tokens remain valid after switching modules");
+  state=await getApplicationModuleState();
+  const race=await Promise.allSettled([setApplicationModule(admin,"locations",true,state.revision,"BESTÄTIGEN"),setApplicationModule(admin,"finance",true,state.revision,"BESTÄTIGEN")]);
+  assert.equal(race.filter(value=>value.status==="fulfilled").length,1);
+  const live=await getApplicationModuleState();assert.ok(["locations","finance"].includes(live.activeModule!));
+  const selected=await listPublicLocations();assert.equal(selected.some(row=>row.id===oldLocation.id),live.activeModule==="locations");assert.equal(selected.some(row=>row.id===newLocation.id),live.activeModule==="finance");
+ }finally{
+  const current=await getApplicationModuleState();if(current.activeModule)await setApplicationModule(admin,current.activeModule,false,current.revision,"DEAKTIVIEREN");
+  await setApplicationModule(admin,"locations",true,(await getApplicationModuleState()).revision,"BESTÄTIGEN");
+ }
+});

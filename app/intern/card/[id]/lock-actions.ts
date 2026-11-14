@@ -25,6 +25,7 @@ export async function uploadReceiptAction(cardId: number, _prev: {
     const [board] = card ? await db.select().from(boards).where(eq(boards.id, card.boardId)) : [];
     if (!card || !board || !await canEditBoard(user, board))
         return { error: "Kein Schreibzugriff." };
+    if (board.attachmentFields != null && !board.attachmentFields.includes("receipts")) return {error:"Dieses Board hat keinen Quittungsbereich."};
     const file = data.get("file");
     if (!(file instanceof File))
         return { error: "Bitte eine Quittung auswählen." };

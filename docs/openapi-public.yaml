@@ -50,7 +50,10 @@ paths:
       summary: Auswählbare Standorte abrufen
       description: "Liefert genau die Standorte, die auch im öffentlichen Formular zur Auswahl stehen:
         aktiviert und vollständig geroutet (Ziel-Board und Zielspalte vorhanden, Zielspalte gehört
-        zum Ziel-Board). Reihenfolge wie im Formular."
+        zum Ziel-Board). Reihenfolge wie im Formular. Es werden nur Standorte des aktiven Moduls
+        geliefert; sind beide Module deaktiviert, ist die Liste leer. Im Finanzanträge-Modul
+        beschreiben attachmentFields und requiredAttachmentFields die beim Ziel-Antragsboard
+        eingerichteten Uploads."
       operationId: listPublicLocations
       security: []
       responses:
@@ -907,6 +910,26 @@ components:
           type: string
           examples:
             - Standort A
+        attachmentFields:
+          type: array
+          items:
+            type: string
+            enum:
+              - finance_request
+              - student_card
+              - annex_a
+              - annex_b
+          description: Beim Finanzanträge-Modul verfügbare Datei-Slots. Fehlt die Angabe, gilt der bisherige
+            Standort-Vertrag mit allen vier Slots.
+        requiredAttachmentFields:
+          type: array
+          items:
+            type: string
+            enum:
+              - finance_request
+              - student_card
+          description: Beim Finanzanträge-Modul erforderliche Datei-Slots. Fehlt die Angabe, sind
+            finance_request und student_card Pflicht.
     PublicLocationsResponse:
       type: object
       required:
@@ -1014,8 +1037,9 @@ components:
         - title
         - applicant
         - email
-        - finance_request
-        - student_card
+      description: Datei-Pflichten folgen requiredAttachmentFields aus der Standortliste. Im bisherigen
+        Standort-Modul bleiben finance_request und student_card Pflicht. Nicht eingerichtete Slots
+        dürfen nicht hochgeladen werden.
       properties:
         email:
           type: string
@@ -1045,11 +1069,13 @@ components:
         finance_request:
           type: string
           format: binary
-          description: Finanzantrag. **Pflicht.** Nur PDF, max. 25 MB.
+          description: Finanzantrag. Pflicht, wenn requiredAttachmentFields den Slot enthält (beim bisherigen
+            Standort-Modul immer). Nur PDF, max. 25 MB.
         student_card:
           type: string
           format: binary
-          description: Studierendenausweis. **Pflicht.** PDF, PNG oder JPG, max. 25 MB. Wird ausschließlich
+          description: Studierendenausweis. Pflicht, wenn requiredAttachmentFields den Slot enthält (beim
+            bisherigen Standort-Modul immer). PDF, PNG oder JPG, max. 25 MB. Wird ausschließlich
             intern verarbeitet und ist über die öffentliche Statusseite nicht abrufbar.
         annex_a:
           type: string

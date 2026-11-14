@@ -34,6 +34,8 @@ import { BoardDeleteBlockedError, deleteBoardCascade } from "@/lib/boards";
 import {
   ARCHIVE_FOLDER_FIELD_KEYS,
   CARD_FIELD_KEYS,
+  ATTACHMENT_FIELD_KEYS,
+  LEGACY_FINANCE_FIELD_KEYS,
   DEFAULT_ARCHIVE_FOLDER_SEPARATOR,
   PDF_MIME,
 } from "@/lib/constants";
@@ -77,7 +79,7 @@ export async function renameBoardAction(
   }
   await db
     .update(boards)
-    .set({ name: parsed.data.name, description: parsed.data.description ?? null, isApplicationBoard: formData.get("isApplicationBoard") === "on" })
+    .set({ name: parsed.data.name, description: parsed.data.description ?? null })
     .where(eq(boards.id, boardId));
   rev(boardId);
   return { success: "Gespeichert." };
@@ -527,10 +529,13 @@ export async function setCardFieldsAction(
   const result = await db.transaction(async (tx) => {
     await lockLocationBoard(tx, boardId);
     const required = await getLocationRequiredFieldKeys(boardId, tx);
-    if (required.some((key) => formData.get(`field_${key}`) !== "on")) {
+    if (required.some((key) => !(ATTACHMENT_FIELD_KEYS as readonly string[]).includes(key) && formData.get(`field_${key}`) !== "on")) {
       return { error: "Pflichtfelder können nicht deaktiviert werden, solange dieses Board einem Standort, einer Umfrage oder einem Inventar zugeordnet ist." };
     }
+    const [currentBoard] = await tx.select().from(boards).where(eq(boards.id,boardId));
     for (const key of CARD_FIELD_KEYS) {
+      if ((ATTACHMENT_FIELD_KEYS as readonly string[]).includes(key) && key !== "other_pdfs") continue;
+      if (!currentBoard.legacyFinanceFields && LEGACY_FINANCE_FIELD_KEYS.includes(key)) continue;
       const visible = formData.get(`field_${key}`) === "on";
       const position = positionOf(key);
       await tx

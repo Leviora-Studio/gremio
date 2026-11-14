@@ -347,3 +347,40 @@ unchanged office completion). DB checks exercise office access with a read grant
 writer resolution, concurrent attempts, stale revisions and immutable resolution
 metadata. The upgrade fixture verifies migration 0098 retains existing flags and
 all historical values while initializing resolution metadata to null.
+
+The cashbook production fixture exercises default planning accounts, confirmed
+account changes and typed corrections of frozen plans before completing the two
+signatures. Both signers now enter their place/date immediately before Signieren,
+which prepares and opens the PDF in one action. DB tests additionally cover new
+versus legacy board fields, immutable planning correction chains, API/MCP parity,
+concurrent corrections and source/ledger union totals. `planning-upgrade.test.ts`
+requires an empty isolated TEST_PLANNING_UPGRADE_URL database and verifies existing
+locked card data, legacy fields and amount/title/revision preservation.
+
+The cashbook production fixture also downloads complete protected Excel and
+filtered PDFs, exercises the mobile export dialogs, and checks all five finance
+views. It verifies current read permissions/revocation, bearer and office-only
+denial, fresh protection verifiers, original/correction inclusion, PDF scope and
+unchanged entry revisions/data/files. Pure export coverage runs independently of
+the database with `node --import tsx --test tests/export.test.ts`.
+
+The cashbook fixture checks the wide application-planning correction dialog and
+its final comparison, the collapsible activity snapshots and both mobile layouts.
+It also creates a fresh board, saves its field settings, checks the absence of all
+three legacy finance fields, and verifies their continued availability on a legacy
+board. `board-finance-fields-upgrade.test.ts` requires an empty isolated
+TEST_BOARD_FIELDS_UPGRADE_URL database and verifies migration 0100 preserves old
+board configuration, all card values and frozen plans while removing only obsolete
+field configuration from new boards.
+
+The cashbook browser fixture also creates an application board through the Admin
+Panel, checks default/selected attachment areas, reader denial, fixed attachment
+settings, finance-only routing, typed deactivation/activation, the inactive gap,
+the mobile module UI, public submission with a disabled student-card area, and
+returning to the legacy module. `application-form-modules-db.test.ts` additionally
+covers concurrent activation, non-admin creation, DB/file guards, independent
+receipts, stale submission during file preparation and existing status tokens.
+`application-modules-upgrade.test.ts` uses an empty isolated
+TEST_APPLICATION_MODULES_UPGRADE_URL database to verify data/attachment preservation
+and legacy-module activation at migration 0101. Run module-switch tests separately
+from tests that submit to the shared public form.

@@ -23,7 +23,8 @@ export function maskHiddenCardFields<T extends object>(value: T, visible: Readon
 }
 
 /** Historical free-form details can retain disabled values and private paths. */
-export function visibleActivityDetail(event: { type: string; detail: string | null }, visible: ReadonlySet<string>): string | null {
+export function visibleActivityDetail(event: { type: string; detail: string | null }, visible: ReadonlySet<string>, applicationBoard = false): string | null {
+  if (event.type === "budget_plan" || event.type === "budget_plan_correction") return applicationBoard ? event.detail : event.type === "budget_plan" ? "Haushaltstitel-Einplanung aktualisiert" : "Korrektureintrag der Einplanung";
   if (event.type === "status" || event.type === "created") return event.detail;
   if (event.type === "assignee") return visible.has("assignee") ? event.detail : null;
   if (event.type === "deadline") return visible.has("deadline") ? event.detail : null;

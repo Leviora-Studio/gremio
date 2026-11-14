@@ -36,13 +36,7 @@ export function RenameBoardForm({
           rows={2}
         />
       </div>
-      <div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="isApplicationBoard" defaultChecked={isApplicationBoard} className="mt-1" />
-          <span>Antragsboard: Haushaltstitel auf Karten einplanen</span>
-        </label>
-        <p className="mt-1 text-xs text-slate-500">Erfasst Beträge und Haushaltstitel für Beschlussvorschläge. Bestehende Finanzbeträge bleiben unabhängig davon. Beim Deaktivieren bleiben Einplanungen erhalten.</p>
-      </div>
+      <p className="text-sm text-slate-500">Boardtyp: {isApplicationBoard ? "Antragsboard" : "Normales Board"}. Der Typ wird beim Erstellen festgelegt.</p>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className="btn-primary">
           {"Speichern"}

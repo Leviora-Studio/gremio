@@ -35,8 +35,8 @@ function Fixture() {
     <div className="flex gap-2"><button onClick={() => render(n => n+1)}>Live-Aktualisierung</button><button onClick={() => setAllowed(false)}>Gate sperren</button></div>
     <button onClick={() => { setLoadedBudget({ rows: (window as any).budgetSaves.at(-1).map((row: BudgetPosition, position: number) => ({ ...row, cardId: 1, position })), revision: (window as any).budgetSaves.length }); setBudgetMount(n => n + 1); }}>Gespeicherte Positionen neu laden</button>
     <section aria-label="Budget" className="card p-4"><BudgetPositionsEditor key={budgetMount} cardId={1} initial={loadedBudget.rows} revision={loadedBudget.revision} accounts={[{ id: 1, name: "Konto A" }, { id: 2, name: "Konto B" }]} visible={["budget_title", "account", "requested_amount", "approved_amount", "actual_amount"]} active={active} onActive={setActive} /></section>
-    <BudgetPlanEditor cardId={1} initial={[]} revision={0} readOnly={false} />
-    <section aria-label="Read-only plan"><BudgetPlanEditor cardId={2} initial={[{amount:12345,budgetTitle:"Legacy-safe"}]} revision={1} readOnly /></section>
+    <BudgetPlanEditor accounts={[{id:1,name:"Standard"}]} defaultAccountId={1} locked={false} cardId={1} initial={[]} revision={0} readOnly={false} />
+    <section aria-label="Read-only plan"><BudgetPlanEditor accounts={[{id:1,name:"Standard"}]} defaultAccountId={1} locked={false} cardId={2} initial={[{amount:12345,budgetTitle:"Legacy-safe"}]} revision={1} readOnly /></section>
     <AntraegeTable rows={[{ id: 1, number: "A01", title: "Zwei Positionen", applicant: "Test", budgetTitle: "12345, 12344", decisionRef: null, instructionDate: null, transferDate: null, approvedAmount: 35000, actualAmount: 31000, accountId: null }]} />
   </main>;
 }

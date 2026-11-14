@@ -16,7 +16,9 @@ import { MAX_AMOUNT_CENTS } from "@/lib/money";
 export const lockCardSchema = z.object({ confirm: z.literal(true), expectedStatusId: z.number().int().positive().max(2147483647) }).strict();
 export const budgetPlanWriteSchema = z.object({
   revision: z.number().int().min(0).max(2147483646),
-  allocations: z.array(z.object({ amountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS), budgetTitle: z.string().min(1).max(200) }).strict()).max(100),
+  allocations: z.array(z.object({ accountId: z.number().int().positive().max(2147483647).nullable().optional(), amountCents: z.number().int().min(0).max(MAX_AMOUNT_CENTS), budgetTitle: z.string().min(1).max(200) }).strict()).max(100),
+  confirmAccountChange: z.literal(true).optional(),
+  correction: z.object({reason:z.string().trim().min(1).max(4000),confirmation:z.literal("BESTÄTIGEN")}).strict().optional(),
 }).strict();
 
 export async function lockCardApi(req: Request, id: string) {
@@ -44,12 +46,12 @@ export async function budgetPlanApi(req: Request, id: string) {
     const parsed = budgetPlanWriteSchema.safeParse(body.body);
     if (!parsed.success) return apiError(400, "Ungültige Einplanung; revision und vollständige allocations erforderlich.");
     try {
-      await writeBudgetPlan(r.ctx.user, r.card.id, parsed.data.revision, parsed.data.allocations.map(row => ({ amount: (row.amountCents / 100).toFixed(2), budgetTitle: row.budgetTitle })));
+      await writeBudgetPlan(r.ctx.user, r.card.id, parsed.data.revision, parsed.data.allocations.map(row => ({ amount: (row.amountCents / 100).toFixed(2), budgetTitle: row.budgetTitle, ...(row.accountId!==undefined?{accountId:row.accountId}:{}) })), {confirmAccountChange:parsed.data.confirmAccountChange,correction:parsed.data.correction});
     } catch (error) {
       if (error instanceof CardFrozenError || error instanceof BudgetPlanError) return apiError(409, error.message);
       throw error;
     }
   }
   const [plan] = await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, r.card.id));
-  return NextResponse.json({ revision: plan?.revision ?? 0, allocations: (plan?.allocations ?? []).map(row => ({ amountCents: row.amount, budgetTitle: row.budgetTitle })) });
+  return NextResponse.json({ revision: plan?.revision ?? 0, allocations: (plan?.allocations ?? []).map(row => ({ amountCents: row.amount, budgetTitle: row.budgetTitle, accountId:row.accountId??null })) });
 }

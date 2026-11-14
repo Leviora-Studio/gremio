@@ -2,13 +2,15 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { createHash } from "node:crypto";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { emailAddressSchema } from "@/lib/email-validation";
 import { queueConfirmation } from "@/lib/email";
 import { db } from "@/lib/db";
 import {
   attachments,
+  applicationFormModules,
+  boardCardFields,
   boards,
   boardStatuses,
   cardActivity,
@@ -181,23 +183,25 @@ export type SubmissionOptions<T> = {
  * Die REST-API lehnt das Anlegen von Karten auf solchen Boards aus demselben
  * Grund mit 409 ab.
  */
-export async function listPublicLocations(): Promise<
-  { id: number; name: string }[]
-> {
-  return db
-    .select({ id: locations.id, name: locations.name })
-    .from(locations)
-    .innerJoin(
-      boardStatuses,
-      and(
-        eq(boardStatuses.id, locations.targetStatusId),
-        eq(boardStatuses.boardId, locations.targetBoardId),
-      ),
-    )
-    .innerJoin(boards, eq(boards.id, locations.targetBoardId))
-    .where(and(eq(locations.enabled, true), isNull(boards.inventoryBoardId)))
-    .orderBy(asc(locations.position), asc(locations.id));
+export type PublicApplicationLocation = {id:number;name:string;attachmentFields?:string[];requiredAttachmentFields?:string[]};
+export async function listPublicLocations():Promise<PublicApplicationLocation[]> {
+ const rows=await db.select({id:locations.id,name:locations.name,module:locations.module,boardId:boards.id,attachmentFields:boards.attachmentFields}).from(locations)
+ .innerJoin(applicationFormModules,and(eq(applicationFormModules.id,1),eq(applicationFormModules.activeModule,locations.module)))
+ .innerJoin(boardStatuses,and(eq(boardStatuses.id,locations.targetStatusId),eq(boardStatuses.boardId,locations.targetBoardId)))
+ .innerJoin(boards,eq(boards.id,locations.targetBoardId))
+ .where(and(eq(locations.enabled,true),isNull(boards.inventoryBoardId),sql`(${locations.module}='locations' OR ${boards.isApplicationBoard}=true)`)).orderBy(asc(locations.position),asc(locations.id));
+ const fieldRows=rows.length?await db.select({boardId:boardCardFields.boardId,key:boardCardFields.fieldKey}).from(boardCardFields).where(and(inArray(boardCardFields.boardId,rows.map(row=>row.boardId)),eq(boardCardFields.visible,true))):[];
+ const result:PublicApplicationLocation[]=[];
+ for(const row of rows){
+  const allowed=row.module==='finance'&&row.attachmentFields!=null?APPLICATION_FILE_SLOTS.filter(slot=>row.attachmentFields!.includes(slot.field)):APPLICATION_FILE_SLOTS;
+  const required=['applicant','submitter_email',...allowed.filter(slot=>slot.required).map(slot=>slot.field)];
+  const visible=fieldRows.filter(field=>field.boardId===row.boardId);
+  if((row.module==='finance'||row.attachmentFields!=null)&&!required.every(key=>visible.some(field=>field.key===key)))continue;
+  result.push({id:row.id,name:row.name,...(row.module==='finance'?{attachmentFields:allowed.map(slot=>slot.field),requiredAttachmentFields:allowed.filter(slot=>slot.required).map(slot=>slot.field)}:{})});
+ }
+ return result;
 }
+class ApplicationRoutingChangedError extends Error {}
 
 function fileOrNull(v: unknown): File | null {
   return v instanceof File && v.size > 0 ? v : null;
@@ -242,6 +246,7 @@ export async function submitPublicApplication<T = never>(
   }
 
   // --- 2. Standort + Routingziel ------------------------------------------
+  const [moduleState]=await db.select().from(applicationFormModules).where(eq(applicationFormModules.id,1));
   const [location] = await db
     .select()
     .from(locations)
@@ -263,7 +268,7 @@ export async function submitPublicApplication<T = never>(
     location?.targetBoardId && location?.targetStatusId
       ? (
           await db
-            .select({ id: boardStatuses.id })
+            .select({ id: boardStatuses.id, isApplicationBoard:boards.isApplicationBoard, attachmentFields:boards.attachmentFields })
             .from(boardStatuses)
             .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
             .where(
@@ -279,9 +284,11 @@ export async function submitPublicApplication<T = never>(
   if (
     !location ||
     !location.enabled ||
+    moduleState?.activeModule!==location.module ||
     !location.targetBoardId ||
     !location.targetStatusId ||
-    !routedStatus
+    !routedStatus ||
+    (location.module==="finance"&&!routedStatus.isApplicationBoard)
   ) {
     return {
       ok: false,
@@ -297,6 +304,10 @@ export async function submitPublicApplication<T = never>(
   const picked: { slot: (typeof APPLICATION_FILE_SLOTS)[number]; file: File }[] = [];
   for (const slot of APPLICATION_FILE_SLOTS) {
     const file = fileOrNull(raw.files[slot.field]);
+    if(location.module==="finance" && routedStatus.attachmentFields!=null && !routedStatus.attachmentFields.includes(slot.field)){
+      if(file)return {ok:false,reason:"validation",message:"Dieser Anhangstyp ist für den gewählten Standort nicht verfügbar.",issues:[{field:slot.field,message:"Anhangstyp nicht verfügbar."}]};
+      continue;
+    }
     if (!file) {
       if (slot.required) {
         return {
@@ -360,11 +371,6 @@ export async function submitPublicApplication<T = never>(
     .where(
       and(eq(cards.boardId, targetBoardId), eq(cards.statusId, targetStatusId)),
     );
-  const [board] = await db
-    .select({ defaultAccountId: boards.defaultAccountId })
-    .from(boards)
-    .where(eq(boards.id, targetBoardId))
-    .limit(1);
   const position = (maxRow?.m ?? -1) + 1;
 
   // --- 6. Anlegen ---------------------------------------------------------
@@ -373,14 +379,22 @@ export async function submitPublicApplication<T = never>(
   let assignedNumber: string | null = null;
   let aborted: { value: T } | null = null;
   const writtenPaths: string[] = [];
+  const savedUploads: {upload:PreparedUpload;saved:Awaited<ReturnType<typeof saveAntragBuffer>>}[]=[];
 
   try {
+    const reserved=await db.execute(sql`SELECT nextval(pg_get_serial_sequence('cards','id'))::integer AS id`);
+    cardId=Number(reserved.rows[0].id);
+    for(const upload of prepared){const saved=await saveAntragBuffer(cardId,upload.originalName,upload.bytes,upload.mime);writtenPaths.push(saved.relPath);savedUploads.push({upload,saved});}
     for (let attempt = 0; ; attempt++) {
       token = generateToken();
-      writtenPaths.length = 0;
       aborted = null;
       try {
         await db.transaction(async (tx) => {
+          const [freshModule]=await tx.select().from(applicationFormModules).where(eq(applicationFormModules.id,1)).for("share");
+          const [freshBoard]=await tx.select().from(boards).where(eq(boards.id,targetBoardId)).for("share");
+          const [freshLocation]=await tx.select().from(locations).where(eq(locations.id,location.id)).for("share");
+          const [freshStatus]=await tx.select().from(boardStatuses).where(and(eq(boardStatuses.id,targetStatusId),eq(boardStatuses.boardId,targetBoardId))).for("share");
+          if(!freshModule||freshModule.activeModule!==location.module||!freshLocation?.enabled||freshLocation.module!==location.module||freshLocation.targetBoardId!==targetBoardId||freshLocation.targetStatusId!==targetStatusId||!freshBoard||freshBoard.inventoryBoardId!=null||!freshStatus||(location.module==="finance"&&!freshBoard.isApplicationBoard))throw new ApplicationRoutingChangedError("Das Formular wurde zwischenzeitlich umgestellt. Bitte die Seite neu laden und den Standort erneut auswählen.");
           // Vor JEDEM Schreibzugriff: Aufrufer darf abbrechen (Idempotenz).
           // Die Transaktion bleibt dann schreibfrei — ein Commit ohne Wirkung.
           if (opts.preflightTx) {
@@ -399,6 +413,7 @@ export async function submitPublicApplication<T = never>(
           const [inserted] = await tx
             .insert(cards)
             .values({
+              id:cardId,
               boardId: targetBoardId,
               statusId: targetStatusId,
               locationId: location.id,
@@ -406,7 +421,7 @@ export async function submitPublicApplication<T = never>(
               applicant: parsed.data.applicant,
               submitterEmail: parsed.data.email,
               token,
-              accountId: board?.defaultAccountId ?? null,
+              accountId: freshBoard.defaultAccountId ?? null,
               position,
             })
             .returning();
@@ -427,14 +442,7 @@ export async function submitPublicApplication<T = never>(
             inserted.id,
           );
 
-          for (const up of prepared) {
-            const saved = await saveAntragBuffer(
-              inserted.id,
-              up.originalName,
-              up.bytes,
-              up.mime,
-            );
-            writtenPaths.push(saved.relPath);
+          for (const {upload:up,saved} of savedUploads) {
             await tx.insert(attachments).values({
               cardId: inserted.id,
               kind: up.kind,
@@ -459,14 +467,14 @@ export async function submitPublicApplication<T = never>(
       } catch (e) {
         // Transaktion rollte zurück → bereits geschriebene Dateien entfernen
         // (sonst Datei-Leichen im Upload-Verzeichnis).
-        for (const p of writtenPaths) await deleteStoredFile(p);
-        writtenPaths.length = 0;
         // Nur bei Token-Duplikat neu würfeln; sonst weiterwerfen.
         if (isTokenConflict(e) && attempt < 5) continue;
         throw e;
       }
     }
-  } catch {
+  } catch (error) {
+    for(const path of writtenPaths)await deleteStoredFile(path);
+    if(error instanceof ApplicationRoutingChangedError)return {ok:false,reason:"location",message:error.message};
     return {
       ok: false,
       reason: "internal",
@@ -476,6 +484,7 @@ export async function submitPublicApplication<T = never>(
   }
 
   if (aborted) {
+    for(const path of writtenPaths)await deleteStoredFile(path);
     return { ok: false, reason: "aborted", value: (aborted as { value: T }).value };
   }
   return { ok: true, token, number: assignedNumber, cardId };

@@ -10,5 +10,5 @@ export async function saveReceiptBrandingAction(_previous:BrandingState,form:For
 }
 export async function saveScopedReceiptBrandingAction(scope:ReceiptScope,_previous:BrandingState,form:FormData){
   const result=await saveReceiptBranding(await requireAdmin(),scope,form);
-  if(result.success){revalidatePath("/admin/standorte");revalidatePath("/admin/umfragen");}return result;
+  if(result.success){revalidatePath("/admin/standorte");revalidatePath("/admin/finanzantraege-formular");revalidatePath("/admin/umfragen");}return result;
 }

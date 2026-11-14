@@ -41,6 +41,7 @@ export default async function AdminOverview() {
   ];
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <Link href="/admin/antragsboards" className="card block p-5 font-semibold hover:border-brand-400">Antragsboards verwalten / erstellen</Link>
       <Link href="/admin/kassenbuecher" className="card block p-5 font-semibold hover:border-brand-400">Kassenbücher verwalten / erstellen</Link>
       {stats.map((s) => {
         const inner = (

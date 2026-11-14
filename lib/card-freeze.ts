@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { cards } from "@/lib/db/schema";
 
 export class CardFrozenError extends Error {
-  constructor() { super("Diese Karte ist dauerhaft gesperrt. Nur Spaltenwechsel und neue Quittungen sind zulässig."); }
+  constructor() { super("Diese Karte ist dauerhaft gesperrt. Nur Spaltenwechsel, neue Quittungen und begründete Korrektureinträge zur Einplanung sind zulässig."); }
 }
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** Serialize the permission to mutate children with irreversible card locking. */

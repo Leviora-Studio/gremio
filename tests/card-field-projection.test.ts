@@ -33,3 +33,5 @@ test("history never discloses disabled values, legacy filenames, paths or unknow
   }
   assert.equal(visibleActivityDetail({ type: "status", detail: "Open → Done" }, new Set()), "Open → Done");
 });
+
+test("planning correction history is detailed only while the application feature is enabled",()=>{const event={type:"budget_plan_correction",detail:"Reason and allocated account"};assert.equal(visibleActivityDetail(event,new Set(),true),event.detail);assert.doesNotMatch(visibleActivityDetail(event,new Set(),false)!,/allocated account/);});

@@ -45,10 +45,10 @@ export async function transitionCashbookAction(id: number, revision: number, act
 }) { const user = await requireUser(); if (!["submit", "return", "authorize", "office", "bookingDate", "resolveFlag"].includes(action))
     return { error: "Ungültige Aktion." }; return run(() => transitionCashbook(user, id, revision, action, options)); }
 export async function correctCashbookAction(id: number, revision: number, data: unknown, reason: string, confirmation: string) { const user = await requireUser(); return run(() => correctCashbookEntry(user, id, revision, data, reason, confirmation)); }
-export async function generateCashbookAction(id: number, revision: number) { const user = await requireUser(); return run(() => generateCashbookPdf(user, id, revision)); }
+export async function generateCashbookAction(id: number, revision: number) { const user = await requireUser(); return run(async () => { await generateCashbookPdf(user, id, revision); }); }
 export async function prepareSecondCashbookSignatureAction(id: number, revision: number, details: unknown) {
   const user = await requireUser();
-  return run(() => prepareSecondCashbookSignature(user, id, revision, details));
+  return run(async () => { await prepareSecondCashbookSignature(user, id, revision, details); });
 }
 export async function signCashbookAction(id: number, revision: number, input: SavePdfInput): Promise<SavePdfResult> { const user = await requireUser(); if (!input.signature || input.edits?.fields?.length || input.edits?.texts?.length)
     return { ok: false, error: "Dieses Formular darf ausschließlich unterschrieben werden." }; try {
@@ -98,4 +98,12 @@ export async function removeBusinessReceiptAction(id: number, revision: number, 
 export async function markCashbookInstructionIncorrectAction(id: number, revision: number, confirmation: string, reason: string) {
   const user = await requireUser();
   return run(() => markCashbookInstructionIncorrect(user,id,revision,confirmation,reason));
+}
+
+export async function prepareCashbookSignatureAction(id: number, revision: number, details: unknown) {
+  const user = await requireUser();
+  try {
+    const { entry } = await requireCashbookEntry(user, id);
+    return entry.state === "draft" ? await generateCashbookPdf(user, id, revision, details) : await prepareSecondCashbookSignature(user, id, revision, details);
+  } catch (error) { return { error: error instanceof Error ? error.message : "Unterschrift konnte nicht vorbereitet werden." }; }
 }

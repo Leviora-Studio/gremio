@@ -28,7 +28,7 @@ export type CashbookPayment = {
     place: string;
     date: string;
 };
-export const paymentFields = [{ key: "amount", label: "Betrag" }, { key: "budgetTitle", label: "Haushaltstitel" }, { key: "holder", label: "Kontoinhaber" }, { key: "iban", label: "IBAN" }, { key: "bank", label: "Bank" }, { key: "purpose", label: "Verwendungszweck (optional)" }, { key: "place", label: "Ort" }, { key: "date", label: "Datum" }] as const;
+export const paymentFields = [{ key: "amount", label: "Betrag" }, { key: "budgetTitle", label: "Haushaltstitel" }, { key: "holder", label: "Kontoinhaber" }, { key: "iban", label: "IBAN" }, { key: "bank", label: "Bank" }, { key: "purpose", label: "Verwendungszweck (optional)" }] as const;
 export type CashbookFile = {
     id: string;
     filename: string;

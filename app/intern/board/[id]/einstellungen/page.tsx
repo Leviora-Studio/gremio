@@ -20,7 +20,7 @@ import {
 } from "@/lib/db/schema";
 import { getBoardMemberUsers, requireBoardManage } from "@/lib/authz";
 import { getAccounts } from "@/lib/accounts";
-import { EDITABLE_FIELD_KEYS, type TriggerKind } from "@/lib/constants";
+import { EDITABLE_FIELD_KEYS, LEGACY_FINANCE_FIELD_KEYS, type TriggerKind } from "@/lib/constants";
 import { getTriggerAssignmentConfigs } from "@/lib/trigger-assignments";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
@@ -100,7 +100,7 @@ export default async function BoardSettingsPage({
   const fieldOrder = [
     ...stored,
     ...EDITABLE_FIELD_KEYS.filter((k) => !stored.includes(k)),
-  ];
+  ].filter(key => board.legacyFinanceFields || !LEGACY_FINANCE_FIELD_KEYS.includes(key as (typeof EDITABLE_FIELD_KEYS)[number]));
 
   const [numberingRow] = await db
     .select()
@@ -345,6 +345,7 @@ export default async function BoardSettingsPage({
           visibility={visibility}
           fieldOrder={fieldOrder}
           requiredFields={requiredFields}
+          fixedAttachmentFields={board.attachmentFields??[...fieldRows.filter(row=>row.visible&&["finance_request","student_card","annex_a","annex_b"].includes(row.fieldKey)).map(row=>row.fieldKey),"receipts"]}
         />
       </CollapsibleSection>
 

@@ -35,10 +35,12 @@ export function LocationEditor({
   location,
   boards,
   receiptSettings,
+  moduleActive = true,
 }: {
   location: LocationLite;
   boards: BoardWithStatuses[];
   receiptSettings?: React.ReactNode;
+  moduleActive?: boolean;
 }) {
   // Beide Felder als kontrollierter lokaler State — die Anzeige spiegelt immer
   // die zuletzt getroffene Auswahl wider (unabhängig von Revalidation-Timing).
@@ -92,6 +94,7 @@ export function LocationEditor({
             <label className="label">Ziel-Board</label>
             <Select
               name="boardId"
+              ariaLabel="Ziel-Board"
               value={boardId}
               onChange={(v) => {
                 setBoardId(v);
@@ -108,6 +111,7 @@ export function LocationEditor({
             <label className="label">Ziel-Spalte</label>
             <Select
               name="statusId"
+              ariaLabel="Ziel-Spalte"
               value={statusId}
               onChange={setStatusId}
               disabled={!boardId}
@@ -133,7 +137,7 @@ export function LocationEditor({
           message={
             location.enabled
               ? "Der Standort verschwindet aus dem öffentlichen Formular — es können keine neuen Anträge mehr darüber eingereicht werden."
-              : "Der Standort erscheint im öffentlichen Formular und kann Anträge empfangen (Ziel-Board und Spalte müssen gesetzt sein)."
+              : moduleActive ? "Der Standort erscheint im öffentlichen Formular und kann Anträge empfangen (Ziel-Board und Spalte müssen gesetzt sein)." : "Der Standort wird für dieses Modul freigeschaltet. Im öffentlichen Formular erscheint er erst, wenn das Modul aktiviert ist."
           }
           confirmLabel={location.enabled ? "Deaktivieren" : "Aktivieren"}
           confirmClassName={location.enabled ? "btn-danger" : "btn-primary"}

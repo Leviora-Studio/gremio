@@ -20,7 +20,7 @@ async function main(){
   let [board]=await db.select().from(s.boards).where(and(eq(s.boards.ownerId,owner.id),eq(s.boards.name,"Demo – Finanzanträge")));
   if(!board){
     const [template]=await db.select().from(s.boardTemplates).where(eq(s.boardTemplates.name,"Antragsboard"));
-    const id=await createBoardFromTemplate(owner.id,"Demo – Finanzanträge","Fiktive Anträge für lokale Tests",template?.id??null);
+    const id=await createBoardFromTemplate(owner.id,"Demo – Finanzanträge","Fiktive Anträge für lokale Tests",template?.id??null,{attachmentFields:["finance_request","annex_a","annex_b","student_card","receipts"]});
     [board]=await db.select().from(s.boards).where(eq(s.boards.id,id));
   }
   const statuses=await db.select().from(s.boardStatuses).where(eq(s.boardStatuses.boardId,board.id)).orderBy(s.boardStatuses.position);

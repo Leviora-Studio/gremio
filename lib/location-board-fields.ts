@@ -10,10 +10,10 @@ export async function lockLocationBoard(tx: Transaction, boardId: number) {
  await tx.select({id:boards.id}).from(boards).where(eq(boards.id,boardId)).for("update");
 }
 export async function getLocationRequiredFieldKeys(boardId:number,reader:Transaction|typeof db=db):Promise<readonly string[]>{
- const [location]=await reader.select({id:locations.id}).from(locations).where(eq(locations.targetBoardId,boardId)).limit(1);
+ const linkedLocations=await reader.select({id:locations.id,module:locations.module}).from(locations).where(eq(locations.targetBoardId,boardId));
  const [feedback]=await reader.select({id:feedbackAreas.id}).from(feedbackAreas).where(eq(feedbackAreas.targetBoardId,boardId)).limit(1);
- const [board]=await reader.select({inventoryBoardId:boards.inventoryBoardId}).from(boards).where(eq(boards.id,boardId));
- return [...new Set([...(location?APPLICATION_REQUIRED_CARD_FIELD_KEYS:[]),...(feedback?FEEDBACK_REQUIRED_CARD_FIELD_KEYS:[]),...(board?.inventoryBoardId!=null?INVENTORY_REQUIRED_CARD_FIELD_KEYS:[])])];
+ const [board]=await reader.select({inventoryBoardId:boards.inventoryBoardId,attachmentFields:boards.attachmentFields}).from(boards).where(eq(boards.id,boardId));
+ return [...new Set([...linkedLocations.flatMap(location=>APPLICATION_REQUIRED_CARD_FIELD_KEYS.filter(key=>location.module!=="finance"||!["finance_request","student_card"].includes(key)||board?.attachmentFields==null||board.attachmentFields.includes(key))),...(feedback?FEEDBACK_REQUIRED_CARD_FIELD_KEYS:[]),...(board?.inventoryBoardId!=null?INVENTORY_REQUIRED_CARD_FIELD_KEYS:[])])];
 }
 export async function missingBoardFields(boardId:number,required:readonly string[],reader:Transaction|typeof db=db){
  const fields=await reader.select({key:boardCardFields.fieldKey}).from(boardCardFields).where(and(eq(boardCardFields.boardId,boardId),eq(boardCardFields.visible,true)));

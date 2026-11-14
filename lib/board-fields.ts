@@ -3,7 +3,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { boardCardFields } from "@/lib/db/schema";
+import { boardCardFields, boards } from "@/lib/db/schema";
 
 /**
  * Die am Board AKTIVIERTEN (sichtbaren) Kartenfeld-Schlüssel. Maßgeblich dafür,
@@ -20,7 +20,10 @@ export async function getVisibleFieldKeys(
     .where(
       and(eq(boardCardFields.boardId, boardId), eq(boardCardFields.visible, true)),
     );
-  return new Set(rows.map((r) => r.fieldKey));
+  const visible = new Set(rows.map((r) => r.fieldKey));
+  const [board] = await db.select({attachmentFields:boards.attachmentFields}).from(boards).where(eq(boards.id,boardId));
+  if (board && (board.attachmentFields == null || board.attachmentFields.includes("receipts"))) visible.add("receipts");
+  return visible;
 }
 
 /**

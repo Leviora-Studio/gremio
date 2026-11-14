@@ -81,7 +81,10 @@ async function visibleFields(boardId: number): Promise<Set<string>> {
     .select()
     .from(boardCardFields)
     .where(and(eq(boardCardFields.boardId, boardId), eq(boardCardFields.visible, true)));
-  return new Set(rows.map((r) => r.fieldKey));
+  const visible = new Set(rows.map((r) => r.fieldKey));
+  const board = await getBoardById(boardId);
+  if (board && (board.attachmentFields == null || board.attachmentFields.includes("receipts"))) visible.add("receipts");
+  return visible;
 }
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
