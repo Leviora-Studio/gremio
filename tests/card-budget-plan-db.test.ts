@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
+import { budgetTitleFixture } from "./helpers/budget-title-fixtures";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -17,6 +18,7 @@ test("budget plans require live write access, reject stale revisions, preserve a
   const [board] = await db.insert(s.boards).values({ name: "Planning", ownerId: owner.id, isApplicationBoard: true, legacyFinanceFields:true }).returning();
   const [status] = await db.insert(s.boardStatuses).values({ boardId: board.id, name: "Incoming" }).returning();
   const [account] = await db.insert(s.accounts).values({ name: `Original-${randomUUID()}` }).returning();
+  const financeId = await budgetTitleFixture(owner.id,["1200","1300"],[account.id]);
   const [card] = await db.insert(s.cards).values({ boardId: board.id, statusId: status.id, title: "Motion", applicant: "Original", token: randomUUID(), budgetTitle: "Legacy", accountId: account.id, requestedAmount: 12345, approvedAmount: 10000, actualAmount: 0 }).returning();
   const topic = { title: "Finance", isFinanceItem: true, financeCardId: card.id, motion: "Bewilligt werden {{planned_budget}}; insgesamt {{planned_budget_total}}." };
   try {
@@ -46,6 +48,7 @@ test("budget plans require live write access, reject stale revisions, preserve a
   } finally {
     await db.delete(s.boards).where(eq(s.boards.id, board.id));
     await db.delete(s.accounts).where(eq(s.accounts.id, account.id));
+    await db.delete(s.financeBoards).where(eq(s.financeBoards.id,financeId));
     for (const user of [owner, reader, writer, outsider]) await db.delete(s.users).where(eq(s.users.id, user.id));
   }
 });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
 import Link from "next/link";
 import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
@@ -9,10 +10,11 @@ import { inventoryBoards } from "@/lib/db/schema";
 import { getOverviewItems } from "@/lib/inventory-overview";
 import { conditionLabel } from "@/lib/inventory-condition";
 import { OverviewExport } from "@/components/inventory/OverviewExport";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import {
   setOverviewMinPriceAction,
-  toggleBoardOverviewAction,
+  setBoardOverviewConfirmedAction,
 } from "./actions";
 
 export const metadata = { title: "Inventar-Gesamtübersicht — Gremio" };
@@ -31,7 +33,7 @@ export default async function InventoryOverviewPage() {
         name: inventoryBoards.name,
         includeInOverview: inventoryBoards.includeInOverview,
       })
-      .from(inventoryBoards)
+      .from(inventoryBoards).where(activeRows.inventoryBoards)
       .orderBy(asc(inventoryBoards.name)),
     getOverviewItems(),
   ]);
@@ -103,17 +105,7 @@ export default async function InventoryOverviewPage() {
                   >
                     {b.includeInOverview ? "einbezogen" : "nicht einbezogen"}
                   </span>
-                  <form action={toggleBoardOverviewAction}>
-                    <input type="hidden" name="boardId" value={b.id} />
-                    <input
-                      type="hidden"
-                      name="include"
-                      value={b.includeInOverview ? "0" : "1"}
-                    />
-                    <SubmitButton className="btn-secondary px-3 py-1 text-sm">
-                      {b.includeInOverview ? "Entfernen" : "Einbeziehen"}
-                    </SubmitButton>
-                  </form>
+                  <ConfirmButton action={setBoardOverviewConfirmedAction.bind(null,b.id,!b.includeInOverview)} label={b.includeInOverview?"Entfernen":"Einbeziehen"} title={b.includeInOverview?"Aus Gesamtinventar ausschließen":"In Gesamtinventar einbeziehen"} message="Die Einbeziehung dieses Inventars in das Gesamtinventar wird geändert. Einzelne Gegenstände werden dadurch nicht gelöscht." confirmLabel="Bestätigen" requireTyped={b.includeInOverview?"AUSSCHLIESSEN":"EINBEZIEHEN"} className="btn-secondary px-3 py-1 text-sm"/>
                 </span>
               </div>
             ))}

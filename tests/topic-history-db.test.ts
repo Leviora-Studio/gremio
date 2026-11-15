@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -46,7 +47,7 @@ test("personal proposals retain the private master and show deferral, scheduling
   await assert.rejects(service.setTopicStatus(owner,third,'unknown',await rev(ids[2])),/Ungültiger/);
   await service.saveAreaGrant(owner,area,'user',reader.id,'remove');assert.deepEqual(await personalTopicHistory(reader,root),[],'revoked session access leaks no titles or state');
   await assert.rejects(personalTopicHistory(outsider,root));
- }finally{for(const id of ids)await service.deleteMeeting(owner,id);if(root)await service.deleteTopic(reader,root);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));for(const u of [owner,reader,outsider])await db.delete(s.users).where(eq(s.users.id,u.id));}
+ }finally{for(const id of ids)await purgeTestResource("meeting",id);if(root)await purgeTestResource("topic",root);await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));for(const u of [owner,reader,outsider])await db.delete(s.users).where(eq(s.users.id,u.id));}
 });
 test("moving planned TOPs hides their source while all other states and mixed child history remain visible",async()=>{
  assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
@@ -65,7 +66,7 @@ test("moving planned TOPs hides their source while all other states and mixed ch
   const parent=await service.createTopic(owner,ids[0],{...values,title:'Mixed main'});const child=await service.createTopic(owner,ids[0],{...values,title:'Retained child',parentId:parent,state:'treated'});const plannedChild=await service.createTopic(owner,ids[0],{...values,title:'Moved child',parentId:parent});
   await service.transferTopic(owner,parent,ids[1],true);const rows=await visibleTopics(owner,ids[0]);assert.ok(!rows.some(t=>t.id===parent||t.id===plannedChild));assert.equal(rows.find(t=>t.id===child)?.parentId,null,'retained child remains visible even if its planned parent moved');assert.equal(rows.find(t=>t.id===child)?.state,'treated');
   await assert.rejects(service.setTopicStatus(owner,child,'scheduled',(await requireMeeting(owner,ids[0])).revision),/weitergegeben/);
- }finally{for(const id of ids)await service.deleteMeeting(owner,id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));await db.delete(s.users).where(eq(s.users.id,owner.id));}
+ }finally{for(const id of ids)await purgeTestResource("meeting",id);await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));await db.delete(s.users).where(eq(s.users.id,owner.id));}
 });
 
 test("financial TOPs carry references forward while re-planning checks board write rights and updates the new date atomically",async()=>{
@@ -84,7 +85,7 @@ test("financial TOPs carry references forward while re-planning checks board wri
   await service.setTopicStatus(owner,newRoot,'scheduled',(await requireMeeting(owner,ids[1])).revision);
   await assert.rejects(service.setTopicStatus(writer,newChild.id,'scheduled',(await requireMeeting(owner,ids[1])).revision),/Schreibzugriff/);assert.equal((await requireTopic(owner,newChild.id)).topic.state,'proposed');
   await service.setTopicStatus(owner,newChild.id,'scheduled',(await requireMeeting(owner,ids[1])).revision);const fresh=(await db.select().from(s.cards).where(eq(s.cards.id,card.id)))[0];assert.equal(fresh.meeting,'2026-11-13');assert.equal(fresh.position,7);
- }finally{for(const id of ids)await service.deleteMeeting(owner,id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));await db.delete(s.boards).where(eq(s.boards.id,board.id));for(const u of [owner,writer])await db.delete(s.users).where(eq(s.users.id,u.id));}
+ }finally{for(const id of ids)await purgeTestResource("meeting",id);await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));await db.delete(s.boards).where(eq(s.boards.id,board.id));for(const u of [owner,writer])await db.delete(s.users).where(eq(s.users.id,u.id));}
 });
 
 test("withdrawn personal proposals stay in the agenda, can be proposed anew by their author or privately resolved",async()=>{
@@ -102,5 +103,5 @@ test("withdrawn personal proposals stay in the agenda, can be proposed anew by t
   const direct=await service.createTopic(author,meetings[0],{...values,title:'Direct submission',state:'proposed'});await service.setTopicStatus(owner,direct,'withdrawn',await rev(meetings[0]));assert.ok((await personalTopics(author)).some(t=>t.id===direct),'direct withdrawn submissions also appear for their author');const adopted=await service.personalTopicForAction(author,direct);masters.push(adopted);assert.notEqual(adopted,direct);assert.equal((await requireTopic(author,direct)).topic.state,'withdrawn');assert.equal((await personalTopicHistory(author,adopted))[0].baseline,true,'legacy direct state is not presented with an invented transition time');assert.equal((await personalTopics(author)).filter(t=>t.id===direct||t.id===adopted).length,1);await service.resolvePersonalTopic(author,adopted);assert.ok((await personalTopics(author,'past')).some(t=>t.id===adopted));
   const directForward=await service.createTopic(author,meetings[0],{...values,title:'Forwarded direct submission',state:'proposed'});const forwarded=await service.transferTopic(owner,directForward,meetings[1],true);assert.equal((await requireTopic(author,forwarded)).topic.createdBy,author.id,'forwarding preserves the original submitter');await service.setTopicStatus(owner,forwarded,'withdrawn',await rev(meetings[1]));assert.ok((await personalTopics(author)).some(t=>t.id===forwarded));const forwardedMaster=await service.personalTopicForAction(author,forwarded);masters.push(forwardedMaster);await service.resolvePersonalTopic(author,forwardedMaster);
   const parent=await service.createTopic(owner,meetings[0],{...values,title:'Parent'});const child=await service.createTopic(owner,meetings[0],{...values,title:'Withdrawn child',parentId:parent,state:'withdrawn'});const copied=await service.transferTopic(owner,parent,meetings[1],true);assert.equal((await visibleTopics(owner,meetings[1])).some(t=>t.parentId===copied&&t.title==='Withdrawn child'),false);assert.ok(agendaTopics(await visibleTopics(owner,meetings[0])).some(t=>t.id===child));
- }finally{for(const id of meetings)await service.deleteMeeting(owner,id);for(const id of masters)await service.deleteTopic(author,id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));for(const u of [owner,author,other])await db.delete(s.users).where(eq(s.users.id,u.id));}
+ }finally{for(const id of meetings)await purgeTestResource("meeting",id);for(const id of masters)await purgeTestResource("topic",id);await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));for(const u of [owner,author,other])await db.delete(s.users).where(eq(s.users.id,u.id));}
 });

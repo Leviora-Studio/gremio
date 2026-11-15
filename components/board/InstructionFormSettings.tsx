@@ -58,7 +58,8 @@ export function InstructionFormSettings({
           </div>
           <DeleteConfirm
             action={deleteInstructionFormAction.bind(null, boardId)}
-            requireWord={false}
+            confirmName={config.filename??""}
+            recycleBin={false}
             compact
             buttonLabel="Vorlage entfernen"
             buttonClassName="text-xs text-red-600 hover:underline"

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use client";
+import {DeleteConfirm} from "@/components/DeleteConfirm";
 import {useEffect,useState} from "react";
 import {Select} from "@/components/Select";
 import {FileInput} from "@/components/FileInput";
 import {MeetingActionForm} from "./ActionForm";
-import {uploadWordTemplateAction,saveWordConfigurationAction,removeWordTemplateAction} from "@/app/intern/sitzungen/actions";
+import {uploadWordTemplateAction,saveWordConfigurationAction,confirmedRemoveWordTemplateAction} from "@/app/intern/sitzungen/actions";
 import {wordStyleRoles,type MeetingWordConfiguration,type WordTemplateInfo} from "@/lib/meetings/word-template-types";
 export function WordTemplateConfiguration({areaId,name,revision,info,configuration,error,templateKey}:{areaId:number;name:string|null;revision:number;info:WordTemplateInfo|null;configuration:MeetingWordConfiguration|null;error?:string;templateKey:string}){
   const config=configuration??info?.configuration;
@@ -22,6 +23,6 @@ export function WordTemplateConfiguration({areaId,name,revision,info,configurati
       {insertion!=="replace"&&<><input type="hidden" name="start" value={config.start}/><input type="hidden" name="end" value={config.end}/></>}
       <p className="text-sm text-slate-500">Alternativ kann die Vorlage einen einzelnen Absatz mit {"{{TAGESORDNUNG}}"} enthalten. Optionale Textplatzhalter: {"{{SITZUNGSTITEL}}, {{GREMIUM}}, {{DATUM}}, {{BEGINN}}, {{ORT}}, {{SITZUNGSLEITUNG}}"}. Datum, Beginn, Ort und Sitzungsleitung werden auch in gleichnamige einfache Inhaltssteuerelemente eingetragen. Das Inhaltsverzeichnis muss einmal aktualisiert werden.</p>
     </MeetingActionForm>}
-    {name&&<MeetingActionForm action={removeWordTemplateAction.bind(null,areaId)} submit="Wordvorlage entfernen"><input type="hidden" name="revision" value={revision}/><p className="text-sm text-slate-500">Ohne Vorlage wird der Wordexport für diesen Bereich ausgeblendet.</p></MeetingActionForm>}
+    {name&&<DeleteConfirm action={confirmedRemoveWordTemplateAction.bind(null,areaId,revision)} confirmName={name} recycleBin={false} buttonLabel="Wordvorlage entfernen" title="Wordvorlage entfernen" message="Die Wordvorlage wird endgültig entfernt. Ohne Vorlage wird der Wordexport für diesen Bereich ausgeblendet."/>}
   </div>;
 }

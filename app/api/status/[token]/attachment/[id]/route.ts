@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -29,8 +31,8 @@ export async function GET(
   const [row] = await db
     .select({ att: attachments, cardToken: cards.token })
     .from(attachments)
-    .innerJoin(cards, eq(cards.id, attachments.cardId))
-    .where(eq(attachments.id, attId))
+    .innerJoin(cards, trashAnd(activeRows.cards, eq(cards.id, attachments.cardId)))
+    .where(trashAnd(activeRows.attachments, eq(attachments.id, attId)))
     .limit(1);
 
   if (!row || row.cardToken !== token || !PUBLIC.has(row.att.kind)) {

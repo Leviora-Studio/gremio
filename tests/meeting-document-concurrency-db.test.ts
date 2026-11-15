@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -58,8 +59,8 @@ test("document mutations invalidate stale TOP edits and serialize with meeting c
     assert.deepEqual(await readdir(join(process.env.UPLOAD_DIR!, "meeting-topics", String(topicId))), [], "rejected uploads leave no stored files");
   } finally {
     await closer.query("rollback"); closer.release();
-    await service.deleteMeeting(owner, meetingId);
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id, area));
+    await purgeTestResource("meeting",meetingId);
+    await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));
     await db.delete(s.users).where(eq(s.users.id, owner.id));
   }
 });

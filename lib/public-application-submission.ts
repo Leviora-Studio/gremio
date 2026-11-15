@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -187,9 +189,9 @@ export type PublicApplicationLocation = {id:number;name:string;attachmentFields?
 export async function listPublicLocations():Promise<PublicApplicationLocation[]> {
  const rows=await db.select({id:locations.id,name:locations.name,module:locations.module,boardId:boards.id,attachmentFields:boards.attachmentFields}).from(locations)
  .innerJoin(applicationFormModules,and(eq(applicationFormModules.id,1),eq(applicationFormModules.activeModule,locations.module)))
- .innerJoin(boardStatuses,and(eq(boardStatuses.id,locations.targetStatusId),eq(boardStatuses.boardId,locations.targetBoardId)))
- .innerJoin(boards,eq(boards.id,locations.targetBoardId))
- .where(and(eq(locations.enabled,true),isNull(boards.inventoryBoardId),sql`(${locations.module}='locations' OR ${boards.isApplicationBoard}=true)`)).orderBy(asc(locations.position),asc(locations.id));
+ .innerJoin(boardStatuses,trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id,locations.targetStatusId),eq(boardStatuses.boardId,locations.targetBoardId))))
+ .innerJoin(boards,trashAnd(activeRows.boards, eq(boards.id,locations.targetBoardId)))
+ .where(trashAnd(activeRows.locations, and(eq(locations.enabled,true),isNull(boards.inventoryBoardId),sql`(${locations.module}='locations' OR ${boards.isApplicationBoard}=true)`))).orderBy(asc(locations.position),asc(locations.id));
  const fieldRows=rows.length?await db.select({boardId:boardCardFields.boardId,key:boardCardFields.fieldKey}).from(boardCardFields).where(and(inArray(boardCardFields.boardId,rows.map(row=>row.boardId)),eq(boardCardFields.visible,true))):[];
  const result:PublicApplicationLocation[]=[];
  for(const row of rows){
@@ -250,7 +252,7 @@ export async function submitPublicApplication<T = never>(
   const [location] = await db
     .select()
     .from(locations)
-    .where(eq(locations.id, parsed.data.locationId))
+    .where(trashAnd(activeRows.locations, eq(locations.id, parsed.data.locationId)))
     .limit(1);
   // Identische Bedingung wie die öffentliche Standortliste: aktiviert UND
   // vollständig geroutet. Sonst gäbe es kein Ziel für die Karte.
@@ -270,13 +272,13 @@ export async function submitPublicApplication<T = never>(
           await db
             .select({ id: boardStatuses.id, isApplicationBoard:boards.isApplicationBoard, attachmentFields:boards.attachmentFields })
             .from(boardStatuses)
-            .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
+            .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, boardStatuses.boardId)))
             .where(
-              and(
+              trashAnd(activeRows.boardStatuses, and(
                 eq(boardStatuses.id, location.targetStatusId),
                 eq(boardStatuses.boardId, location.targetBoardId),
                 isNull(boards.inventoryBoardId),
-              ),
+              )),
             )
             .limit(1)
         )[0]
@@ -369,7 +371,7 @@ export async function submitPublicApplication<T = never>(
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
     .where(
-      and(eq(cards.boardId, targetBoardId), eq(cards.statusId, targetStatusId)),
+      trashAnd(activeRows.cards, and(eq(cards.boardId, targetBoardId), eq(cards.statusId, targetStatusId))),
     );
   const position = (maxRow?.m ?? -1) + 1;
 
@@ -391,9 +393,9 @@ export async function submitPublicApplication<T = never>(
       try {
         await db.transaction(async (tx) => {
           const [freshModule]=await tx.select().from(applicationFormModules).where(eq(applicationFormModules.id,1)).for("share");
-          const [freshBoard]=await tx.select().from(boards).where(eq(boards.id,targetBoardId)).for("share");
-          const [freshLocation]=await tx.select().from(locations).where(eq(locations.id,location.id)).for("share");
-          const [freshStatus]=await tx.select().from(boardStatuses).where(and(eq(boardStatuses.id,targetStatusId),eq(boardStatuses.boardId,targetBoardId))).for("share");
+          const [freshBoard]=await tx.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id,targetBoardId))).for("share");
+          const [freshLocation]=await tx.select().from(locations).where(trashAnd(activeRows.locations, eq(locations.id,location.id))).for("share");
+          const [freshStatus]=await tx.select().from(boardStatuses).where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id,targetStatusId),eq(boardStatuses.boardId,targetBoardId)))).for("share");
           if(!freshModule||freshModule.activeModule!==location.module||!freshLocation?.enabled||freshLocation.module!==location.module||freshLocation.targetBoardId!==targetBoardId||freshLocation.targetStatusId!==targetStatusId||!freshBoard||freshBoard.inventoryBoardId!=null||!freshStatus||(location.module==="finance"&&!freshBoard.isApplicationBoard))throw new ApplicationRoutingChangedError("Das Formular wurde zwischenzeitlich umgestellt. Bitte die Seite neu laden und den Standort erneut auswählen.");
           // Vor JEDEM Schreibzugriff: Aufrufer darf abbrechen (Idempotenz).
           // Die Transaktion bleibt dann schreibfrei — ein Commit ohne Wirkung.

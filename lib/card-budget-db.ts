@@ -1,3 +1,5 @@
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accounts, cards, cardBudgetPositions, type Card } from "@/lib/db/schema";
@@ -7,13 +9,13 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export class BudgetValidationError extends Error {}
 
 export async function loadBudgetPositions(cardId: number, tx: Tx | typeof db = db) {
-  return tx.select().from(cardBudgetPositions).where(eq(cardBudgetPositions.cardId, cardId)).orderBy(asc(cardBudgetPositions.position));
+  return tx.select().from(cardBudgetPositions).where(trashAnd(activeRows.cardBudgetPositions, eq(cardBudgetPositions.cardId, cardId))).orderBy(asc(cardBudgetPositions.position));
 }
 
 /** Revisions and position rows must describe the same committed budget. */
 export async function loadBudgetSnapshot(cardId: number) {
   return db.transaction(async tx => {
-    const [card] = await tx.select().from(cards).where(eq(cards.id, cardId));
+    const [card] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId)));
     if (!card) throw new BudgetValidationError("Karte nicht gefunden.");
     return { card, rows: await loadBudgetPositions(cardId, tx) };
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
@@ -23,7 +25,7 @@ export async function loadBudgetSnapshot(cardId: number) {
 export async function budgetDisplayForCards(cardIds: number[]) {
   const result = new Map<number, { budgetTitle: string | null; accountName: string }>();
   if (!cardIds.length) return result;
-  const rows = await db.select({ cardId: cardBudgetPositions.cardId, budgetTitle: cardBudgetPositions.budgetTitle, accountName: accounts.name }).from(cardBudgetPositions).innerJoin(accounts, eq(accounts.id, cardBudgetPositions.accountId)).where(inArray(cardBudgetPositions.cardId, cardIds)).orderBy(asc(cardBudgetPositions.position));
+  const rows = await db.select({ cardId: cardBudgetPositions.cardId, budgetTitle: cardBudgetPositions.budgetTitle, accountName: accounts.name }).from(cardBudgetPositions).innerJoin(accounts, trashAnd(activeRows.accounts, eq(accounts.id, cardBudgetPositions.accountId))).where(trashAnd(activeRows.cardBudgetPositions, inArray(cardBudgetPositions.cardId, cardIds))).orderBy(asc(cardBudgetPositions.position));
   const grouped = new Map<number, typeof rows>();
   for (const row of rows) { const group = grouped.get(row.cardId) ?? []; group.push(row); grouped.set(row.cardId, group); }
   for (const [id, group] of grouped) result.set(id, { budgetTitle: budgetTitles(group), accountName: [...new Set(group.map((r) => r.accountName))].join(", ") });
@@ -32,7 +34,7 @@ export async function budgetDisplayForCards(cardIds: number[]) {
 
 /** Call inside the same transaction as the card update, never before it. */
 export async function guardBudgetCardUpdate(tx: Tx, cardId: number, update: Partial<typeof cards.$inferInsert>) {
-  const [fresh] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
+  const [fresh] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).for("update");
   if (!fresh) throw new BudgetValidationError("Karte nicht gefunden.");
   if (fresh.lockedAt && Object.keys(update).some(key=>!["statusId","position","updatedAt","doneSince"].includes(key))) throw new BudgetValidationError("Diese Karte ist dauerhaft gesperrt. Nur Spaltenwechsel bleiben möglich.");
   if (Object.keys(BUDGET_FIELDS).some((key) => key in update)) {
@@ -57,7 +59,7 @@ export async function writeBudgetPositions(tx: Tx, card: Card, input: unknown, r
   // IDs are globally unique. Reject copied IDs from another card as validation
   // errors, rather than exposing a constraint failure after deleting old rows.
   const usedIds = await tx.select({ cardId: cardBudgetPositions.cardId }).from(cardBudgetPositions)
-    .where(inArray(cardBudgetPositions.id, rows.map((row) => row.id)));
+    .where(trashAnd(activeRows.cardBudgetPositions, inArray(cardBudgetPositions.id, rows.map((row) => row.id))));
   if (usedIds.some((row) => row.cardId !== card.id))
     throw new BudgetValidationError("Eine Positions-ID wird bereits verwendet. Für neue Positionen bitte neue UUIDs vergeben.");
   // Hidden fields must not be writable indirectly through row replacement.
@@ -74,7 +76,7 @@ export async function writeBudgetPositions(tx: Tx, card: Card, input: unknown, r
   // be edited before the first save. Revision and hidden-field checks above
   // still protect concurrent changes and values the user cannot edit.
   const ids = [...new Set(rows.map((r) => r.accountId))];
-  const valid = await tx.select({ id: accounts.id }).from(accounts).where(inArray(accounts.id, ids)).for("key share");
+  const valid = await tx.select({ id: accounts.id }).from(accounts).where(trashAnd(activeRows.accounts, inArray(accounts.id, ids))).for("key share");
   if (valid.length !== ids.length) throw new BudgetValidationError("Ein ausgewähltes Konto existiert nicht mehr. Bitte für jede Position ein gültiges Konto wählen.");
   let totals;
   try { totals = budgetTotals(rows); } catch (e) { throw new BudgetValidationError((e as Error).message); }

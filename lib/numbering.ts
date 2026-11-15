@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardNumbering, cards } from "@/lib/db/schema";
@@ -39,7 +41,7 @@ export async function assignCardNumberTx(
   const [card] = await tx
     .select({ number: cards.number })
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
     .limit(1);
   if (!card) return null; // Karte weg
   if (card.number) return card.number; // schon nummeriert

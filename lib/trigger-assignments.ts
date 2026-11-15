@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -17,6 +19,7 @@ import { getBoardById, getBoardMemberUsers } from "@/lib/authz";
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { assigneeActivityDetail } from "@/lib/activity";
 import { TRIGGER_KINDS, TRIGGER_LABELS, type TriggerKind } from "@/lib/constants";
+import { isBoardTriggerAvailable } from "@/lib/board-trigger-policy";
 
 export type TriggerAssignmentConfig = { clearAssignees: boolean; userIds: number[] };
 
@@ -47,6 +50,8 @@ export function planTriggerAssignment(
 export async function getTriggerAssignmentConfigs(
   boardId: number,
 ): Promise<Map<TriggerKind, TriggerAssignmentConfig>> {
+  const board = await getBoardById(boardId);
+  if (!board) return new Map();
   const rows = await db
     .select()
     .from(boardTriggerAssignments)
@@ -57,7 +62,7 @@ export async function getTriggerAssignmentConfigs(
     .where(eq(boardTriggerAssignees.boardId, boardId));
   const map = new Map<TriggerKind, TriggerAssignmentConfig>();
   for (const r of rows) {
-    if (!isTriggerKind(r.trigger)) continue;
+    if (!isTriggerKind(r.trigger) || !isBoardTriggerAvailable(board, r.trigger)) continue;
     map.set(r.trigger, {
       clearAssignees: r.clearAssignees,
       userIds: assignees.filter((a) => a.trigger === r.trigger).map((a) => a.userId),
@@ -79,6 +84,7 @@ export async function setTriggerAssignmentConfig(
   const userIds = [...new Set(input.map(Number))];
   const board = await getBoardById(boardId);
   if (!board) return { error: "Board nicht gefunden." };
+  if (!isBoardTriggerAvailable(board, trigger)) return { error: "Dieser Trigger ist auf diesem Board nicht verfügbar." };
   const memberIds = new Set((await getBoardMemberUsers(board)).map((m) => m.id));
   if (userIds.some((id) => !Number.isInteger(id) || !memberIds.has(id))) {
     return { error: "Bitte ausschließlich Nutzer mit Zugriff auf dieses Board auswählen." };
@@ -109,21 +115,19 @@ export async function statusTriggerKinds(statusId: number): Promise<TriggerKind[
   const [st] = await db
     .select({
       id: boardStatuses.id,
-      instruction: boardStatuses.isInstructionTrigger,
-      transfer: boardStatuses.isTransferTrigger,
       archive: boardStatuses.isArchiveTrigger,
+      isApplicationBoard: boards.isApplicationBoard,
+      inventoryBoardId: boards.inventoryBoardId,
       doneStatusId: boards.doneStatusId,
     })
     .from(boardStatuses)
-    .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
-    .where(eq(boardStatuses.id, statusId))
+    .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, boardStatuses.boardId)))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, statusId)))
     .limit(1);
   if (!st) return [];
   const kinds: TriggerKind[] = [];
-  if (st.instruction) kinds.push("instruction");
-  if (st.transfer) kinds.push("transfer");
-  if (st.archive) kinds.push("archive");
-  if (st.doneStatusId === st.id) kinds.push("done");
+  if (st.archive && isBoardTriggerAvailable(st, "archive")) kinds.push("archive");
+  if (st.doneStatusId === st.id && isBoardTriggerAvailable(st, "done")) kinds.push("done");
   return kinds;
 }
 
@@ -140,7 +144,7 @@ export async function applyTriggerAssignments(
   const [card] = await db
     .select({ boardId: cards.boardId, lockedAt: cards.lockedAt })
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
     .limit(1);
   if (!card || card.lockedAt) return;
   const configs = await getTriggerAssignmentConfigs(card.boardId);
@@ -160,7 +164,7 @@ export async function applyTriggerAssignments(
       const [locked] = await tx
         .select({ id: cards.id })
         .from(cards)
-        .where(eq(cards.id, cardId))
+        .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
         .for("update");
       if (!locked) return;
       const current = (

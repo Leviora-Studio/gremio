@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
 import Link from "next/link";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -14,7 +15,7 @@ export default async function NewBoardPage() {
   await requireUser();
   const templates = await db
     .select({ id: boardTemplates.id, name: boardTemplates.name })
-    .from(boardTemplates)
+    .from(boardTemplates).where(activeRows.boardTemplates)
     .orderBy(asc(boardTemplates.name));
 
   return (

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {getVisibleFieldKeys} from "@/lib/board-fields";
 import {AreaDefaultTopics} from "@/components/meetings/AreaDefaultTopics";
 import {meetingTemplates} from "@/lib/meetings/templates";
@@ -13,25 +15,30 @@ import { getAccessibleBoards,canManageBoard } from "@/lib/authz";
 import { WordTemplateConfiguration } from "@/components/meetings/WordTemplateConfiguration";
 import {wordTemplateSettings} from "@/lib/meetings/word";
 import { FinanceConfiguration } from "@/components/meetings/FinanceConfiguration";
-import { requireArea } from "@/lib/meetings/access";
+import { MeetingAreaManagementSettings } from "@/components/meetings/MeetingAreaManagementSettings";
+import { getMeetingAreaManagementPeople } from "@/lib/board-management";
+import { canManageArea, requireArea } from "@/lib/meetings/access";
 import { parseApiId } from "@/lib/api";
 import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import { Avatar } from "@/components/Avatar";
 import { Select } from "@/components/Select";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { MeetingActionForm } from "@/components/meetings/ActionForm";
-import { areaGrantAction,saveAreaAction,saveAgendaSettingsAction } from "../../../actions";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
+import { deleteMeetingAreaAction,areaGrantAction,saveAreaAction,saveAgendaSettingsAction } from "../../../actions";
 export default async function AreaSettings({params}:{params:Promise<{id:string}>}) {
   const user=await requireUser();const id=parseApiId((await params).id);if(!id)notFound();
-  const area=await requireArea(user,id,"manage").catch(()=>null);if(!area)notFound();
+  const area=await requireArea(user,id,"settings").catch(()=>null);if(!area)notFound();
+  const fullManagement=canManageArea(user,area);
+  const managementPeople=fullManagement?await getMeetingAreaManagementPeople(id):null;
   let wordInfo=null,wordError="";
   try{wordInfo=await wordTemplateSettings(user,id);}catch(error){wordError=error instanceof Error?error.message:"Die Wordvorlage ist nicht lesbar.";}
   const templates=await meetingTemplates(user);
   const people=await db.select({id:users.id,name:users.username,avatarPath:users.avatarPath}).from(users).orderBy(asc(users.username));
-  const groupRows=await db.select().from(groups).orderBy(asc(groups.name));
+  const groupRows=await db.select().from(groups).where(activeRows.groups).orderBy(asc(groups.name));
   const grants=await db.select().from(meetingAreaAccess).where(eq(meetingAreaAccess.areaId,id));
   const financeBoards=[];
-  for(const board of await getAccessibleBoards(user))if(board.inventoryBoardId==null&&await canManageBoard(user,board))financeBoards.push({fields:[...await getVisibleFieldKeys(board.id),...(board.isApplicationBoard?["planned_budget"]:[])],id:board.id,name:board.name,statuses:await db.select({id:boardStatuses.id,name:boardStatuses.name}).from(boardStatuses).where(eq(boardStatuses.boardId,board.id)).orderBy(asc(boardStatuses.position),asc(boardStatuses.id))});
+  for(const board of await getAccessibleBoards(user))if(board.inventoryBoardId==null&&await canManageBoard(user,board))financeBoards.push({fields:[...await getVisibleFieldKeys(board.id),...(board.isApplicationBoard?["planned_budget"]:[])],id:board.id,name:board.name,statuses:await db.select({id:boardStatuses.id,name:boardStatuses.name}).from(boardStatuses).where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId,board.id))).orderBy(asc(boardStatuses.position),asc(boardStatuses.id))});
   return <div className="mx-auto max-w-5xl space-y-6"><Link href={`/intern/sitzungen/bereich/${id}`} className="break-words text-sm text-brand-700">← {area.name}</Link><h1 className="text-2xl font-bold">Bereichseinstellungen</h1>
     <CollapsibleSection title="Allgemein" defaultOpen><MeetingActionForm preserveValues action={saveAreaAction.bind(null,id)}><label className="label">Bezeichnung<input name="name" className="input" defaultValue={area.name} maxLength={200} required/></label><label className="label">Beschreibung<textarea name="description" className="input" defaultValue={area.description} maxLength={5000}/></label></MeetingActionForm></CollapsibleSection>
     <CollapsibleSection title="Tagesordnung" defaultOpen><MeetingActionForm preserveValues action={saveAgendaSettingsAction.bind(null,id)}><p className="text-sm text-slate-500">Diese Einstellungen gelten für alle Sitzungen dieses Bereichs. Begrüßung und Regularien werden im öffentlichen Teil weitergezählt. Der nicht öffentliche Teil wird unabhängig nummeriert.</p>{([{name:"publicNumbering",label:"Nummerierung öffentlicher Teil"},{name:"nonPublicNumbering",label:"Nummerierung nicht öffentlicher Teil"}] as const).map(field=><div key={field.name}><label className="label">{field.label}</label><Select portal name={field.name} ariaLabel={field.label} defaultValue={area[field.name]} options={[{value:"arabic",label:"Arabisch (1, 2, 3)"},{value:"roman",label:"Römisch (I, II, III)"}]}/></div>)}<div><label className="label">Reihenfolge der Bereiche</label><Select portal name="firstSection" ariaLabel="Reihenfolge der Bereiche" defaultValue={area.firstSection} options={[{value:"public",label:"Öffentlich vor nicht öffentlich"},{value:"non_public",label:"Nicht öffentlich vor öffentlich"}]}/></div></MeetingActionForm></CollapsibleSection>
@@ -43,7 +50,11 @@ export default async function AreaSettings({params}:{params:Promise<{id:string}>
       <div className="mt-4 space-y-2">{!grants.length&&<p className="text-sm text-slate-500">Noch keine Freigaben (nur Eigentümer &amp; Admins haben Zugriff).</p>}{grants.map(grant=>{const person=people.find(p=>p.id===grant.userId);const name=person?.name??groupRows.find(g=>g.id===grant.groupId)?.name??"Freigabe";return <div key={grant.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2"><span className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm"><span className="shrink-0">{person?<Avatar username={name} src={person.avatarPath?`/api/avatar/${person.id}`:null} size={22}/>:"👥"}</span><span className="min-w-0 break-all">{name}{grant.groupId?" (Gruppe)":""}</span></span>
         <MeetingActionForm preserveValues action={areaGrantAction.bind(null,id)} compact><input type="hidden" name="subject" value={grant.userId?"user":"group"}/><input type="hidden" name="subjectId" value={grant.userId??grant.groupId??""}/><div className="w-full max-w-full sm:w-56"><Select portal name="accessLevel" ariaLabel={`Zugriff für ${name}`} defaultValue={grant.accessLevel} key={`${grant.id}-${grant.accessLevel}`} options={ACCESS_LEVEL_OPTIONS}/></div></MeetingActionForm>
         <MeetingActionForm preserveValues action={areaGrantAction.bind(null,id)} compact submit="Entfernen"><input type="hidden" name="subject" value={grant.userId?"user":"group"}/><input type="hidden" name="subjectId" value={grant.userId??grant.groupId??""}/><input type="hidden" name="accessLevel" value="remove"/></MeetingActionForm>
-      </div>;})}</div>
+  </div>;})}</div>
     </CollapsibleSection>
+    {fullManagement&&<CollapsibleSection title="Sitzungsbereich löschen" className="border-red-200">
+      <DeleteConfirm action={deleteMeetingAreaAction.bind(null,id)} confirmName={area.name} buttonLabel="Sitzungsbereich löschen" title={`Sitzungsbereich „${area.name}“ löschen`}/>
+    </CollapsibleSection>}
+    {managementPeople&&<CollapsibleSection title="Verwaltungsrechte vergeben"><MeetingAreaManagementSettings areaId={id} {...managementPeople}/></CollapsibleSection>}
   </div>;
 }

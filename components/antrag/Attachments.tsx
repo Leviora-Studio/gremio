@@ -145,7 +145,7 @@ function FileLine({
           buttonLabel="löschen"
           buttonClassName="text-xs text-red-600 hover:underline"
           title={`Datei „${att.filename}" löschen`}
-          message="Die Datei wird vom Antrag entfernt."
+          message="Die Datei wird für 30 Tage in den Papierkorb dieses Boards verschoben und kann dort wiederhergestellt werden."
         />}
       </div>
       {canEdit && <FileOrganization cardId={cardId} att={att} folders={folders} />}
@@ -203,7 +203,7 @@ export function AttachmentSlot({
                 buttonLabel="löschen"
                 buttonClassName="text-xs leading-none text-red-600 hover:underline"
                 title={`Datei „${current.filename}" löschen`}
-                message="Die Datei wird vom Antrag entfernt."
+                message="Die Datei wird für 30 Tage in den Papierkorb dieses Boards verschoben und kann dort wiederhergestellt werden."
               />
             </div>}
           </div>

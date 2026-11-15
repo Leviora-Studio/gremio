@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { moveToTrash, TrashError } from "@/lib/trash";
+import { deleteConfirmationError } from "@/lib/confirmation";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
@@ -62,6 +64,12 @@ export async function areaGrantAction(areaId: number, _previous: MeetingActionSt
   try {await service.saveAreaGrant(user,areaId,form.get("subject")==="group"?"group":"user",id(form.get("subjectId")),String(form.get("accessLevel")) as "read"|"write"|"remove");refresh();return {success:"Freigabe gespeichert."};}
   catch(error){return errorState(error);}
 }
+export async function deleteMeetingAreaAction(areaId: number, confirmation?: unknown, areaName?: unknown): Promise<{error?:string}|void> {
+  const user = await requireUser();
+  try { await moveToTrash(user,"meeting_area",areaId,confirmation,{areaName}); }
+  catch (error) { return {error:error instanceof TrashError ? error.message : "Der Sitzungsbereich konnte nicht in den Papierkorb verschoben werden."}; }
+  refresh(); revalidatePath("/admin/papierkorb"); redirect("/intern/sitzungen");
+}
 export async function saveAreaAction(areaId: number|null,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();let saved:number;
   try{saved=await service.saveArea(user,areaId,String(form.get("name")??""),String(form.get("description")??""));refresh();}catch(error){return errorState(error);}
@@ -93,14 +101,14 @@ export async function documentAction(topicId: number, _previous: MeetingActionSt
     refresh(); return { success: "Sitzungsunterlage freigegeben." };
   } catch (error) { return errorState(error); }
 }
-export async function removeDocumentAction(documentId: number, _previous: MeetingActionState, _form: FormData): Promise<MeetingActionState> {
+export async function removeDocumentAction(documentId: number, _previous: MeetingActionState, form: FormData): Promise<MeetingActionState> {
   const user = await requireUser();
-  try { await service.removeMeetingDocument(user, documentId); refresh(); return { success: "Unterlage entfernt." }; }
+  try { const invalid=deleteConfirmationError(form.get("confirmation"));if(invalid)return invalid;await service.removeMeetingDocument(user, documentId); refresh(); return { success: "Unterlage entfernt." }; }
   catch (error) { return errorState(error); }
 }
 export async function deleteTopicAction(topicId: number, _previous: MeetingActionState, form: FormData): Promise<MeetingActionState> {
   const user = await requireUser();
-  try { if (form.get("confirmDelete") !== "on") throw new MeetingError("Bitte das Löschen bestätigen."); await service.deleteTopic(user, topicId); refresh(); }
+  try { const confirmationError = deleteConfirmationError(form.get("confirmation")); if (confirmationError) return confirmationError; await service.deleteTopic(user, topicId); refresh(); }
   catch (error) { return errorState(error); }
   redirect("/intern/sitzungen");
 }
@@ -112,19 +120,33 @@ export async function reorderTopicsAction(meetingId: number, ids: number[], rev:
 
 export async function deleteMeetingAction(meetingId: number, _previous: MeetingActionState, form: FormData): Promise<MeetingActionState> {
   const user = await requireUser();
-  try { if (form.get("confirmDelete") !== "on") throw new MeetingError("Bitte das Löschen bestätigen."); await service.deleteMeeting(user, meetingId); refresh(); }
+  try { const confirmationError = deleteConfirmationError(form.get("confirmation")); if (confirmationError) return confirmationError; await service.deleteMeeting(user, meetingId); refresh(); }
   catch (error) { return errorState(error); }
   redirect("/intern/sitzungen");
 }
 
-export async function confirmedDeleteMeetingAction(meetingId:number):Promise<MeetingActionState|void>{
-  const user=await requireUser();try{await service.deleteMeeting(user,meetingId);refresh();}catch(error){return errorState(error);}redirect("/intern/sitzungen");
+export async function confirmedDeleteMeetingAction(meetingId:number, confirmation?: unknown):Promise<MeetingActionState|void>{
+  const user=await requireUser();
+  const confirmationError = deleteConfirmationError(confirmation);
+  if (confirmationError) return confirmationError;
+  try {
+    await service.deleteMeeting(user, meetingId);
+    refresh();
+  } catch (error) { return errorState(error); }
+  redirect("/intern/sitzungen");
 }
-export async function confirmedDeleteTopicAction(topicId:number):Promise<MeetingActionState|void>{
-  const user=await requireUser();try{await service.deleteTopic(user,topicId);refresh();}catch(error){return errorState(error);}redirect("/intern/sitzungen");
+export async function confirmedDeleteTopicAction(topicId:number, confirmation?: unknown):Promise<MeetingActionState|void>{
+  const user=await requireUser();
+  const confirmationError = deleteConfirmationError(confirmation);
+  if (confirmationError) return confirmationError;
+  try {
+    await service.deleteTopic(user, topicId);
+    refresh();
+  } catch (error) { return errorState(error); }
+  redirect("/intern/sitzungen");
 }
-export async function confirmedRemoveDocumentAction(documentId:number):Promise<MeetingActionState|void>{
-  const user=await requireUser();try{await service.removeMeetingDocument(user,documentId);refresh();}catch(error){return errorState(error);}
+export async function confirmedRemoveDocumentAction(documentId:number,confirmation?:unknown):Promise<MeetingActionState|void>{
+  const user=await requireUser();const invalid=deleteConfirmationError(confirmation);if(invalid)return invalid;try{await service.removeMeetingDocument(user,documentId);refresh();}catch(error){return errorState(error);}
 }
 
 /** Plan an existing proposal without replacing its content or disclosure settings. */
@@ -166,9 +188,13 @@ export async function saveWordConfigurationAction(areaId:number,_previous:Meetin
 }
 export async function removeWordTemplateAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();
-  try{await removeWordTemplate(user,areaId,revision(form));refresh();return {success:"Wordvorlage entfernt."};}catch(error){return errorState(error);}
+  try{await removeWordTemplate(user,areaId,revision(form),form.get("confirmation"),form.get("templateName"));refresh();return {success:"Wordvorlage entfernt."};}catch(error){return errorState(error);}
 }
 
 export async function applyAreaDefaultsToMeetingAction(meetingId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
   const user=await requireUser();try{await service.applyAreaDefaultsToMeeting(user,meetingId,revision(form));refresh();return {success:"Standard-TOPs übernommen."};}catch(error){return errorState(error);}
+}
+
+export async function confirmedRemoveWordTemplateAction(areaId:number,revision:number,confirmation?:unknown,templateName?:unknown):Promise<MeetingActionState>{
+  const user=await requireUser();try{await removeWordTemplate(user,areaId,revision,confirmation,templateName);refresh();return {success:"Wordvorlage entfernt."};}catch(error){return errorState(error);}
 }

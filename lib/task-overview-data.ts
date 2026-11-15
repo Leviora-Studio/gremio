@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, cardAssignees, cards, type User } from "@/lib/db/schema";
@@ -58,7 +60,7 @@ export async function loadTaskOverviewData(
           position: boardStatuses.position,
         })
         .from(boardStatuses)
-        .where(inArray(boardStatuses.boardId, boardIds))
+        .where(trashAnd(activeRows.boardStatuses, inArray(boardStatuses.boardId, boardIds)))
         .orderBy(asc(boardStatuses.position))
     : [];
   const statusesByBoard: Record<number, { id: number; name: string }[]> = {};
@@ -90,7 +92,7 @@ export async function loadTaskOverviewData(
         })
         .from(cards)
         .where(
-          and(
+          trashAnd(activeRows.cards, and(
             // Karten, in denen der Nutzer zu den Zugewiesenen gehört (n:m).
             inArray(
               cards.id,
@@ -101,7 +103,7 @@ export async function loadTaskOverviewData(
             ),
             isNull(cards.archivedAt),
             inArray(cards.boardId, boardIds),
-          ),
+          )),
         )
     : [];
 

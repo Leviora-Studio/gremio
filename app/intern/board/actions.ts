@@ -3,6 +3,9 @@
 
 "use server";
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
@@ -16,7 +19,6 @@ import { generateToken, isTokenConflict } from "@/lib/token";
 import { maybeArchive } from "@/lib/archive";
 import { logActivity } from "@/lib/activity";
 import { assignCardNumber } from "@/lib/numbering";
-import { maybeSetTriggerDates } from "@/lib/instruction";
 import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { doneSinceForStatus } from "@/lib/done-archive";
@@ -62,7 +64,7 @@ export async function moveCardAction(
   orderedIds: number[],
 ): Promise<void> {
   const user = await requireUser();
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) return;
   const board = await getBoardById(card.boardId);
   if (!board || !(await canMoveBoardCard(user, board, card, statusId))) throw new Error("Dieser Statuswechsel ist nicht erlaubt.");
@@ -71,7 +73,7 @@ export async function moveCardAction(
   const [target] = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)
-    .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, card.boardId)))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, card.boardId))))
     .limit(1);
   if (!target) return;
 
@@ -82,7 +84,7 @@ export async function moveCardAction(
   let previousStatusId = card.statusId;
 
   await db.transaction(async (tx) => {
-    const [fresh] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
+    const [fresh] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).for("update");
     if (!fresh || !(await canMoveBoardCard(user, board, fresh, statusId, tx))) throw new Error("Dieser Statuswechsel ist nicht mehr erlaubt. Bitte neu laden.");
     fullWrite = await canEditBoard(user, board);
     if (!fullWrite && fresh.statusId !== card.statusId) throw new Error("Die Karte wurde zwischenzeitlich verschoben. Bitte neu laden.");
@@ -96,7 +98,7 @@ export async function moveCardAction(
           statusId,
           updatedAt: new Date(),
           ...(fresh.lockedAt ? {} : { resubmittedAt: null }),
-          doneSince: doneSinceForStatus(board.doneStatusId, statusId, fresh.doneSince),
+          doneSince: doneSinceForStatus(effectiveDoneStatusId(board), statusId, fresh.doneSince),
         })
         .where(eq(cards.id, cardId));
     }
@@ -105,11 +107,11 @@ export async function moveCardAction(
       .select({ id: cards.id })
       .from(cards)
       .where(
-        and(
+        trashAnd(activeRows.cards, and(
           eq(cards.boardId, card.boardId),
           eq(cards.statusId, statusId),
           isNull(cards.archivedAt),
-        ),
+        )),
       )
       .orderBy(asc(cards.position), asc(cards.id));
     const colSet = new Set(inCol.map((r) => r.id));
@@ -126,7 +128,7 @@ export async function moveCardAction(
     const [old] = await db
       .select({ name: boardStatuses.name })
       .from(boardStatuses)
-      .where(eq(boardStatuses.id, previousStatusId))
+      .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, previousStatusId)))
       .limit(1);
     await logActivity(
       cardId,
@@ -134,7 +136,7 @@ export async function moveCardAction(
       "status",
       `${old?.name ?? "?"} → ${target.name}`,
     );
-    await maybeSetTriggerDates(cardId, statusId);
+
     await applyStatusTriggerAssignments(cardId, statusId);
     // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
     // der Kartenspalte ableiten — spart auf normalen Boards Tx/Lock/Query.
@@ -158,7 +160,7 @@ export async function createBlankCardAction(
   const [firstStatus] = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position))
     .limit(1);
   if (!firstStatus) return { error: "Board hat keine Spalten." };
@@ -166,7 +168,7 @@ export async function createBlankCardAction(
   const [maxRow] = await db
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
-    .where(and(eq(cards.boardId, boardId), eq(cards.statusId, firstStatus.id)));
+    .where(trashAnd(activeRows.cards, and(eq(cards.boardId, boardId), eq(cards.statusId, firstStatus.id))));
 
   const position = (maxRow?.m ?? -1) + 1;
   // Karte + Aktivitätseintrag atomar anlegen; Token-Kollision wird durch
@@ -187,7 +189,7 @@ export async function createBlankCardAction(
               creatorUserId: user.id,
               accountId: board.defaultAccountId ?? null,
               position,
-              doneSince: doneSinceForStatus(board.doneStatusId, firstStatus.id, null),
+              doneSince: doneSinceForStatus(effectiveDoneStatusId(board), firstStatus.id, null),
             })
             .returning({ id: cards.id });
           await tx.insert(cardActivity).values({
@@ -218,7 +220,7 @@ export async function createBlankCardAction(
  */
 export async function finalizeNewCardAction(cardId: number): Promise<void> {
   const user = await requireUser();
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) return;
   const board = await getBoardById(card.boardId);
   if (!board || !(await canEditBoard(user, board))) return;

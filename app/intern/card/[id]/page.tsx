@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { postedCardBookings } from "@/lib/cashbook/projection";
 import { formatCents } from "@/lib/money";
 import Link from "next/link";
@@ -25,6 +27,7 @@ import { officeCanMove } from "@/lib/board-move-policy";
 import { requireUser } from "@/lib/auth";
 import { getOfficeMoveRules, canEditBoard, canAccessBoard, canManageBoard, getBoardById } from "@/lib/authz";
 import { getPriorities } from "@/lib/priorities";
+import { getAccountBudgetCatalogs } from "@/lib/budget-title-catalog";
 import { getAccounts } from "@/lib/accounts";
 import { getCardAssignees } from "@/lib/assignees";
 import { centsToInput } from "@/lib/money";
@@ -63,7 +66,7 @@ export default async function AntragDetailPage({
   const cardId = Number(id);
   if (!Number.isInteger(cardId)) notFound();
   const user = await requireUser();
-  let [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  let [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) notFound();
 
   // Leihvorgang-Karte: immer die Leih-Detailansicht öffnen (egal ob man über
@@ -71,7 +74,7 @@ export default async function AntragDetailPage({
   const [linkedLoan] = await db
     .select({ id: inventoryLoans.id })
     .from(inventoryLoans)
-    .where(eq(inventoryLoans.cardId, cardId))
+    .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.cardId, cardId)))
     .limit(1);
   if (linkedLoan) redirect(`/intern/inventar/loan/${linkedLoan.id}`);
 
@@ -92,7 +95,7 @@ export default async function AntragDetailPage({
   const statuses = await db
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, board.id))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, board.id)))
     .orderBy(asc(boardStatuses.position));
 
   const visibleRows = await db
@@ -109,12 +112,12 @@ export default async function AntragDetailPage({
   const atts = await db
     .select()
     .from(attachments)
-    .where(eq(attachments.cardId, card.id));
+    .where(trashAnd(activeRows.attachments, eq(attachments.cardId, card.id)));
   const visibleAtts = atts.filter((attachment) =>
     isCardAttachmentVisible(attachment, visibleSet),
   );
   const folders = await db.select({ id: attachmentFolders.id, name: attachmentFolders.name })
-    .from(attachmentFolders).where(eq(attachmentFolders.cardId, card.id)).orderBy(asc(attachmentFolders.name));
+    .from(attachmentFolders).where(trashAnd(activeRows.attachmentFolders, eq(attachmentFolders.cardId, card.id))).orderBy(asc(attachmentFolders.name));
   const slot = (k: AttachmentKind) => {
     const a = visibleAtts.find((x) => x.kind === k);
     return a ? { id: a.id, filename: a.filename, mime: a.mime, folderId: a.folderId } : null;
@@ -170,7 +173,7 @@ export default async function AntragDetailPage({
         await db
           .select()
           .from(locations)
-          .where(eq(locations.id, card.locationId))
+          .where(trashAnd(activeRows.locations, eq(locations.id, card.locationId)))
           .limit(1)
       )[0]
     : null;
@@ -193,7 +196,7 @@ export default async function AntragDetailPage({
         : `${publicBaseUrl()}/status/${card.token}`;
   const manage = (await canManageBoard(user, board));
   const bookings = await postedCardBookings(card.id);
-  const [budgetPlan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, card.id)) : [];
+  const [budgetPlan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(trashAnd(activeRows.cardBudgetPlans, eq(cardBudgetPlans.cardId, card.id))) : [];
 
   const comments = await db
     .select({
@@ -221,7 +224,7 @@ export default async function AntragDetailPage({
     })
     .from(cardActivity)
     .leftJoin(users, eq(users.id, cardActivity.userId))
-    .where(eq(cardActivity.cardId, card.id))
+    .where(trashAnd(activeRows.cardActivity, eq(cardActivity.cardId, card.id)))
     .orderBy(desc(cardActivity.createdAt), desc(cardActivity.id));
 
   return (
@@ -333,7 +336,7 @@ export default async function AntragDetailPage({
         </fieldset>
       </section>
 
-      {board.isApplicationBoard && <BudgetPlanEditor cardId={card.id} initial={budgetPlan?.allocations ?? []} revision={budgetPlan?.revision ?? 0} accounts={accounts} defaultAccountId={board.defaultAccountId} locked={!!card.lockedAt} readOnly={!await canEditBoard(user,board)} />}
+      {board.isApplicationBoard && <BudgetPlanEditor cardId={card.id} initial={budgetPlan?.allocations ?? []} revision={budgetPlan?.revision ?? 0} accounts={accounts} budgetCatalogs={await canEditBoard(user,board)?await getAccountBudgetCatalogs():{}} defaultAccountId={board.defaultAccountId} locked={!!card.lockedAt} readOnly={!await canEditBoard(user,board)} />}
 
       {/* Anhänge */}
       <section className="card space-y-4 p-5">
@@ -473,11 +476,11 @@ export default async function AntragDetailPage({
       {canEdit && <section className="card border-red-200 p-4">
         <DeleteConfirm
           action={deleteCardAction.bind(null, card.id)}
-          requireWord={false}
+          wordInModal
           buttonLabel="Karte löschen"
           buttonClassName="btn-danger"
           title="Karte löschen"
-          message="Die Karte wird inklusive aller Anhänge unwiderruflich gelöscht."
+          recycleBinMessage="Die Karte wird mit ihren Inhalten und Anhängen für 30 Tage in den Board-Papierkorb verschoben. Personen mit Schreibzugriff können sie dort wiederherstellen oder nach zusätzlicher Bestätigung endgültig löschen."
         />
       </section>}
     </div>

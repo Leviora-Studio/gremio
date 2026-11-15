@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCashbookDraft } from "./DraftContext";
 import { ReceiptPicker } from "./ReceiptPicker";
+import { BudgetTitleSelect } from "@/components/BudgetTitleSelect";
+import type { BudgetTitleOption } from "@/lib/budget-title-catalog";
 import { Select } from "@/components/Select";
 import { centsToInput, parseEuroToCents } from "@/lib/money";
 import { paymentFields, type CashbookPayment, type CashbookRole } from "@/lib/cashbook-types";
@@ -18,13 +20,15 @@ export type Candidate = {
         filename: string;
     }[];
 };
-export function PaymentFields({ value, onChange, disabled = false }: {
+export function PaymentFields({ value, onChange, disabled = false, budgetTitles = [], preservedTitle }: {
     value: CashbookPayment;
     onChange: (value: CashbookPayment) => void;
     disabled?: boolean;
+    budgetTitles?: BudgetTitleOption[];
+    preservedTitle?: string;
 }) { const [amount, setAmount] = useState(centsToInput(value.amount)); useEffect(() => { if (value.amount >= 0 && parseEuroToCents(amount) !== value.amount)
-    setAmount(centsToInput(value.amount)); }, [value.amount, amount]); return <fieldset disabled={disabled} className="grid min-w-0 gap-4 sm:grid-cols-2">{paymentFields.map(field => <label key={field.key} className="min-w-0 text-sm">{field.label}{field.key === "amount" ? <input className="input mt-1" inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); onChange({ ...value, amount: parseEuroToCents(e.target.value) ?? -1 }); }}/> : <input className="input mt-1" maxLength={field.key === "purpose" ? 1000 : 200} value={value[field.key]} onChange={e => onChange({ ...value, [field.key]: e.target.value })}/>}</label>)}</fieldset>; }
-export function PaymentEditor({ bookId, entryId, revision, initial, role: initialRole, candidates, previewNumber, hasForm = false }: {
+    setAmount(centsToInput(value.amount)); }, [value.amount, amount]); return <fieldset disabled={disabled} className="grid min-w-0 gap-4 sm:grid-cols-2">{paymentFields.map(field => <label key={field.key} className="min-w-0 text-sm">{field.label}{field.key === "budgetTitle" ? <BudgetTitleSelect value={value.budgetTitle} options={budgetTitles} preservedValue={preservedTitle} disabled={disabled} onChange={budgetTitle=>onChange({...value,budgetTitle})}/> : field.key === "amount" ? <input className="input mt-1" inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); onChange({ ...value, amount: parseEuroToCents(e.target.value) ?? -1 }); }}/> : <input className="input mt-1" maxLength={field.key === "purpose" ? 1000 : 200} value={value[field.key]} onChange={e => onChange({ ...value, [field.key]: e.target.value })}/>}</label>)}</fieldset>; }
+export function PaymentEditor({ bookId, entryId, revision, initial, role: initialRole, candidates, previewNumber, hasForm = false, budgetTitles = [] }: {
     hasForm?: boolean;
     bookId: number;
     entryId: number | null;
@@ -33,6 +37,7 @@ export function PaymentEditor({ bookId, entryId, revision, initial, role: initia
     role: CashbookRole | null;
     candidates: Candidate[];
     previewNumber: string;
+    budgetTitles?: BudgetTitleOption[];
 }) {
     const draftState = useCashbookDraft();
     const [value, setRawValue] = useState(initial), [role, setRole] = useState<CashbookRole | "">(initialRole ?? ""), [error, setError] = useState(""), [pending, setPending] = useState(false);
@@ -72,5 +77,5 @@ export function PaymentEditor({ bookId, entryId, revision, initial, role: initia
     finally {
         setPending(false);
     } }
-    return <section data-live-refresh-managed data-live-refresh-dirty={draftState.dirty} data-live-refresh-block={draftState.dirty || pending} className="card space-y-5 p-5"><fieldset disabled={pending} className="space-y-5"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.business} onChange={e => setValue({ ...value, business: e.target.checked, cardId: null, receiptIds: [], number: e.target.checked ? previewNumber : "" })}/>Geschäftsbedarf</label><div><label className="label">Antrag auswählen</label><Select portal searchable disabled={value.business} value={value.cardId ? String(value.cardId) : ""} onChange={id => { const c = candidates.find(c => c.id === Number(id)); setValue({ ...value, cardId: c?.id ?? null, receiptIds: [], number: c?.number ?? "" }); }} options={[{ value: "", label: "Bitte Antrag auswählen" }, ...candidates.map(c => ({ value: String(c.id), label: c.label }))]}/></div>{value.business ? <p className="rounded-lg bg-slate-50 p-3 text-sm">Geschäftsbedarfsnummer: <strong>{entryId ? value.number : previewNumber}</strong>{!entryId && <span className="block text-xs text-slate-500">Vorschau – die Nummer wird beim Speichern verbindlich vergeben.</span>}</p> : <ReceiptPicker receipts={candidate?.receipts ?? []} selectedIds={value.receiptIds} onChange={receiptIds => setValue({ ...value, receiptIds })} hasApplication={!!candidate}/>}{!initialRole && <div><label className="label">In welcher Rolle bearbeitest du den Vorgang?</label><Select value={role} onChange={role => { setRole(role as CashbookRole); draftState.setDirty(true); }} options={[{ value: "", label: "Bitte eigene Rolle auswählen" }, { value: "speaker", label: "Sprecher / Sprecherin" }, { value: "finance", label: "Finanzreferent / Finanzreferentin" }]}/></div>}<PaymentFields value={value} onChange={setValue}/></fieldset><div className="flex flex-wrap gap-3"><button disabled={pending} className="btn-secondary" onClick={() => void save(false)}>Entwurf speichern</button><button disabled={pending} className="btn-primary" onClick={() => void save(true)}>{hasForm ? "Formular neu generieren" : "Anweisungsformular erstellen"}</button></div>{value.business && !entryId && <p className="text-sm text-slate-500">Speichere zunächst den Entwurf, um die Quittungen für den Geschäftsbedarf hochzuladen.</p>}{error && <p role="alert" className="text-sm text-red-700">{error}</p>}</section>;
+    return <section data-live-refresh-managed data-live-refresh-dirty={draftState.dirty} data-live-refresh-block={draftState.dirty || pending} className="card space-y-5 p-5"><fieldset disabled={pending} className="space-y-5"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.business} onChange={e => setValue({ ...value, business: e.target.checked, cardId: null, receiptIds: [], number: e.target.checked ? previewNumber : "" })}/>Geschäftsbedarf</label><div><label className="label">Antrag auswählen</label><Select portal searchable disabled={value.business} value={value.cardId ? String(value.cardId) : ""} onChange={id => { const c = candidates.find(c => c.id === Number(id)); setValue({ ...value, cardId: c?.id ?? null, receiptIds: [], number: c?.number ?? "" }); }} options={[{ value: "", label: "Bitte Antrag auswählen" }, ...candidates.map(c => ({ value: String(c.id), label: c.label }))]}/></div>{value.business ? <p className="rounded-lg bg-slate-50 p-3 text-sm">Geschäftsbedarfsnummer: <strong>{entryId ? value.number : previewNumber}</strong>{!entryId && <span className="block text-xs text-slate-500">Vorschau – die Nummer wird beim Speichern verbindlich vergeben.</span>}</p> : <ReceiptPicker receipts={candidate?.receipts ?? []} selectedIds={value.receiptIds} onChange={receiptIds => setValue({ ...value, receiptIds })} hasApplication={!!candidate}/>}{!initialRole && <div><label className="label">In welcher Rolle bearbeitest du den Vorgang?</label><Select value={role} onChange={role => { setRole(role as CashbookRole); draftState.setDirty(true); }} options={[{ value: "", label: "Bitte eigene Rolle auswählen" }, { value: "speaker", label: "Sprecher / Sprecherin" }, { value: "finance", label: "Finanzreferent / Finanzreferentin" }]}/></div>}<PaymentFields value={value} onChange={setValue} budgetTitles={budgetTitles} preservedTitle={entryId?initial.budgetTitle:undefined}/></fieldset><div className="flex flex-wrap gap-3"><button disabled={pending} className="btn-secondary" onClick={() => void save(false)}>Entwurf speichern</button><button disabled={pending} className="btn-primary" onClick={() => void save(true)}>{hasForm ? "Formular neu generieren" : "Anweisungsformular erstellen"}</button></div>{value.business && !entryId && <p className="text-sm text-slate-500">Speichere zunächst den Entwurf, um die Quittungen für den Geschäftsbedarf hochzuladen.</p>}{error && <p role="alert" className="text-sm text-red-700">{error}</p>}</section>;
 }

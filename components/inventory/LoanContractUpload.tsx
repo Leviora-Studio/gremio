@@ -5,12 +5,13 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Select } from "@/components/Select";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
 import type { InventoryAttachment } from "@/lib/db/schema";
 import {
-  deleteInventoryAttachmentAction,
+  deleteInventoryAttachmentConfirmedAction,
   uploadLoanContractAction,
   type AttachmentState,
 } from "@/app/intern/inventar/item/[itemId]/attachment-actions";
@@ -71,12 +72,7 @@ export function LoanContractUpload({
               />
               <span className="flex shrink-0 items-center gap-2 text-xs text-slate-400">
                 {d.uploadedBy == null ? "vom Entleiher" : "bereitgestellt"}
-                {canEdit && <form action={deleteInventoryAttachmentAction}>
-                  <input type="hidden" name="attId" value={d.id} />
-                  <SubmitButton className="hover:text-red-600">
-                    löschen
-                  </SubmitButton>
-                </form>}
+                {canEdit && <DeleteConfirm action={deleteInventoryAttachmentConfirmedAction.bind(null,d.id)} wordInModal recycleBin={false} compact buttonLabel="löschen" buttonClassName="text-slate-400 hover:text-red-600" title="Inventardatei endgültig löschen" message="Diese Datei wird endgültig entfernt. Diese Aktion kann nicht rückgängig gemacht werden."/>}
               </span>
             </li>
           ))}

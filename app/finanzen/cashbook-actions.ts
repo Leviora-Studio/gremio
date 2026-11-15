@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -20,7 +22,7 @@ export async function linkFinanceCashbookAction(id: number, _previous: State, da
       const [owner] = await db.select().from(users).where(eq(users.id, fb.ownerId));
       if (!owner || !["manage", "read", "write"].includes(await cashbookPermission(owner, book) ?? "")) throw new Error("Der Eigentümer der Finanzübersicht benötigt Lesezugriff auf das Kassenbuch.");
       for (const source of sources) {
-        const [board] = await db.select().from(boards).where(eq(boards.id, source.boardId));
+        const [board] = await db.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id, source.boardId)));
         if (!board?.isApplicationBoard) throw new Error("Bitte ausschließlich Antragsboards als Quellen verwenden.");
       }
     }
@@ -35,7 +37,7 @@ export async function financeSourceAccountAction(id: number, boardId: number, _p
   const { fb } = await requireFinanceManage(id);
   const accountId = Number(data.get("accountId")) || null;
   if (fb.cashbookId && !accountId) return { error: "Bei verknüpftem Kassenbuch ist ein Konto je Antragsboard erforderlich." };
-  if (accountId && !(await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, accountId))).length) return { error: "Konto nicht verfügbar." };
+  if (accountId && !(await db.select({ id: accounts.id }).from(accounts).where(trashAnd(activeRows.accounts, eq(accounts.id, accountId)))).length) return { error: "Konto nicht verfügbar." };
   await db.update(financeBoardSources).set({ accountId }).where(and(eq(financeBoardSources.financeBoardId, id), eq(financeBoardSources.boardId, boardId)));
   revalidatePath(`/finanzen/${id}`, "layout");
   return { success: "Gespeichert." };

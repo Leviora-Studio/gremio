@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
 import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { inventoryBoards, users } from "@/lib/db/schema";
-import { SubmitButton } from "@/components/SubmitButton";
-import { setInventoryBoardPublicAction } from "./actions";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { setInventoryBoardPublicConfirmedAction } from "./actions";
 
 export default async function AdminInventoryPage() {
   await requireAdmin();
@@ -20,7 +21,7 @@ export default async function AdminInventoryPage() {
       ownerName: users.username,
     })
     .from(inventoryBoards)
-    .leftJoin(users, eq(users.id, inventoryBoards.ownerId))
+    .leftJoin(users, eq(users.id, inventoryBoards.ownerId)).where(activeRows.inventoryBoards)
     .orderBy(asc(inventoryBoards.name));
 
   return (
@@ -70,17 +71,7 @@ export default async function AdminInventoryPage() {
               >
                 {b.isPublic ? "öffentlich" : "privat"}
               </span>
-              <form action={setInventoryBoardPublicAction}>
-                <input type="hidden" name="boardId" value={b.id} />
-                <input
-                  type="hidden"
-                  name="isPublic"
-                  value={b.isPublic ? "0" : "1"}
-                />
-                <SubmitButton className="btn-secondary px-3 py-1 text-sm">
-                  {b.isPublic ? "Verbergen" : "Öffentlich machen"}
-                </SubmitButton>
-              </form>
+              <ConfirmButton action={setInventoryBoardPublicConfirmedAction.bind(null,b.id,!b.isPublic)} label={b.isPublic?"Verbergen":"Öffentlich machen"} title={b.isPublic?"Inventar verbergen":"Inventar öffentlich machen"} message={b.isPublic?"Das Inventar wird aus der öffentlichen Ansicht entfernt.":"Das Inventar wird mit seinen öffentlich freigegebenen Angaben sichtbar."} confirmLabel="Bestätigen" requireTyped={b.isPublic?"VERBERGEN":"ÖFFENTLICH"} className="btn-secondary px-3 py-1 text-sm"/>
             </div>
           </div>
         ))}

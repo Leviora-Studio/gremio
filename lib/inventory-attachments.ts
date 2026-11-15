@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { join } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -29,7 +31,7 @@ export async function listInventoryAttachments(
   const rows = await db
     .select()
     .from(inventoryAttachments)
-    .where(eq(inventoryAttachments.itemId, itemId))
+    .where(trashAnd(activeRows.inventoryAttachments, eq(inventoryAttachments.itemId, itemId)))
     .orderBy(desc(inventoryAttachments.uploadedAt));
   const grouped: Record<InventoryAttachmentKind, InventoryAttachment[]> = {
     receipt: [],
@@ -53,7 +55,7 @@ export async function listLoanAttachments(
   return db
     .select()
     .from(inventoryAttachments)
-    .where(eq(inventoryAttachments.loanId, loanId))
+    .where(trashAnd(activeRows.inventoryAttachments, eq(inventoryAttachments.loanId, loanId)))
     .orderBy(desc(inventoryAttachments.uploadedAt));
 }
 
@@ -64,7 +66,7 @@ export async function getInventoryAttachmentById(
   const [row] = await db
     .select()
     .from(inventoryAttachments)
-    .where(eq(inventoryAttachments.id, id))
+    .where(trashAnd(activeRows.inventoryAttachments, eq(inventoryAttachments.id, id)))
     .limit(1);
   return row;
 }
@@ -104,7 +106,7 @@ export async function deleteInventoryAttachment(id: number): Promise<void> {
   const [row] = await db
     .select({ path: inventoryAttachments.path })
     .from(inventoryAttachments)
-    .where(eq(inventoryAttachments.id, id))
+    .where(trashAnd(activeRows.inventoryAttachments, eq(inventoryAttachments.id, id)))
     .limit(1);
   if (!row) return;
   await db.delete(inventoryAttachments).where(eq(inventoryAttachments.id, id));
@@ -120,10 +122,10 @@ export async function countInventoryAttachments(
     .select({ id: inventoryAttachments.id })
     .from(inventoryAttachments)
     .where(
-      and(
+      trashAnd(activeRows.inventoryAttachments, and(
         eq(inventoryAttachments.itemId, itemId),
         eq(inventoryAttachments.kind, kind),
-      ),
+      )),
     );
   return rows.length;
 }

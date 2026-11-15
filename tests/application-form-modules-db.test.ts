@@ -55,11 +55,18 @@ test("application boards are admin-created with immutable attachment areas; publ
   assert.ok((await listPublicLocations()).some(row=>row.id===oldLocation.id));assert.ok(!(await listPublicLocations()).some(row=>row.id===newLocation.id));
   await assert.rejects(setApplicationModule(writer,"locations",false,initial.revision,"DEAKTIVIEREN"),/Administrationskonten/);
   await assert.rejects(setApplicationModule(admin,"finance",true,initial.revision,"BESTÄTIGEN"),/zuerst/);
-  await assert.rejects(setApplicationModule(admin,"locations",false,initial.revision,"deaktivieren"));
+  for (const confirmation of ["", "deaktivieren", "BESTÄTIGEN", "LÖSCHEN"]) {
+   await assert.rejects(setApplicationModule(admin,"locations",false,initial.revision,confirmation));
+   assert.deepEqual(await getApplicationModuleState(),initial);
+  }
   await setApplicationModule(admin,"locations",false,initial.revision,"DEAKTIVIEREN");
   assert.deepEqual(await listPublicLocations(),[]);
   assert.equal((await submitPublicApplication({...raw,locationId:oldLocation.id},{activityDetail:"Test"})).ok,false);
   let state=await getApplicationModuleState();
+  for (const confirmation of ["", "bestätigen", "DEAKTIVIEREN", "LÖSCHEN"]) {
+   await assert.rejects(setApplicationModule(admin,"finance",true,state.revision,confirmation));
+   assert.deepEqual(await getApplicationModuleState(),state);
+  }
   await setApplicationModule(admin,"finance",true,state.revision,"BESTÄTIGEN");
   const listed=await listPublicLocations();assert.ok(!listed.some(row=>row.id===oldLocation.id));
   assert.deepEqual(listed.find(row=>row.id===newLocation.id),{id:newLocation.id,name:newLocation.name,attachmentFields:["finance_request"],requiredAttachmentFields:["finance_request"]});

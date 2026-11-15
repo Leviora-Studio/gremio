@@ -619,3 +619,36 @@ Fehlen die beiden Eigenschaften beim bisherigen Modul, gilt unverändert: alle
 vier Slots sind verfügbar, Finanzantrag und Studierendenausweis sind Pflicht.
 Die öffentlichen Metadaten enthalten weder Board-IDs noch Konten oder interne
 Details. Die Einreichung prüft aktive Modulzuordnung und Routing auch beim Commit.
+
+### Archiv-Trigger bei Antragsboards
+
+Nextcloud-Archiv-Trigger funktionieren auf normalen Boards und Antragsboards wie bisher. Eine Archiv-Spalte setzt `archived: true` und sperrt öffentliche Uploads einschließlich Quittungen; Statusabfrage und Uploadvalidierung verwenden dieselbe Regel. Ohne Archiv-Sperre erlaubt eine gesperrte Karte weiterhin ausschließlich Quittungen im freigegebenen Quittungsbereich. Ausschließlich die interne Done-Spalte und ihr automatisches Erledigt-Archiv entfallen auf Antragsboards. Bestehende Token und Antwortstrukturen ändern sich nicht.
+
+Bei einer noch unbestätigten Sperrspalte bleibt der bisherige öffentliche Status
+einschließlich seiner Uploadregeln bestehen. Der Nextcloud-Upload für die neue
+Archivspalte beginnt ebenfalls erst nach der internen Sperrbestätigung. Danach
+greifen deren Archivregeln unmittelbar, auch wenn der externe Upload fehlschlägt
+und wiederholt werden muss. Die öffentliche API erhält keine Sperr- oder
+Archivierungsaktion und keine zusätzlichen Daten.
+
+
+## Papierkorb und Verfügbarkeit
+
+Mit Worteingabe gelöschte Ressourcen werden 30 Tage intern aufbewahrt. Währenddessen sind sie und ihre abhängigen Inhalte über normale Ansichten, direkte Downloads sowie API/MCP nicht verfügbar (bei bestehenden Einzelressourcen-Endpunkten wie nicht vorhandene Daten, in Listen ausgelassen). Dies gilt auch für öffentliche Antrags-/Status-Tokens; dort werden keine Papierkorb-Metadaten offengelegt. Gelöschte Gruppen vermitteln keine Berechtigungen. Eine Wiederherstellung durch Admins reaktiviert die erhaltenen Daten und Freigaben, ohne Inhalte neu zu erzeugen. Antragsboards und Kassenbücher dürfen nur Admins in den Papierkorb verschieben.
+
+Es wurden keine Bearer- oder MCP-Funktionen für Löschen ganzer Ressourcen, Papierkorbverwaltung oder Kassenbuch hinzugefügt. Wiederherstellen (`WIEDERHERSTELLEN`) und endgültiges Löschen (`ENDGÜLTIG`) sind geschützte, sessiongebundene Admin-Aktionen. Nach 720 Stunden ist die Wiederherstellung gesperrt; die automatische endgültige Bereinigung läuft täglich ab 03:00 Uhr Europe/Berlin. Öffentliche API-Felder und Token-Grenzen bleiben unverändert.
+
+
+Dateien im Board-Papierkorb sind keine aktiven Kartenanhänge. Sie fehlen sofort in öffentlichen Dateilisten, Statusabfragen und Downloads (404); eine interne Wiederherstellung macht sie nach den bisherigen Sichtbarkeitsregeln wieder verfügbar. Die öffentliche API erhält keine Papierkorb-Endpunkte oder zusätzliche Metadaten.
+
+
+Nextcloud-Archivaufträge werden bei bestätigten Status-/Sperränderungen transaktional in einer internen Auftragsliste gespeichert. Ein Serverabbruch oder ein paralleler Upload verliert den Auftrag nicht; der interne Worker übernimmt ihn erneut. Erfolgsvermerk, Aktivität und Bestätigung des Auftrags sind atomar. Bestätigter öffentlicher Status, Sperren und Live-Anwendbarkeit bleiben Voraussetzung. Die Auftragsliste und ihre Bearbeitung erhalten keine externen REST-/MCP-Endpunkte; öffentliche Antworten enthalten weiterhin weder Archivpfade noch Auftrags- oder Zugangsdaten.
+
+
+Die optionale Nextcloud-Archivierung von Kassenbuch-Anweisungen ist ausschließlich ein interner, sessiongebundener Ablauf. Nur der Kassenbucheigentümer verwaltet die verschlüsselte Verbindung. Beim Erteilen der Anweisung wird ein dauerhafter Auftrag gespeichert; keine externen REST-/MCP-Endpunkte erlauben Konfiguration, Buchen oder Bearbeiten der Archivaufträge. Öffentliche Antrags-/Status-Token geben weder Kassenbuchdateien noch Archivpfade, Zugangsdaten oder Jobmetadaten aus. Bestehende Buchungswerte und ihre Unveränderlichkeit bleiben erhalten.
+
+
+Im Board-Papierkorb liegende Karten gelten auch für öffentliche Statusabfragen
+und zugehörige Dokumentabrufe als nicht verfügbar. Nach berechtigter
+Wiederherstellung über die interne Oberfläche funktioniert der ursprüngliche
+Status-Link wieder. Es gibt keine öffentliche Lösch-/Wiederherstellungsfunktion.

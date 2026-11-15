@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -30,7 +32,7 @@ export default async function MeetingPage({params}:{params:Promise<{id:string}>}
   const editable=writer&&meeting.state!=="closed";
   const canPropose=meeting.state!=="closed"&&(writer||!meeting.submissionDeadline||meeting.submissionDeadline.getTime()>=Date.now());
   const agenda=agendaTopics(topics,meeting);const agendaIds=new Set(agenda.map(topic=>topic.id));const others=topics.filter(topic=>["deferred","withdrawn"].includes(topic.state)||!agendaIds.has(topic.id));
-  const documentCounts=topics.length?await db.select({topicId:meetingDocuments.topicId,total:count()}).from(meetingDocuments).where(inArray(meetingDocuments.topicId,topics.map(t=>t.id))).groupBy(meetingDocuments.topicId):[];
+  const documentCounts=topics.length?await db.select({topicId:meetingDocuments.topicId,total:count()}).from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, inArray(meetingDocuments.topicId,topics.map(t=>t.id)))).groupBy(meetingDocuments.topicId):[];
   const parentOptions=topics.filter(topic=>!topic.transferred&&topic.parentId==null&&["scheduled","treated"].includes(topic.state)).map(topic=>({value:String(topic.id),label:`Unter-TOP von: ${topic.title}`}));
   const duration=agenda.reduce((sum,t)=>sum+t.durationMinutes,0);
   const destinations=await topicDestinations(user,topics.map(t=>t.id));

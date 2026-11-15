@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { budgetTitleFixture } from "./helpers/budget-title-fixtures";
 import {test,after} from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
@@ -16,6 +17,7 @@ test("new boards use per-title accounts and frozen plans require immutable, just
  assert.match(new URL(process.env.DATABASE_URL!).pathname,/^\/gremio_workflows_test_/);
  const [owner,writer,reader]=await db.insert(s.users).values(["owner","writer","reader"].map(name=>({username:`planning-correction-${name}-${randomUUID()}`,role:name==="owner"?"admin" as const:"user" as const}))).returning();
  const [account,otherAccount]=await db.insert(s.accounts).values([{name:`Default planning account ${randomUUID()}`},{name:`Different planning account ${randomUUID()}`}]).returning();
+ await budgetTitleFixture(owner.id,["1200","1300"],[account.id,otherAccount.id]);
  const boardId=await createBoardFromTemplate(owner.id,"New planning board",null,null,{attachmentFields:["receipts"]});
  const [newBoard]=await db.select().from(s.boards).where(eq(s.boards.id,boardId));assert.equal(newBoard.legacyFinanceFields,false);
  const fields=await db.select().from(s.boardCardFields).where(eq(s.boardCardFields.boardId,boardId));assert.ok(fields.every(field=>!["account","budget_title","approved_amount","actual_amount","instruction_date","transfer_date"].includes(field.fieldKey)));
@@ -36,7 +38,7 @@ test("new boards use per-title accounts and frozen plans require immutable, just
  await assert.rejects(db.update(s.cardBudgetPlans).set({allocations:[],revision:2}).where(eq(s.cardBudgetPlans.cardId,card.id)));
  const corrected=[{amount:"90",budgetTitle:"1300",accountId:otherAccount.id}];
  const options={confirmAccountChange:true,correction:{reason:"Correct the funding allocation",confirmation:"BESTÄTIGEN"}};
- for(const bad of [{...options,correction:{reason:"",confirmation:"BESTÄTIGEN"}},{...options,correction:{reason:"Reason",confirmation:"bestätigen"}}])await assert.rejects(writeBudgetPlan(writer,card.id,1,corrected,bad));
+ for(const bad of [{...options,correction:{reason:"",confirmation:"BESTÄTIGEN"}},{...options,correction:{reason:"Reason",confirmation:"bestätigen"}},{...options,correction:{reason:"Reason",confirmation:""}},{...options,correction:{reason:"Reason",confirmation:"LÖSCHEN"}}])await assert.rejects(writeBudgetPlan(writer,card.id,1,corrected,bad));
  await assert.rejects(writeBudgetPlan(reader,card.id,1,corrected,options),/Schreibzugriff/);
  assert.equal(await writeBudgetPlan(writer,card.id,1,corrected,options),2);
  const [correction]=await db.select().from(s.cardBudgetPlanCorrections).where(eq(s.cardBudgetPlanCorrections.cardId,card.id));

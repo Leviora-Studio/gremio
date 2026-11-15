@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -18,7 +20,9 @@ import {
   groups,
   users,
 } from "@/lib/db/schema";
-import { getBoardMemberUsers, requireBoardManage } from "@/lib/authz";
+import { canManageBoard, getBoardMemberUsers, requireBoardSettingsAccess } from "@/lib/authz";
+import { BoardManagementSettings } from "@/components/board/BoardManagementSettings";
+import { getBoardManagementPeople } from "@/lib/board-management";
 import { getAccounts } from "@/lib/accounts";
 import { EDITABLE_FIELD_KEYS, LEGACY_FINANCE_FIELD_KEYS, type TriggerKind } from "@/lib/constants";
 import { getTriggerAssignmentConfigs } from "@/lib/trigger-assignments";
@@ -50,8 +54,6 @@ import {
   removeAccessAction,
   updateAccessLevelAction,
   setArchiveTriggerAction,
-  setInstructionTriggerAction,
-  setTransferTriggerAction,
   setTriggerAssignmentAction,
   setResubmitStatusAction,
   setReceiptFromStatusAction,
@@ -66,7 +68,9 @@ export default async function BoardSettingsPage({
 }) {
   const { id } = await params;
   const boardId = Number(id);
-  const { board } = await requireBoardManage(boardId);
+  const { user, board } = await requireBoardSettingsAccess(boardId);
+  const fullManagement = await canManageBoard(user, board);
+  const managementPeople = fullManagement ? await getBoardManagementPeople(boardId) : null;
 
   // System-Board (Leihvorgänge): keine normalen Board-Einstellungen — die
   // Verwaltung (inkl. Freigaben) läuft über das verknüpfte Inventar.
@@ -77,7 +81,7 @@ export default async function BoardSettingsPage({
   const statuses = await db
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position));
   const people = await getBoardMemberUsers(board);
   const [officeRole] = await db.select().from(boardOfficeRoles).where(eq(boardOfficeRoles.boardId, boardId));
@@ -129,8 +133,8 @@ export default async function BoardSettingsPage({
     })
     .from(boardAccess)
     .leftJoin(users, eq(users.id, boardAccess.userId))
-    .leftJoin(groups, eq(groups.id, boardAccess.groupId))
-    .where(eq(boardAccess.boardId, boardId));
+    .leftJoin(groups, trashAnd(activeRows.groups, eq(groups.id, boardAccess.groupId)))
+    .where(trashAnd(activeRows.boardAccess, eq(boardAccess.boardId, boardId)));
 
   const allUsers = await db
     .select({ id: users.id, username: users.username })
@@ -139,16 +143,12 @@ export default async function BoardSettingsPage({
     .orderBy(users.username);
   const allGroups = await db
     .select({ id: groups.id, name: groups.name })
-    .from(groups)
+    .from(groups).where(activeRows.groups)
     .orderBy(groups.name);
 
   const archiveTriggerIds = statuses
     .filter((s) => s.isArchiveTrigger)
     .map((s) => s.id);
-  const instrTriggerId =
-    statuses.find((s) => s.isInstructionTrigger)?.id ?? "";
-  const transferTriggerId =
-    statuses.find((s) => s.isTransferTrigger)?.id ?? "";
 
   const [archiveCfg] = await db
     .select()
@@ -156,11 +156,11 @@ export default async function BoardSettingsPage({
     .where(eq(boardArchive.boardId, boardId))
     .limit(1);
 
-  const [instructionForm] = await db
+  const [instructionForm] = fullManagement ? await db
     .select()
     .from(boardInstructionForms)
     .where(eq(boardInstructionForms.boardId, boardId))
-    .limit(1);
+    .limit(1) : [];
 
   const triggerConfigs = await getTriggerAssignmentConfigs(boardId);
   const triggerUserIds = [...new Set([...triggerConfigs.values()].flatMap((c) => c.userIds))];
@@ -194,24 +194,26 @@ export default async function BoardSettingsPage({
         <h1 className="text-2xl font-bold">Board-Einstellungen</h1>
       </div>
 
+      {!fullManagement && <p className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-slate-700">Du hast begrenzte Verwaltungsrechte für dieses Board. Hier siehst du die dafür freigegebenen Einstellungen.</p>}
+
       {/* 1. Allgemein */}
-      <CollapsibleSection title="Allgemein">
+      {fullManagement && <CollapsibleSection title="Allgemein">
         <RenameBoardForm
           boardId={boardId}
           name={board.name}
           description={board.description}
           isApplicationBoard={board.isApplicationBoard}
         />
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {board.isApplicationBoard && <CollapsibleSection title="Sperrspalten und Zahlungsabschluss"><LockColumnsForm boardId={boardId} statuses={statuses} completedStatusId={board.completedStatusId}/></CollapsibleSection>}
       <CollapsibleSection title="Email-Settings"><BoardEmailSettings boardId={boardId} /></CollapsibleSection>
 
-      <CollapsibleSection title="Bürokraft aktivieren">
+      {fullManagement && <CollapsibleSection title="Bürokraft aktivieren">
         <OfficeRoleForm boardId={boardId} people={people} statuses={statuses} initial={{ enabled: officeRole?.enabled ?? false, userId: officeRole?.userId ?? null,
           sourceStatusIds: officeStatuses.filter(row => row.direction === "source").map(row => row.statusId),
           targetStatusIds: officeStatuses.filter(row => row.direction === "target").map(row => row.statusId) }} />
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {/* 2. Freigaben */}
       <CollapsibleSection title="Freigaben">
@@ -355,7 +357,7 @@ export default async function BoardSettingsPage({
       </CollapsibleSection>
 
       {/* 6. Anweisungsformular */}
-      <CollapsibleSection title="Anweisung Formular">
+      {fullManagement && <CollapsibleSection title="Anweisung Formular">
         <InstructionFormSettings
           boardId={boardId}
           config={{
@@ -364,9 +366,9 @@ export default async function BoardSettingsPage({
             size: instructionForm?.size ?? null,
           }}
         />
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
-      {/* 7. Trigger-Spalten (Anweisungsdatum, Nachreichung, Quittung, Done) */}
+      {/* 7. Trigger-Spalten (Nachreichung, Quittung, Done) */}
       <CollapsibleSection title="Trigger-Spalten">
         <p className="mb-4 text-sm text-slate-500">
           Diese Spalten lösen beim Erreichen automatische Aktionen aus oder
@@ -374,54 +376,8 @@ export default async function BoardSettingsPage({
           deaktiviert.
         </p>
 
-        {/* Anweisungsdatum */}
-        <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-slate-700">
-            Anweisungsdatum automatisch setzen
-          </h3>
-          <p className="text-xs text-slate-500">
-            Erreicht eine Karte diese Spalte, wird ihr Anweisungsdatum
-            automatisch auf den heutigen Tag gesetzt.
-          </p>
-          <SelectSaveForm
-            action={setInstructionTriggerAction.bind(null, boardId)}
-            name="statusId"
-            label="Auslösende Spalte"
-            submitLabel="Setzen"
-            initial={instrTriggerId ? String(instrTriggerId) : ""}
-            options={[
-              { value: "", label: "— keine —" },
-              ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
-            ]}
-          />
-          {assignmentForm("instruction", "Wird ausgeführt, sobald eine Karte die auslösende Spalte erreicht.")}
-        </div>
-
-        {/* Überweisungsdatum */}
-        <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
-          <h3 className="text-sm font-semibold text-slate-700">
-            Überweisungsdatum automatisch setzen
-          </h3>
-          <p className="text-xs text-slate-500">
-            Erreicht eine Karte diese Spalte, wird ihr Überweisungsdatum
-            automatisch auf den heutigen Tag gesetzt.
-          </p>
-          <SelectSaveForm
-            action={setTransferTriggerAction.bind(null, boardId)}
-            name="statusId"
-            label="Auslösende Spalte"
-            submitLabel="Setzen"
-            initial={transferTriggerId ? String(transferTriggerId) : ""}
-            options={[
-              { value: "", label: "— keine —" },
-              ...statuses.map((s) => ({ value: String(s.id), label: s.name })),
-            ]}
-          />
-          {assignmentForm("transfer", "Wird ausgeführt, sobald eine Karte die auslösende Spalte erreicht.")}
-        </div>
-
         {/* Nachreichung */}
-        <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
+        <div className="space-y-1">
           <h3 className="text-sm font-semibold text-slate-700">
             Nachreichung (öffentlicher Status-Link)
           </h3>
@@ -476,7 +432,7 @@ export default async function BoardSettingsPage({
         </div>
 
         {/* Done-Spalte */}
-        <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
+        {!board.isApplicationBoard && <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
           <h3 className="text-sm font-semibold text-slate-700">
             Done-Spalte (Erledigt-Archiv)
           </h3>
@@ -489,7 +445,7 @@ export default async function BoardSettingsPage({
             }}
           />
           {assignmentForm("done", "Wird ausgeführt, sobald eine Karte die Done-Spalte erreicht (nicht erst beim täglichen Archivieren).")}
-        </div>
+        </div>}
       </CollapsibleSection>
 
       {/* 8. Standardkonto */}
@@ -547,18 +503,24 @@ export default async function BoardSettingsPage({
       </CollapsibleSection>
 
       {/* 10. Eigentum & Löschen */}
-      <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
+      {fullManagement && <CollapsibleSection title={board.isApplicationBoard ? "Eigentümerschaft" : "Eigentum & Löschen"}>
         <div className="mb-4">
 
           <OwnerSettings kind="board" id={boardId}/>
         </div>
+        {!board.isApplicationBoard && <>
         <DeleteConfirm
           action={deleteBoardConfirmedAction.bind(null, boardId)}
+          confirmName={board.name}
           buttonLabel="Board löschen"
           title={`Board „${board.name}" löschen`}
           message="Das Board wird inkl. aller Anträge, Karten und Anhänge unwiderruflich gelöscht."
         />
-      </CollapsibleSection>
+        </>}
+      </CollapsibleSection>}
+      {managementPeople && <CollapsibleSection title="Verwaltungsrechte vergeben">
+        <BoardManagementSettings boardId={boardId} {...managementPeople} />
+      </CollapsibleSection>}
     </div>
   );
 }

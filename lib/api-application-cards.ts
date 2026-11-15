@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -52,6 +54,6 @@ export async function budgetPlanApi(req: Request, id: string) {
       throw error;
     }
   }
-  const [plan] = await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, r.card.id));
+  const [plan] = await db.select().from(cardBudgetPlans).where(trashAnd(activeRows.cardBudgetPlans, eq(cardBudgetPlans.cardId, r.card.id)));
   return NextResponse.json({ revision: plan?.revision ?? 0, allocations: (plan?.allocations ?? []).map(row => ({ amountCents: row.amount, budgetTitle: row.budgetTitle, accountId:row.accountId??null })) });
 }

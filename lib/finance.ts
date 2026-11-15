@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { isResourceOwner, additionalOwnedIds } from "@/lib/board-ownership";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
@@ -32,7 +34,7 @@ export async function resolveSourceBoards(fb: FinanceBoard): Promise<{
       expiredStatusId: financeBoardSources.expiredStatusId,
     })
     .from(financeBoardSources)
-    .innerJoin(boards, eq(boards.id, financeBoardSources.boardId))
+    .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, financeBoardSources.boardId)))
     .where(eq(financeBoardSources.financeBoardId, fb.id))
     .orderBy(boards.name);
 
@@ -61,7 +63,7 @@ export async function getFinanceBoardById(
   const [row] = await db
     .select()
     .from(financeBoards)
-    .where(eq(financeBoards.id, id))
+    .where(trashAnd(activeRows.financeBoards, eq(financeBoards.id, id)))
     .limit(1);
   return row;
 }
@@ -72,7 +74,7 @@ export async function canAccessFinanceBoard(
   fb: FinanceBoard,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || fb.deletedAt) return false;
   if (user.role === "admin") return true;
   if (await isResourceOwner("finance",fb,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
@@ -80,7 +82,7 @@ export async function canAccessFinanceBoard(
     .select({ id: financeBoardAccess.id })
     .from(financeBoardAccess)
     .where(
-      and(
+      trashAnd(activeRows.financeBoardAccess, and(
         eq(financeBoardAccess.financeBoardId, fb.id),
         access === "write" ? eq(financeBoardAccess.accessLevel, "write") : undefined,
         or(
@@ -89,7 +91,7 @@ export async function canAccessFinanceBoard(
             ? inArray(financeBoardAccess.groupId, groupIds)
             : undefined,
         ),
-      ),
+      )),
     )
     .limit(1);
   return rows.length > 0;
@@ -97,7 +99,7 @@ export async function canAccessFinanceBoard(
 
 /** Verwalten (Name, Konto, Quellen, Freigaben, Plan, löschen): admin ODER Eigentümer. */
 export async function canManageFinanceBoard(user: User, fb: FinanceBoard): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || fb.deletedAt) return false;
   return user.role === "admin" || await isResourceOwner("finance",fb,user.id);
 }
 
@@ -106,22 +108,22 @@ export async function getAccessibleFinanceBoards(
 ): Promise<FinanceBoard[]> {
   if (!user.isActive) return [];
   if (user.role === "admin") {
-    return db.select().from(financeBoards).orderBy(financeBoards.name);
+    return db.select().from(financeBoards).where(activeRows.financeBoards).orderBy(financeBoards.name);
   }
   const groupIds = await getUserGroupIds(user.id);
   const ownerRows = await db
     .select({ id: financeBoards.id })
     .from(financeBoards)
-    .where(eq(financeBoards.ownerId, user.id));
+    .where(trashAnd(activeRows.financeBoards, eq(financeBoards.ownerId, user.id)));
   const userRows = await db
     .select({ id: financeBoardAccess.financeBoardId })
     .from(financeBoardAccess)
-    .where(eq(financeBoardAccess.userId, user.id));
+    .where(trashAnd(activeRows.financeBoardAccess, eq(financeBoardAccess.userId, user.id)));
   const groupRows = groupIds.length
     ? await db
         .select({ id: financeBoardAccess.financeBoardId })
         .from(financeBoardAccess)
-        .where(inArray(financeBoardAccess.groupId, groupIds))
+        .where(trashAnd(activeRows.financeBoardAccess, inArray(financeBoardAccess.groupId, groupIds)))
     : [];
   const ids = Array.from(
     new Set([...ownerRows, ...await additionalOwnedIds("finance",user.id), ...userRows, ...groupRows].map((r) => r.id)),
@@ -130,7 +132,7 @@ export async function getAccessibleFinanceBoards(
   return db
     .select()
     .from(financeBoards)
-    .where(inArray(financeBoards.id, ids))
+    .where(trashAnd(activeRows.financeBoards, inArray(financeBoards.id, ids)))
     .orderBy(financeBoards.name);
 }
 

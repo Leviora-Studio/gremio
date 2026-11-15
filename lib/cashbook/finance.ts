@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boards, cards, cardBudgetPlans, cardBudgetPositions, cashbooks, cashbookEntries, financeBoardSources, users, type FinanceBoard } from "@/lib/db/schema";
@@ -9,10 +11,10 @@ import { effectiveCashbookEntries } from "./projection";
 import type { AntragRow } from "@/lib/finance-data";
 
 export async function cashbookFinanceProjection(fb:FinanceBoard,sourceIds:number[],fallbackAccounts:number[]) {
-    const [book]=fb.cashbookId?await db.select().from(cashbooks).where(eq(cashbooks.id,fb.cashbookId)):[];
+    const [book]=fb.cashbookId?await db.select().from(cashbooks).where(trashAnd(activeRows.cashbooks, eq(cashbooks.id,fb.cashbookId))):[];
     const [owner]=await db.select().from(users).where(eq(users.id,fb.ownerId));
     if(!book||!owner||!["manage","read","write"].includes(await cashbookPermission(owner,book)??"")) throw new Error("Der Eigentümer der Finanzübersicht benötigt weiterhin Lesezugriff auf das verknüpfte Kassenbuch.");
-    const posted=effectiveCashbookEntries(await db.select().from(cashbookEntries).where(eq(cashbookEntries.cashbookId,book.id))).filter(entry=>entry.state==="posted");
+    const posted=effectiveCashbookEntries(await db.select().from(cashbookEntries).where(trashAnd(activeRows.cashbookEntries, eq(cashbookEntries.cashbookId,book.id)))).filter(entry=>entry.state==="posted");
     const actual=new Map<string,number>(),live=new Map<string,number>();
     const paidByCard=new Map<number,Map<string,number>>();
     for(const entry of posted){
@@ -21,13 +23,13 @@ export async function cashbookFinanceProjection(fb:FinanceBoard,sourceIds:number
         if(entry.data.cardId!=null){const paid=paidByCard.get(entry.data.cardId)??new Map<string,number>();paid.set(title,(paid.get(title)??0)+entry.data.amount);paidByCard.set(entry.data.cardId,paid);}
     }
     const linkedIds=[...paidByCard.keys()];
-    const sources=sourceIds.length?await db.select({source:financeBoardSources,board:boards}).from(financeBoardSources).innerJoin(boards,eq(boards.id,financeBoardSources.boardId)).where(and(eq(financeBoardSources.financeBoardId,fb.id),inArray(financeBoardSources.boardId,sourceIds))):[];
-    const allCards=sourceIds.length||linkedIds.length?await db.select().from(cards).where(or(sourceIds.length?inArray(cards.boardId,sourceIds):undefined,linkedIds.length?inArray(cards.id,linkedIds):undefined)):[];
+    const sources=sourceIds.length?await db.select({source:financeBoardSources,board:boards}).from(financeBoardSources).innerJoin(boards,trashAnd(activeRows.boards, eq(boards.id,financeBoardSources.boardId))).where(and(eq(financeBoardSources.financeBoardId,fb.id),inArray(financeBoardSources.boardId,sourceIds))):[];
+    const allCards=sourceIds.length||linkedIds.length?await db.select().from(cards).where(trashAnd(activeRows.cards, or(sourceIds.length?inArray(cards.boardId,sourceIds):undefined,linkedIds.length?inArray(cards.id,linkedIds):undefined))):[];
     const cardIds=allCards.map(card=>card.id);
-    const plans=cardIds.length?await db.select().from(cardBudgetPlans).where(inArray(cardBudgetPlans.cardId,cardIds)):[];
-    const positions=cardIds.length?await db.select().from(cardBudgetPositions).where(inArray(cardBudgetPositions.cardId,cardIds)):[];
+    const plans=cardIds.length?await db.select().from(cardBudgetPlans).where(trashAnd(activeRows.cardBudgetPlans, inArray(cardBudgetPlans.cardId,cardIds))):[];
+    const positions=cardIds.length?await db.select().from(cardBudgetPositions).where(trashAnd(activeRows.cardBudgetPositions, inArray(cardBudgetPositions.cardId,cardIds))):[];
     const boardIds=[...new Set(allCards.map(card=>card.boardId))];
-    const sourceBoards=boardIds.length?await db.select().from(boards).where(inArray(boards.id,boardIds)):[];
+    const sourceBoards=boardIds.length?await db.select().from(boards).where(trashAnd(activeRows.boards, inArray(boards.id,boardIds))):[];
     const readableBoards=new Set<number>();
     for(const board of sourceBoards)if(await canAccessBoard(owner,board))readableBoards.add(board.id);
     const cardRows:AntragRow[]=[];

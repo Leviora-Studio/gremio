@@ -3,6 +3,8 @@
 
 "use server";
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -22,9 +24,9 @@ function validId(id: unknown): id is number {
 async function access(cardId: number) {
   const user = await requireUser();
   if (!validId(cardId)) notFound();
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId));
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId)));
   if (!card || card.lockedAt) notFound();
-  const [board] = await db.select().from(boards).where(eq(boards.id, card.boardId));
+  const [board] = await db.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id, card.boardId)));
   if (!board || !await canEditBoard(user, board)) notFound();
   return { user, card, visible: await getVisibleFieldKeys(board.id) };
 }
@@ -34,9 +36,9 @@ export async function createAttachmentFolderAction(cardId: number, _prev: State,
   const name = organizationName(data.get("name"));
   if (!name) return { error: "Bitte einen gültigen Ordnernamen eingeben (max. 120 Zeichen, keine Pfad- oder Sonderzeichen)." };
   const result = await db.transaction(async (tx): Promise<State> => {
-    const [current] = await tx.select().from(cards).where(eq(cards.id, card.id)).for("update");
+    const [current] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, card.id))).for("update");
     if (!current) return { error: "Das Ticket wurde gelöscht." };
-    const folders = await tx.select().from(attachmentFolders).where(eq(attachmentFolders.cardId, card.id));
+    const folders = await tx.select().from(attachmentFolders).where(trashAnd(activeRows.attachmentFolders, eq(attachmentFolders.cardId, card.id)));
     if (folders.some((f) => f.name.toLocaleLowerCase("de-DE") === name.toLocaleLowerCase("de-DE"))) {
       return { error: "Ein Ordner mit diesem Namen existiert bereits." };
     }
@@ -59,9 +61,9 @@ export async function organizeAttachmentAction(cardId: number, attachmentId: num
   if (typeof rawName !== "string") return { error: "Bitte einen Dateinamen eingeben." };
   if (folderId !== null && !validId(folderId)) return { error: "Bitte einen gültigen Zielordner auswählen." };
   const result = await db.transaction(async (tx): Promise<State> => {
-    const [currentCard] = await tx.select().from(cards).where(eq(cards.id, card.id)).for("update");
+    const [currentCard] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, card.id))).for("update");
     if (!currentCard) return { error: "Das Ticket wurde gelöscht." };
-    const [att] = await tx.select().from(attachments).where(and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id))).for("update");
+    const [att] = await tx.select().from(attachments).where(trashAnd(activeRows.attachments, and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id)))).for("update");
     if (!att || !isCardAttachmentVisible(att, visible)) return { error: "Diese Datei ist nicht verfügbar." };
     // Moving a legacy upload must not require renaming its existing filename.
     const name = rawName === att.filename ? att.filename : requestedName;
@@ -72,7 +74,7 @@ export async function organizeAttachmentAction(cardId: number, attachmentId: num
     }
     const extension = (filename: string) => filename.match(/\.[^.]+$/)?.[0].toLowerCase() ?? "";
     if (extension(name) !== extension(att.filename)) return { error: "Die Dateiendung muss erhalten bleiben." };
-    const [folder] = folderId == null ? [] : await tx.select().from(attachmentFolders).where(and(eq(attachmentFolders.id, folderId), eq(attachmentFolders.cardId, card.id)));
+    const [folder] = folderId == null ? [] : await tx.select().from(attachmentFolders).where(trashAnd(activeRows.attachmentFolders, and(eq(attachmentFolders.id, folderId), eq(attachmentFolders.cardId, card.id))));
     if (folderId != null && !folder) return { error: "Der Zielordner gehört nicht zu diesem Ticket." };
     if (att.filename === name && att.folderId === folderId) return { success: "Keine Änderung erforderlich." };
     await tx.update(attachments).set({ filename: name, folderId }).where(eq(attachments.id, att.id));

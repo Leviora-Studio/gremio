@@ -5,7 +5,7 @@ import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { parseApiId } from "@/lib/api";
-import { requireMeeting,canManageMeeting } from "@/lib/meetings/access";
+import { requireMeeting,canManageMeeting,requireArea,canConfigureAreaSettings } from "@/lib/meetings/access";
 import { manageSourceBoard, visibleMeetingBoards } from "@/lib/meetings/service";
 import { getAccessibleBoards } from "@/lib/authz";
 import { Select } from "@/components/Select";
@@ -15,7 +15,8 @@ import { saveMeetingAction, bindBoardAction, confirmedDeleteMeetingAction } from
 export default async function MeetingSettingsPage({params}:{params:Promise<{id:string}>}) {
   const user=await requireUser();const id=parseApiId((await params).id);if(!id)notFound();
   const meeting=await requireMeeting(user,id,"write").catch(()=>null);if(!meeting)notFound();
-  const manager=canManageMeeting(user,meeting);
+  const owner=canManageMeeting(user,meeting);
+  const manager=await canConfigureAreaSettings(user,await requireArea(user,meeting.areaId));
   const linked=await visibleMeetingBoards(user,id);const candidates=[];
   for(const board of await getAccessibleBoards(user)) if(await manageSourceBoard(user,board))candidates.push({value:String(board.id),label:board.name});
   return <div className="mx-auto max-w-5xl space-y-6">
@@ -26,7 +27,7 @@ export default async function MeetingSettingsPage({params}:{params:Promise<{id:s
       {linked.map(board=><p key={board.id} className="break-words text-sm">{board.name}</p>)}
       <MeetingActionForm action={bindBoardAction.bind(null,id)} submit="Board-Anbindung speichern"><div><label className="label">Board</label><Select portal name="boardId" ariaLabel="Board" options={candidates} searchable/></div><label className="flex items-center gap-2 text-sm"><input name="remove" type="checkbox"/>Anbindung entfernen (bestehende Kartenverknüpfungen behalten ihren Zugriffsschutz)</label></MeetingActionForm>
     </details>}
-    {manager&&<section className="card p-5"><DeleteConfirm action={confirmedDeleteMeetingAction.bind(null,id)} buttonLabel="Sitzung löschen" title="Sitzung löschen" message="Sitzung, TOPs und Sitzungsunterlagen werden endgültig gelöscht. Verknüpfte Karten bleiben erhalten." wordInModal/></section>}
+    {owner&&<section className="card p-5"><DeleteConfirm action={confirmedDeleteMeetingAction.bind(null,id)} buttonLabel="Sitzung löschen" title="Sitzung löschen" message="Sitzung, TOPs und Sitzungsunterlagen werden endgültig gelöscht. Verknüpfte Karten bleiben erhalten." wordInModal/></section>}
 
   </div>;
 }

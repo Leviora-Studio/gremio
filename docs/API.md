@@ -241,8 +241,7 @@ Felder ändern und/oder Karte **verschieben**. Alle Felder optional; nur
 übergebene Felder werden geändert (`null` löscht ein Feld).
 
 - **Spalte wechseln:** `statusId` setzen → Karte landet am Ende der Zielspalte,
-  Aktivität wird protokolliert, Trigger (Anweisungsdatum, Überweisungsdatum,
-  Nextcloud-Archiv) greifen wie in der UI — einschließlich der in den
+  Aktivität wird protokolliert, weiterhin verfügbare Trigger (Nextcloud-Archiv auf normalen Boards und Antragsboards; Done nur auf normalen Boards) greifen wie in der UI — einschließlich der in den
   Board-Einstellungen hinterlegten Trigger-Zuweisungen (Zuweisungen entfernen
   und/oder Nutzer zuweisen). Wird im selben Request `assigneeUserIds`
   übergeben, gilt diese Liste. Nachreichungsmarkierung und
@@ -319,7 +318,7 @@ Board-Beschränkungen und Feldsichtbarkeiten. Die öffentliche API bleibt unver�
 `unassigned=true|false`, `archived=false|true|all`, `deadlineBefore=YYYY-MM-DD`,
 `deadlineAfter=YYYY-MM-DD`, `overdue=true|false`, `sort=position|updated|deadline`,
 `limit` und `offset`. Datumsschranken sind exklusiv. `overdue=true` bedeutet:
-Deadline vor heute (Europe/Berlin), nicht in der Done-Spalte, nicht archiviert.
+Deadline vor heute (Europe/Berlin), nicht archiviert und auf normalen Boards nicht in einer wirksamen Done-Spalte. Auf Antragsboards werden alte Done-Einstellungen ignoriert.
 `accountId` berücksichtigt auch Haushaltspositionen. `q` sucht einen wörtlichen,
 case-insensitiven Teilstring in Titel und sichtbarer Nummer, Antragsteller, Notizen
 und Haushaltstitel; `%` und `_` sind keine Wildcards. Verborgene Felder können auch
@@ -341,7 +340,7 @@ Pfade; unbekannte Ereignisdetails werden vorsichtshalber nicht ausgegeben.
 
 **Dateien:** Maximal 25 MiB je Datei. `kind` ist `finance_request`, `annex_a`,
 `annex_b`, `student_card` oder `other`. PDF ist überall erlaubt; `student_card`
-erlaubt zusätzlich PNG/JPEG. Benannte Slots ersetzen vorhandene Dateien,
+erlaubt zusätzlich PNG/JPEG. Benannte Slots ersetzen vorhandene Dateien; die vorherige Datei bleibt 30 Tage im Datei-Papierkorb des Boards wiederherstellbar.
 `other` fügt hinzu. Ein deaktiviertes Anhangfeld ergibt beim Upload 400, beim
 Download 404 und wird in Listen ausgelassen. Generierte Anweisungsdateien folgen
 der bestehenden Sichtbarkeitsausnahme. Antwort: 201 `{ attachment: … }` ohne
@@ -377,8 +376,9 @@ individual users and groups. Any matching write grant wins; owners and admins
 retain full access. Existing grants are migrated to `write` by migration 0070.
 All internal REST/MCP mutations require both live board write access and token
 `scope=write`. A read-only board grant returns HTTP 403 for writes, even with a
-write-scoped token. Reading and downloads remain available. Sharing/settings
-remain owner/admin-only; this change adds no external sharing endpoints.
+write-scoped token. Reading and downloads remain available. Full management remains owner/admin-only. Explicit board delegates may configure
+the limited settings listed below through the session-bound UI; this adds no
+external sharing/settings endpoints.
 
 ### Restricted office status moves
 
@@ -397,7 +397,7 @@ is added. Revoked read access also revokes the supplemental movement permission.
 
 ### Spalten-E-Mails
 
-Instanzweites SMTP und Bestätigungen werden ausschließlich im Admin-Dashboard verwaltet. Board-Einstellungen erlauben Eigentümer/Admin Spaltenregeln mit Empfangsadressen. Neue Karten oder echte Statuswechsel über UI, REST oder MCP erzeugen atomar eine Nachricht pro Empfänger in der Outbox, sofern SMTP und die Zielspalten-Regel aktiviert sind. Positionsänderungen und No-op-Statusupdates senden nichts. Versand läuft nach dem Commit; API-Antworten und Berechtigungen bleiben unverändert. Es gibt keine neuen SMTP-Konfigurationsendpunkte und keine Kontaktadressen in öffentlichen Karten-/Statusantworten.
+Instanzweites SMTP und Bestätigungen werden ausschließlich im Admin-Dashboard verwaltet. Board-Einstellungen erlauben Eigentümern/Admins sowie ausdrücklich ernannten Board-Verwaltern Spaltenregeln mit Empfangsadressen. Neue Karten oder echte Statuswechsel über UI, REST oder MCP erzeugen atomar eine Nachricht pro Empfänger in der Outbox, sofern SMTP und die Zielspalten-Regel aktiviert sind. Positionsänderungen und No-op-Statusupdates senden nichts. Versand läuft nach dem Commit; API-Antworten und Berechtigungen bleiben unverändert. Es gibt keine neuen SMTP-Konfigurationsendpunkte und keine Kontaktadressen in öffentlichen Karten-/Statusantworten.
 
 
 ### Sitzungen: getrennte Berechtigungen und sessiongebundene Downloads
@@ -470,6 +470,13 @@ Board-Schreibrecht. Es gibt keinen Weg zum Entsperren. `card.lockedAt`, `lockedB
 und `publicStatusId` sind ausschließlich lesbare Metadaten; Board/Spalten liefern
 `isApplicationBoard`, `completedStatusId` und `isLockColumn`.
 
+Bei aktivierter Nextcloud-Archivierung startet ein Archiv-Trigger erst mit dem
+bestätigten öffentlichen Status. Ein Wechsel in eine unbestätigte Sperrspalte
+archiviert noch nicht; der Sperraufruf startet die Archivierung nach dem Commit.
+Normale Archivspalten und spätere Wechsel bereits gesperrter Karten archivieren
+sofort. Archivlink und Wiederholungszustand werden ausschließlich intern gepflegt;
+dadurch werden keine gesperrten Karteninhalte bearbeitbar.
+
 `GET /api/v1/cards/{id}/budget-plan` liefert `{ revision, allocations }` mit
 `{ amountCents, accountId, budgetTitle }` je Zeile. PATCH ersetzt diese separate Einplanung
 vollständig mit der zuletzt gelesenen Revision; `allocations: []` entfernt sie.
@@ -537,3 +544,74 @@ toggleable; receipt uploads require the independent receipts area, even when
 other_pdfs is disabled. Internal REST/MCP uploads use the same field projection
 and database guards and cannot add unconfigured attachment types. No new bearer
 or MCP methods are introduced for board or public-module administration.
+
+### Begrenzte Board-Verwaltung (sessiongebunden)
+
+Normale Boards und Antragsboards können aktive Personen mit bestehendem direktem oder Gruppen-Schreibzugriff als begrenzte Board-Verwalter ernennen. Die Vergabe/der Entzug erfolgt ausschließlich durch Eigentümer/Admins über die authentifizierten Einstellungen. Freigegeben sind Sperrspalten/Zahlungsabschluss, Email-Settings, Freigaben, Spalten, Kartenfelder, automatische Antragsnummer, Trigger-Spalten, Standard-Konto und Nextcloud-Archiv. Ohne aktuellen Schreibzugriff ruht die Ernennung, bei erneutem Schreibzugriff gilt sie wieder; ihr ausdrücklicher Entzug entfernt sie vollständig.
+
+Allgemein/Umbenennen, Bürokraft, Anweisungsformular, Eigentümerschaft/Löschen und die Ernennung selbst bleiben geschützt. Finanzboards, Kassenbücher und Leih-System-Boards erhalten keine delegierten Verwaltungsrechte. Der Bearer-Vertrag bleibt unverändert: keine neuen Einstellungs- oder Ernennungsendpunkte, kein `owner`-Status durch Delegation, unveränderte Sichtbarkeit geschützter Verwaltungsmetadaten. MCP verwendet dieselben bestehenden API-Grenzen; die öffentliche API bleibt unverändert.
+
+### Entfernte Datums-Trigger und Done nur auf normalen Boards
+
+Statuswechsel über Oberfläche, Sitzungsplanung, REST und MCP setzen weder Anweisungsdatum noch Überweisungsdatum automatisch. Bestehende Werte und die manuellen Schreibrechte alter Boards bleiben erhalten. `isInstructionTrigger`/`isTransferTrigger` bleiben als kompatible Verwaltungsmetadaten für Eigentümer/Admins enthalten, liefern aber stets `false`.
+
+`isArchiveTrigger` funktioniert auf normalen Boards und Antragsboards wie bisher, einschließlich automatischer Nextcloud-Archivierung, öffentlicher Uploadsperre und Vorlagenübernahme. Ausschließlich die Done-Spalte entfällt auf Antragsboards: `doneStatusId` ist dort immer `null`, der Done-Sweep und die dazugehörigen Zuweisungen sind inaktiv. Historische Done-Konfigurationen bleiben gespeichert; Suchfilter/Statistiken behandeln die Spalte als gewöhnliche Spalte. Vorhandene archivierte Karten bleiben zugänglich. Normale Boards behalten Done und Nextcloud; Zahlungsabschluss bleibt unabhängig davon erhalten. Keine neuen API-/MCP-Funktionen.
+
+### Begrenzte Inventar-Verwaltung (sessiongebunden)
+
+Eigentümer/Admins können aktive Personen mit bestehendem direktem oder Gruppen-Schreibzugriff als Inventar-Verwalter ernennen. Die Delegation gilt ausschließlich für Email-Settings des tatsächlich verknüpften Leihvorgangsboards, Freigaben, Felder und automatische Inventarnummer. Umbenennen, Aufgabentracking, Eigentümerschaft, Löschen und Vergabe/Entzug der Verwaltungsrechte bleiben Eigentümer/Admin vorbehalten. Jeder Aufruf prüft aktuelle Schreibrechte; ohne diese ruhen die Rechte. Eine spätere Schreibfreigabe aktiviert eine bestehende Ernennung erneut; ausdrücklicher Entzug löscht sie.
+
+Die vier Bereiche und die Ernennung verwenden ausschließlich authentifizierte Server Actions, keine neuen Bearer-/MCP-Endpunkte. `canManageInventoryBoard` und `canManageBoard` bleiben volle Eigentümerprüfungen; Delegation ändert die REST/MCP-Rolle eines System-Boards nicht. Normale Board-Verwaltung und Inventar-Verwaltung sind getrennt; Rechte anderer Ressourcen sowie öffentliche Token bleiben unverändert.
+
+### Finanzübersichten anlegen
+
+Die Anlage ist ausschließlich über das Admin-Panel und seine authentifizierte Server Action für aktive Administrationskonten verfügbar. Ein bestehender Finanzboard-Eigentümer oder Schreiber ohne globale Adminrolle darf keine neue Übersicht anlegen. Die bisherige `/finanzen/neu`-Seite leitet nur Admins ins Admin-Panel weiter; es gibt keine neuen Bearer-/MCP-Funktionen. Bestehende Finanzboard-Rechte bleiben unverändert. Die Navigation zeigt Finanzen nur mit aktuellem Zugriff auf mindestens eine Übersicht, einschließlich direkter/Gruppen-Lesefreigaben und Eigentümerschaften.
+
+### Entfernen eines Inventar-Aufgabentrackingboards
+
+Die sessiongebundene Server Action erfordert weiterhin vollständige Inventar-Verwaltung durch Eigentümer/Admin und zusätzlich die Bestätigung `LÖSCHEN`. Die tatsächlich eingegebene Bestätigung wird geprüft, bevor Verknüpfungen oder Daten verändert werden. Es gibt keinen neuen Bearer-Endpunkt. Das Board und seine Karten einschließlich Kartenkommentaren/-verlauf und nur dort abgelegten Anhängen werden gelöscht; laufende und alte Inventar-Leihvorgänge, Stückzuordnungen und Inventar-Dokumente bleiben erhalten. Nur die Tracking-Kartenverknüpfung entfällt.
+
+### Haushaltstitel aus dem zugeordneten Haushaltsplan
+
+Neue bzw. geänderte Haushaltstitel der Einplanung müssen als Ausgabentitel im
+Finanzboard des jeweiligen Kontos vorhanden sein. Fehlende Zuordnung oder fremde
+Titel ergeben 409 ohne Teiländerung; dies gilt auch für Korrektureinträge und MCP.
+Ein zuvor gespeichertes Konto/Titel-Paar darf unverändert erhalten bleiben, auch
+wenn es inzwischen nicht mehr im Plan steht. Solche historischen Zeilen dürfen
+nicht durch zusätzliche Kopien vermehrt werden. Es gibt keinen neuen öffentlichen
+oder Bearer-Endpunkt für die Titelkataloge; die interne Oberfläche bietet die
+konfigurierten Nummern und Bezeichnungen zur Auswahl. Planbeträge werden dadurch
+nicht freigegeben. Kassenbuch-Zuordnungen und Buchungen bleiben sessiongebunden.
+
+
+## Papierkorb und Verfügbarkeit
+
+Mit Worteingabe gelöschte Ressourcen werden 30 Tage intern aufbewahrt. Währenddessen sind sie und ihre abhängigen Inhalte über normale Ansichten, direkte Downloads sowie API/MCP nicht verfügbar (bei bestehenden Einzelressourcen-Endpunkten wie nicht vorhandene Daten, in Listen ausgelassen). Dies gilt auch für öffentliche Antrags-/Status-Tokens; dort werden keine Papierkorb-Metadaten offengelegt. Gelöschte Gruppen vermitteln keine Berechtigungen. Eine Wiederherstellung durch Admins reaktiviert die erhaltenen Daten und Freigaben, ohne Inhalte neu zu erzeugen. Antragsboards und Kassenbücher dürfen nur Admins in den Papierkorb verschieben.
+
+Es wurden keine Bearer- oder MCP-Funktionen für Löschen ganzer Ressourcen, Papierkorbverwaltung oder Kassenbuch hinzugefügt. Wiederherstellen (`WIEDERHERSTELLEN`) und endgültiges Löschen (`ENDGÜLTIG`) sind geschützte, sessiongebundene Admin-Aktionen. Nach 720 Stunden ist die Wiederherstellung gesperrt; die automatische endgültige Bereinigung läuft täglich ab 03:00 Uhr Europe/Berlin. Öffentliche API-Felder und Token-Grenzen bleiben unverändert.
+
+
+Der Datei-Papierkorb eines Boards ist ausschließlich über geschützte, sessiongebundene Board-Aktionen zugänglich. Gelöschte bzw. ersetzte Anhänge fehlen sofort in API-/MCP-Listen und liefern beim Download 404. Bestehende Upload-Endpunkte ändern weder Umfang noch Antwortschema. Schreibrechte und Anhangsfeld-Sichtbarkeit gelten auch bei Wiederherstellung/endgültiger Löschung; gesperrte Karten werden dabei nicht wieder bearbeitbar. Öffentliche Statusabfragen und ZIPs geben Papierkorbdateien nicht aus.
+
+
+Nextcloud-Archivaufträge werden bei bestätigten Status-/Sperränderungen transaktional in einer internen Auftragsliste gespeichert. Ein Serverabbruch oder ein paralleler Upload verliert den Auftrag nicht; der interne Worker übernimmt ihn erneut. Erfolgsvermerk, Aktivität und Bestätigung des Auftrags sind atomar. Bestätigter öffentlicher Status, Sperren und Live-Anwendbarkeit bleiben Voraussetzung. Die Auftragsliste und ihre Bearbeitung erhalten keine externen REST-/MCP-Endpunkte; öffentliche Antworten enthalten weiterhin weder Archivpfade noch Auftrags- oder Zugangsdaten.
+
+
+Die optionale Nextcloud-Archivierung von Kassenbuch-Anweisungen ist ausschließlich ein interner, sessiongebundener Ablauf. Nur der Kassenbucheigentümer verwaltet die verschlüsselte Verbindung. Beim Erteilen der Anweisung wird ein dauerhafter Auftrag gespeichert; keine externen REST-/MCP-Endpunkte erlauben Konfiguration, Buchen oder Bearbeiten der Archivaufträge. Öffentliche Antrags-/Status-Token geben weder Kassenbuchdateien noch Archivpfade, Zugangsdaten oder Jobmetadaten aus. Bestehende Buchungswerte und ihre Unveränderlichkeit bleiben erhalten.
+
+
+Sitzungsbereiche unterstützen zusätzlich persönliche Verwaltungsfreigaben für
+aktuelle Schreibberechtigte (`meeting_area_managers`). Diese erweitern nur die
+sessiongebundenen Einstellungsaktionen und den Original-Wordvorlagen-Download.
+Sie verleihen keine Eigentümerschaft, Lösch-/Ernennungsrechte, vertraulichen
+TOP-Zugriff oder vertraulichen Sitzungsexporte. REST-/MCP-Scope bleibt unverändert.
+
+
+Kartenlöschen nutzt seit dem Board-Kartenpapierkorb die 30-Tage-Aufbewahrung:
+`DELETE /api/v1/cards/{id}` verlangt den JSON-Body
+`{"confirmation":"LÖSCHEN"}`. Fehlende, falsche und zusätzliche Eingabefelder
+werden mit 400 abgewiesen. Weiterhin sind Scope `write`, aktueller Board-Schreibzugriff
+und ein zulässiges Board erforderlich; gesperrte Karten bleiben geschützt.
+Nach Erfolg bleiben Inhalte/Dateien gespeichert, sind aber über normale
+API-/öffentliche Abfragen nicht mehr abrufbar. Wiederherstellung und endgültiges
+Löschen erfolgen im Board-Papierkorb über die Oberfläche.

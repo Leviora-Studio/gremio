@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -56,8 +57,8 @@ test("area settings serialize with financial planning and meeting edits without 
     await planFinanceCard(owner, root.id, card.id, await revision());
     assert.equal((await db.select().from(s.meetingTopics).where(eq(s.meetingTopics.parentId, root.id))).length, 1, "retry with the current revision succeeds");
   } finally {
-    await service.deleteMeeting(owner, mid);
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id, area.id));
+    await purgeTestResource("meeting",mid);
+    await purgeTestMeetings(area.id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area.id));
     await db.delete(s.boards).where(eq(s.boards.id, board.id));
     await db.delete(s.users).where(eq(s.users.id, owner.id));
   }

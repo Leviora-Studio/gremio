@@ -36,16 +36,16 @@ test("an admin snapshot cannot restore privileges after live revocation or deact
     loaded.filename = entry; loaded.paths = module.paths;
     loaded._compile(await readFile(entry, "utf8"), entry);
     context.__auditAdminSnapshot = actor;
-    await loaded.exports.setRoleAction(target.id, "admin");
+    await loaded.exports.setRoleAction(target.id, "admin", "ADMIN");
     assert.equal((await db.select().from(users).where(eq(users.id, target.id)))[0].role, "admin");
     await db.update(users).set({ role: "user" }).where(eq(users.id, target.id));
     // Simulate permission loss after initial request authentication, before
     // the action acquires its administrator locks.
     await db.update(users).set({ role: "user" }).where(eq(users.id, actor.id));
-    await loaded.exports.setRoleAction(actor.id, "admin");
+    await loaded.exports.setRoleAction(actor.id, "admin", "ADMIN");
     assert.equal((await db.select().from(users).where(eq(users.id, actor.id)))[0].role, "user");
     await db.update(users).set({ role: "admin", isActive: false }).where(eq(users.id, actor.id));
-    await loaded.exports.setRoleAction(target.id, "admin");
+    await loaded.exports.setRoleAction(target.id, "admin", "ADMIN");
     assert.equal((await db.select().from(users).where(eq(users.id, target.id)))[0].role, "user");
   } finally {
     delete context.__auditAdminSnapshot;

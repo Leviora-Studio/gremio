@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import type { NumberingConfig } from "./numbering";
+export const CASHBOOK_SECOND_PLACE_DATE_FIELD = "GremioSecondSignerPlaceDate";
 export type CashbookRole = "speaker" | "finance";
 export type CashbookConfig = {
     speakerId: number | null;
@@ -46,6 +47,8 @@ export type CashbookFile = {
         wRatio: number;
         hRatio: number;
     }[];
+    /** Prefix containing the first signature; incremental PDF updates preserve these bytes. */
+    firstSignature?: { byteLength: number; sha256: string };
     obsolete?: boolean;
     role?: CashbookRole;
 };

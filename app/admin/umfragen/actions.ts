@@ -3,13 +3,17 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
 import { revalidatePath } from "next/cache";
 import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { boards, boardStatuses, feedbackAreas } from "@/lib/db/schema";
-import {FEEDBACK_REQUIRED_CARD_FIELD_KEYS} from "@/lib/constants";
-import {lockLocationBoard,missingBoardFields,missingBoardFieldsMessage} from "@/lib/location-board-fields";
+import { FEEDBACK_REQUIRED_CARD_FIELD_KEYS } from "@/lib/constants";
+import { lockLocationBoard, missingBoardFields, missingBoardFieldsMessage } from "@/lib/location-board-fields";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
 import { sanitizeSingleLine } from "@/lib/text";
@@ -44,13 +48,13 @@ export async function createFeedbackAreaAction(
   const exists = await db
     .select({ id: feedbackAreas.id })
     .from(feedbackAreas)
-    .where(eq(feedbackAreas.name, parsed.data.name))
+    .where(trashAnd(activeRows.feedbackAreas, eq(feedbackAreas.name, parsed.data.name)))
     .limit(1);
   if (exists.length) return { error: "Bereichs-Name bereits vergeben." };
 
   const [row] = await db
     .select({ m: max(feedbackAreas.position) })
-    .from(feedbackAreas);
+    .from(feedbackAreas).where(activeRows.feedbackAreas);
   try {
     await db.insert(feedbackAreas).values({
       name: parsed.data.name,
@@ -91,7 +95,7 @@ export async function renameFeedbackAreaAction(
   const clash = await db
     .select({ id: feedbackAreas.id })
     .from(feedbackAreas)
-    .where(eq(feedbackAreas.name, parsed.data.name))
+    .where(trashAnd(activeRows.feedbackAreas, eq(feedbackAreas.name, parsed.data.name)))
     .limit(1);
   if (clash[0] && clash[0].id !== areaId) {
     return { error: "Bereichs-Name bereits vergeben." };
@@ -113,13 +117,11 @@ export async function renameFeedbackAreaAction(
   return { success: "Umbenannt." };
 }
 
-export async function deleteFeedbackAreaAction(areaId: number): Promise<void> {
-  await requireAdmin();
-  if (!isValidId(areaId)) return;
-  // feedback_submissions.area_id ist ON DELETE SET NULL → bestehende
-  // Feedback-Karten und ihr Herkunfts-Snapshot bleiben erhalten.
-  await db.delete(feedbackAreas).where(eq(feedbackAreas.id, areaId));
-  revalidatePath("/admin/umfragen");
+export async function deleteFeedbackAreaAction(areaId: number, confirmation?: unknown): Promise<{ error?: string } | void> {
+  const user=await requireAdmin();
+  try { await moveToTrash(user, "feedback", areaId, confirmation); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/umfragen"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }
 
 export async function setFeedbackAreaTargetAction(
@@ -160,7 +162,7 @@ export async function setFeedbackAreaTargetAction(
   const [zielBoard] = await db
     .select({ inventoryBoardId: boards.inventoryBoardId })
     .from(boards)
-    .where(eq(boards.id, boardId))
+    .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
     .limit(1);
   if (!zielBoard) return { error: "Ungültiges Ziel-Board." };
   if (zielBoard.inventoryBoardId != null) {
@@ -172,7 +174,7 @@ export async function setFeedbackAreaTargetAction(
   const [status] = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId))))
     .limit(1);
   if (!status) {
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
@@ -206,7 +208,7 @@ export async function toggleFeedbackAreaEnabledAction(
   const [area] = await db
     .select()
     .from(feedbackAreas)
-    .where(eq(feedbackAreas.id, areaId))
+    .where(trashAnd(activeRows.feedbackAreas, eq(feedbackAreas.id, areaId)))
     .limit(1);
   if (!area) return { error: "Bereich nicht gefunden." };
   if (!area.enabled && (!area.targetBoardId || !area.targetStatusId)) {

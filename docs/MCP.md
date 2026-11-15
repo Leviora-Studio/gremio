@@ -143,3 +143,56 @@ catalogs, comments, attachment replacement/download, PKCE, resources, live grant
 refresh rotation/replay and revocation. `tests/browser/mcp-production.cjs` checks
 the actual production server and browser consent/management with synthetic users
 and a local mock OIDC provider. It never contacts a real identity provider or cloud.
+
+### Begrenzte Board-Verwaltung
+
+Personenbezogene Verwaltungsrechte an normalen Boards/Antragsboards gelten ausschließlich für die ausdrücklich freigegebenen, sessiongebundenen Einstellungsbereiche in Gremio. Sie machen eine Person in MCP nicht zum Eigentümer und fügen keine Tools hinzu. Die Vergabe/der Entzug bleibt Eigentümern/Admins in der Oberfläche vorbehalten. Aktueller Schreibzugriff, Token-Scopes und Boardbeschränkungen bleiben erforderlich. Finanzboards und Kassenbücher erhalten dadurch keine neuen Verwaltungsrechte.
+
+### Status-Trigger
+
+Statuswechsel setzen keine Anweisungs-/Überweisungsdaten mehr automatisch. Die kompatiblen Datums-Triggerfelder bleiben für Eigentümer/Admins enthalten und sind immer `false`. Nextcloud-Archiv-Trigger funktionieren auf normalen Boards und Antragsboards wie bisher, einschließlich öffentlicher Uploadsperre. Nur die Done-Spalte entfällt auf Antragsboards (`doneStatusId: null`); Done-Sweep und Done-Zuweisungen bleiben dort auch bei alten Konfigurationen inaktiv. Bestehende manuelle Datumsfelder alter Boards behalten ihre bisherigen Rechte.
+
+### Begrenzte Inventar-Verwaltung
+
+Die personenbezogene Inventar-Verwaltung gilt ausschließlich für die authentifizierte Gremio-Oberfläche: Email-Settings, Freigaben, Felder und automatische Inventarnummer. Sie fügt keine MCP-Tools hinzu und macht eine Person weder zum Inventar- noch zum System-Board-Eigentümer. Aktueller Schreibzugriff bleibt erforderlich; Vergabe/Entzug und übrige Einstellungen bleiben Eigentümern/Admins vorbehalten.
+
+### Anlage von Finanzübersichten
+
+Neue Finanzübersichten werden ausschließlich durch Administrationskonten im Admin-Panel angelegt. Es gibt dafür keine neuen MCP-Tools oder Bearer-Endpunkte. Bestehende Finanzboard-Freigaben und Token-Grenzen bleiben unverändert.
+
+Nextcloud archive triggers wait for the published card status. Moving into an
+unconfirmed lock column does not upload files; `lock_application_card` starts
+archiving after committing the irreversible lock. Non-lock archive columns and
+later moves of already locked cards still archive immediately. Upload failures
+remain retryable without making any frozen card content editable. This changes
+no tool parameters, scopes or available capabilities.
+
+`update_budget_plan` now validates new account/title pairs against the expense
+plan of the financial overview assigned to that account. Missing assignments or
+out-of-catalog titles fail without changes; existing historical pairs may be
+retained but not multiplied. No new tools, finance read access or cashbook
+capabilities are introduced.
+
+
+## Papierkorb und Verfügbarkeit
+
+Mit Worteingabe gelöschte Ressourcen werden 30 Tage intern aufbewahrt. Währenddessen sind sie und ihre abhängigen Inhalte über normale Ansichten, direkte Downloads sowie API/MCP nicht verfügbar (bei bestehenden Einzelressourcen-Endpunkten wie nicht vorhandene Daten, in Listen ausgelassen). Dies gilt auch für öffentliche Antrags-/Status-Tokens; dort werden keine Papierkorb-Metadaten offengelegt. Gelöschte Gruppen vermitteln keine Berechtigungen. Eine Wiederherstellung durch Admins reaktiviert die erhaltenen Daten und Freigaben, ohne Inhalte neu zu erzeugen. Antragsboards und Kassenbücher dürfen nur Admins in den Papierkorb verschieben.
+
+Es wurden keine Bearer- oder MCP-Funktionen für Löschen ganzer Ressourcen, Papierkorbverwaltung oder Kassenbuch hinzugefügt. Wiederherstellen (`WIEDERHERSTELLEN`) und endgültiges Löschen (`ENDGÜLTIG`) sind geschützte, sessiongebundene Admin-Aktionen. Nach 720 Stunden ist die Wiederherstellung gesperrt; die automatische endgültige Bereinigung läuft täglich ab 03:00 Uhr Europe/Berlin. Öffentliche API-Felder und Token-Grenzen bleiben unverändert.
+
+
+Named-slot attachment replacement retains the previous file in the board's 30-day file recycle bin. Removed references disappear from MCP attachment lists/downloads immediately. Restore and permanent deletion remain session-bound board UI operations; no MCP tools or bearer API scopes are added.
+
+
+Nextcloud-Archivaufträge werden bei bestätigten Status-/Sperränderungen transaktional in einer internen Auftragsliste gespeichert. Ein Serverabbruch oder ein paralleler Upload verliert den Auftrag nicht; der interne Worker übernimmt ihn erneut. Erfolgsvermerk, Aktivität und Bestätigung des Auftrags sind atomar. Bestätigter öffentlicher Status, Sperren und Live-Anwendbarkeit bleiben Voraussetzung. Die Auftragsliste und ihre Bearbeitung erhalten keine externen REST-/MCP-Endpunkte; öffentliche Antworten enthalten weiterhin weder Archivpfade noch Auftrags- oder Zugangsdaten.
+
+
+Die optionale Nextcloud-Archivierung von Kassenbuch-Anweisungen ist ausschließlich ein interner, sessiongebundener Ablauf. Nur der Kassenbucheigentümer verwaltet die verschlüsselte Verbindung. Beim Erteilen der Anweisung wird ein dauerhafter Auftrag gespeichert; keine externen REST-/MCP-Endpunkte erlauben Konfiguration, Buchen oder Bearbeiten der Archivaufträge. Öffentliche Antrags-/Status-Token geben weder Kassenbuchdateien noch Archivpfade, Zugangsdaten oder Jobmetadaten aus. Bestehende Buchungswerte und ihre Unveränderlichkeit bleiben erhalten.
+
+
+`delete_card` requires `{id, confirmation: "LÖSCHEN"}` and moves the unlocked
+card, its contents and attachments into the board's 30-day recycle bin. Missing
+confirmation cannot invoke deletion. Live user/write/token restrictions and frozen
+card protection remain enforced by the shared REST lifecycle. Deleted cards and
+files disappear from normal tool responses and existing download tickets. There
+are no new MCP tools for restoration, final purge or cashbook operations.

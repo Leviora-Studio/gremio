@@ -17,6 +17,7 @@ import {
   PDFTextField,
   StandardFonts,
 } from "pdf-lib";
+import { appendPdfRevision, documentHasSignatures } from "@/lib/pdf-incremental";
 import { locatePdfWidgets, syncLegacyWidgetAppearances } from "@/lib/pdf-widget-compat";
 
 // Markierung an „unseren" Freitextfeldern, damit sie sich von echten
@@ -305,7 +306,17 @@ export async function applyPdfEdits(
   pdf: Buffer,
   edits: PdfEdits,
 ): Promise<{ pdf: Buffer; failed: string[] }> {
-  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
+  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true, updateMetadata: false });
+  if (documentHasSignatures(doc)) {
+    let failed: string[] = [];
+    const result = await appendPdfRevision(pdf, async current => { failed = await applyPdfEditsToDocument(current, edits); });
+    return {pdf: result, failed};
+  }
+  const failed = await applyPdfEditsToDocument(doc, edits);
+  return {pdf: Buffer.from(await doc.save()), failed};
+}
+
+async function applyPdfEditsToDocument(doc: PDFDocument, edits: PdfEdits): Promise<string[]> {
   const form = doc.getForm();
   // pdf-lib returns fresh PDFField wrappers; their underlying dictionaries are stable.
   const widgetLocations = new Map([...locatePdfWidgets(doc, form.getFields())].map(([field, widgets]) => [field.acroField.dict, widgets]));
@@ -475,7 +486,8 @@ export async function applyPdfEdits(
     form.updateFieldAppearances();
     for (const field of changedFields) syncLegacyWidgetAppearances(field, widgetLocations.get(field.acroField.dict) ?? []);
   }
-  return { pdf: Buffer.from(await doc.save()), failed };
+  form.updateFieldAppearances();
+  return failed;
 }
 
 export type FieldType =

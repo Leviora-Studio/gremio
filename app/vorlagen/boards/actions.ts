@@ -3,6 +3,10 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, max } from "drizzle-orm";
@@ -38,7 +42,7 @@ export async function createTemplateAction(
   const exists = await db
     .select({ id: boardTemplates.id })
     .from(boardTemplates)
-    .where(eq(boardTemplates.name, parsed.data.name))
+    .where(trashAnd(activeRows.boardTemplates, eq(boardTemplates.name, parsed.data.name)))
     .limit(1);
   if (exists.length) return { error: "Template-Name bereits vergeben." };
 
@@ -65,7 +69,7 @@ export async function renameTemplateAction(
   const clash = await db
     .select({ id: boardTemplates.id })
     .from(boardTemplates)
-    .where(eq(boardTemplates.name, parsed.data.name))
+    .where(trashAnd(activeRows.boardTemplates, eq(boardTemplates.name, parsed.data.name)))
     .limit(1);
   if (clash[0] && clash[0].id !== templateId) {
     return { error: "Template-Name bereits vergeben." };
@@ -78,10 +82,11 @@ export async function renameTemplateAction(
   return { success: "Gespeichert." };
 }
 
-export async function deleteTemplateAction(templateId: number): Promise<void> {
-  await requireTemplateManager();
-  await db.delete(boardTemplates).where(eq(boardTemplates.id, templateId));
-  revalidatePath("/vorlagen/boards");
+export async function deleteTemplateAction(templateId: number, confirmation?: unknown,entityName?:unknown): Promise<{ error?: string } | void> {
+  const user=await requireTemplateManager();
+  try { await moveToTrash(user, "board_template", templateId, confirmation,{entityName}); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/vorlagen/boards"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }
 
 export async function addTemplateStatusAction(
@@ -94,7 +99,7 @@ export async function addTemplateStatusAction(
   const [row] = await db
     .select({ m: max(boardTemplateStatuses.position) })
     .from(boardTemplateStatuses)
-    .where(eq(boardTemplateStatuses.templateId, templateId));
+    .where(trashAnd(activeRows.boardTemplateStatuses, eq(boardTemplateStatuses.templateId, templateId)));
   await db
     .insert(boardTemplateStatuses)
     .values({ templateId, name, position: (row?.m ?? -1) + 1 });
@@ -132,7 +137,7 @@ export async function reorderTemplateStatusesAction(
   const rows = await db
     .select({ id: boardTemplateStatuses.id })
     .from(boardTemplateStatuses)
-    .where(eq(boardTemplateStatuses.templateId, templateId));
+    .where(trashAnd(activeRows.boardTemplateStatuses, eq(boardTemplateStatuses.templateId, templateId)));
   const valid = new Set(rows.map((r) => r.id));
   const ordered = orderedIds.filter((id) => valid.has(id));
   for (const r of rows) if (!ordered.includes(r.id)) ordered.push(r.id);
@@ -174,13 +179,13 @@ export async function duplicateTemplateAction(templateId: number): Promise<void>
   const [orig] = await db
     .select()
     .from(boardTemplates)
-    .where(eq(boardTemplates.id, templateId))
+    .where(trashAnd(activeRows.boardTemplates, eq(boardTemplates.id, templateId)))
     .limit(1);
   if (!orig) return;
 
   // Eindeutigen Namen finden (boardTemplates.name ist UNIQUE).
   const existing = new Set(
-    (await db.select({ name: boardTemplates.name }).from(boardTemplates)).map(
+    (await db.select({ name: boardTemplates.name }).from(boardTemplates).where(activeRows.boardTemplates)).map(
       (r) => r.name,
     ),
   );
@@ -190,7 +195,7 @@ export async function duplicateTemplateAction(templateId: number): Promise<void>
   const cols = await db
     .select()
     .from(boardTemplateStatuses)
-    .where(eq(boardTemplateStatuses.templateId, templateId))
+    .where(trashAnd(activeRows.boardTemplateStatuses, eq(boardTemplateStatuses.templateId, templateId)))
     .orderBy(asc(boardTemplateStatuses.position));
 
   let newId: number | undefined;

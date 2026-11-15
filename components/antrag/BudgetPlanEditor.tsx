@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
+import { BudgetTitleSelect } from "@/components/BudgetTitleSelect";
+import type { AccountBudgetCatalogs } from "@/lib/budget-title-catalog";
 import { Select } from "@/components/Select";
 import { saveBudgetPlanAction } from "@/app/intern/card/[id]/budget-plan-actions";
 import { MAX_BUDGET_POSITIONS } from "@/lib/card-budget";
@@ -12,9 +14,9 @@ import { type BudgetPlanAllocation, type BudgetPlanDraft, parseBudgetPlan } from
 import { centsToInput, formatCents } from "@/lib/money";
 import type { AccountOption } from "@/lib/accounts";
 
-export function BudgetPlanEditor({ cardId, initial, revision, readOnly, locked, accounts, defaultAccountId }: {
+export function BudgetPlanEditor({ cardId, initial, revision, readOnly, locked, accounts, defaultAccountId, budgetCatalogs = {} }: {
   cardId:number; initial:BudgetPlanAllocation[]; revision:number; readOnly:boolean; locked:boolean;
-  accounts:AccountOption[]; defaultAccountId:number|null;
+  accounts:AccountOption[]; defaultAccountId:number|null; budgetCatalogs?:AccountBudgetCatalogs;
 }) {
   const router=useRouter();
   const draftRows=(items:BudgetPlanAllocation[])=>items.map(row=>({amount:centsToInput(row.amount),budgetTitle:row.budgetTitle,accountId:row.accountId ?? defaultAccountId}));
@@ -85,9 +87,10 @@ export function BudgetPlanEditor({ cardId, initial, revision, readOnly, locked, 
       </div>
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <label className="min-w-0 text-sm">Betrag (€)<input aria-label={`Betrag Zeile ${index+1}`} className="input mt-1 tabular-nums" inputMode="decimal" value={row.amount} onChange={event=>change(rows.map((r,i)=>i===index?{...r,amount:event.target.value}:r))}/></label>
-        <label className="min-w-0 text-sm">Haushaltstitel<input aria-label={`Haushaltstitel Zeile ${index+1}`} className="input mt-1" maxLength={200} value={row.budgetTitle} onChange={event=>change(rows.map((r,i)=>i===index?{...r,budgetTitle:event.target.value}:r))}/></label>
-      </div>
       <div className="min-w-0"><p className="mb-1 text-sm">Konto</p><Select portal searchable ariaLabel={`Konto Zeile ${index+1}`} value={row.accountId?String(row.accountId):""} options={[{value:"",label:"Bitte Konto auswählen"},...accounts.map(account=>({value:String(account.id),label:account.name}))]} onChange={value=>{const id=value?Number(value):null;if(id!==row.accountId)setAccountChange({index,accountId:id});}}/></div>
+        <div className="min-w-0 text-sm sm:col-span-2"><p className="mb-1">Haushaltstitel</p><BudgetTitleSelect ariaLabel={`Haushaltstitel Zeile ${index+1}`} value={row.budgetTitle} preservedValue={initial.some(item=>(item.accountId??defaultAccountId)===row.accountId&&item.budgetTitle===row.budgetTitle)?row.budgetTitle:undefined} options={budgetCatalogs[String(row.accountId)]??[]} onChange={value=>change(rows.map((r,i)=>i===index?{...r,budgetTitle:value}:r))}/></div>
+      </div>
+
     </div>)}
     <button type="button" className="btn-secondary w-full border-dashed" disabled={rows.length>=MAX_BUDGET_POSITIONS} onClick={addRow}>Weiteren Titel hinzufügen</button>
   </fieldset>;
@@ -118,7 +121,7 @@ export function BudgetPlanEditor({ cardId, initial, revision, readOnly, locked, 
         {actions}
       </div>
     </Modal>
-    <ConfirmDialog open={accountChange!=null} title="Konto ändern" message={`Konto für diese Zeile wirklich von „${accountName(accountChange==null?null:rows[accountChange.index]?.accountId)}“ zu „${accountName(accountChange?.accountId)}“ ändern?`} confirmLabel="Konto wechseln" onClose={()=>setAccountChange(null)} onConfirm={()=>{if(accountChange)change(rows.map((row,index)=>index===accountChange.index?{...row,accountId:accountChange.accountId}:row));setAccountChange(null);}}/>
+    <ConfirmDialog open={accountChange!=null} title="Konto ändern" message={`Konto für diese Zeile wirklich von „${accountName(accountChange==null?null:rows[accountChange.index]?.accountId)}“ zu „${accountName(accountChange?.accountId)}“ ändern?`} confirmLabel="Konto wechseln" onClose={()=>setAccountChange(null)} onConfirm={()=>{if(accountChange)change(rows.map((row,index)=>index===accountChange.index?{...row,accountId:accountChange.accountId,budgetTitle:""}:row));setAccountChange(null);}}/>
     <ConfirmDialog open={removeIndex!=null} title="Einplanung entfernen" message="Diese Zeile entfernen? Die Änderung wird erst beim Speichern übernommen." confirmLabel="Entfernen" onClose={()=>setRemoveIndex(null)} onConfirm={()=>{change(rows.filter((_,index)=>index!==removeIndex));setRemoveIndex(null);}}/>
     <Modal portal manageFocus open={review} onClose={()=>{if(!saving)setReview(false);}} title="Korrektureintrag verbindlich bestätigen" maxWidth="max-w-4xl">
       <div className="space-y-5">

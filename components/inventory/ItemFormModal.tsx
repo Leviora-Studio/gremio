@@ -75,6 +75,7 @@ export function ItemFormModal({
     return Array.from(set).sort((a, b) => a.localeCompare(b, "de"));
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteWord,setDeleteWord]=useState("");
 
   useEffect(() => {
     if (state.ok || delState.ok) onSaved();
@@ -380,20 +381,21 @@ export function ItemFormModal({
             <div>
               {isEdit &&
                 (confirmDelete ? (
-                  <span className="flex items-center gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <label className="text-sm">Zum endgültigen Löschen LÖSCHEN eingeben<input className="input mt-1" name="confirmation" placeholder="LÖSCHEN" value={deleteWord} onChange={event=>setDeleteWord(event.target.value)} autoComplete="off"/></label>
                     <button
                       type="submit"
                       formAction={delAction}
                       name="itemId"
                       value={item.id}
-                      disabled={delPending}
+                      disabled={delPending||deleteWord.trim().toUpperCase()!=="LÖSCHEN"}
                       className="btn-secondary text-red-600"
                     >
                       Wirklich löschen
                     </button>
                     <button
                       type="button"
-                      onClick={() => setConfirmDelete(false)}
+                      onClick={() => {setConfirmDelete(false);setDeleteWord("");}}
                       className="text-sm text-slate-500"
                     >
                       Abbrechen
@@ -402,7 +404,7 @@ export function ItemFormModal({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={() => {setConfirmDelete(true);setDeleteWord("");}}
                     className="text-sm font-medium text-red-600"
                   >
                     Löschen

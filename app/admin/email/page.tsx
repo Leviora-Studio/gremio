@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -11,9 +13,9 @@ export default async function EmailAdminPage() {
   await requireAdmin();
   const [config] = await db.select().from(smtpSettings).where(eq(smtpSettings.id, 1));
   const settings = await db.select().from(emailConfirmationSettings);
-  const publicApplications = await db.selectDistinct({id:boards.id,name:boards.name}).from(boards).innerJoin(locations,eq(locations.targetBoardId,boards.id)).where(and(eq(locations.enabled,true),isNull(boards.inventoryBoardId)));
-  const publicFeedback = await db.selectDistinct({id:boards.id,name:boards.name}).from(boards).innerJoin(feedbackAreas,eq(feedbackAreas.targetBoardId,boards.id)).where(and(eq(feedbackAreas.enabled,true),isNull(boards.inventoryBoardId)));
-  const publicInventories = await db.select({id:inventoryBoards.id,name:inventoryBoards.name}).from(inventoryBoards).where(eq(inventoryBoards.isPublic,true));
+  const publicApplications = await db.selectDistinct({id:boards.id,name:boards.name}).from(boards).innerJoin(locations,trashAnd(activeRows.locations, eq(locations.targetBoardId,boards.id))).where(trashAnd(activeRows.boards, and(eq(locations.enabled,true),isNull(boards.inventoryBoardId))));
+  const publicFeedback = await db.selectDistinct({id:boards.id,name:boards.name}).from(boards).innerJoin(feedbackAreas,trashAnd(activeRows.feedbackAreas, eq(feedbackAreas.targetBoardId,boards.id))).where(trashAnd(activeRows.boards, and(eq(feedbackAreas.enabled,true),isNull(boards.inventoryBoardId))));
+  const publicInventories = await db.select({id:inventoryBoards.id,name:inventoryBoards.name}).from(inventoryBoards).where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.isPublic,true)));
   const counts = await db.select({state:emailOutbox.state,count:sql<number>`count(*)::int`}).from(emailOutbox).groupBy(emailOutbox.state);
   return <div className="mx-auto max-w-5xl space-y-6">
     <section className="card space-y-4 p-5"><h2 className="text-xl font-semibold">SMTP-Einstellungen der Instanz</h2>

@@ -3,7 +3,11 @@
 
 "use server";
 
-import {missingBoardFields,missingBoardFieldsMessage,lockLocationBoard} from "@/lib/location-board-fields";
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
+import { missingBoardFields, missingBoardFieldsMessage, lockLocationBoard } from "@/lib/location-board-fields";
 import { revalidatePath } from "next/cache";
 import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
@@ -11,7 +15,7 @@ import { db } from "@/lib/db";
 import { boards, boardStatuses, locations } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
-import {APPLICATION_REQUIRED_CARD_FIELD_KEYS} from "@/lib/constants";
+import { APPLICATION_REQUIRED_CARD_FIELD_KEYS } from "@/lib/constants";
 import { sanitizeSingleLine } from "@/lib/text";
 
 export type State = { error?: string; success?: string };
@@ -34,11 +38,11 @@ async function createModuleLocation(module:"locations"|"finance", formData:FormD
   const exists = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(and(eq(locations.name, parsed.data.name),eq(locations.module,module)))
+    .where(trashAnd(activeRows.locations, and(eq(locations.name, parsed.data.name),eq(locations.module,module))))
     .limit(1);
   if (exists.length) return { error: "Standort-Name bereits vergeben." };
 
-  const [row] = await db.select({ m: max(locations.position) }).from(locations);
+  const [row] = await db.select({ m: max(locations.position) }).from(locations).where(activeRows.locations);
   try {
     await db.insert(locations).values({
       name: parsed.data.name,
@@ -74,12 +78,12 @@ export async function renameLocationAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Ungültig." };
   }
-  const [currentLocation]=await db.select().from(locations).where(eq(locations.id,locationId));
+  const [currentLocation]=await db.select().from(locations).where(trashAnd(activeRows.locations, eq(locations.id,locationId)));
   if(!currentLocation)return {error:"Standort nicht gefunden."};
   const clash = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(and(eq(locations.name, parsed.data.name),eq(locations.module,currentLocation.module)))
+    .where(trashAnd(activeRows.locations, and(eq(locations.name, parsed.data.name),eq(locations.module,currentLocation.module))))
     .limit(1);
   if (clash[0] && clash[0].id !== locationId) {
     return { error: "Standort-Name bereits vergeben." };
@@ -101,13 +105,11 @@ export async function renameLocationAction(
   return { success: "Umbenannt." };
 }
 
-export async function deleteLocationAction(locationId: number): Promise<void> {
-  await requireAdmin();
-  // cards.location_id ist ON DELETE SET NULL → bestehende Karten bleiben erhalten.
-  await db.delete(locations).where(eq(locations.id, locationId));
-  revalidatePath("/admin/standorte");
-  revalidatePath("/admin/finanzantraege-formular");
-  revalidatePath("/");
+export async function deleteLocationAction(locationId: number, confirmation?: unknown): Promise<{ error?: string } | void> {
+  const user=await requireAdmin();
+  try { await moveToTrash(user, "location", locationId, confirmation); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/standorte"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }
 
 export async function setLocationTargetAction(
@@ -148,12 +150,12 @@ export async function setLocationTargetAction(
   // Karten von dort mit 404 ab (lib/public-status.ts). Ein dorthin gerouteter
   // Antrag würde zwar angelegt, sein Status-Link führte aber sofort ins Leere —
   // die REST-API lehnt das Anlegen dort aus demselben Grund mit 409 ab.
-  const [sourceLocation] = await db.select().from(locations).where(eq(locations.id,locationId));
+  const [sourceLocation] = await db.select().from(locations).where(trashAnd(activeRows.locations, eq(locations.id,locationId)));
   if(!sourceLocation)return {error:"Standort nicht gefunden."};
   const [zielBoard] = await db
     .select()
     .from(boards)
-    .where(eq(boards.id, boardId))
+    .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
     .limit(1);
   if (!zielBoard) return { error: "Ungültiges Ziel-Board." };
   if(sourceLocation.module==="finance"&&!zielBoard.isApplicationBoard)return {error:"Im Finanzanträge-Formular sind nur Antragsboards als Ziel erlaubt."};
@@ -166,7 +168,7 @@ export async function setLocationTargetAction(
   const [status] = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId))))
     .limit(1);
   if (!status) {
     return { error: "Die Spalte gehört nicht zum gewählten Board." };
@@ -203,7 +205,7 @@ export async function toggleLocationEnabledAction(
   const [loc] = await db
     .select()
     .from(locations)
-    .where(eq(locations.id, locationId))
+    .where(trashAnd(activeRows.locations, eq(locations.id, locationId)))
     .limit(1);
   if (!loc) return { error: "Standort nicht gefunden." };
   if (!loc.enabled && (!loc.targetBoardId || !loc.targetStatusId)) {
@@ -218,7 +220,7 @@ export async function toggleLocationEnabledAction(
   const geaendert = await db.transaction(async (tx) => {
     if (!loc.enabled && loc.targetBoardId){
       await lockLocationBoard(tx, loc.targetBoardId);
-      const [targetBoard]=await tx.select().from(boards).where(eq(boards.id,loc.targetBoardId));
+      const [targetBoard]=await tx.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id,loc.targetBoardId)));
       if(loc.module==="finance"&&!targetBoard?.isApplicationBoard)return {error:"Bitte ein Antragsboard als Ziel wählen."};
       const required=loc.module==="finance"?APPLICATION_REQUIRED_CARD_FIELD_KEYS.filter(key=>!["finance_request","student_card"].includes(key)||targetBoard?.attachmentFields==null||targetBoard.attachmentFields.includes(key)):APPLICATION_REQUIRED_CARD_FIELD_KEYS;
       const missing=await missingBoardFields(loc.targetBoardId,required,tx);

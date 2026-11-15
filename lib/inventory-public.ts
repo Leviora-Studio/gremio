@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { inventoryBoards, type InventoryBoard } from "@/lib/db/schema";
@@ -35,7 +37,7 @@ export async function getPublicInventoryBoards(): Promise<InventoryBoard[]> {
   return db
     .select()
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.isPublic, true))
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.isPublic, true)))
     .orderBy(asc(inventoryBoards.name));
 }
 
@@ -46,7 +48,7 @@ export async function getPublicInventoryBoardById(
   const [row] = await db
     .select()
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.id, boardId))
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, boardId)))
     .limit(1);
   return row && row.isPublic ? row : undefined;
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { DeleteConfirm } from "@/components/DeleteConfirm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicBaseUrl } from "@/lib/public-api";
@@ -25,7 +26,7 @@ import { LoanQuantityEditor } from "@/components/inventory/LoanQuantityEditor";
 import { LoanColumnSelect } from "@/components/inventory/LoanColumnSelect";
 import {
   approveLoanAction,
-  deleteLoanAction,
+  deleteLoanConfirmedAction,
   rejectLoanAction,
   returnLoanAction,
 } from "../../item/[itemId]/actions";
@@ -205,12 +206,7 @@ export default async function InventoryLoanPage({
               </SubmitButton>
             </form>
           )}
-          {canEdit && <form action={deleteLoanAction} className="ml-auto">
-            <input type="hidden" name="loanId" value={loan.id} />
-            <SubmitButton className="text-sm text-slate-400 hover:text-red-600">
-              Vorgang löschen
-            </SubmitButton>
-          </form>}
+          {canEdit && <DeleteConfirm action={deleteLoanConfirmedAction.bind(null,loan.id)} wordInModal recycleBin={false} compact buttonLabel="Vorgang löschen" buttonClassName="text-sm text-slate-400 hover:text-red-600" title="Leihvorgang endgültig löschen" message="Der Leihvorgang und seine Tracking-Karte werden endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."/>}
         </div>
       </div>
 

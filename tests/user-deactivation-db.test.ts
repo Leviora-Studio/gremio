@@ -29,12 +29,12 @@ test("admin deactivation blocks existing sessions, preserves contents and requir
  let boardId:number|undefined;
  try{
   [boardId]= (await db.insert(boards).values({name:"Preserved board",ownerId:target.id}).returning({id:boards.id})).map(r=>r.id);
-  context.__ssoSession=session(target);assert.equal((await api.getCurrentUser()).id,target.id);await assert.rejects(api.setUserActiveAction(other.id,false),/redirect:\/intern/);
-  context.__ssoSession=session(admin);assert.ok((await api.setUserActiveAction(admin.id,false)).error);assert.ok((await api.setUserActiveAction(target.id,false)).success);
+  context.__ssoSession=session(target);assert.equal((await api.getCurrentUser()).id,target.id);await assert.rejects(api.setUserActiveAction(other.id,false,"DEAKTIVIEREN"),/redirect:\/intern/);
+  context.__ssoSession=session(admin);assert.ok((await api.setUserActiveAction(admin.id,false,"DEAKTIVIEREN")).error);assert.ok((await api.setUserActiveAction(target.id,false,"DEAKTIVIEREN")).success);
   const disabled=(await db.select().from(users).where(eq(users.id,target.id)))[0];assert.equal(disabled.isActive,false);assert.equal(disabled.sessionVersion,1);
   assert.equal((await db.select().from(boards).where(eq(boards.id,boardId!))).length,1);
   context.__ssoSession=session(target);assert.equal(await api.getCurrentUser(),null);
-  context.__ssoSession=session(admin);assert.ok((await api.setUserActiveAction(target.id,true)).success);
+  context.__ssoSession=session(admin);assert.ok((await api.setUserActiveAction(target.id,true,"REAKTIVIEREN")).success);
   context.__ssoSession=session(target);assert.equal(await api.getCurrentUser(),null,"reactivation never revives old cookies");
   context.__ssoSession=session(target,2);assert.equal((await api.getCurrentUser()).id,target.id);
   const rejected=session(other);rejected.refreshToken="token:wrong-subject";assert.equal(await api.resolveSessionUser(rejected),null);

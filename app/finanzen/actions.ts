@@ -3,34 +3,21 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
+
 import { parseAccessLevel } from "@/lib/access-level";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, max } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  accounts,
-  boardStatuses,
-  financeBoards,
-  financeBoardAccess,
-  financeBoardAccounts,
-  financeBoardExpenseAccounts,
-  financeBoardSources,
-  financePlanItems,
-  financeTemplateItems,
-  groups,
-  userFinanceBoardOrder,
-  users,
-} from "@/lib/db/schema";
+import { accounts, boardStatuses, financeBoards, financeBoardAccess, financeBoardAccounts, financeBoardExpenseAccounts, financeBoardSources, financePlanItems, financeTemplateItems, groups, userFinanceBoardOrder, users } from "@/lib/db/schema";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { canAccessBoard, getBoardById } from "@/lib/authz";
-import {
-  getAccessibleFinanceBoards,
-  requireFinanceManage,
-  requireFinanceWrite,
-  resolveSourceBoards,
-} from "@/lib/finance";
+import { getAccessibleFinanceBoards, requireFinanceManage, requireFinanceWrite, resolveSourceBoards } from "@/lib/finance";
 import { parseEuroToCents } from "@/lib/money";
 
 export type State = { error?: string; success?: string };
@@ -57,7 +44,7 @@ async function copyFinanceTemplate(
   const items = await tx
     .select()
     .from(financeTemplateItems)
-    .where(eq(financeTemplateItems.templateId, templateId))
+    .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.templateId, templateId)))
     .orderBy(asc(financeTemplateItems.position));
   const tops = items.filter((i) => i.parentId == null);
   for (const top of tops) {
@@ -117,7 +104,7 @@ export async function createFinanceBoardAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Bitte einen Namen angeben." };
   const description =
@@ -152,17 +139,11 @@ export async function renameFinanceBoardAction(
   return { success: "Gespeichert." };
 }
 
-export async function deleteFinanceBoardAction(id: number): Promise<void> {
-  await requireFinanceManage(id);
-  await db.delete(financeBoards).where(eq(financeBoards.id, id));
-  redirect("/finanzen");
-}
-
-
-export async function deleteFinanceBoardAdminAction(id: number): Promise<void> {
-  await requireAdmin();
-  await db.delete(financeBoards).where(eq(financeBoards.id, id));
-  revalidatePath("/admin/finanzboards");
+export async function deleteFinanceBoardAdminAction(id: number, confirmation?: unknown, financeName?: unknown): Promise<{ error?: string } | void> {
+  const user=await requireAdmin();
+  try { await moveToTrash(user, "finance", id, confirmation, { financeName }); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/finanzboards"); revalidatePath("/finanzen", "layout");
 }
 
 /** Betroffenes Konto hinzufügen (n:m) — mehrere Konten je Finanzboard möglich. */
@@ -176,7 +157,7 @@ export async function addFinanceAccountAction(
   const [acc] = await db
     .select({ id: accounts.id })
     .from(accounts)
-    .where(eq(accounts.id, accountId))
+    .where(trashAnd(activeRows.accounts, eq(accounts.id, accountId)))
     .limit(1);
   if (!acc) return; // ungültige accountId (manipuliert) → No-op statt FK-500
   await db
@@ -270,7 +251,7 @@ export async function addFinanceSourceAction(
   if (!board || !(await canAccessBoard(user, board))) return; // nur eigene Boards
   const accountId = Number(formData.get("accountId")) || null;
   if (fb.cashbookId && (!board.isApplicationBoard || !accountId)) throw new Error("Bitte ein Antragsboard und ein zugehöriges Konto auswählen.");
-  if (accountId && !(await db.select({id:accounts.id}).from(accounts).where(eq(accounts.id,accountId))).length) throw new Error("Das Konto ist nicht verfügbar.");
+  if (accountId && !(await db.select({id:accounts.id}).from(accounts).where(trashAnd(activeRows.accounts, eq(accounts.id,accountId)))).length) throw new Error("Das Konto ist nicht verfügbar.");
   await db
     .insert(financeBoardSources)
     .values({ financeBoardId: id, boardId, accountId })
@@ -318,7 +299,7 @@ export async function setFinanceSourceExpiredStatusAction(
     const [status] = await db
       .select({ id: boardStatuses.id })
       .from(boardStatuses)
-      .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
+      .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId))));
     if (!status) return { error: "Die Spalte gehört nicht zu diesem Quell-Board." };
   }
   await db
@@ -363,7 +344,7 @@ export async function addFinanceAccessGroupAction(
   const [g] = await db
     .select({ id: groups.id })
     .from(groups)
-    .where(eq(groups.id, groupId))
+    .where(trashAnd(activeRows.groups, eq(groups.id, groupId)))
     .limit(1);
   if (!g) return; // ungültige groupId (manipuliert) → No-op statt FK-500
   await db.insert(financeBoardAccess).values({ financeBoardId: id, groupId, accessLevel }).onConflictDoUpdate({ target: [financeBoardAccess.financeBoardId, financeBoardAccess.groupId], set: { accessLevel } });
@@ -402,7 +383,7 @@ export async function addPlanItemAction(
         boardId: financePlanItems.financeBoardId,
       })
       .from(financePlanItems)
-      .where(eq(financePlanItems.id, parentId))
+      .where(trashAnd(activeRows.financePlanItems, eq(financePlanItems.id, parentId)))
       .limit(1);
     // Oberpunkt muss zu DIESEM Finanzboard gehören (keine board-übergreifende
     // Verknüpfung über manipuliertes parentId).
@@ -412,7 +393,7 @@ export async function addPlanItemAction(
   const [row] = await db
     .select({ m: max(financePlanItems.position) })
     .from(financePlanItems)
-    .where(eq(financePlanItems.financeBoardId, id));
+    .where(trashAnd(activeRows.financePlanItems, eq(financePlanItems.financeBoardId, id)));
   await db.insert(financePlanItems).values({
     financeBoardId: id,
     parentId: parentId ?? null,
@@ -426,7 +407,7 @@ async function planItemBoardId(itemId: number): Promise<number | null> {
   const [it] = await db
     .select({ fb: financePlanItems.financeBoardId })
     .from(financePlanItems)
-    .where(eq(financePlanItems.id, itemId))
+    .where(trashAnd(activeRows.financePlanItems, eq(financePlanItems.id, itemId)))
     .limit(1);
   return it?.fb ?? null;
 }

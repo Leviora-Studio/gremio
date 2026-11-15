@@ -14,6 +14,7 @@ import {
 import {
   cardWriteSchema,
   deleteCardViaApi,
+  deleteCardSchema,
   loadApiCard,
   updateCardViaApi,
 } from "@/lib/api-cards";
@@ -21,6 +22,7 @@ import { getOfficeMoveRules, canMoveBoardCard, canEditBoard } from "@/lib/authz"
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import type { Board, Card } from "@/lib/db/schema";
 import { serializeApiCardDetail } from "@/lib/api-card-response";
+import { TrashError } from "@/lib/trash-error";
 import { CardFrozenError } from "@/lib/card-freeze";
 
 export const dynamic = "force-dynamic";
@@ -114,9 +116,12 @@ export async function DELETE(
     );
   }
 
-  try { await deleteCardViaApi(r.card.id); }
+  const body=await readApiJson(req);
+  if(!body.ok)return body.response;
+  const parsed=deleteCardSchema.safeParse(body.body);if(!parsed.success)return apiError(400,"Bitte zum Bestätigen LÖSCHEN im Feld confirmation übergeben.");
+  try { await deleteCardViaApi(r.ctx.user,r.card.id,parsed.data.confirmation); }
   catch (error) {
-    if (error instanceof CardFrozenError) return apiError(409, error.message);
+    if (error instanceof CardFrozenError || error instanceof TrashError) return apiError(409, error.message);
     throw error;
   }
   return NextResponse.json({ ok: true });

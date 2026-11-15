@@ -3,6 +3,8 @@
 
 "use server";
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
@@ -66,7 +68,7 @@ export async function savePdfEditsAction(
   const [att] = await db
     .select()
     .from(attachments)
-    .where(eq(attachments.id, input.attachmentId))
+    .where(trashAnd(activeRows.attachments, eq(attachments.id, input.attachmentId)))
     .limit(1);
   if (!att) return { ok: false, error: "Anhang nicht gefunden." };
   if (att.mime !== "application/pdf") {
@@ -76,7 +78,7 @@ export async function savePdfEditsAction(
   const [card] = await db
     .select()
     .from(cards)
-    .where(eq(cards.id, att.cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, att.cardId)))
     .limit(1);
   if (!card) return { ok: false, error: "Karte nicht gefunden." };
   if (card.lockedAt) return { ok: false, error: "Diese Karte ist dauerhaft gesperrt." };
@@ -124,16 +126,16 @@ export async function savePdfEditsAction(
         const [lockedCard] = await tx
           .select({ id: cards.id })
           .from(cards)
-          .where(eq(cards.id, card.id))
+          .where(trashAnd(activeRows.cards, eq(cards.id, card.id)))
           .for("update");
         const [current] = await tx
           .select({ path: attachments.path, folderId: attachments.folderId })
           .from(attachments)
           .where(
-            and(
+            trashAnd(activeRows.attachments, and(
               eq(attachments.id, att.id),
               eq(attachments.cardId, card.id),
-            ),
+            )),
           )
           .for("update");
         if (!lockedCard || !current || current.path !== oldPath) {
@@ -184,13 +186,13 @@ export async function savePdfEditsAction(
       const [lockedCard] = await tx
         .select({ id: cards.id })
         .from(cards)
-        .where(eq(cards.id, card.id))
+        .where(trashAnd(activeRows.cards, eq(cards.id, card.id)))
         .for("update");
       const [current] = await tx
         .select({ path: attachments.path, folderId: attachments.folderId })
         .from(attachments)
         .where(
-          and(eq(attachments.id, att.id), eq(attachments.cardId, card.id)),
+          trashAnd(activeRows.attachments, and(eq(attachments.id, att.id), eq(attachments.cardId, card.id))),
         )
         .for("update");
       if (!lockedCard || !current || current.path !== att.path) {

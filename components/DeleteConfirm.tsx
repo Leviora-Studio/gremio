@@ -24,8 +24,16 @@ export function DeleteConfirm({
   wordInModal = false,
   disabled = false,
   buttonClassName = "btn-danger",
+  confirmName,
+  recycleBin = true,
+  recycleBinMessage,
 }: {
-  action: () => Promise<{ error?: string } | void>;
+  action: (confirmation?: string, confirmedName?: string) => Promise<{ error?: string } | void>;
+  /** Optional second-stage name confirmation, checked again by the server. */
+  confirmName?: string;
+  /** Typed confirmations can also protect immediate deletions. */
+  recycleBin?: boolean;
+  recycleBinMessage?:string;
   word?: string;
   buttonLabel?: string;
   title: string;
@@ -41,6 +49,7 @@ export function DeleteConfirm({
   buttonClassName?: string;
 }) {
   const [text, setText] = useState("");
+  const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -72,6 +81,7 @@ export function DeleteConfirm({
         disabled={disabled || pending || (!wordInModal && !armed)}
         onClick={() => {
           setError(null);
+          setName("");
           if (wordInModal) setText("");
           setOpen(true);
         }}
@@ -82,7 +92,7 @@ export function DeleteConfirm({
 
       <Modal open={open} onClose={() => setOpen(false)} title={title}>
         <p className="text-sm text-slate-600">
-          {message ?? "Diese Aktion kann nicht rückgängig gemacht werden."}
+          {requireWord && recycleBin ? recycleBinMessage ?? "Dieser Eintrag wird mit seinen zugehörigen Inhalten und Dateien für 30 Tage in den Papierkorb verschoben. Nur Admins können ihn dort wiederherstellen oder sofort endgültig löschen. Nach Ablauf der Frist erfolgt die endgültige Löschung automatisch bei der täglichen Bereinigung." : message ?? "Diese Aktion kann nicht rückgängig gemacht werden."}
         </p>
         {requireWord && wordInModal && (
           <label className="mt-4 block">
@@ -97,6 +107,10 @@ export function DeleteConfirm({
             />
           </label>
         )}
+        {confirmName !== undefined && <label className="mt-4 block">
+          <span className="label">Gib zusätzlich den vollständigen Namen ein: <strong className="break-words">{confirmName}</strong></span>
+          <input className="input mt-2 w-full" aria-label="Name zur Bestätigung" placeholder="Vollständiger Name" value={name} onChange={event => setName(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={pending}/>
+        </label>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -108,10 +122,10 @@ export function DeleteConfirm({
           </button>
           <button
             type="button"
-            disabled={disabled || pending || !armed}
+            disabled={disabled || pending || !armed || (confirmName !== undefined && name !== confirmName)}
             onClick={() =>
               startTransition(async () => {
-                const r = await action();
+                const r = confirmName !== undefined ? await action(requireWord ? text : undefined, name) : requireWord ? await action(text) : await action();
                 if (r && "error" in r && r.error) {
                   setError(r.error);
                 } else {
@@ -121,7 +135,7 @@ export function DeleteConfirm({
             }
             className="btn-danger"
           >
-            OK, löschen
+            {confirmName !== undefined ? "Löschen" : "OK, löschen"}
           </button>
         </div>
       </Modal>

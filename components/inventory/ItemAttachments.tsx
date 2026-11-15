@@ -4,6 +4,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { FileInput } from "@/components/FileInput";
 import { AttachmentLink } from "@/components/pdf/AttachmentLink";
@@ -13,7 +14,7 @@ import {
   type InventoryAttachmentKind,
 } from "@/lib/inventory-attachment-kinds";
 import {
-  deleteInventoryAttachmentAction,
+  deleteInventoryAttachmentConfirmedAction,
   uploadInventoryAttachmentAction,
   type AttachmentState,
 } from "@/app/intern/inventar/item/[itemId]/attachment-actions";
@@ -114,12 +115,7 @@ function AttachmentKindSection({
               />
               <span className="flex shrink-0 items-center gap-3 text-xs text-slate-400">
                 {fmt(f.uploadedAt)}
-                {canEdit && <form action={deleteInventoryAttachmentAction}>
-                  <input type="hidden" name="attId" value={f.id} />
-                  <SubmitButton className="text-slate-400 hover:text-red-600">
-                    löschen
-                  </SubmitButton>
-                </form>}
+                {canEdit && <DeleteConfirm action={deleteInventoryAttachmentConfirmedAction.bind(null,f.id)} wordInModal recycleBin={false} compact buttonLabel="löschen" buttonClassName="text-slate-400 hover:text-red-600" title="Inventardatei endgültig löschen" message="Diese Datei wird endgültig entfernt. Diese Aktion kann nicht rückgängig gemacht werden."/>}
               </span>
             </li>
           ))}

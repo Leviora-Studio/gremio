@@ -3,24 +3,14 @@
 
 "use server";
 
-import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { inventoryBoards } from "@/lib/db/schema";
-
-/** Öffentliche Sichtbarkeit eines Inventars umschalten (nur Admin). */
-export async function setInventoryBoardPublicAction(
-  formData: FormData,
-): Promise<void> {
-  await requireAdmin();
-  const boardId = Number(formData.get("boardId"));
-  const isPublic = formData.get("isPublic") === "1";
-  if (!Number.isInteger(boardId)) return;
-  await db
-    .update(inventoryBoards)
-    .set({ isPublic })
-    .where(eq(inventoryBoards.id, boardId));
-  revalidatePath("/admin/inventar");
-  revalidatePath("/inventar");
+import { setConfirmedInventoryFlag } from "@/lib/inventory-visibility";
+export async function setInventoryBoardPublicAction(formData:FormData){
+  const value=formData.get("isPublic");if(value!=="0"&&value!=="1")return {error:"Ungültige Änderung."};
+  return setInventoryBoardPublicConfirmedAction(Number(formData.get("boardId")),value==="1",formData.get("confirmation"));
+}
+export async function setInventoryBoardPublicConfirmedAction(boardId:number,enabled:boolean,confirmation?:unknown){
+  const user=await requireAdmin();const result=await setConfirmedInventoryFlag(user,boardId,"isPublic",enabled,confirmation);
+  revalidatePath("/admin/inventar");revalidatePath("/inventar");return result;
 }

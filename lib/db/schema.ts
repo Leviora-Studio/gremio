@@ -72,6 +72,7 @@ export const users = pgTable(
 // groups + user_groups (n:m)
 // ---------------------------------------------------------------------------
 export const groups = pgTable("groups", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
@@ -95,6 +96,7 @@ export const userGroups = pgTable(
 // boards (owner_id NICHT cascade — beim Löschen des Eigentümers umhängen)
 // ---------------------------------------------------------------------------
 export const boards = pgTable("boards", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -172,6 +174,14 @@ export const boardAccess = pgTable(
   }),
 );
 
+// Limited settings delegation; effective board write access remains required.
+export const boardManagers = pgTable("board_managers", {
+  boardId: integer("board_id").notNull().references(() => boards.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedById: integer("granted_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, t => ({ pk: primaryKey({ columns: [t.boardId, t.userId] }) }));
+
 // Optional per-board office role; grants remain the source of read access.
 export const boardOfficeRoles = pgTable("board_office_roles", {
   boardId: integer("board_id").primaryKey().references(() => boards.id, { onDelete: "cascade" }),
@@ -203,11 +213,11 @@ export const boardStatuses = pgTable(
     isLockColumn: boolean("is_lock_column").notNull().default(false),
     isArchiveTrigger: boolean("is_archive_trigger").notNull().default(false),
     isReceiptTrigger: boolean("is_receipt_trigger").notNull().default(false),
-    // Erreicht eine Karte diese Spalte, wird das Anweisungsdatum auto-gesetzt.
+    // Retired date-trigger flag, kept only for historical configuration.
     isInstructionTrigger: boolean("is_instruction_trigger")
       .notNull()
       .default(false),
-    // Erreicht eine Karte diese Spalte, wird das Überweisungsdatum auto-gesetzt.
+    // Retired date-trigger flag, kept only for historical configuration.
     isTransferTrigger: boolean("is_transfer_trigger").notNull().default(false),
     createdAt: createdAt(),
   },
@@ -321,6 +331,7 @@ export const boardTriggerAssignees = pgTable(
 // locations — Standorte & Formular-Routing (target_* NICHT cascade)
 // ---------------------------------------------------------------------------
 export const locations = pgTable("locations", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   module: text("module").notNull().default("locations"),
   receiptBrandingEnabled: boolean("receipt_branding_enabled").notNull().default(false),
   receiptOrganization: text("receipt_organization").notNull().default(""),
@@ -350,6 +361,7 @@ export const applicationFormModules = pgTable("application_form_modules", {
 export const cards = pgTable(
   "cards",
   {
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     id: serial("id").primaryKey(),
     boardId: integer("board_id")
       .notNull()
@@ -385,8 +397,8 @@ export const cards = pgTable(
     meeting: text("meeting"), // YYYY-MM-DD
     // Freitext-Referenz auf den Gremienbeschluss (z. B. "Beschluss 12/2026").
     decisionRef: text("decision_ref"),
-    instructionDate: text("instruction_date"), // YYYY-MM-DD, auto bei Trigger-Spalte
-    transferDate: text("transfer_date"), // YYYY-MM-DD, auto bei Überweisungs-Trigger-Spalte
+    instructionDate: text("instruction_date"), // YYYY-MM-DD; legacy field, no automatic date trigger
+    transferDate: text("transfer_date"), // YYYY-MM-DD; legacy field, no automatic date trigger
     approvedAmount: integer("approved_amount"), // Genehmigter Betrag in Cent
     actualAmount: integer("actual_amount"), // Tatsächliche Ausgaben in Cent
     priorityId: integer("priority_id").references(() => priorities.id, {
@@ -408,10 +420,13 @@ export const cards = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     // Zeitpunkt, seit dem die Karte in der Done-Spalte liegt (für den Sweep).
     doneSince: timestamp("done_since", { withTimezone: true }),
-    // Nextcloud-Archiv-Retry: schlägt die Archivierung in der Trigger-Spalte fehl
+    // Nextcloud failure indicators (durable jobs live in nextcloud_archive_jobs).
+    // Schlägt die Archivierung in der Trigger-Spalte fehl
     // (Nextcloud nicht erreichbar, falsches Passwort …), wird sie periodisch
     // erneut versucht, bis sie klappt. Nach >24 h Dauerfehler erscheint eine
     // Warnung auf dem Dashboard. nextcloudLink != NULL = endgültig erledigt.
+    // Technical archive fields remain writable after a card lock (migration 0104);
+    // frozen card contents and an existing nextcloudLink remain immutable.
     archivePending: boolean("archive_pending").notNull().default(false),
     archiveFirstFailedAt: timestamp("archive_first_failed_at", {
       withTimezone: true,
@@ -545,6 +560,7 @@ export const boardCardFields = pgTable(
 // board_templates — Vorlagen für neue Boards (vom Admin verwaltet)
 // ---------------------------------------------------------------------------
 export const boardTemplates = pgTable("board_templates", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
@@ -610,17 +626,20 @@ export const formDocuments = pgTable("form_documents", {
 // Konten (frei vom Admin verwaltbare Auswahloptionen für das Kartenfeld "Konto")
 // ---------------------------------------------------------------------------
 export const accounts = pgTable("accounts", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  financeBoardId: integer("finance_board_id").references((): AnyPgColumn => financeBoards.id, { onDelete: "set null" }),
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),
-});
+}, t => ({financeBoardIdx:index("accounts_finance_board_idx").on(t.financeBoardId)}));
 
 // ---------------------------------------------------------------------------
 // Prioritäten — frei im Admin-Panel verwaltbare Auswahloptionen (Anzahl,
 // Bezeichnung und Farbe). cards.priority_id verweist hierauf (SET NULL).
 // ---------------------------------------------------------------------------
 export const priorities = pgTable("priorities", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   label: text("label").notNull(),
   color: text("color").notNull().default("slate"),
@@ -632,7 +651,8 @@ export const priorities = pgTable("priorities", {
 // Finanzübersichten ("Finanzboards")
 // ---------------------------------------------------------------------------
 export const financeBoards = pgTable("finance_boards", {
-  cashbookId: integer("cashbook_id").references((): AnyPgColumn => cashbooks.id, { onDelete: "restrict" }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  cashbookId: integer("cashbook_id").references((): AnyPgColumn => cashbooks.id, { onDelete: "set null" }),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -749,6 +769,7 @@ export const financePlanItems = pgTable("finance_plan_items", {
 
 // Finanz-Templates (Haushaltsplan-Vorlagen, vom Admin verwaltet).
 export const financeTemplates = pgTable("finance_templates", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -915,6 +936,7 @@ export const apiIdempotencyKeys = pgTable(
 // Bereichslisten, und ein Standort soll nicht versehentlich im Feedback
 // auftauchen (oder umgekehrt).
 export const feedbackAreas = pgTable("feedback_areas", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   receiptBrandingEnabled: boolean("receipt_branding_enabled").notNull().default(false),
   receiptOrganization: text("receipt_organization").notNull().default(""),
   receiptLogoPng: text("receipt_logo_png"),
@@ -969,6 +991,7 @@ export const feedbackSubmissions = pgTable("feedback_submissions", {
 // (inventory_board_access). `isPublic` (nur Admin) steuert, ob das Board im
 // öffentlichen Bereich /inventar erscheint.
 export const inventoryBoards = pgTable("inventory_boards", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -1444,11 +1467,13 @@ export const emailOutbox = pgTable("email_outbox", {
 
 // Meeting areas own permissions; meetings never grant source-board access.
 export const meetingAreaTemplates = pgTable("meeting_area_templates", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   id: serial("id").primaryKey(), name: text("name").notNull().unique(), description: text("description").notNull().default(""),
   topics: jsonb("topics").$type<DefaultTopic[]>().notNull().default(sql`'[]'::jsonb`),
   revision: integer("revision").notNull().default(0), createdAt: createdAt(),
 });
 export const meetingAreas = pgTable("meeting_areas", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   includeMiscellaneous: boolean("include_miscellaneous").notNull().default(false),
   defaultTopics: jsonb("default_topics").$type<DefaultTopic[]>().notNull().default(sql`'[]'::jsonb`),
   defaultTopicsRevision: integer("default_topics_revision").notNull().default(0),
@@ -1472,6 +1497,7 @@ export const meetingAreas = pgTable("meeting_areas", {
   firstSectionCheck: check("meeting_areas_first_section_check", sql`${t.firstSection} in ('public','non_public')`),
 }));
 export const meetings = pgTable("meetings", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   defaultsApplied: boolean("defaults_applied").notNull().default(false),
   id: serial("id").primaryKey(),
   areaId: integer("area_id").notNull().references(() => meetingAreas.id),
@@ -1495,12 +1521,20 @@ export const meetingAreaAccess = pgTable("meeting_area_access", {
   person: uniqueIndex("meeting_area_access_person_uq").on(t.areaId, t.userId),
   group: uniqueIndex("meeting_area_access_group_uq").on(t.areaId, t.groupId) }));
 
+export const meetingAreaManagers = pgTable("meeting_area_managers", {
+  areaId: integer("area_id").notNull().references(() => meetingAreas.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedById: integer("granted_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, t => ({ pk: primaryKey({ columns: [t.areaId, t.userId] }) }));
+
 export const meetingBoards = pgTable("meeting_boards", {
   meetingId: integer("meeting_id").notNull().references(() => meetings.id, { onDelete: "cascade" }),
   boardId: integer("board_id").notNull().references(() => boards.id, { onDelete: "cascade" }),
 }, t => ({ pk: primaryKey({ columns: [t.meetingId, t.boardId] }) }));
 
 export const meetingTopics = pgTable("meeting_topics", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   isMiscellaneous: boolean("is_miscellaneous").notNull().default(false),
   id: serial("id").primaryKey(),
   resolvedAt: timestamp("resolved_at",{withTimezone:true}),
@@ -1524,8 +1558,8 @@ export const meetingTopics = pgTable("meeting_topics", {
   outcome: text("outcome").notNull().default(""), position: integer("position").notNull().default(0),
   createdAt: createdAt(),
 }, t => ({ miscellaneousUnique: uniqueIndex("meeting_topics_miscellaneous_uq").on(t.meetingId).where(sql`${t.isMiscellaneous} = true`), miscellaneousCheck: check("meeting_topics_miscellaneous_check", sql`not ${t.isMiscellaneous} or (${t.meetingId} is not null and ${t.parentId} is null and ${t.section} = 'public' and not ${t.isFinanceTopic} and not ${t.isFinanceItem})`), sectionCheck: check("meeting_topics_section_check", sql`${t.section} in ('opening','public','non_public')`), originIndex: index("meeting_topics_origin_idx").on(t.originTopicId), previousIndex: index("meeting_topics_previous_idx").on(t.previousTopicId), meetingOrder: index("meeting_topics_order_idx").on(t.meetingId, t.position, t.id),
-  financeRoot: uniqueIndex("meeting_topics_finance_root_uq").on(t.meetingId).where(sql`${t.isFinanceTopic} = true and ${t.transferred} = false`),
-  financeCard: uniqueIndex("meeting_topics_finance_card_uq").on(t.meetingId, t.financeCardId).where(sql`${t.transferred} = false`),
+  financeRoot: uniqueIndex("meeting_topics_finance_root_uq").on(t.meetingId).where(sql`${t.isFinanceTopic} = true and ${t.transferred} = false and ${t.deletedAt} is null`),
+  financeCard: uniqueIndex("meeting_topics_finance_card_uq").on(t.meetingId, t.financeCardId).where(sql`${t.transferred} = false and ${t.deletedAt} is null`),
   financeRootCheck: check("meeting_topics_finance_root_check", sql`not ${t.isFinanceTopic} or (${t.parentId} is null and ${t.meetingId} is not null and not ${t.isFinanceItem})`),
   kindCheck: check("meeting_topics_kind_check", sql`${t.kind} in ('information','discussion','decision')`),
   stateCheck: check("meeting_topics_state_check", sql`${t.state} in ('proposed','scheduled','treated','deferred','withdrawn')`),
@@ -1567,6 +1601,12 @@ export const inventoryBoardOwners = pgTable("inventory_board_owners", {
   boardId: integer("board_id").notNull().references(()=>inventoryBoards.id,{onDelete:"cascade"}),
   userId: integer("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
 },t=>({pk:primaryKey({columns:[t.boardId,t.userId]})}));
+export const inventoryBoardManagers = pgTable("inventory_board_managers", {
+  boardId: integer("board_id").notNull().references(() => inventoryBoards.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedById: integer("granted_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+}, t => ({ pk: primaryKey({ columns: [t.boardId, t.userId] }) }));
 export const receiptBranding = pgTable("receipt_branding", {
   id: integer("id").primaryKey().default(1),
   organization: text("organization").notNull().default(""),
@@ -1576,9 +1616,11 @@ export const receiptBranding = pgTable("receipt_branding", {
 
 // Cashbook content is session-bound; no bearer API expansion.
 export const cashbooks = pgTable("cashbooks", {
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  financeBoardId: integer("finance_board_id").references((): AnyPgColumn => financeBoards.id, { onDelete: "set null" }),
  id: serial("id").primaryKey(), name:text("name").notNull(), ownerId:integer("owner_id").notNull().references(()=>users.id,{onDelete:"restrict"}),
  config:jsonb("config").$type<CashbookConfig>().notNull(), revision:integer("revision").notNull().default(0), nextNumber:integer("next_number").notNull().default(1), nextBookingNumber:integer("next_booking_number").notNull().default(1), createdAt:createdAt(),
-});
+}, t => ({financeBoardIdx:index("cashbooks_finance_board_idx").on(t.financeBoardId)}));
 export const cashbookAccess = pgTable("cashbook_access", {
  id:serial("id").primaryKey(),cashbookId:integer("cashbook_id").notNull().references(()=>cashbooks.id,{onDelete:"restrict"}),userId:integer("user_id").references(()=>users.id,{onDelete:"restrict"}),groupId:integer("group_id").references(()=>groups.id,{onDelete:"restrict"}),accessLevel:text("access_level").notNull(),
 });
@@ -1595,3 +1637,40 @@ export const cashbookEntries = pgTable("cashbook_entries", {
 export const cashbookActivity=pgTable("cashbook_activity",{
  id:serial("id").primaryKey(),cashbookId:integer("cashbook_id").notNull().references(()=>cashbooks.id,{onDelete:"restrict"}),entryId:integer("entry_id").references(()=>cashbookEntries.id,{onDelete:"restrict"}),userId:integer("user_id").notNull().references(()=>users.id,{onDelete:"restrict"}),type:text("type").notNull(),detail:jsonb("detail").$type<Record<string,unknown>>().notNull(),createdAt:createdAt(),
 });
+
+// Recycle-bin lifecycle metadata. Content/files stay in their original tables
+// until an authorized whole-resource purge; no bearer API exposes this table.
+export const trashEntries = pgTable("trash_entries", {
+ id:serial("id").primaryKey(), kind:text("kind").notNull(), entityId:integer("entity_id").notNull(), label:text("label").notNull(),
+ deletedBy:integer("deleted_by").references(()=>users.id,{onDelete:"set null"}), deletedAt:timestamp("deleted_at",{withTimezone:true}).notNull(), expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(),
+ state:text("state",{enum:["trashed","purging","restored","purged"]}).notNull().default("trashed"), context:jsonb("context").$type<Record<string,unknown>>().notNull().default({}),
+ finishedBy:integer("finished_by").references(()=>users.id,{onDelete:"set null"}),cleanupPaths:jsonb("cleanup_paths").$type<string[]>().notNull().default([]),lastError:text("last_error"),finishedAt:timestamp("finished_at",{withTimezone:true}),
+},t=>({retention:check("trash_entries_retention_check",sql`${t.state} <> 'trashed' or ${t.expiresAt} >= ${t.deletedAt} + interval '720 hours'`),cardBoard:index("trash_card_board").on(sql`(${t.context}->>'boardId')`,t.deletedAt).where(sql`${t.kind}='card' and ${t.state} in ('trashed','purging')`),attachmentBoard:index("trash_attachment_board").on(sql`(${t.context}->>'boardId')`,t.deletedAt).where(sql`${t.kind}='attachment' and ${t.state} in ('trashed','purging')`),expiry:index("trash_expiry").on(t.expiresAt).where(sql`${t.state} in ('trashed','purging')`),active:uniqueIndex("trash_active_entity").on(t.kind,t.entityId).where(sql`${t.state} in ('trashed','purging')`)}));
+export const maintenanceRuns = pgTable("maintenance_runs", {name:text("name").primaryKey(),lastDate:text("last_date").notNull()});
+
+
+// Pending Nextcloud work, inserted transactionally by database triggers.
+// A per-card session advisory lock serializes delivery without row locks during IO.
+export const nextcloudArchiveJobs = pgTable("nextcloud_archive_jobs", {
+ cardId: integer("card_id").primaryKey().references(() => cards.id, { onDelete: "cascade" }),
+ requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+ attempts: integer("attempts").notNull().default(0),
+ lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+ lastError: text("last_error"),
+}, t => ({ attempts: check("nextcloud_archive_jobs_attempts_check", sql`${t.attempts} >= 0`), order: index("nextcloud_archive_jobs_order").on(t.requestedAt, t.cardId) }));
+
+
+// Owner-only Nextcloud configuration; never serialize the encrypted secret.
+export const cashbookArchive = pgTable("cashbook_archive", {
+ cashbookId: integer("cashbook_id").primaryKey().references(() => cashbooks.id, { onDelete: "cascade" }),
+ enabled: boolean("enabled").notNull().default(false), ncUrl: text("nc_url"), ncUsername: text("nc_username"),
+ ncPasswordEnc: text("nc_password_enc"), targetFolder: text("target_folder"), revision: integer("revision").notNull().default(0),
+});
+export const cashbookArchiveJobs = pgTable("cashbook_archive_jobs", {
+ entryId: integer("entry_id").primaryKey().references(() => cashbookEntries.id, { onDelete: "cascade" }),
+ cashbookId: integer("cashbook_id").notNull().references(() => cashbooks.id, { onDelete: "cascade" }),
+ requestedBy: integer("requested_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+ requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+ attempts: integer("attempts").notNull().default(0), lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }), lastError: text("last_error"),
+ archivedAt: timestamp("archived_at", { withTimezone: true }), archivePath: text("archive_path"),
+}, t => ({ attempts: check("cashbook_archive_jobs_attempts_check", sql`${t.attempts}>=0`), completion:check("cashbook_archive_jobs_check",sql`(${t.archivedAt} is null)=(${t.archivePath} is null)`),pending:index("cashbook_archive_jobs_pending").on(t.requestedAt,t.entryId).where(sql`${t.archivedAt} is null`) }));

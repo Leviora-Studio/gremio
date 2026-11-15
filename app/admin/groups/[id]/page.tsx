@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -25,7 +27,7 @@ export default async function GroupDetailPage({
   const [group] = await db
     .select()
     .from(groups)
-    .where(eq(groups.id, groupId))
+    .where(trashAnd(activeRows.groups, eq(groups.id, groupId)))
     .limit(1);
   if (!group) notFound();
 
@@ -37,7 +39,7 @@ export default async function GroupDetailPage({
     })
     .from(userGroups)
     .innerJoin(users, eq(users.id, userGroups.userId))
-    .where(eq(userGroups.groupId, groupId))
+    .where(trashAnd(activeRows.userGroups, eq(userGroups.groupId, groupId)))
     .orderBy(users.username);
 
   const memberIds = new Set(members.map((m) => m.id));

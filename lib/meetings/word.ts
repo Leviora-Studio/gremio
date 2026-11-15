@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { deleteConfirmationError } from "@/lib/confirmation";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {readFile} from "node:fs/promises";
 import {eq,sql} from "drizzle-orm";
 import {db} from "@/lib/db";
@@ -7,7 +10,7 @@ import {meetingAreas,meetingDocuments,meetings,type User} from "@/lib/db/schema"
 import {absPath,deleteStoredFile,displayFileName,saveNamedBuffer} from "@/lib/attachments";
 import {MAX_UPLOAD_BYTES} from "@/lib/constants";
 import {env} from "@/lib/env";
-import {MeetingError,requireArea,requireMeeting,visibleTopics} from "./access";
+import {MeetingError,lockAreaSettings,requireArea,requireMeeting,visibleTopics} from "./access";
 import {agendaTopics} from "./agenda";
 import {topicStates} from "./validation";
 import {buildWordFromTemplate,inspectWordTemplate,validateWordConfiguration,type WordExportTopic,type WordExportLine} from "./word-template";
@@ -15,13 +18,13 @@ import type {MeetingWordConfiguration} from "./word-template-types";
 
 function checkRevision(value:number){if(!Number.isSafeInteger(value)||value<0)throw new MeetingError("Bitte die Vorlageneinstellungen neu laden.");}
 export async function wordTemplateSettings(user:User,areaId:number){
-  const area=await requireArea(user,areaId,"manage");
+  const area=await requireArea(user,areaId,"settings");
   if(!area.wordTemplatePath)return null;
   try{return inspectWordTemplate(await readFile(absPath(area.wordTemplatePath)));}
   catch{throw new MeetingError("Die Wordvorlage ist nicht lesbar. Bitte erneut hochladen.");}
 }
 export async function uploadWordTemplate(user:User,areaId:number,file:File,revision:number){
-  await requireArea(user,areaId,"manage");checkRevision(revision);
+  await requireArea(user,areaId,"settings");checkRevision(revision);
   if(!/\.(docx|dotx)$/i.test(file.name)||!file.size||file.size>MAX_UPLOAD_BYTES)throw new MeetingError("Bitte eine DOCX- oder DOTX-Vorlage bis 25 MB auswählen.");
   const bytes=Buffer.from(await file.arrayBuffer());let configuration:MeetingWordConfiguration;
   try{configuration=inspectWordTemplate(bytes).configuration;}catch(error){throw new MeetingError(error instanceof Error?error.message:"Ungültige Wordvorlage.");}
@@ -29,35 +32,36 @@ export async function uploadWordTemplate(user:User,areaId:number,file:File,revis
   let oldPath:string|null=null;
   try{
     await db.transaction(async tx=>{
-      const [current]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,areaId)).for("update");
+      const current=await lockAreaSettings(tx,user,areaId);
       if(!current||current.wordTemplateRevision!==revision)throw new MeetingError("Die Vorlage wurde zwischenzeitlich geändert. Bitte neu laden.");
-      await requireArea(user,areaId,"manage");oldPath=current.wordTemplatePath;
+      await requireArea(user,areaId,"settings");oldPath=current.wordTemplatePath;
       await tx.update(meetingAreas).set({wordTemplatePath:stored.relPath,wordTemplateName:stored.filename,wordConfiguration:configuration,wordTemplateRevision:revision+1}).where(eq(meetingAreas.id,areaId));
-      await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,areaId));
+      await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(trashAnd(activeRows.meetings,eq(meetings.areaId,areaId)));
     });
   }catch(error){await deleteStoredFile(stored.relPath);throw error;}
   if(oldPath)await deleteStoredFile(oldPath);
 }
 export async function saveWordConfiguration(user:User,areaId:number,configuration:MeetingWordConfiguration,revision:number){
-  const area=await requireArea(user,areaId,"manage");checkRevision(revision);
+  const area=await requireArea(user,areaId,"settings");checkRevision(revision);
   if(!area.wordTemplatePath)throw new MeetingError("Bitte zuerst eine Wordvorlage hochladen.");
   try{validateWordConfiguration(await readFile(absPath(area.wordTemplatePath)),configuration);}catch(error){throw new MeetingError(error instanceof Error?error.message:"Ungültige Vorlageneinstellungen.");}
   await db.transaction(async tx=>{
-    const [current]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,areaId)).for("update");
+    const current=await lockAreaSettings(tx,user,areaId);
     if(!current||current.wordTemplateRevision!==revision||current.wordTemplatePath!==area.wordTemplatePath)throw new MeetingError("Die Vorlage wurde zwischenzeitlich geändert. Bitte neu laden.");
-    await requireArea(user,areaId,"manage");
+    await requireArea(user,areaId,"settings");
     await tx.update(meetingAreas).set({wordConfiguration:configuration,wordTemplateRevision:revision+1}).where(eq(meetingAreas.id,areaId));
-    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,areaId));
+    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(trashAnd(activeRows.meetings,eq(meetings.areaId,areaId)));
   });
 }
-export async function removeWordTemplate(user:User,areaId:number,revision:number){
-  await requireArea(user,areaId,"manage");checkRevision(revision);let path:string|null=null;
+export async function removeWordTemplate(user:User,areaId:number,revision:number,confirmation?:unknown,templateName?:unknown){
+  await requireArea(user,areaId,"settings");const invalid=deleteConfirmationError(confirmation);if(invalid)throw new MeetingError(invalid.error);checkRevision(revision);let path:string|null=null;
   await db.transaction(async tx=>{
-    const [current]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,areaId)).for("update");
+    const current=await lockAreaSettings(tx,user,areaId);
     if(!current||current.wordTemplateRevision!==revision)throw new MeetingError("Die Vorlage wurde zwischenzeitlich geändert. Bitte neu laden.");
-    await requireArea(user,areaId,"manage");path=current.wordTemplatePath;
+    if(typeof templateName!=="string"||templateName!==current.wordTemplateName)throw new MeetingError("Bitte den aktuellen Namen der Wordvorlage exakt eingeben.");
+    await requireArea(user,areaId,"settings");path=current.wordTemplatePath;
     await tx.update(meetingAreas).set({wordTemplatePath:null,wordTemplateName:null,wordConfiguration:null,wordTemplateRevision:revision+1}).where(eq(meetingAreas.id,areaId));
-    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,areaId));
+    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(trashAnd(activeRows.meetings,eq(meetings.areaId,areaId)));
   });
   if(path)await deleteStoredFile(path);
 }
@@ -76,7 +80,7 @@ export async function buildMeetingAgendaWord(user:User,id:number):Promise<Buffer
     if(topic.description)lines.push(topic.description);
     if(topic.motion?.trim())lines.push(`Beschlussvorschlag: ${topic.motion}`,{text:"Abstimmung: Dafür / Dagegen / Enthaltung",bold:true});
     if(topic.outcome)lines.push(`Ergebnis / Notiz: ${topic.outcome}`);
-    const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
+    const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.topicId,topic.id)));
     if(docs.length)lines.push("Freigegebene Sitzungsunterlagen",...docs.map(doc=>doc.filename));
     items.push({...topic,lines});
   }

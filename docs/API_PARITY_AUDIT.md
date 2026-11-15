@@ -94,3 +94,43 @@ die relevanten Tests ausführen. `AGENTS.md` verweist auf diese Pflegepflicht.
 Keine Produktion, echte Nextcloud-Archivierung oder externes OIDC-System wurde
 für diese Tests angesprochen. Keine zusätzlichen Abhängigkeiten, Commits oder
 Veröffentlichungen im Rahmen des Abgleichs.
+
+## Begrenzte Board-Verwaltung
+
+Migration 0102 ergänzt personenbezogene Verwaltungsrechte für normale Boards und Antragsboards. Die festgelegten Teilbereiche werden in der UI und ihren Server Actions über eine separate Live-Prüfung freigegeben; volle Eigentümerprüfungen bleiben unverändert. Der bestehende REST-/MCP-Umfang umfasst keine Board-Einstellungsänderungen oder Ernennungen und wird nicht erweitert. Delegierte Verwalter bleiben API-Mitglieder; Finanzboard-, Kassenbuch-, Inventar- und öffentliche Rechte ändern sich nicht. `tests/board-management-db.test.ts` prüft direkte/Gruppen-Schreibrechte, Live-Entzug, ausgeschlossene Einstellungen und Ressourcenarten.
+
+## Verfügbare Status-Trigger
+
+Datums-Trigger und zugehörige automatische Zuweisungen sind vollständig deaktiviert, auch für historische Konfigurationen und Statuswechsel über REST/MCP, Sitzungen oder öffentliche Einreichung. Datumswerte/manuelle Altfelder bleiben erhalten. Nextcloud-Archiv-Trigger funktionieren auf normalen Boards und Antragsboards wie bisher. Nur die Done-Spalte entfällt auf Antragsboards; Sweep, Done-Zuweisungen, Suchfilter und Statistiken ignorieren dort alte Done-Konfigurationen. Die bestehenden Antwortfelder bleiben kompatibel (`isInstructionTrigger`/`isTransferTrigger` immer false, `doneStatusId` auf Antragsboards null). Gemeinsame Policy, Status-/Uploadprüfungen und Setter verhindern UI-/API-Abweichungen; Regressionen in `application-archive-trigger-db.test.ts`, `api-parity.test.ts` und `application-api-freeze-db.test.ts`.
+
+## Begrenzte Inventar-Verwaltung
+
+Migration 0103 ergänzt separate Inventar-Verwaltungsfreigaben ohne automatische Ernennungen. Die Oberfläche und Server Actions erlauben genau Email-Settings des verknüpften Leihboards, Freigaben, Felder und automatische Inventarnummer. Alle anderen Eigentümerprüfungen bleiben unverändert. Keine neuen REST-/MCP-Endpunkte oder Eigentümerrollen; aktuelle Schreibfreigaben bleiben erforderlich. `inventory-management-db.test.ts` prüft erlaubte Aktionen, geschützte Direktaufrufe, zusätzliche Eigentümer, Gruppenrechte, Live-Entzug und fremde/unverknüpfte Boards. Der Browserablauf prüft Vergabe, exakte Einstellungsbereiche, Nummerierungsänderung und Entzug auf Desktop/Mobilgerät.
+
+## Finanzübersichten: Anlage nur für Admins
+
+`createFinanceBoardAction` und der frühere Anlegepfad verlangen Adminrechte; das Formular steht ausschließlich unter `/admin/finanzboards`. REST/MCP werden nicht erweitert. Bestehende Eigentümer-/Schreib-/Leserechte gelten unverändert; Desktop- und Mobilnavigation berücksichtigen aktuelle direkte/Gruppen-Freigaben und Eigentümerschaft über `getAccessibleFinanceBoards`. `finance-creation-db.test.ts` prüft verweigerte Direktaufrufe, Admin-Anlage samt Vorlage und Live-Rechte; die Browserprüfung deckt Admin-Panel, Altpfad und Navigationssichtbarkeit einschließlich Entzug ab.
+
+Nextcloud archiving now uses the confirmed public status and waits while an
+application is in an unconfirmed lock column. The shared lock service starts
+archiving after commit for UI, REST and MCP. Ordinary archive columns and later
+moves of frozen cards still trigger immediately; failed uploads remain retryable.
+Migration 0104 allows technical archive bookkeeping on frozen cards while
+preserving all content restrictions and making recorded archive links immutable.
+No API methods or write fields were added. `frozen-card-archive-db.test.ts` covers
+the shared paths; `frozen-card-archive-migration.test.ts` verifies unchanged
+existing rows across the upgrade.
+
+New planning account/title pairs are validated by the common writer against the
+account's configured expense-plan catalog (409 for missing/invalid catalog
+choices). UI, REST and MCP share this restriction. Persisted historical pairs
+can be retained but not multiplied; no public/accounting data or catalog read
+endpoints were added. Cashbook source selection and title validation remain
+session-only. Tests cover the REST/MCP rejection and correct existing writes.
+
+
+Card-bin follow-up: REST card deletion and MCP `delete_card` now require explicit
+`confirmation: "LÖSCHEN"` and use the same 30-day card-bin lifecycle as the UI.
+Shared predicates also hide card descendants and retained public/download links.
+No restore/purge or cashbook bearer capability is introduced. Input requirements
+changed intentionally; clients must supply the confirmation.

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { isResourceOwner, additionalOwnedIds, resourceOwners } from "@/lib/board-ownership";
 import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
   boardAccess,
+  boardManagers,
   boardOfficeRoles,
   boardOfficeStatuses,
   boardStatuses,
@@ -26,7 +29,7 @@ export async function getUserGroupIds(userId: number): Promise<number[]> {
   const rows = await db
     .select({ groupId: userGroups.groupId })
     .from(userGroups)
-    .where(eq(userGroups.userId, userId));
+    .where(trashAnd(activeRows.userGroups, eq(userGroups.userId, userId)));
   return rows.map((r) => r.groupId);
 }
 
@@ -43,7 +46,7 @@ async function canAccessInventoryBoardById(
   const [inv] = await db
     .select({ ownerId: inventoryBoards.ownerId })
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.id, inventoryBoardId))
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, inventoryBoardId)))
     .limit(1);
   if (!inv) return false;
   if (await isResourceOwner("inventory",{id:inventoryBoardId,ownerId:inv.ownerId},user.id)) return true;
@@ -52,7 +55,7 @@ async function canAccessInventoryBoardById(
     .select({ id: inventoryBoardAccess.id })
     .from(inventoryBoardAccess)
     .where(
-      and(
+      trashAnd(activeRows.inventoryBoardAccess, and(
         eq(inventoryBoardAccess.boardId, inventoryBoardId),
         access === "write" ? eq(inventoryBoardAccess.accessLevel, "write") : undefined,
         or(
@@ -61,7 +64,7 @@ async function canAccessInventoryBoardById(
             ? inArray(inventoryBoardAccess.groupId, groupIds)
             : undefined,
         ),
-      ),
+      )),
     )
     .limit(1);
   return rows.length > 0;
@@ -76,7 +79,7 @@ export async function canAccessBoard(
   board: Board,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || board.deletedAt) return false;
   if (user.role === "admin") return true;
   // System-Board (Leihvorgänge): Zugriff spiegelt das verknüpfte Inventar.
   if (board.inventoryBoardId != null) {
@@ -89,14 +92,14 @@ export async function canAccessBoard(
     .select({ id: boardAccess.id })
     .from(boardAccess)
     .where(
-      and(
+      trashAnd(activeRows.boardAccess, and(
         eq(boardAccess.boardId, board.id),
         access === "write" ? eq(boardAccess.accessLevel, "write") : undefined,
         or(
           eq(boardAccess.userId, user.id),
           groupIds.length ? inArray(boardAccess.groupId, groupIds) : undefined,
         ),
-      ),
+      )),
     )
     .limit(1);
   return rows.length > 0;
@@ -104,33 +107,50 @@ export async function canAccessBoard(
 
 /** Verwalten (umbenennen, Stati, Freigaben, Nextcloud, löschen): admin ODER Eigentümer. */
 export async function canManageBoard(user: User, board: Board): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || board.deletedAt) return false;
   if(user.role==="admin")return true;
-  if(board.inventoryBoardId!=null){const [inv]=await db.select().from(inventoryBoards).where(eq(inventoryBoards.id,board.inventoryBoardId));return !!inv&&await isResourceOwner("inventory",inv,user.id);}
+  if(board.inventoryBoardId!=null){const [inv]=await db.select().from(inventoryBoards).where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id,board.inventoryBoardId)));return !!inv&&await isResourceOwner("inventory",inv,user.id);}
   return isResourceOwner("board",board,user.id);
+}
+
+/** Only the explicitly delegated settings, never ownership/full management. */
+export async function canConfigureBoardSettings(user: User, board: Board): Promise<boolean> {
+  if (board.inventoryBoardId != null || !user.isActive) return false;
+  if (await canManageBoard(user, board)) return true;
+  const [delegation] = await db.select({ userId: boardManagers.userId }).from(boardManagers)
+    .where(and(eq(boardManagers.boardId, board.id), eq(boardManagers.userId, user.id))).limit(1);
+  return !!delegation && await canEditBoard(user, board);
+}
+
+/** Session-only guard for the limited set of delegable board settings. */
+export async function requireBoardSettingsAccess(boardId: number): Promise<{ user: User; board: Board }> {
+  const user = await requireUser();
+  const board = await getBoardById(boardId);
+  if (!board || !(await canConfigureBoardSettings(user, board))) notFound();
+  return { user, board };
 }
 
 /** Alle Boards, die ein Nutzer sehen darf (Admin: alle). */
 export async function getAccessibleBoards(user: User): Promise<Board[]> {
   if (!user.isActive) return [];
   if (user.role === "admin") {
-    return db.select().from(boards).orderBy(boards.name);
+    return db.select().from(boards).where(activeRows.boards).orderBy(boards.name);
   }
 
   const groupIds = await getUserGroupIds(user.id);
   const ownerRows = await db
     .select({ id: boards.id })
     .from(boards)
-    .where(eq(boards.ownerId, user.id));
+    .where(trashAnd(activeRows.boards, eq(boards.ownerId, user.id)));
   const userRows = await db
     .select({ id: boardAccess.boardId })
     .from(boardAccess)
-    .where(eq(boardAccess.userId, user.id));
+    .where(trashAnd(activeRows.boardAccess, eq(boardAccess.userId, user.id)));
   const groupRows = groupIds.length
     ? await db
         .select({ id: boardAccess.boardId })
         .from(boardAccess)
-        .where(inArray(boardAccess.groupId, groupIds))
+        .where(trashAnd(activeRows.boardAccess, inArray(boardAccess.groupId, groupIds)))
     : [];
 
   // System-Boards (Leihvorgänge): über die zugänglichen Inventare einbeziehen,
@@ -138,16 +158,16 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
   const invOwner = await db
     .select({ id: inventoryBoards.id })
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.ownerId, user.id));
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.ownerId, user.id)));
   const invUser = await db
     .select({ id: inventoryBoardAccess.boardId })
     .from(inventoryBoardAccess)
-    .where(eq(inventoryBoardAccess.userId, user.id));
+    .where(trashAnd(activeRows.inventoryBoardAccess, eq(inventoryBoardAccess.userId, user.id)));
   const invGroup = groupIds.length
     ? await db
         .select({ id: inventoryBoardAccess.boardId })
         .from(inventoryBoardAccess)
-        .where(inArray(inventoryBoardAccess.groupId, groupIds))
+        .where(trashAnd(activeRows.inventoryBoardAccess, inArray(inventoryBoardAccess.groupId, groupIds)))
     : [];
   const invIds = Array.from(
     new Set([...invOwner, ...await additionalOwnedIds("inventory",user.id), ...invUser, ...invGroup].map((r) => r.id)),
@@ -156,7 +176,7 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
     ? await db
         .select({ id: boards.id })
         .from(boards)
-        .where(inArray(boards.inventoryBoardId, invIds))
+        .where(trashAnd(activeRows.boards, inArray(boards.inventoryBoardId, invIds)))
     : [];
 
   const ids = Array.from(
@@ -170,7 +190,7 @@ export async function getAccessibleBoards(user: User): Promise<Board[]> {
     .from(boards)
     // System boards inherit inventory rights exclusively. Ignore stale normal
     // grants/owners even when they contributed an ID to the candidate set.
-    .where(and(inArray(boards.id, ids), or(isNull(boards.inventoryBoardId), invIds.length ? inArray(boards.inventoryBoardId, invIds) : undefined)))
+    .where(trashAnd(activeRows.boards, and(inArray(boards.id, ids), or(isNull(boards.inventoryBoardId), invIds.length ? inArray(boards.inventoryBoardId, invIds) : undefined))))
     .orderBy(boards.name);
 }
 
@@ -185,7 +205,7 @@ export async function getBoardById(boardId: number): Promise<Board | undefined> 
   const rows = await db
     .select()
     .from(boards)
-    .where(eq(boards.id, boardId))
+    .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
     .limit(1);
   return rows[0];
 }
@@ -210,31 +230,31 @@ export async function getBoardMemberUsers(
       .select({ id: inventoryBoardAccess.userId })
       .from(inventoryBoardAccess)
       .where(
-        and(
+        trashAnd(activeRows.inventoryBoardAccess, and(
           eq(inventoryBoardAccess.boardId, invId),
           isNotNull(inventoryBoardAccess.userId),
-        ),
+        )),
       );
     groupMemberRows = await db
       .select({ id: userGroups.userId })
       .from(userGroups)
       .innerJoin(
         inventoryBoardAccess,
-        eq(inventoryBoardAccess.groupId, userGroups.groupId),
+        trashAnd(activeRows.inventoryBoardAccess, eq(inventoryBoardAccess.groupId, userGroups.groupId)),
       )
-      .where(eq(inventoryBoardAccess.boardId, invId));
+      .where(trashAnd(activeRows.userGroups, eq(inventoryBoardAccess.boardId, invId)));
   } else {
     directRows = await db
       .select({ id: boardAccess.userId })
       .from(boardAccess)
       .where(
-        and(eq(boardAccess.boardId, board.id), isNotNull(boardAccess.userId)),
+        trashAnd(activeRows.boardAccess, and(eq(boardAccess.boardId, board.id), isNotNull(boardAccess.userId))),
       );
     groupMemberRows = await db
       .select({ id: userGroups.userId })
       .from(userGroups)
-      .innerJoin(boardAccess, eq(boardAccess.groupId, userGroups.groupId))
-      .where(eq(boardAccess.boardId, board.id));
+      .innerJoin(boardAccess, trashAnd(activeRows.boardAccess, eq(boardAccess.groupId, userGroups.groupId)))
+      .where(trashAnd(activeRows.userGroups, eq(boardAccess.boardId, board.id)));
   }
 
   const ids = Array.from(
@@ -307,6 +327,6 @@ export async function canMoveBoardCard(user: User, board: Board, card: Pick<Card
   if (card.archivedAt != null || !(await canAccessBoard(user, board))) return false;
   const rules = await getOfficeMoveRules(user, board, connection);
   if (!rules || card.statusId === targetStatusId || !rules.sourceStatusIds.includes(card.statusId) || !rules.targetStatusIds.includes(targetStatusId)) return false;
-  const [target] = await connection.select({ id: boardStatuses.id }).from(boardStatuses).where(and(eq(boardStatuses.boardId, board.id), eq(boardStatuses.id, targetStatusId))).limit(1);
+  const [target] = await connection.select({ id: boardStatuses.id }).from(boardStatuses).where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.boardId, board.id), eq(boardStatuses.id, targetStatusId)))).limit(1);
   return !!target;
 }

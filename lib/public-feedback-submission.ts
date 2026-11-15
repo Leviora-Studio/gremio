@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { emailAddressSchema } from "@/lib/email-validation";
@@ -172,7 +174,7 @@ export async function submitPublicFeedback<T = never>(
   const [area] = await db
     .select()
     .from(feedbackAreas)
-    .where(eq(feedbackAreas.id, parsed.data.areaId))
+    .where(trashAnd(activeRows.feedbackAreas, eq(feedbackAreas.id, parsed.data.areaId)))
     .limit(1);
   // Wie beim Standort-Routing: Die Zielspalte muss WIRKLICH zum Ziel-Board
   // gehören. Die beiden FKs sind einzeln gültig, auch wenn die Spalte zu einem
@@ -187,13 +189,13 @@ export async function submitPublicFeedback<T = never>(
           await db
             .select({ id: boardStatuses.id })
             .from(boardStatuses)
-            .innerJoin(boards, eq(boards.id, boardStatuses.boardId))
+            .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, boardStatuses.boardId)))
             .where(
-              and(
+              trashAnd(activeRows.boardStatuses, and(
                 eq(boardStatuses.id, area.targetStatusId),
                 eq(boardStatuses.boardId, area.targetBoardId),
                 isNull(boards.inventoryBoardId),
-              ),
+              )),
             )
             .limit(1)
         )[0]
@@ -222,7 +224,7 @@ export async function submitPublicFeedback<T = never>(
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
     .where(
-      and(eq(cards.boardId, targetBoardId), eq(cards.statusId, targetStatusId)),
+      trashAnd(activeRows.cards, and(eq(cards.boardId, targetBoardId), eq(cards.statusId, targetStatusId))),
     );
   const position = (maxRow?.m ?? -1) + 1;
   const title = deriveFeedbackTitle(feedbackText);
@@ -372,8 +374,8 @@ export async function getFeedbackByToken(
         feedbackText: feedbackSubmissions.feedbackText,
       })
       .from(feedbackSubmissions)
-      .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
-      .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+      .innerJoin(cards, trashAnd(activeRows.cards, eq(cards.id, feedbackSubmissions.cardId)))
+      .leftJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, cards.statusId)))
       .where(eq(cards.token, token))
       .limit(1);
     return row?.token ? { ...row, token: row.token } : undefined;
@@ -393,7 +395,7 @@ export async function isFeedbackToken(token: string): Promise<boolean> {
     const [row] = await db
       .select({ id: feedbackSubmissions.id })
       .from(feedbackSubmissions)
-      .innerJoin(cards, eq(cards.id, feedbackSubmissions.cardId))
+      .innerJoin(cards, trashAnd(activeRows.cards, eq(cards.id, feedbackSubmissions.cardId)))
       .where(eq(cards.token, token))
       .limit(1);
     return !!row;
@@ -436,12 +438,12 @@ export async function listPublicFeedbackAreas(): Promise<
     // deren Spalte zu einem anderen Board gehört (siehe oben).
     .innerJoin(
       boardStatuses,
-      and(
+      trashAnd(activeRows.boardStatuses, and(
         eq(boardStatuses.id, feedbackAreas.targetStatusId),
         eq(boardStatuses.boardId, feedbackAreas.targetBoardId),
-      ),
+      )),
     )
-    .innerJoin(boards, eq(boards.id, feedbackAreas.targetBoardId))
-    .where(and(eq(feedbackAreas.enabled, true), isNull(boards.inventoryBoardId)))
+    .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, feedbackAreas.targetBoardId)))
+    .where(trashAnd(activeRows.feedbackAreas, and(eq(feedbackAreas.enabled, true), isNull(boards.inventoryBoardId))))
     .orderBy(feedbackAreas.position, feedbackAreas.id);
 }

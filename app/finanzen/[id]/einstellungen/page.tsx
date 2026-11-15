@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
@@ -22,7 +24,6 @@ import { getAccounts } from "@/lib/accounts";
 import { Select } from "@/components/Select";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Avatar } from "@/components/Avatar";
-import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { OwnerSettings } from "@/components/ownership/OwnerSettings";
 import { RenameFinanceForm } from "@/components/finance/RenameFinanceForm";
 import { accessibleCashbooks } from "@/lib/cashbook/access";
@@ -36,7 +37,6 @@ import {
   addFinanceAccountAction,
   addFinanceExpenseAccountAction,
   addFinanceSourceAction,
-  deleteFinanceBoardAction,
   removeFinanceAccessAction,
   updateFinanceAccessLevelAction,
   removeFinanceAccountAction,
@@ -81,7 +81,7 @@ export default async function FinanceSettingsPage({
     (a) => !expenseAccountIds.has(a.id),
   );
 
-  const allGroups = await db.select().from(groups).orderBy(groups.name);
+  const allGroups = await db.select().from(groups).where(activeRows.groups).orderBy(groups.name);
   const activeUsers = await db
     .select({ id: users.id, username: users.username })
     .from(users)
@@ -93,7 +93,7 @@ export default async function FinanceSettingsPage({
   const sourceStatuses = accessible.length
     ? await db.select({ id: boardStatuses.id, name: boardStatuses.name, boardId: boardStatuses.boardId })
         .from(boardStatuses)
-        .where(inArray(boardStatuses.boardId, accessible.map((s) => s.id)))
+        .where(trashAnd(activeRows.boardStatuses, inArray(boardStatuses.boardId, accessible.map((s) => s.id))))
         .orderBy(asc(boardStatuses.position), asc(boardStatuses.id))
     : [];
   const sourceList = [
@@ -116,13 +116,13 @@ export default async function FinanceSettingsPage({
     })
     .from(financeBoardAccess)
     .leftJoin(users, eq(users.id, financeBoardAccess.userId))
-    .leftJoin(groups, eq(groups.id, financeBoardAccess.groupId))
-    .where(eq(financeBoardAccess.financeBoardId, fbId));
+    .leftJoin(groups, trashAnd(activeRows.groups, eq(groups.id, financeBoardAccess.groupId)))
+    .where(trashAnd(activeRows.financeBoardAccess, eq(financeBoardAccess.financeBoardId, fbId)));
 
   const items = await db
     .select()
     .from(financePlanItems)
-    .where(eq(financePlanItems.financeBoardId, fbId))
+    .where(trashAnd(activeRows.financePlanItems, eq(financePlanItems.financeBoardId, fbId)))
     .orderBy(asc(financePlanItems.position));
 
   return (
@@ -309,6 +309,25 @@ export default async function FinanceSettingsPage({
 
       {/* Freigaben */}
       <CollapsibleSection title="Freigaben">
+        <div className="mb-4 space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+          <h3 className="font-semibold">Was bedeutet schreibender Zugriff?</h3>
+          <p>
+            Zusätzlich zum Ansehen und Exportieren dürfen Schreibberechtigte den
+            Haushaltsplan bearbeiten: Einnahmen, Ausgaben und Unterpunkte anlegen
+            oder löschen sowie Haushaltstitel, Bezeichnungen und geplante Beträge
+            ändern. Diese Änderungen gelten für alle Berechtigten.
+          </p>
+          <p>
+            Name, Einstellungen, Konten, Quellboards, Kassenbuch-Verknüpfung,
+            Freigaben und das Löschen des Finanzboards bleiben Eigentümern und
+            Admins vorbehalten.
+          </p>
+          <p>
+            Diese Freigabe vergibt keine zusätzlichen Rechte auf Antragsboards
+            oder im Kassenbuch. Lesender Zugriff erlaubt ausschließlich das
+            Ansehen, Sortieren, Filtern und Exportieren.
+          </p>
+        </div>
         <p className="mb-3 text-sm text-slate-500">Bei mehreren direkten oder Gruppenfreigaben gelten die höchsten Rechte. Eigentümer und Admins behalten volle Rechte.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <form
@@ -411,18 +430,13 @@ export default async function FinanceSettingsPage({
         <FinancePlanEditor fbId={fbId} items={items} />
       </CollapsibleSection>
 
-      {/* Eigentum & Löschen */}
-      <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
+      {/* Eigentümerschaft */}
+      <CollapsibleSection title="Eigentümerschaft">
         <div className="mb-4">
 
           <OwnerSettings kind="finance" id={fbId}/>
         </div>
-        <DeleteConfirm
-          action={deleteFinanceBoardAction.bind(null, fbId)}
-          buttonLabel="Finanzübersicht löschen"
-          title={`„${fb.name}" löschen`}
-          message="Die Finanzübersicht inkl. Haushaltsplan wird unwiderruflich gelöscht (die Quell-Boards bleiben unberührt)."
-        />
+
       </CollapsibleSection>
     </div>
   );

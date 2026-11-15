@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boards, cards } from "@/lib/db/schema";
@@ -55,7 +57,7 @@ export async function sweepDoneColumns(now: Date = new Date()): Promise<number> 
       doneSweepTime: boards.doneSweepTime,
     })
     .from(boards)
-    .where(and(isNotNull(boards.doneStatusId), isNotNull(boards.doneSweepTime)));
+    .where(trashAnd(activeRows.boards, and(eq(boards.isApplicationBoard, false), isNull(boards.inventoryBoardId), isNotNull(boards.doneStatusId), isNotNull(boards.doneSweepTime))));
 
   let archived = 0;
   for (const b of list) {
@@ -66,6 +68,7 @@ export async function sweepDoneColumns(now: Date = new Date()): Promise<number> 
       .set({ archivedAt: now })
       .where(
         and(
+          activeRows.cards,
           eq(cards.boardId, b.id),
           eq(cards.statusId, b.doneStatusId!),
           isNull(cards.archivedAt),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
@@ -28,14 +30,14 @@ export default async function FinanceTemplateDetailPage({
   const [tpl] = await db
     .select()
     .from(financeTemplates)
-    .where(eq(financeTemplates.id, tId))
+    .where(trashAnd(activeRows.financeTemplates, eq(financeTemplates.id, tId)))
     .limit(1);
   if (!tpl) notFound();
 
   const items = await db
     .select()
     .from(financeTemplateItems)
-    .where(eq(financeTemplateItems.templateId, tId))
+    .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.templateId, tId)))
     .orderBy(asc(financeTemplateItems.position));
   const tops = items.filter((i) => i.parentId == null);
   const childrenOf = (pid: number) => items.filter((i) => i.parentId === pid);

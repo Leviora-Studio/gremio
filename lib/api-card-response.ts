@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardStatuses, cardAssignees, cards } from "@/lib/db/schema";
@@ -12,8 +14,8 @@ import { loadBudgetPositions } from "@/lib/card-budget-db";
 export async function serializeApiCardDetail(cardId: number, visible: Set<string>, boardName?: string) {
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ card: cards, statusName: boardStatuses.name })
-      .from(cards).innerJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-      .where(eq(cards.id, cardId));
+      .from(cards).innerJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, cards.statusId)))
+      .where(trashAnd(activeRows.cards, eq(cards.id, cardId)));
     if (!row) return null;
     const assignees = await tx.select({ userId: cardAssignees.userId })
       .from(cardAssignees).where(eq(cardAssignees.cardId, cardId));

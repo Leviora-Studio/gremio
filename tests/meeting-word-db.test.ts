@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -55,11 +56,11 @@ test('Word template lifecycle and both exports enforce management rights, live r
   const before=createHash('sha256').update(bytes).digest('hex');await word.buildMeetingAgendaWord(owner,meetingId);assert.equal(createHash('sha256').update(await readFile(absPath(first.wordTemplatePath!))).digest('hex'),before);
   const races=await Promise.allSettled([word.uploadWordTemplate(owner,areaId,file,2),word.uploadWordTemplate(admin,areaId,file,2)]);assert.equal(races.filter(r=>r.status==='fulfilled').length,1);
   const current=await requireArea(owner,areaId,'manage');assert.equal(current.wordTemplateRevision,3);assert.notEqual(current.wordTemplatePath,first.wordTemplatePath);await assert.rejects(readFile(absPath(first.wordTemplatePath!)));
-  await assert.rejects(word.removeWordTemplate(owner,areaId,2),/zwischenzeitlich/);await word.removeWordTemplate(owner,areaId,3);
+  await assert.rejects(word.removeWordTemplate(owner,areaId,2,"LÖSCHEN","Replacement.docx"),/zwischenzeitlich/);await word.removeWordTemplate(owner,areaId,3,"LÖSCHEN",(await requireArea(owner,areaId)).wordTemplateName);
   await assert.rejects(readFile(absPath(current.wordTemplatePath!)));assert.equal((await requireArea(owner,areaId)).wordTemplatePath,null);await assert.rejects(word.buildMeetingAgendaWord(owner,meetingId),/keine Wordvorlage/);
   assert.ok((await buildMeetingAgendaPdf(owner,meetingId)).length>0,'PDF works without a Word template');
  }finally{
-  const current=await requireArea(owner,areaId);if(current.wordTemplatePath)await word.removeWordTemplate(owner,areaId,current.wordTemplateRevision);
-  if(meetingId)await service.deleteMeeting(owner,meetingId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));await db.delete(s.users).where(inArray(s.users.id,people.map(p=>p.id)));
+  const current=await requireArea(owner,areaId);if(current.wordTemplatePath)await word.removeWordTemplate(owner,areaId,current.wordTemplateRevision,"LÖSCHEN",current.wordTemplateName);
+  if(meetingId)await purgeTestResource("meeting",meetingId);await purgeTestMeetings(areaId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));await db.delete(s.users).where(inArray(s.users.id,people.map(p=>p.id)));
  }
 });

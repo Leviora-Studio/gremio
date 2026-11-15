@@ -70,11 +70,13 @@ const TABS: {
 export function BottomNav({
   role,
   hasCashbook = false,
+  hasFinance = false,
   displayName,
   avatarSrc,
 }: {
   role: Role;
   hasCashbook?: boolean;
+  hasFinance?: boolean;
   displayName: string;
   avatarSrc: string | null;
 }) {
@@ -182,7 +184,7 @@ export function BottomNav({
         }`}
       >
         <div className="flex">
-          {TABS.map((t) => {
+          {TABS.filter(t => hasFinance || t.href !== "/finanzen").map((t) => {
             const active = t.match(pathname);
             return (
               <Link

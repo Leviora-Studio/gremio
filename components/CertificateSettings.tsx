@@ -3,6 +3,7 @@
 
 "use client";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { useActionState } from "react";
 import { FileInput } from "@/components/FileInput";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -67,11 +68,7 @@ export function CertificateSettings({ cert }: { cert: Cert | null }) {
           <p className="text-slate-500">
             Hinzugefügt: {fmtDate(cert.uploadedAt)}
           </p>
-          <form action={removeCertificateAction} className="mt-3">
-            <SubmitButton className="btn-secondary btn-sm text-red-600">
-              Zertifikat entfernen
-            </SubmitButton>
-          </form>
+          <div className="mt-3"><ConfirmButton action={removeCertificateAction} className="btn-secondary btn-sm text-red-600" label="Zertifikat entfernen" title="Zertifikat entfernen" message="Die gespeicherte Datei wird entfernt. Bereits signierte Dokumente bleiben unverändert." confirmLabel="Entfernen" confirmClassName="btn-danger" requireTyped="ENTFERNEN"/></div>
         </div>
       ) : (
         <p className="mb-4 text-sm text-slate-500">

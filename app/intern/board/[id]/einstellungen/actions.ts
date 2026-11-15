@@ -3,9 +3,15 @@
 
 "use server";
 
+import { deleteConfirmationError } from "@/lib/confirmation";
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
 import { getLocationRequiredFieldKeys, lockLocationBoard } from "@/lib/location-board-fields";
 import { parseAccessLevel } from "@/lib/access-level";
 import { setBoardTriggerSources } from "@/lib/board-triggers";
+import { isBoardTriggerAvailable } from "@/lib/board-trigger-policy";
 import { isTriggerKind, setTriggerAssignmentConfig } from "@/lib/trigger-assignments";
 
 import { redirect } from "next/navigation";
@@ -13,41 +19,15 @@ import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, max, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import {
-  accounts,
-  boardAccess,
-  boardOfficeRoles,
-  boardOfficeStatuses,
-  boardArchive,
-  boardCardFields,
-  boardInstructionForms,
-  boardNumbering,
-  boards,
-  boardStatuses,
-  cards,
-  groups,
-  users,
-} from "@/lib/db/schema";
-import { canAccessBoard, requireBoardManage } from "@/lib/authz";
+import { accounts, boardAccess, boardOfficeRoles, boardOfficeStatuses, boardArchive, boardCardFields, boardInstructionForms, boardNumbering, boards, boardStatuses, cards, groups, users } from "@/lib/db/schema";
+import { canAccessBoard, requireBoardManage, requireBoardSettingsAccess } from "@/lib/authz";
 import { isForeignKeyViolation } from "@/lib/db-errors";
-import { BoardDeleteBlockedError, deleteBoardCascade } from "@/lib/boards";
-import {
-  ARCHIVE_FOLDER_FIELD_KEYS,
-  CARD_FIELD_KEYS,
-  ATTACHMENT_FIELD_KEYS,
-  LEGACY_FINANCE_FIELD_KEYS,
-  DEFAULT_ARCHIVE_FOLDER_SEPARATOR,
-  PDF_MIME,
-} from "@/lib/constants";
+
+import { ARCHIVE_FOLDER_FIELD_KEYS, CARD_FIELD_KEYS, ATTACHMENT_FIELD_KEYS, LEGACY_FINANCE_FIELD_KEYS, DEFAULT_ARCHIVE_FOLDER_SEPARATOR, PDF_MIME } from "@/lib/constants";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { testConnection } from "@/lib/nextcloud";
 import { isSafeExternalUrl } from "@/lib/url-guard";
-import {
-  deleteStoredFile,
-  displayFileName,
-  saveNamedBuffer,
-  validateUpload,
-} from "@/lib/attachments";
+import { deleteStoredFile, displayFileName, saveNamedBuffer, validateUpload } from "@/lib/attachments";
 import { isUsableInstructionTemplatePdf } from "@/lib/instruction-form";
 
 export type State = { error?: string; success?: string };
@@ -90,7 +70,7 @@ export async function addStatusAction(
   boardId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   // Länge kappen wie beim Board-Namen (nameSchema: 120) — sonst ließe sich ein
   // beliebig großer Spaltenname speichern, der überall mitgerendert wird.
   const name = String(formData.get("name") ?? "").trim().slice(0, 120);
@@ -98,7 +78,7 @@ export async function addStatusAction(
   const [row] = await db
     .select({ m: max(boardStatuses.position) })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId));
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)));
   const maxPos = row?.m ?? -1;
   await db.insert(boardStatuses).values({ boardId, name, position: maxPos + 1 });
   rev(boardId);
@@ -110,7 +90,7 @@ export async function renameStatusAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   // Manipulierte RPC-Argumente dürfen keinen pg-Fehler/500 auslösen.
   if (!Number.isInteger(statusId)) return { error: "Ungültige Spalte." };
   const name = String(formData.get("name") ?? "").trim().slice(0, 120);
@@ -128,11 +108,11 @@ export async function moveStatusAction(
   statusId: number,
   dir: "up" | "down",
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const list = await db
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position));
   const idx = list.findIndex((s) => s.id === statusId);
   if (idx === -1) return;
@@ -158,11 +138,11 @@ export async function reorderStatusesAction(
   boardId: number,
   orderedIds: number[],
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const rows = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId));
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)));
   const valid = new Set(rows.map((r) => r.id));
   const ordered = orderedIds.filter((id) => valid.has(id));
   for (const r of rows) if (!ordered.includes(r.id)) ordered.push(r.id);
@@ -183,7 +163,7 @@ export async function deleteStatusAction(
   boardId: number,
   statusId: number,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   if (!Number.isInteger(statusId)) return { error: "Ungültige Spalte." };
   try {
     // Zählen und Löschen unter einem Advisory-Lock je Board („BS" = Board
@@ -197,7 +177,7 @@ export async function deleteStatusAction(
       const [row] = await tx
         .select({ c: sql<number>`count(*)` })
         .from(boardStatuses)
-        .where(eq(boardStatuses.boardId, boardId));
+        .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)));
       if (Number(row?.c ?? 0) <= 1) return null;
       return tx
         .delete(boardStatuses)
@@ -235,59 +215,31 @@ export async function setArchiveTriggerAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const result = await setBoardTriggerSources(boardId, "archive", formData.getAll("statusIds"));
   if (result.error) return result;
   rev(boardId);
   return { success: "Archiv-Trigger gespeichert." };
 }
 
+/** Compatibility response for settings forms opened before date triggers were removed. */
 export async function setInstructionTriggerAction(
   boardId: number,
   _prev: State,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
-  const raw = formData.get("statusId");
-  const statusId = raw ? Number(raw) : null;
-  await db.transaction(async (tx) => {
-    await tx
-      .update(boardStatuses)
-      .set({ isInstructionTrigger: false })
-      .where(eq(boardStatuses.boardId, boardId));
-    if (statusId) {
-      await tx
-        .update(boardStatuses)
-        .set({ isInstructionTrigger: true })
-        .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
-    }
-  });
-  rev(boardId);
-  return { success: "Anweisungsdatum-Trigger gespeichert." };
+  await requireBoardSettingsAccess(boardId);
+  return { error: "Datums-Trigger sind nicht mehr verfügbar." };
 }
 
+/** Compatibility response for settings forms opened before date triggers were removed. */
 export async function setTransferTriggerAction(
   boardId: number,
   _prev: State,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
-  const raw = formData.get("statusId");
-  const statusId = raw ? Number(raw) : null;
-  await db.transaction(async (tx) => {
-    await tx
-      .update(boardStatuses)
-      .set({ isTransferTrigger: false })
-      .where(eq(boardStatuses.boardId, boardId));
-    if (statusId) {
-      await tx
-        .update(boardStatuses)
-        .set({ isTransferTrigger: true })
-        .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)));
-    }
-  });
-  rev(boardId);
-  return { success: "Überweisungsdatum-Trigger gespeichert." };
+  await requireBoardSettingsAccess(boardId);
+  return { error: "Datums-Trigger sind nicht mehr verfügbar." };
 }
 
 /** Zuweisungs-Aktionen eines Triggers: alle entfernen und/oder zusätzlich zuweisen. */
@@ -297,7 +249,7 @@ export async function setTriggerAssignmentAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   if (!isTriggerKind(trigger)) return { error: "Unbekannter Trigger." };
   const result = await setTriggerAssignmentConfig(
     boardId,
@@ -321,7 +273,7 @@ async function validBoardStatus(
   const [s] = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId)))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, boardId))))
     .limit(1);
   return s ? statusId : null;
 }
@@ -332,7 +284,7 @@ export async function setResubmitStatusAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const id = await validBoardStatus(boardId, formData.get("statusId"));
   await db.update(boards).set({ resubmitStatusId: id }).where(eq(boards.id, boardId));
   rev(boardId);
@@ -345,7 +297,7 @@ export async function setReceiptFromStatusAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const result = await setBoardTriggerSources(boardId, "receipt", formData.getAll("statusIds"));
   if (result.error) return result;
   rev(boardId);
@@ -358,7 +310,7 @@ export async function setReceiptToStatusAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const id = await validBoardStatus(boardId, formData.get("statusId"));
   await db
     .update(boards)
@@ -374,7 +326,8 @@ export async function setDoneColumnAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  const { board } = await requireBoardSettingsAccess(boardId);
+  if (!isBoardTriggerAvailable(board, "done")) return { error: "Die Done-Spalte ist auf Antragsboards nicht verfügbar." };
   const enabled = formData.get("enabled") === "on";
 
   if (!enabled) {
@@ -386,7 +339,7 @@ export async function setDoneColumnAction(
       await tx
         .update(cards)
         .set({ doneSince: null })
-        .where(eq(cards.boardId, boardId));
+        .where(and(activeRows.cards, eq(cards.boardId, boardId)));
     });
     rev(boardId);
     return { success: "Done-Spalte deaktiviert." };
@@ -416,6 +369,7 @@ export async function setDoneColumnAction(
       .set({ doneSince: new Date() })
       .where(
         and(
+          activeRows.cards,
           eq(cards.boardId, boardId),
           eq(cards.statusId, statusId),
           isNull(cards.doneSince),
@@ -425,7 +379,7 @@ export async function setDoneColumnAction(
     await tx
       .update(cards)
       .set({ doneSince: null })
-      .where(and(eq(cards.boardId, boardId), ne(cards.statusId, statusId)));
+      .where(and(activeRows.cards, eq(cards.boardId, boardId), ne(cards.statusId, statusId)));
   });
   rev(boardId);
   return { success: "Done-Spalte gespeichert." };
@@ -436,14 +390,14 @@ export async function setDefaultAccountAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const raw = formData.get("accountId");
   const accountId = raw ? Number(raw) : null;
   if (accountId != null) {
     const [acc] = await db
       .select({ id: accounts.id })
       .from(accounts)
-      .where(eq(accounts.id, accountId))
+      .where(trashAnd(activeRows.accounts, eq(accounts.id, accountId)))
       .limit(1);
     if (!acc) return { error: "Konto nicht gefunden." };
   }
@@ -460,7 +414,7 @@ export async function addAccessUserAction(
   boardId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel) return;
   const userId = Number(formData.get("userId"));
@@ -479,7 +433,7 @@ export async function addAccessGroupAction(
   boardId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel) return;
   const groupId = Number(formData.get("groupId"));
@@ -487,7 +441,7 @@ export async function addAccessGroupAction(
   const exists = await db
     .select({ id: groups.id })
     .from(groups)
-    .where(eq(groups.id, groupId))
+    .where(trashAnd(activeRows.groups, eq(groups.id, groupId)))
     .limit(1);
   if (!exists.length) return;
   await db.insert(boardAccess).values({ boardId, groupId, accessLevel }).onConflictDoUpdate({ target: [boardAccess.boardId, boardAccess.groupId], set: { accessLevel } });
@@ -498,7 +452,7 @@ export async function removeAccessAction(
   boardId: number,
   accessId: number,
 ): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   // Manipulierte RPC-Argumente dürfen keinen pg-Fehler/500 auslösen.
   if (!Number.isInteger(accessId)) return;
   await db
@@ -513,7 +467,7 @@ export async function setCardFieldsAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   // Reihenfolge der editierbaren Felder (CSV der field_keys); Anhang-Slots
   // werden danach einsortiert (ihre Reihenfolge ist nicht relevant).
   const order = String(formData.get("order") ?? "")
@@ -532,7 +486,7 @@ export async function setCardFieldsAction(
     if (required.some((key) => !(ATTACHMENT_FIELD_KEYS as readonly string[]).includes(key) && formData.get(`field_${key}`) !== "on")) {
       return { error: "Pflichtfelder können nicht deaktiviert werden, solange dieses Board einem Standort, einer Umfrage oder einem Inventar zugeordnet ist." };
     }
-    const [currentBoard] = await tx.select().from(boards).where(eq(boards.id,boardId));
+    const [currentBoard] = await tx.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id,boardId)));
     for (const key of CARD_FIELD_KEYS) {
       if ((ATTACHMENT_FIELD_KEYS as readonly string[]).includes(key) && key !== "other_pdfs") continue;
       if (!currentBoard.legacyFinanceFields && LEGACY_FINANCE_FIELD_KEYS.includes(key)) continue;
@@ -558,7 +512,7 @@ export async function setBoardNumberingAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const enabled = formData.get("enabled") === "on";
   const prefix = String(formData.get("prefix") ?? "").slice(0, 30);
   const year = String(formData.get("year") ?? "").slice(0, 20);
@@ -604,7 +558,7 @@ export async function setInstructionFormAction(
       const [lockedBoard] = await tx
         .select({ id: boards.id })
         .from(boards)
-        .where(eq(boards.id, boardId))
+        .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
         .for("update");
       if (!lockedBoard) return "board-missing" as const;
       const [current] = await tx
@@ -658,7 +612,7 @@ export async function setInstructionFormAction(
       const [lockedBoard] = await tx
         .select({ id: boards.id })
         .from(boards)
-        .where(eq(boards.id, boardId))
+        .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
         .for("update");
       if (!lockedBoard) throw new Error("board-missing");
       const [current] = await tx
@@ -707,22 +661,26 @@ export async function setInstructionFormAction(
 }
 
 export async function deleteInstructionFormAction(
-  boardId: number,
+  boardId: number,confirmation?:unknown,templateName?:unknown,
 ): Promise<State> {
   await requireBoardManage(boardId);
+  const invalid=deleteConfirmationError(confirmation);if(invalid)return invalid;
+  try{
   const oldPath = await db.transaction(async (tx) => {
     const [lockedBoard] = await tx
       .select({ id: boards.id })
       .from(boards)
-      .where(eq(boards.id, boardId))
+      .where(trashAnd(activeRows.boards, eq(boards.id, boardId)))
       .for("update");
     if (!lockedBoard) return null;
     const [current] = await tx
-      .select({ path: boardInstructionForms.path })
+      .select({ path: boardInstructionForms.path,filename:boardInstructionForms.filename })
       .from(boardInstructionForms)
       .where(eq(boardInstructionForms.boardId, boardId))
       .limit(1);
     if (!current) return null;
+    if(typeof templateName!=="string"||templateName!==current.filename)throw new Error("Bitte den aktuellen Namen der PDF-Vorlage exakt eingeben.");
+    await requireBoardManage(boardId);
     await tx
       .delete(boardInstructionForms)
       .where(eq(boardInstructionForms.boardId, boardId));
@@ -732,6 +690,7 @@ export async function deleteInstructionFormAction(
   await deleteStoredFile(oldPath);
   rev(boardId);
   return { success: "PDF-Vorlage entfernt; die Funktion ist deaktiviert." };
+  }catch(error){return {error:error instanceof Error?error.message:"Vorlage konnte nicht entfernt werden."};}
 }
 
 // --- Eigentum & Löschen -------------------------------------------------
@@ -741,7 +700,7 @@ export async function setArchiveConfigAction(
   _prev: State,
   formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const enabled = formData.get("enabled") === "on";
   const ncUrl = String(formData.get("ncUrl") ?? "").trim() || null;
   if (ncUrl && !isSafeExternalUrl(ncUrl)) {
@@ -819,7 +778,7 @@ export async function testArchiveAction(
   _prev: State,
   _formData: FormData,
 ): Promise<State> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const [cfg] = await db
     .select()
     .from(boardArchive)
@@ -851,29 +810,26 @@ export async function testArchiveAction(
 export async function deleteBoardAction(
   boardId: number,
   _prev: State,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<State> {
-  return deleteBoardConfirmedAction(boardId);
+  return deleteBoardConfirmedAction(boardId, formData.get("confirmation"), formData.get("boardName"));
 }
 
 /** Wie deleteBoardAction, aber ohne Form-Argumente (für In-App-Bestätigung). */
 export async function deleteBoardConfirmedAction(
   boardId: number,
+  confirmation?: unknown,
+  boardName?: unknown,
 ): Promise<State> {
-  await requireBoardManage(boardId);
-  try {
-    await deleteBoardCascade(boardId);
-  } catch (err) {
-    if (err instanceof BoardDeleteBlockedError) {
-      return { error: err.message };
-    }
-    throw err;
-  }
-  redirect("/intern");
+  const {user,board} = await requireBoardManage(boardId);
+  if(board.isApplicationBoard)return {error:"Antragsboards können ausschließlich im Admin-Panel gelöscht werden."};
+  try { await moveToTrash(user, "board", boardId, confirmation, { boardName }); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/intern", "layout"); redirect("/intern");
 }
 
 export async function updateAccessLevelAction(boardId: number, accessId: number, formData: FormData): Promise<void> {
-  await requireBoardManage(boardId);
+  await requireBoardSettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel || !Number.isSafeInteger(accessId)) return;
   await db.update(boardAccess).set({ accessLevel }).where(and(eq(boardAccess.id, accessId), eq(boardAccess.boardId, boardId)));
@@ -890,7 +846,7 @@ export async function saveOfficeRoleAction(boardId: number, _previous: { error?:
     if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647) return { error: "Bitte eine Person mit Board-Zugriff auswählen." };
     const [person] = await db.select().from(users).where(and(eq(users.id, userId), eq(users.isActive, true))).limit(1);
     if (!person || !(await canAccessBoard(person, board))) return { error: "Die Person benötigt bereits mindestens lesenden Zugriff auf dieses Board." };
-    const statuses = await db.select({ id: boardStatuses.id }).from(boardStatuses).where(eq(boardStatuses.boardId, boardId));
+    const statuses = await db.select({ id: boardStatuses.id }).from(boardStatuses).where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)));
     const valid = new Set(statuses.map(status => status.id));
     if (!sourceIds.length || !targetIds.length || [...sourceIds, ...targetIds].some(id => !Number.isSafeInteger(id) || !valid.has(id))) return { error: "Bitte mindestens eine gültige Ausgangsspalte und Zielspalte dieses Boards auswählen." };
   }

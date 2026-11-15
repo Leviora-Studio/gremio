@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {
   and,
   asc,
@@ -69,21 +71,21 @@ async function maybeCreateTrackingCard(
   const [firstItem] = await tx
     .select({ boardId: inventoryItems.boardId, name: inventoryItems.name })
     .from(inventoryItems)
-    .where(eq(inventoryItems.id, leadId))
+    .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, leadId)))
     .limit(1);
   if (!firstItem) return;
 
   const [invBoard] = await tx
     .select({ loanBoardId: inventoryBoards.loanBoardId })
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.id, firstItem.boardId))
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, firstItem.boardId)))
     .limit(1);
   if (!invBoard?.loanBoardId) return;
 
   const [firstCol] = await tx
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, invBoard.loanBoardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, invBoard.loanBoardId)))
     .orderBy(asc(boardStatuses.position))
     .limit(1);
   if (!firstCol) return;
@@ -95,10 +97,10 @@ async function maybeCreateTrackingCard(
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
     .where(
-      and(
+      trashAnd(activeRows.cards, and(
         eq(cards.boardId, invBoard.loanBoardId),
         eq(cards.statusId, firstCol.id),
-      ),
+      )),
     );
   const position = (maxRow?.m ?? -1) + 1;
 
@@ -171,7 +173,7 @@ export async function listLoans(itemId: number): Promise<InventoryLoan[]> {
   const rows = await db
     .select({ l: inventoryLoans })
     .from(inventoryLoanItems)
-    .innerJoin(inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId))
+    .innerJoin(inventoryLoans, trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId)))
     .where(eq(inventoryLoanItems.itemId, itemId))
     .orderBy(desc(inventoryLoans.createdAt));
   return rows.map((r) => r.l);
@@ -184,7 +186,7 @@ export async function getLoanById(
   const [row] = await db
     .select()
     .from(inventoryLoans)
-    .where(eq(inventoryLoans.id, loanId))
+    .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, loanId)))
     .limit(1);
   return row;
 }
@@ -206,7 +208,7 @@ export async function getLoanItems(
       quantity: inventoryLoanItems.quantity,
     })
     .from(inventoryLoanItems)
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId))
+    .innerJoin(inventoryItems, trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId)))
     .where(eq(inventoryLoanItems.loanId, loanId))
     .orderBy(inventoryItems.number, inventoryItems.id);
 }
@@ -232,7 +234,7 @@ export async function updateTrackingCardTitle(loanId: number): Promise<void> {
   const [lead] = await db
     .select({ name: inventoryItems.name })
     .from(inventoryItems)
-    .where(eq(inventoryItems.id, loan.itemId))
+    .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, loan.itemId)))
     .limit(1);
   const [cnt] = await db
     .select({
@@ -268,7 +270,7 @@ export async function getAddableGroupUnits(
       groupName: inventoryItems.groupName,
     })
     .from(inventoryItems)
-    .where(eq(inventoryItems.id, loan.itemId))
+    .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, loan.itemId)))
     .limit(1);
   if (!lead?.groupName) return [];
   const candidates = await db
@@ -279,12 +281,12 @@ export async function getAddableGroupUnits(
     })
     .from(inventoryItems)
     .where(
-      and(
+      trashAnd(activeRows.inventoryItems, and(
         eq(inventoryItems.boardId, lead.boardId),
         eq(inventoryItems.groupName, lead.groupName),
         eq(inventoryItems.condition, "active"),
         eq(inventoryItems.lendable, true),
-      ),
+      )),
     )
     .orderBy(inventoryItems.number, inventoryItems.id);
   if (!candidates.length) return [];
@@ -326,7 +328,7 @@ export async function addLoanItem(
     const [loan] = await tx
       .select({ itemId: inventoryLoans.itemId })
       .from(inventoryLoans)
-      .where(eq(inventoryLoans.id, loanId))
+      .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, loanId)))
       .limit(1);
     if (!loan) return;
     const [lead] = await tx
@@ -335,7 +337,7 @@ export async function addLoanItem(
         groupName: inventoryItems.groupName,
       })
       .from(inventoryItems)
-      .where(eq(inventoryItems.id, loan.itemId))
+      .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, loan.itemId)))
       .limit(1);
     const [target] = await tx
       .select({
@@ -343,7 +345,7 @@ export async function addLoanItem(
         groupName: inventoryItems.groupName,
       })
       .from(inventoryItems)
-      .where(eq(inventoryItems.id, itemId))
+      .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, itemId)))
       .limit(1);
     // Nur Stücke derselben Obergruppe/desselben Boards zulassen.
     if (
@@ -435,7 +437,7 @@ export async function removeLoanItem(
     const [loan] = await tx
       .select({ itemId: inventoryLoans.itemId })
       .from(inventoryLoans)
-      .where(eq(inventoryLoans.id, loanId))
+      .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, loanId)))
       .limit(1);
     if (loan && loan.itemId === itemId) {
       const nextLead = rows.find((r) => r.id !== itemId)?.id;
@@ -546,7 +548,7 @@ export async function deleteLoan(loanId: number): Promise<void> {
     const [loan] = await tx
       .select({ cardId: inventoryLoans.cardId })
       .from(inventoryLoans)
-      .where(eq(inventoryLoans.id, loanId))
+      .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, loanId)))
       .limit(1);
     if (!loan) return;
 
@@ -571,11 +573,11 @@ export async function deleteLoan(loanId: number): Promise<void> {
       // Board-Mitglied kann PDFs an sie hängen. `attachments.card_id` ist
       // ON DELETE CASCADE — die Zeilen verschwinden mit der Karte, die DATEIEN
       // im Upload-Verzeichnis aber nicht. Pfade deshalb vor dem Löschen sichern
-      // (gleiches Muster wie `removeCard` und `deleteBoardCascade`).
+      // (gleiches Muster wie `removeCard` und Papierkorb-Bereinigung).
       const kartenDateien = await tx
         .select({ path: attachments.path })
         .from(attachments)
-        .where(eq(attachments.cardId, loan.cardId));
+        .where(trashAnd(activeRows.attachments, eq(attachments.cardId, loan.cardId)));
       geloeschteDateien.push(...kartenDateien.map((a) => a.path));
       await tx.delete(cards).where(eq(cards.id, loan.cardId));
     }
@@ -727,7 +729,7 @@ export async function createLoanRequest(
             borrowerEmail:data.borrowerEmail,
           purpose: data.purpose,
           });
-          const requestedItems = await tx.select({ name: inventoryItems.name, boardId: inventoryItems.boardId }).from(inventoryItems).where(inArray(inventoryItems.id, units.map(unit => unit.itemId)));
+          const requestedItems = await tx.select({ name: inventoryItems.name, boardId: inventoryItems.boardId }).from(inventoryItems).where(trashAnd(activeRows.inventoryItems, inArray(inventoryItems.id, units.map(unit => unit.itemId))));
           await queueConfirmation(tx, "inventory", requestedItems[0].boardId, data.borrowerEmail!, { title: `Ausleihanfrage: ${requestedItems.map(item => item.name).join(", ")} (${totalQty} Stück)`, applicant: data.borrower, receivedAt: row.createdAt.toISOString(), statusLink: token });
           return { id: row.id, token };
         });
@@ -781,7 +783,7 @@ export async function syncLoanFromCard(
     const [loan] = await tx
       .select({ id: inventoryLoans.id, itemId: inventoryLoans.itemId })
       .from(inventoryLoans)
-      .where(eq(inventoryLoans.cardId, cardId))
+      .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.cardId, cardId)))
       .limit(1);
     if (!loan) return;
 
@@ -789,7 +791,7 @@ export async function syncLoanFromCard(
     const [card] = await tx
       .select({ statusId: cards.statusId })
       .from(cards)
-      .where(eq(cards.id, cardId))
+      .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
       .limit(1);
     if (!card) return;
     const curStatus = card.statusId;
@@ -800,8 +802,8 @@ export async function syncLoanFromCard(
         returnedId: inventoryBoards.loanReturnedStatusId,
       })
       .from(inventoryItems)
-      .innerJoin(inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId))
-      .where(eq(inventoryItems.id, loan.itemId))
+      .innerJoin(inventoryBoards, trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId)))
+      .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, loan.itemId)))
       .limit(1);
     if (!cfg) return;
 
@@ -873,13 +875,13 @@ export async function getLoanCardProgress(
       archivedAt: cards.archivedAt,
     })
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
     .limit(1);
   if (!card) return null;
   const columns = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, card.boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, card.boardId)))
     .orderBy(asc(boardStatuses.position));
   const current = columns.find((c) => c.id === card.statusId);
   return {
@@ -956,7 +958,7 @@ export async function submitLoanContract(loanId: number): Promise<boolean> {
   const [pre] = await db
     .select({ cardId: inventoryLoans.cardId })
     .from(inventoryLoans)
-    .where(eq(inventoryLoans.id, loanId))
+    .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, loanId)))
     .limit(1);
   if (!pre) return false;
 
@@ -1002,20 +1004,20 @@ export async function submitLoanContract(loanId: number): Promise<boolean> {
     const [card] = await tx
       .select({ id: cards.id, boardId: cards.boardId })
       .from(cards)
-      .where(eq(cards.id, cardId))
+      .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
       .limit(1);
     if (!card) return true;
     const cols = await tx
       .select({ id: boardStatuses.id, name: boardStatuses.name })
       .from(boardStatuses)
       .where(
-        and(
+        trashAnd(activeRows.boardStatuses, and(
           eq(boardStatuses.boardId, card.boardId),
           inArray(boardStatuses.name, [
             LOAN_CONTRACT_PROVIDED_COLUMN,
             LOAN_CONTRACT_SIGNED_COLUMN,
           ]),
-        ),
+        )),
       );
     const from = cols.find((c) => c.name === LOAN_CONTRACT_PROVIDED_COLUMN);
     const to = cols.find((c) => c.name === LOAN_CONTRACT_SIGNED_COLUMN);
@@ -1024,11 +1026,11 @@ export async function submitLoanContract(loanId: number): Promise<boolean> {
       .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
       .from(cards)
       .where(
-        and(
+        trashAnd(activeRows.cards, and(
           eq(cards.boardId, card.boardId),
           eq(cards.statusId, to.id),
           isNull(cards.archivedAt),
-        ),
+        )),
       );
     // Quell-Gate als Compare-and-Swap in der WHERE-Klausel: Die Spalte wird im
     // selben Schritt geprüft und gesetzt. Ein zwischenzeitlicher Kartenzug
@@ -1090,11 +1092,11 @@ export async function listInventoryBoardLoanCards(
       endDate: inventoryLoans.endDate,
     })
     .from(inventoryLoans)
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
-    .innerJoin(cards, eq(cards.id, inventoryLoans.cardId))
-    .innerJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
+    .innerJoin(inventoryItems, trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId)))
+    .innerJoin(cards, trashAnd(activeRows.cards, eq(cards.id, inventoryLoans.cardId)))
+    .innerJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, cards.statusId)))
     .where(
-      and(
+      trashAnd(activeRows.inventoryLoans, and(
         eq(inventoryItems.boardId, inventoryBoardId),
         isNull(cards.archivedAt),
         inArray(inventoryLoans.status, [
@@ -1103,7 +1105,7 @@ export async function listInventoryBoardLoanCards(
           "contract_signed",
           "active",
         ]),
-      ),
+      )),
     )
     .orderBy(asc(boardStatuses.position), desc(inventoryLoans.createdAt));
   return rows;
@@ -1120,9 +1122,9 @@ export async function countUntrackedLoans(
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(inventoryLoans)
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId))
+    .innerJoin(inventoryItems, trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, inventoryLoans.itemId)))
     .where(
-      and(
+      trashAnd(activeRows.inventoryLoans, and(
         eq(inventoryItems.boardId, inventoryBoardId),
         isNull(inventoryLoans.cardId),
         inArray(inventoryLoans.status, [
@@ -1131,7 +1133,7 @@ export async function countUntrackedLoans(
           "contract_signed",
           "active",
         ]),
-      ),
+      )),
     );
   return row?.n ?? 0;
 }
@@ -1144,7 +1146,7 @@ export async function getLoanByToken(
     const [row] = await db
       .select()
       .from(inventoryLoans)
-      .where(eq(inventoryLoans.token, token))
+      .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.token, token)))
       .limit(1);
     return row;
   } catch (e) {
@@ -1196,10 +1198,10 @@ export async function getActiveLoanMap(
       createdAt: inventoryLoans.createdAt,
     })
     .from(inventoryLoanItems)
-    .innerJoin(inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId))
-    .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId))
-    .innerJoin(inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId))
-    .leftJoin(cards, eq(cards.id, inventoryLoans.cardId))
+    .innerJoin(inventoryLoans, trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId)))
+    .innerJoin(inventoryItems, trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, inventoryLoanItems.itemId)))
+    .innerJoin(inventoryBoards, trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId)))
+    .leftJoin(cards, trashAnd(activeRows.cards, eq(cards.id, inventoryLoans.cardId)))
     .where(
       and(
         inArray(inventoryLoanItems.itemId, itemIds),
@@ -1284,7 +1286,7 @@ export async function getFreeQuantities(
       condition: inventoryItems.condition,
     })
     .from(inventoryItems)
-    .where(inArray(inventoryItems.id, itemIds));
+    .where(trashAnd(activeRows.inventoryItems, inArray(inventoryItems.id, itemIds)));
 
   const lentByOthers = await getActiveLoanMap(itemIds, opts);
 

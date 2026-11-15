@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { isResourceOwner, additionalOwnedIds } from "@/lib/board-ownership";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
   inventoryBoardAccess,
+  inventoryBoardManagers,
   inventoryBoardFields,
   inventoryBoards,
   inventoryNumbering,
@@ -28,7 +31,7 @@ export async function canAccessInventoryBoard(
   board: InventoryBoard,
   access: "read" | "write" = "read",
 ): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || board.deletedAt) return false;
   if (user.role === "admin") return true;
   if (await isResourceOwner("inventory",board,user.id)) return true;
   const groupIds = await getUserGroupIds(user.id);
@@ -36,7 +39,7 @@ export async function canAccessInventoryBoard(
     .select({ id: inventoryBoardAccess.id })
     .from(inventoryBoardAccess)
     .where(
-      and(
+      trashAnd(activeRows.inventoryBoardAccess, and(
         eq(inventoryBoardAccess.boardId, board.id),
         access === "write" ? eq(inventoryBoardAccess.accessLevel, "write") : undefined,
         or(
@@ -45,7 +48,7 @@ export async function canAccessInventoryBoard(
             ? inArray(inventoryBoardAccess.groupId, groupIds)
             : undefined,
         ),
-      ),
+      )),
     )
     .limit(1);
   return rows.length > 0;
@@ -56,8 +59,24 @@ export async function canManageInventoryBoard(
   user: User,
   board: InventoryBoard,
 ): Promise<boolean> {
-  if (!user.isActive) return false;
+  if (!user.isActive || board.deletedAt) return false;
   return user.role === "admin" || await isResourceOwner("inventory",board,user.id);
+}
+
+/** Only email rules, sharing, fields and numbering; never full management. */
+export async function canConfigureInventorySettings(user: User, board: InventoryBoard): Promise<boolean> {
+  if (!user.isActive || board.deletedAt) return false;
+  if (await canManageInventoryBoard(user, board)) return true;
+  const [delegation] = await db.select({ userId: inventoryBoardManagers.userId }).from(inventoryBoardManagers)
+    .where(and(eq(inventoryBoardManagers.boardId, board.id), eq(inventoryBoardManagers.userId, user.id))).limit(1);
+  return !!delegation && await canEditInventoryBoard(user, board);
+}
+
+export async function requireInventorySettingsAccess(boardId: number): Promise<{ user: User; board: InventoryBoard }> {
+  const user = await requireUser();
+  const board = await getInventoryBoardById(boardId);
+  if (!board || !(await canConfigureInventorySettings(user, board))) notFound();
+  return { user, board };
 }
 
 /** Alle Inventar-Boards, die ein Nutzer sehen darf (Admin: alle). */
@@ -66,22 +85,22 @@ export async function getAccessibleInventoryBoards(
 ): Promise<InventoryBoard[]> {
   if (!user.isActive) return [];
   if (user.role === "admin") {
-    return db.select().from(inventoryBoards).orderBy(inventoryBoards.name);
+    return db.select().from(inventoryBoards).where(activeRows.inventoryBoards).orderBy(inventoryBoards.name);
   }
   const groupIds = await getUserGroupIds(user.id);
   const ownerRows = await db
     .select({ id: inventoryBoards.id })
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.ownerId, user.id));
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.ownerId, user.id)));
   const userRows = await db
     .select({ id: inventoryBoardAccess.boardId })
     .from(inventoryBoardAccess)
-    .where(eq(inventoryBoardAccess.userId, user.id));
+    .where(trashAnd(activeRows.inventoryBoardAccess, eq(inventoryBoardAccess.userId, user.id)));
   const groupRows = groupIds.length
     ? await db
         .select({ id: inventoryBoardAccess.boardId })
         .from(inventoryBoardAccess)
-        .where(inArray(inventoryBoardAccess.groupId, groupIds))
+        .where(trashAnd(activeRows.inventoryBoardAccess, inArray(inventoryBoardAccess.groupId, groupIds)))
     : [];
   const ids = Array.from(
     new Set([...ownerRows, ...await additionalOwnedIds("inventory",user.id), ...userRows, ...groupRows].map((r) => r.id)),
@@ -90,7 +109,7 @@ export async function getAccessibleInventoryBoards(
   return db
     .select()
     .from(inventoryBoards)
-    .where(inArray(inventoryBoards.id, ids))
+    .where(trashAnd(activeRows.inventoryBoards, inArray(inventoryBoards.id, ids)))
     .orderBy(inventoryBoards.name);
 }
 
@@ -101,7 +120,7 @@ export async function getInventoryBoardById(
   const rows = await db
     .select()
     .from(inventoryBoards)
-    .where(eq(inventoryBoards.id, boardId))
+    .where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, boardId)))
     .limit(1);
   return rows[0];
 }

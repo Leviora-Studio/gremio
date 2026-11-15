@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   accounts,
-  attachments,
   boardStatuses,
   cardActivity,
   cards,
@@ -29,7 +32,6 @@ import {
 } from "@/lib/activity";
 import { setCardAssignees } from "@/lib/assignees";
 import { maybeArchive } from "@/lib/archive";
-import { maybeSetTriggerDates } from "@/lib/instruction";
 import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import { syncLoanFromCard } from "@/lib/inventory-loans";
 import { assignCardNumber } from "@/lib/numbering";
@@ -37,12 +39,11 @@ import { MAX_AMOUNT_CENTS } from "@/lib/money";
 import { sanitizeMultiLine, sanitizeSingleLine } from "@/lib/text";
 import { API_FIELD_TO_KEY, getVisibleFieldKeys } from "@/lib/board-fields";
 import { generateToken, isTokenConflict } from "@/lib/token";
-import { deleteStoredFile } from "@/lib/attachments";
 import { doneSinceForStatus } from "@/lib/done-archive";
 import { budgetPositionsInputSchema } from "@/lib/card-budget";
 import { limitArrayLength } from "@/lib/zod-limits";
 import { BudgetValidationError, guardBudgetCardUpdate, writeBudgetPositions } from "@/lib/card-budget-db";
-import { CardFrozenError, requireMutableCard } from "@/lib/card-freeze";
+import { CardFrozenError } from "@/lib/card-freeze";
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 /** Echtes Kalenderdatum (nicht nur Format) — weist z. B. 2026-99-99 ab. */
@@ -198,10 +199,10 @@ async function buildCardValues(
       .select({ id: boardStatuses.id })
       .from(boardStatuses)
       .where(
-        and(
+        trashAnd(activeRows.boardStatuses, and(
           eq(boardStatuses.id, input.statusId),
           eq(boardStatuses.boardId, board.id),
-        ),
+        )),
       )
       .limit(1);
     if (!s) return fail(400, `statusId ${input.statusId} gehört nicht zu diesem Board.`);
@@ -214,7 +215,7 @@ async function buildCardValues(
       const [p] = await db
         .select({ id: priorities.id })
         .from(priorities)
-        .where(eq(priorities.id, input.priorityId))
+        .where(trashAnd(activeRows.priorities, eq(priorities.id, input.priorityId)))
         .limit(1);
       if (!p) return fail(400, `priorityId ${input.priorityId} existiert nicht.`);
       v.priorityId = input.priorityId;
@@ -227,7 +228,7 @@ async function buildCardValues(
       const [a] = await db
         .select({ id: accounts.id })
         .from(accounts)
-        .where(eq(accounts.id, input.accountId))
+        .where(trashAnd(activeRows.accounts, eq(accounts.id, input.accountId)))
         .limit(1);
       if (!a) return fail(400, `accountId ${input.accountId} existiert nicht.`);
       v.accountId = input.accountId;
@@ -272,11 +273,11 @@ async function repositionCard(
     .select({ id: cards.id })
     .from(cards)
     .where(
-      and(
+      trashAnd(activeRows.cards, and(
         eq(cards.boardId, boardId),
         eq(cards.statusId, statusId),
         isNull(cards.archivedAt), // archivierte Karten nicht mit-renummerieren (wie moveCardAction)
-      ),
+      )),
     )
     .orderBy(asc(cards.position), asc(cards.id));
   const ids = inCol.map((r) => r.id).filter((id) => id !== cardId);
@@ -288,7 +289,7 @@ async function repositionCard(
 }
 
 async function freshCard(cardId: number): Promise<Card> {
-  const [c] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [c] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   return c;
 }
 
@@ -297,7 +298,7 @@ export async function loadApiCard(
   user: User,
   cardId: number,
 ): Promise<ApiResult<{ board: Board; card: Card }>> {
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) return fail(404, "Karte nicht gefunden.");
   const board = await getBoardById(card.boardId);
   if (!board || !(await canAccessBoard(user, board)))
@@ -305,16 +306,11 @@ export async function loadApiCard(
   return { ok: true, value: { board, card } };
 }
 
-/** Karte samt Anhängen löschen (Dateien werden mit entfernt). */
-export async function deleteCardViaApi(cardId: number): Promise<void> {
-  const paths = await db.transaction(async (tx) => {
-    await requireMutableCard(tx, cardId);
-    const atts = await tx.select({ path: attachments.path }).from(attachments)
-      .where(eq(attachments.cardId, cardId));
-    await tx.delete(cards).where(eq(cards.id, cardId));
-    return atts.map((a) => a.path);
-  });
-  for (const path of paths) await deleteStoredFile(path);
+export const deleteCardSchema=z.object({confirmation:z.literal("LÖSCHEN")}).strict();
+
+/** Keep the card and its files in the board bin for 30 days. */
+export async function deleteCardViaApi(user:User, cardId:number, confirmation:unknown):Promise<void> {
+  await moveToTrash(user,"card",cardId,confirmation);
 }
 
 /** Neue Karte über die API anlegen. */
@@ -346,7 +342,7 @@ export async function createCardViaApi(
     const [first] = await db
       .select({ id: boardStatuses.id })
       .from(boardStatuses)
-      .where(eq(boardStatuses.boardId, board.id))
+      .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, board.id)))
       .orderBy(asc(boardStatuses.position))
       .limit(1);
     if (!first) return fail(400, "Board hat keine Spalten.");
@@ -356,7 +352,7 @@ export async function createCardViaApi(
   const [maxRow] = await db
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
-    .where(and(eq(cards.boardId, board.id), eq(cards.statusId, statusId)));
+    .where(trashAnd(activeRows.cards, and(eq(cards.boardId, board.id), eq(cards.statusId, statusId))));
   const position = (maxRow?.m ?? -1) + 1;
 
   let newId: number | undefined;
@@ -375,7 +371,7 @@ export async function createCardViaApi(
             creatorUserId: v.creatorUserId ?? user.id,
             accountId: "accountId" in v ? v.accountId : board.defaultAccountId ?? null,
             position,
-            doneSince: doneSinceForStatus(board.doneStatusId, statusId, null),
+            doneSince: doneSinceForStatus(effectiveDoneStatusId(board), statusId, null),
           })
           .returning();
         if (input.budgetPositions) {
@@ -407,8 +403,7 @@ export async function createCardViaApi(
   if (assigneeUserIds?.length) await setCardAssignees(newId!, assigneeUserIds);
   // Antragsnummer vergeben (falls Board-Nummerierung aktiv).
   await assignCardNumber(board.id, newId!);
-  // Trigger-Spalten beim direkten Anlegen ebenfalls auslösen.
-  await maybeSetTriggerDates(newId!, statusId);
+  // Archive published trigger statuses; unconfirmed lock columns wait.
   await maybeArchive(newId!);
   return { ok: true, value: await freshCard(newId!) };
 }
@@ -448,20 +443,20 @@ export async function updateCardViaApi(
     const [target] = await db
       .select({ id: boardStatuses.id, name: boardStatuses.name })
       .from(boardStatuses)
-      .where(eq(boardStatuses.id, newStatusId))
+      .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, newStatusId)))
       .limit(1);
     moveTo = target ?? null;
     const [old] = await db
       .select({ name: boardStatuses.name })
       .from(boardStatuses)
-      .where(eq(boardStatuses.id, card.statusId))
+      .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, card.statusId)))
       .limit(1);
     oldStatusName = old?.name ?? "?";
     if (!card.lockedAt) update.resubmittedAt = null; // Statuswechsel hebt „Nachgereicht" auf
     // newStatusId statt target.id: target kann (TOCTOU – Spalte zwischenzeitlich
     // gelöscht) undefined sein; newStatusId ist garantiert gesetzt.
     update.doneSince = doneSinceForStatus(
-      board.doneStatusId,
+      effectiveDoneStatusId(board),
       newStatusId,
       card.doneSince,
     );
@@ -510,7 +505,6 @@ export async function updateCardViaApi(
       "status",
       `${oldStatusName} → ${moveTo.name}`,
     );
-    await maybeSetTriggerDates(card.id, moveTo.id);
     // Explicit assignments are committed with the move and take precedence.
     if (assigneeUserIds === undefined) await applyStatusTriggerAssignments(card.id, moveTo.id);
     // Nur auf System-/Leihboards den verknüpften Vorgang ableiten.

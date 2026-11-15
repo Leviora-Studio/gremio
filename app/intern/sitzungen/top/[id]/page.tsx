@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { MeetingDocumentLink } from "@/components/meetings/DocumentLink";
@@ -50,16 +52,16 @@ export default async function TopicPage({params}:{params:Promise<{id:string}>}) 
   const trail=meeting?(await topicDestinations(user,[id]))[id]??[]:await personalTopicHistory(user,id);
   if(editable) {
     for(const link of links) {
-      const [source]=await db.select({boardId:cards.boardId}).from(cards).where(eq(cards.id,link.id));
+      const [source]=await db.select({boardId:cards.boardId}).from(cards).where(trashAnd(activeRows.cards, eq(cards.id,link.id)));
       if(!source)continue;
       const board=await getBoardById(source.boardId);
       if(!board||!(await canAccessBoard(user,board,"write")))continue;
       const visible=await getVisibleFieldKeys(board.id);
-      const files=await db.select().from(attachments).where(eq(attachments.cardId,link.id));
+      const files=await db.select().from(attachments).where(trashAnd(activeRows.attachments, eq(attachments.cardId,link.id)));
       for(const file of files)if(file.kind!=="student_card"&&["application/pdf","image/png","image/jpeg"].includes(file.mime)&&isCardAttachmentVisible(file,visible))copyOptions.push({value:String(file.id),label:`${link.title}: ${file.filename}`});
     }
     if(meeting)for(const board of await visibleMeetingBoards(user,meeting.id)) {
-      const rows=await db.select({id:cards.id,title:cards.title}).from(cards).where(eq(cards.boardId,board.id)).limit(200);
+      const rows=await db.select({id:cards.id,title:cards.title}).from(cards).where(trashAnd(activeRows.cards, eq(cards.boardId,board.id))).limit(200);
       for(const row of rows)cardOptions.push({value:String(row.id),label:`${board.name}: ${row.title}`});
     }
   }
@@ -76,7 +78,7 @@ export default async function TopicPage({params}:{params:Promise<{id:string}>}) 
     <section className="card space-y-5 p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">TOP-Inhalt</h2>{editable&&<MeetingDialog label="TOP bearbeiten" title="Tagesordnungspunkt bearbeiten"><MeetingActionForm action={saveTopicAction.bind(null,id)}><input type="hidden" name="revision" value={meeting?.revision??0}/><TopicFields planning={!!meeting} topic={context.topic} manage={manager} parentOptions={parentOptions} inheritedConfidential={parent?.confidential}/></MeetingActionForm></MeetingDialog>}</div><div className="space-y-5 break-words text-sm leading-relaxed"><div><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Beschreibung</h3><p className="whitespace-pre-wrap">{topic.description||"Keine Beschreibung hinterlegt."}</p></div>{topic.presenter&&<p><span className="text-slate-500">Vortrag:</span> {topic.presenter}</p>}{topic.motion&&<div className="rounded-lg bg-brand-50 p-4"><h3 className="mb-2 font-semibold">Beschlussvorschlag</h3><p className="whitespace-pre-wrap">{topic.motion}</p></div>}{topic.outcome&&<div className="rounded-lg border border-slate-200 p-4"><h3 className="mb-2 font-semibold">Ergebnis</h3><p className="whitespace-pre-wrap">{topic.outcome}</p></div>}</div></section>
     {editable&&meeting&&topic.parentId==null&&["scheduled","treated"].includes(topic.state)&&<details className="card p-5"><summary className="cursor-pointer font-semibold">+ Unter-TOP anlegen</summary><div className="mt-4"><MeetingActionForm action={createTopicAction} submit="Unter-TOP anlegen"><input type="hidden" name="meetingId" value={meeting.id}/><input type="hidden" name="parentId" value={id}/><TopicFields manage={manager} editableState={false}/></MeetingActionForm></div></details>}
     <section id="unterlagen" className="card scroll-mt-6 space-y-4 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Sitzungsunterlagen</h2><span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{docs.length} Dateien</span></div>{!docs.length&&<p className="text-sm text-slate-500">Noch keine Unterlagen hinterlegt.</p>}<p className="text-sm text-slate-500">PDFs öffnen direkt in der Vorschau. Andere Dateien werden heruntergeladen.</p>
-      {docs.map(doc=><div key={doc.id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3"><MeetingDocumentLink document={doc}/>{editable&&<DeleteConfirm action={confirmedRemoveDocumentAction.bind(null,doc.id)} buttonLabel="Unterlage entfernen" buttonClassName="btn-secondary text-red-600" title="Sitzungsunterlage entfernen" message="Die eigenständige Kopie wird gelöscht; Quelldateien bleiben erhalten." requireWord={false} compact/>}</div>)}
+      {docs.map(doc=><div key={doc.id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3"><MeetingDocumentLink document={doc}/>{editable&&<DeleteConfirm action={confirmedRemoveDocumentAction.bind(null,doc.id)} buttonLabel="Unterlage entfernen" buttonClassName="btn-secondary text-red-600" title="Sitzungsunterlage entfernen" message="Die eigenständige Kopie wird endgültig gelöscht; Quelldateien bleiben erhalten." wordInModal recycleBin={false} compact/>}</div>)}
       {editable&&<><details><summary className="cursor-pointer font-medium">+ Eigene Unterlage hochladen</summary><div className="mt-3"><MeetingActionForm action={documentAction.bind(null,id)} submit="Unterlage freigeben"><FileInput name="file" accept="application/pdf,image/png,image/jpeg" required className="flex-wrap"/><label className="flex items-start gap-2 text-sm"><input name="confirmDisclosure" type="checkbox" required className="mt-1"/>Ich gebe diese Datei für alle zum TOP berechtigten Sitzungsteilnehmer frei.</label></MeetingActionForm></div></details>
       {copyOptions.length>0&&<details><summary className="cursor-pointer font-medium">Dateikopie aus einer verknüpften Karte freigeben</summary><div className="mt-3"><MeetingActionForm action={documentAction.bind(null,id)} submit="Eigenständige Kopie freigeben"><div><label className="label">Quelldatei</label><Select portal name="attachmentId" ariaLabel="Quelldatei" options={copyOptions} searchable/></div><label className="flex items-start gap-2 text-sm"><input name="confirmDisclosure" type="checkbox" required className="mt-1"/>Diese Kopie dürfen alle zum TOP berechtigten Sitzungsteilnehmer lesen. Der Board-Zugriff begrenzt die Kopie anschließend nicht mehr.</label></MeetingActionForm></div></details>}</>}
     </section>

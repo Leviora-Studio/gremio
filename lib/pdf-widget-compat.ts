@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { PDFDict, PDFDocument, PDFField, PDFHexString, PDFName, PDFString, PDFWidgetAnnotation } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFField, PDFHexString, PDFName, PDFRef, PDFString, PDFWidgetAnnotation } from "pdf-lib";
 
 export type LocatedPdfWidget = {
   page: number;
@@ -112,4 +112,23 @@ export function syncLegacyWidgetAppearances(field: PDFField, widgets: LocatedPdf
     if (value) widget.dict.set(PDFName.of("V"), value);
     else widget.dict.delete(PDFName.of("V"));
   }
+}
+
+
+/** A single widget may share its field dictionary (ISO 32000). Keep the AP on
+ * that dictionary so incremental field filling is unambiguous to validators.
+ * Only use this on newly created fields, before their first signature. */
+export function mergeSinglePdfWidget(doc: PDFDocument, field: PDFField): void {
+  const widgets = field.acroField.getWidgets();
+  if (widgets.length !== 1) throw new Error("Genau ein Formular-Widget erforderlich.");
+  const widget = widgets[0].dict;
+  const reference = doc.context.getObjectRef(widget);
+  if (!reference || reference === field.ref) return;
+  for (const [key,value] of widget.entries()) if (key !== PDFName.of("Parent")) field.acroField.dict.set(key,value);
+  field.acroField.dict.delete(PDFName.of("Kids"));
+  for (const page of doc.getPages()) {
+    const annots = page.node.Annots();
+    if (annots) for (let i=0;i<annots.size();i++) if (annots.get(i) === reference) annots.set(i,field.ref);
+  }
+  if (reference instanceof PDFRef) doc.context.delete(reference);
 }

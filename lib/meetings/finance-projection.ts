@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accounts, boards, cards, cardBudgetPlans, cardBudgetPositions, type User } from "@/lib/db/schema";
@@ -14,17 +16,17 @@ export type FinanceDetails = { cardId:number; applicant:string; account:string; 
 export async function projectFinanceTopics<T extends {title:string;isFinanceItem:boolean;financeCardId:number|null;motion?:string}>(user:User,topics:T[]):Promise<(T&{financeDetails?:FinanceDetails})[]> {
   const ids=topics.flatMap(t=>t.isFinanceItem&&t.financeCardId!=null?[t.financeCardId]:[]);
   if(!ids.length)return topics.map(t=>t.isFinanceItem?{...t,title:"Finanzantrag (nicht mehr verfügbar)",...(t.motion!==undefined?{motion:renderFinanceMotion(t.motion,{})}:{})}:t);
-  const rows=await db.select({card:cards,board:boards}).from(cards).innerJoin(boards,eq(boards.id,cards.boardId)).where(inArray(cards.id,ids));
+  const rows=await db.select({card:cards,board:boards}).from(cards).innerJoin(boards,trashAnd(activeRows.boards, eq(boards.id,cards.boardId))).where(trashAnd(activeRows.cards, inArray(cards.id,ids)));
   const result=new Map<number,{title:string;financeDetails:FinanceDetails;values:Record<string,string>}>();
   for(const board of [...new Map(rows.map(r=>[r.board.id,r.board])).values()]) {
     if(!await canAccessBoard(user,board))continue;
     const fields=await getVisibleFieldKeys(board.id);
     if (board.isApplicationBoard) fields.add("planned_budget");
     for(const {card} of rows.filter(r=>r.board.id===board.id)) {
-      const positions=card.budgetMode==="positions"?await db.select().from(cardBudgetPositions).where(eq(cardBudgetPositions.cardId,card.id)):[];
+      const positions=card.budgetMode==="positions"?await db.select().from(cardBudgetPositions).where(trashAnd(activeRows.cardBudgetPositions, eq(cardBudgetPositions.cardId,card.id))):[];
       const accountIds=fields.has("account")?(positions.length?positions.map(p=>p.accountId):card.accountId?[card.accountId]:[]):[];
-      const accountRows=accountIds.length?await db.select({name:accounts.name}).from(accounts).where(inArray(accounts.id,accountIds)):[];
-      const [plan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(eq(cardBudgetPlans.cardId, card.id)) : [];
+      const accountRows=accountIds.length?await db.select({name:accounts.name}).from(accounts).where(trashAnd(activeRows.accounts, inArray(accounts.id,accountIds))):[];
+      const [plan] = board.isApplicationBoard ? await db.select().from(cardBudgetPlans).where(trashAnd(activeRows.cardBudgetPlans, eq(cardBudgetPlans.cardId, card.id))) : [];
       const planValues = budgetPlanMotionValues(plan?.allocations ?? []);
       const values:Record<string,string>={};
       for(const field of financeMotionFields){

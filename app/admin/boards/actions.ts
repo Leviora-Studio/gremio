@@ -3,44 +3,28 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { BoardDeleteBlockedError, deleteBoardCascade } from "@/lib/boards";
+
 
 export type State = { error?: string; success?: string };
 
 
-export async function deleteBoardAdminAction(
-  boardId: number,
-  _prev: State,
-  _formData: FormData,
-): Promise<State> {
-  await requireAdmin();
-  try {
-    await deleteBoardCascade(boardId);
-  } catch (err) {
-    if (err instanceof BoardDeleteBlockedError) {
-      return { error: err.message };
-    }
-    throw err;
-  }
-  revalidatePath("/admin/boards");
-  return { success: "Board gelöscht." };
+export async function deleteBoardAdminAction(boardId: number, _prev: State, formData: FormData): Promise<State> {
+  return deleteBoardAdminConfirmedAction(boardId, formData.get("confirmation"), formData.get("boardName"));
 }
 
 /** Wie deleteBoardAdminAction, aber ohne Form-Argumente (In-App-Bestätigung). */
 export async function deleteBoardAdminConfirmedAction(
   boardId: number,
+  confirmation?: unknown,
+  boardName?: unknown,
 ): Promise<State> {
-  await requireAdmin();
-  try {
-    await deleteBoardCascade(boardId);
-  } catch (err) {
-    if (err instanceof BoardDeleteBlockedError) {
-      return { error: err.message };
-    }
-    throw err;
-  }
-  revalidatePath("/admin/boards");
-  return { success: "Board gelöscht." };
+  const user = await requireAdmin();
+  try { await moveToTrash(user, "board", boardId, confirmation, { boardName }); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/boards"); revalidatePath("/admin/antragsboards"); revalidatePath("/intern", "layout");
+  return {success:"Board für 30 Tage in den Papierkorb verschoben."};
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import {
@@ -160,7 +162,7 @@ export async function queryApiCards(
   if (p.overdue)
     conditions.push(
       fieldVisible("deadline"),
-      sql`coalesce((${cards.deadline} < to_char(now() at time zone 'Europe/Berlin', 'YYYY-MM-DD') and (${boards.doneStatusId} is null or ${cards.statusId} <> ${boards.doneStatusId}) and ${cards.archivedAt} is null), false) = ${p.overdue === "true"}`,
+      sql`coalesce((${cards.deadline} < to_char(now() at time zone 'Europe/Berlin', 'YYYY-MM-DD') and (${boards.isApplicationBoard} or ${boards.inventoryBoardId} is not null or ${boards.doneStatusId} is null or ${cards.statusId} <> ${boards.doneStatusId}) and ${cards.archivedAt} is null), false) = ${p.overdue === "true"}`,
     );
   if (p.q) {
     const pattern = `%${p.q.replace(/[\\%_]/g, "\\$&")}%`;
@@ -201,9 +203,9 @@ export async function queryApiCards(
       statusName: boardStatuses.name,
     })
     .from(cards)
-    .innerJoin(boards, eq(boards.id, cards.boardId))
-    .innerJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(and(...conditions))
+    .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, cards.boardId)))
+    .innerJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, cards.statusId)))
+    .where(trashAnd(activeRows.cards, and(...conditions)))
     .orderBy(...ordering)
     .$dynamic();
   const rows = await (paged ? query.limit(limit + 1).offset(offset) : query);

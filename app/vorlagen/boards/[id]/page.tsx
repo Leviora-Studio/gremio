@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
@@ -23,14 +25,14 @@ export default async function TemplateDetailPage({
   const [tpl] = await db
     .select()
     .from(boardTemplates)
-    .where(eq(boardTemplates.id, templateId))
+    .where(trashAnd(activeRows.boardTemplates, eq(boardTemplates.id, templateId)))
     .limit(1);
   if (!tpl) notFound();
 
   const statuses = await db
     .select()
     .from(boardTemplateStatuses)
-    .where(eq(boardTemplateStatuses.templateId, templateId))
+    .where(trashAnd(activeRows.boardTemplateStatuses, eq(boardTemplateStatuses.templateId, templateId)))
     .orderBy(asc(boardTemplateStatuses.position));
 
   return (

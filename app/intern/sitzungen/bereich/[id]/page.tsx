@@ -5,7 +5,7 @@ import { MeetingDialog } from "@/components/meetings/Dialog";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { parseApiId } from "@/lib/api";
-import { accessibleMeetings, areaAccessLevel, requireArea } from "@/lib/meetings/access";
+import { accessibleMeetings, areaAccessLevel, canConfigureAreaSettings, requireArea } from "@/lib/meetings/access";
 import { meetingStates } from "@/lib/meetings/validation";
 import { formatDateTime } from "@/lib/dates";
 import { MeetingActionForm } from "@/components/meetings/ActionForm";
@@ -14,7 +14,7 @@ import { saveMeetingAction } from "../../actions";
 export default async function MeetingAreaPage({params}:{params:Promise<{id:string}>}) {
   const user=await requireUser();const id=parseApiId((await params).id);if(!id)notFound();
   const area=await requireArea(user,id).catch(()=>null);if(!area)notFound();
-  const writer=await areaAccessLevel(user,area)==="write";const manager=user.role==="admin"||area.ownerId===user.id;
+  const writer=await areaAccessLevel(user,area)==="write";const manager=await canConfigureAreaSettings(user,area);
   const meetings=(await accessibleMeetings(user)).filter(m=>m.areaId===id);
   const upcoming=meetings.filter(m=>!["closed","held"].includes(m.state)).sort((a,b)=>(a.startsAt?.getTime()??Infinity)-(b.startsAt?.getTime()??Infinity)||b.id-a.id);
   const past=meetings.filter(m=>["closed","held"].includes(m.state));

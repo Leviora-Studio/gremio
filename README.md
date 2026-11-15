@@ -1,5 +1,15 @@
 # Gremio
 
+Weitere PDF-Unterschriften werden als neue Revision angehängt, damit frühere
+Signaturen erhalten bleiben. Das gilt für Anhänge und Kassenbuchformulare.
+Bereits beschädigte Altdateien benötigen eine erneute Unterschrift auf Basis
+der unbeschädigten Ausgangsdatei.
+
+Kassenbuch-Anweisungen behalten im laufenden Vorgang nur das aktuelle PDF.
+Erstellen und Unterschreiben ersetzen den vorherigen Formularstand; beide
+Unterschriften und der Aktivitätsverlauf bleiben erhalten. Bereits gebuchte
+Altbestände und vorhandene Nextcloud-Archive bleiben unverändert.
+
 ### 4.6.2: Protokollvorlagen und kompakte Tagesordnung
 
 Die bisherigen Sitzungsdownloads heißen „Protokollvorlage als Word/PDF“. Ein
@@ -710,3 +720,61 @@ aller entsprechenden Zuordnungen deaktiviert werden, auch wenn der Standort
 oder Bereich vorübergehend deaktiviert ist. Optionale Antragsanlagen bleiben
 konfigurierbar. Automatisch angelegte Leihboards schützen Name, E-Mail und
 Zweck/Notizen ihrer Vorgänge ebenfalls.
+
+
+### Papierkorb und Aufbewahrung
+
+Löschaktionen mit Worteingabe verschieben ganze Ressourcen zuerst für 30 volle Tage in den Papierkorb. Admins verwalten sie unter **Admin Panel → Papierkorb**: Wiederherstellung mit `WIEDERHERSTELLEN`, sofortige endgültige Löschung mit `ENDGÜLTIG`. Antragsboards, Finanzübersichten und Kassenbücher dürfen ausschließlich Admins über das Admin-Panel löschen; in ihren Einstellungen gibt es keine Löschoption. Normale Boards können weiterhin auch Eigentümer in den Einstellungen löschen. Bei all diesen Boards und Kassenbüchern folgt auf `LÖSCHEN` im Warnfenster die zusätzliche Eingabe des vollständigen aktuellen Namens. Beide Eingaben werden serverseitig geprüft. Inhalte, Freigaben und lokale Dateien bleiben während der Aufbewahrung erhalten; gelöschte Ressourcen sind über normale Ansichten und APIs nicht erreichbar.
+
+Der Produktionsserver bereinigt abgelaufene Einträge täglich ab **03:00 Uhr Europe/Berlin**; nach einem späteren Start wird der Lauf nachgeholt. Ab 720 Stunden ist die Wiederherstellung gesperrt. Die endgültige Löschung umfasst auch eingefrorene Karten und Buchungen im gelöschten Container sowie zugehörige lokale Dateien. Nextcloud-Archive bleiben erhalten. Fehlgeschlagene lokale Dateibereinigung wird dauerhaft vermerkt, im Papierkorb angezeigt und erneut versucht. Migration `0106` übernimmt bestehende Daten unverändert; zusätzliche Dienste oder externe API-/MCP-Rechte sind nicht erforderlich.
+
+
+Auch Karten-Dateien haben einen eigenen Papierkorb direkt am Board (Button rechts in der Kopfzeile). Gelöschte oder ersetzte Dateien bleiben 30 Tage erhalten. Schreibberechtigte stellen sie mit `WIEDERHERSTELLEN` an der ursprünglichen Karte wieder her oder löschen sie mit `ENDGÜLTIG`. Leseberechtigte können die freigegebenen Einträge einsehen. Gesperrte Karten und neu belegte Dateibereiche werden nicht überschrieben. Die tägliche Bereinigung umfasst diesen Datei-Papierkorb; Nextcloud-Archive und eigenständige Kassenbuchkopien bleiben erhalten.
+
+
+### Ausfallsichere Nextcloud-Aufträge
+
+Migration `0109` ergänzt eine dauerhafte Archiv-Auftragsliste. Ein bestätigter Archivstatus beziehungsweise die erforderliche Kartensperre und der Auftrag werden gemeinsam gespeichert. Abgebrochene oder wegen Parallelität übersprungene Aufrufe werden dadurch nachgeholt: Der Produktionsserver prüft die Liste 30 Sekunden nach dem Start und danach alle zehn Minuten. Eine erfolgreiche Archivierung wird zusammen mit ihrem Verlaufseintrag bestätigt; bis dahin bleibt der Auftrag wiederholbar. Bestehende, passende und noch nicht archivierte Karten werden beim Upgrade vorgemerkt. Sperrregeln, einmalige erfolgreiche Archivierung und der Fehlerhinweis nach 24 Stunden bleiben bestehen. Es werden keine neuen externen API-/MCP-Rechte benötigt und keine zusätzlichen Dienste oder Zugangsdaten eingeführt.
+
+
+### Nextcloud-Archivierung im Kassenbuch
+
+Der Eigentümer kann unter **Kassenbuch-Einstellungen → Nextcloud-Archivierung** eine eigene HTTPS-WebDAV-Verbindung mit Benutzername, App-Passwort und Stammordner hinterlegen. Beim Erteilen der Anweisung durch die zweite Person werden alle an der Buchung gespeicherten Dateien einschließlich älterer Formularstände archiviert. Der Unterordner heißt beispielsweise `KÖT-0001 AN-2026-0042` oder `KÖT-0002 G-2026-001`. Zugangsdaten werden verschlüsselt gespeichert.
+
+Der Auftrag wird mit der verbindlichen Buchung gespeichert und nach Abbrüchen/Fehlern wiederholt (Worker nach 30 Sekunden, danach alle zehn Minuten). Der Status ist im Vorgang sichtbar. Alte Buchungen und Korrekturbuchungen werden nicht nachträglich exportiert; Änderungen am Buchungstag lösen keinen weiteren Upload aus. Deaktivierung pausiert offene Aufträge. Gebuchte Werte bleiben unveränderlich. Migration `0110` ist standardmäßig ausgeschaltet und verändert keine vorhandenen Buchungsdaten. Die Funktion ist ausschließlich über die angemeldete Oberfläche verfügbar, ohne REST-/MCP-Erweiterung.
+
+
+Sitzungsbereiche und Inventare können Eigentümer weiterhin bzw. direkt in den
+Einstellungen löschen: zuerst `LÖSCHEN`, danach im Warnfenster den vollständigen
+aktuellen Namen eingeben. Beide Eingaben und die Eigentümerrechte werden
+serverseitig geprüft. Auch Sitzungsbereiche landen mit Sitzungen, TOPs, Vorlagen
+und Dokumenten im 30-Tage-Papierkorb. Admins können den gesamten Bereich dort
+wiederherstellen oder endgültig entfernen. Migration `0111` ergänzt dafür den
+Papierkorb, ohne bestehende Inhalte zu verändern.
+
+
+Eigentümer und Admins können in den Sitzungsbereichseinstellungen unter
+**Verwaltungsrechte vergeben** Personen mit bestehendem Schreibzugriff ernennen.
+Diese verwalten sämtliche Bereichseinstellungen und Board-Anbindungen; Löschen,
+Eigentümerschaft und weitere Ernennungen bleiben Eigentümern/Admins vorbehalten.
+Bei Verlust des Schreibzugriffs ruhen die Rechte sofort. Migration `0112` ergänzt
+die getrennten Verwaltungsfreigaben; vorhandene Daten und Rechte bleiben erhalten.
+
+
+Einzelne ungesperrte Karten werden nach Eingabe von `LÖSCHEN` für 30 Tage in den
+**Board-Papierkorb** verschoben. Dort können Schreibberechtigte sie mit
+`WIEDERHERSTELLEN` zurückholen oder mit `ENDGÜLTIG` endgültig löschen. Auch beim
+Verwerfen einer bereits automatisch gespeicherten neuen Karte gilt dieser Ablauf.
+Migration `0113` erhält alle vorhandenen Karten und Inhalte unverändert.
+
+Inventargegenstände, einzelne Leihvorgänge, Inventardateien und Sitzungsunterlagen
+werden weiterhin direkt gelöscht, verlangen dafür jetzt ebenfalls `LÖSCHEN`.
+Gruppen und benannte Vorlagen verlangen zusätzlich ihren aktuellen Namen; beim
+Entfernen einer Word-/PDF-Vorlage ist es deren Dateiname. Kontosperren,
+Profil-Zertifikat/-Unterschrift sowie öffentliche Inventarsichtbarkeit und
+Gesamtinventar-Einbeziehung haben eigene, im Dialog angezeigte Großbuchstaben-Wörter.
+Alle erforderlichen Eingaben werden serverseitig geprüft.
+
+API-Clients müssen beim Kartenlöschen künftig den JSON-Body
+`{"confirmation":"LÖSCHEN"}` senden; MCP `delete_card` benötigt das gleichnamige
+Argument. Wiederherstellen und endgültiges Löschen bleiben Oberflächenfunktionen.

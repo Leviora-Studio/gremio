@@ -594,6 +594,7 @@ export default function PdfEditor({
                   onChangeField={onChangeField}
                   sign={sign && sign.page === i ? sign : null}
                   editable={editable}
+                  editFormFields={editable && !signOnly}
                   onAddText={addText}
                   onMoveText={moveText}
                   onResizeText={resizeText}
@@ -756,6 +757,7 @@ function PageLayer({
   onChangeField,
   sign,
   editable,
+  editFormFields,
   onAddText,
   onMoveText,
   onResizeText,
@@ -776,6 +778,7 @@ function PageLayer({
   onChangeField: (name: string, value: string | boolean) => void;
   sign: SignItem | null;
   editable: boolean;
+  editFormFields: boolean;
   onAddText: (page: number, x: number, y: number, sizeRatio: number) => void;
   onMoveText: (id: number, x: number, y: number) => void;
   onResizeText: (id: number, sizeRatio: number) => void;
@@ -900,7 +903,7 @@ function PageLayer({
           // Im Editor Formularfelder NICHT in die Canvas backen (sonst „Geister-
           // text" hinter den editierbaren Overlays). In der read-only-Ansicht
           // hingegen einbacken, damit Feldwerte sichtbar bleiben.
-          renderForms={editable}
+          renderForms={editFormFields}
         />
 
         {/* Echte Formular-Textfelder — in-place editierbar; jedes Widget eines

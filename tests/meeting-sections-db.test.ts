@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -75,7 +76,7 @@ test("agenda sections preserve permissions, hierarchy, scheduling, transfers and
   await service.deleteTopic(owner,copied);
   for(const row of copiedChildren){assert.equal((await topic(row.id)).parentId,null);assert.equal((await topic(row.id)).section,"non_public");}
  }finally{
-  if(areaId){const rows=await db.select().from(s.meetings).where(eq(s.meetings.areaId,areaId));for(const m of rows)await service.deleteMeeting(owner,m.id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));}
+  if(areaId){const rows=await db.select().from(s.meetings).where(eq(s.meetings.areaId,areaId));for(const m of rows)await purgeTestResource("meeting",m.id);await purgeTestMeetings(areaId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));}
   await db.delete(s.users).where(inArray(s.users.id,people.map(p=>p.id)));
  }
 });

@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { moveToTrash } from "@/lib/trash";
+import { redirect } from "next/navigation";
+import { requireAdmin, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cashbooks, cashbookEntries } from "@/lib/db/schema";
 import { absPath, deleteStoredFile, saveNamedBuffer, validateUpload, receiptFileName } from "@/lib/attachments";
@@ -15,6 +19,7 @@ import { readPdfFields } from "@/lib/pdf-edit";
 import type { CashbookConfig, CashbookRole } from "@/lib/cashbook-types";
 import { requireCashbook, requireCashbookEntry } from "@/lib/cashbook/access";
 import { createCashbook, saveCashbookConfig, saveCashbookDraft, saveCashbookGrant, transitionCashbook, correctCashbookEntry, markCashbookInstructionIncorrect, activity } from "@/lib/cashbook/service";
+import { replaceInstructionFiles, removeReplacedInstructions } from "@/lib/cashbook/instruction-files";
 import { generateCashbookPdf, signCashbookPdf, prepareSecondCashbookSignature, storeCashbookFile } from "@/lib/cashbook/files";
 import type { SavePdfInput, SavePdfResult } from "@/app/intern/card/[id]/pdf-actions";
 export type CashbookActionState = {
@@ -33,7 +38,7 @@ catch (error) {
     return { error: error instanceof z.ZodError ? "Bitte alle Einstellungen prüfen: Eine Eingabe ist ungültig oder zu lang." : error instanceof Error && !("cause" in error) ? error.message : "Speichern fehlgeschlagen. Bitte aktualisieren und erneut versuchen." };
 } }
 export async function createCashbookAction(_previous: CashbookActionState, data: FormData) { const user = await requireUser(); return run(() => createCashbook(user, String(data.get("name") ?? ""))); }
-export async function configCashbookAction(id: number, revision: number, config: CashbookConfig) { const user = await requireUser(); const { book } = await requireCashbook(user, id, "manage"); return run(() => saveCashbookConfig(user, id, revision, { ...config, templatePath: book.config.templatePath })); }
+export async function configCashbookAction(id: number, revision: number, config: CashbookConfig, financeBoardId?:number|null) { const user = await requireUser(); const { book } = await requireCashbook(user, id, "manage"); return run(() => saveCashbookConfig(user, id, revision, { ...config, templatePath: book.config.templatePath }, financeBoardId)); }
 export async function grantCashbookAction(id: number, kind: "user" | "group", subjectId: number, access: "read" | "write" | "remove") { const user = await requireUser(); if (!["user", "group"].includes(kind) || !["read", "write", "remove"].includes(access) || !Number.isSafeInteger(subjectId) || subjectId < 1)
     return { error: "Ungültige Freigabe." }; return run(() => saveCashbookGrant(user, id, kind, subjectId, access)); }
 export async function draftCashbookAction(bookId: number, id: number | null, revision: number, data: unknown, role: CashbookRole) { const user = await requireUser(); return run(() => saveCashbookDraft(user, bookId, id, revision, data, role)); }
@@ -72,9 +77,9 @@ export async function cashbookTemplateFieldsAction(id: number) { const { book } 
 export async function uploadBusinessReceiptAction(id: number, revision: number, _previous: CashbookActionState, data: FormData) { const user = await requireUser(); const { entry, book } = await requireCashbookEntry(user, id); await requireCashbook(user, book.id, "write"); if (entry.creatorId !== user.id || entry.state !== "draft" || !entry.data.business || entry.revision !== revision)
     return { error: "Der Geschäftsbedarfsentwurf ist nicht bearbeitbar." }; const file = data.get("file"); if (!(file instanceof File))
     return { error: "Bitte eine Quittung auswählen." }; const invalid = validateUpload(file, PDF_MIME); if (invalid)
-    return { error: invalid }; const stored = await storeCashbookFile(book.id, id, Buffer.from(await file.arrayBuffer()), receiptFileName(entry.data.number, entry.files.filter(f => f.kind === "receipt").length + 1, file.name), "receipt"); const result = await run(async () => { await db.transaction(async (tx) => { await tx.select({id:cashbooks.id}).from(cashbooks).where(eq(cashbooks.id,book.id)).for("share");await requireCashbook(user,book.id,"write");const [fresh] = await tx.select().from(cashbookEntries).where(eq(cashbookEntries.id, id)).for("update"); if (fresh.state !== "draft" || fresh.revision !== revision)
-    throw new Error("Der Vorgang wurde geändert."); await tx.update(cashbookEntries).set({ files: [...fresh.files.map(f => f.kind === "receipt" ? f : { ...f, obsolete: true }), stored], firstSignedAt: null, secondSignedAt: null, revision: revision + 1 }).where(eq(cashbookEntries.id, id)); await activity(tx, user, book.id, id, "receipt_uploaded", { filename: stored.filename, sha256: stored.sha256 }); }); }); if (result.error)
-    await deleteStoredFile(stored.path); return result; }
+    return { error: invalid }; const stored = await storeCashbookFile(book.id, id, Buffer.from(await file.arrayBuffer()), receiptFileName(entry.data.number, entry.files.filter(f => f.kind === "receipt").length + 1, file.name), "receipt"); const result = await run(async () => { await db.transaction(async (tx) => { await tx.select({id:cashbooks.id}).from(cashbooks).where(trashAnd(activeRows.cashbooks, eq(cashbooks.id,book.id))).for("share");await requireCashbook(user,book.id,"write");const [fresh] = await tx.select().from(cashbookEntries).where(trashAnd(activeRows.cashbookEntries, eq(cashbookEntries.id, id))).for("update"); if (fresh.state !== "draft" || fresh.revision !== revision)
+    throw new Error("Der Vorgang wurde geändert."); await tx.update(cashbookEntries).set({ files: [...replaceInstructionFiles(fresh.files), stored], firstSignedAt: null, secondSignedAt: null, revision: revision + 1 }).where(eq(cashbookEntries.id, id)); await activity(tx, user, book.id, id, "receipt_uploaded", { filename: stored.filename, sha256: stored.sha256 }); }); }); if (result.error)
+    await deleteStoredFile(stored.path); else await removeReplacedInstructions(entry.files); return result; }
 
 export async function removeBusinessReceiptAction(id: number, revision: number, fileId: string) {
   const user = await requireUser();
@@ -83,15 +88,16 @@ export async function removeBusinessReceiptAction(id: number, revision: number, 
   if (entry.creatorId !== user.id || !entry.data.business) return { error: "Dieser Quittungsentwurf ist nicht bearbeitbar." };
   return run(async () => {
     await db.transaction(async tx => {
-      await tx.select({id:cashbooks.id}).from(cashbooks).where(eq(cashbooks.id,book.id)).for("share");
+      await tx.select({id:cashbooks.id}).from(cashbooks).where(trashAnd(activeRows.cashbooks, eq(cashbooks.id,book.id))).for("share");
       await requireCashbook(user,book.id,"write");
-      const [current] = await tx.select().from(cashbookEntries).where(eq(cashbookEntries.id, id)).for("update");
+      const [current] = await tx.select().from(cashbookEntries).where(trashAnd(activeRows.cashbookEntries, eq(cashbookEntries.id, id))).for("update");
       if (current.state !== "draft" || current.revision !== revision) throw new Error("Der Vorgang wurde geändert oder bereits vorgelegt.");
       const receipt = current.files.find(file => file.id === fileId && file.kind === "receipt" && !file.obsolete);
       if (!receipt) throw new Error("Die Quittung ist nicht mehr verfügbar.");
-      await tx.update(cashbookEntries).set({ files: current.files.map(file => file.id === fileId || file.kind !== "receipt" ? { ...file, obsolete: true } : file), firstSignedAt: null, secondSignedAt: null, revision: revision + 1 }).where(eq(cashbookEntries.id, id));
+      await tx.update(cashbookEntries).set({ files: replaceInstructionFiles(current.files).map(file => file.id === fileId ? { ...file, obsolete: true } : file), firstSignedAt: null, secondSignedAt: null, revision: revision + 1 }).where(eq(cashbookEntries.id, id));
       await activity(tx, user, book.id, id, "receipt_removed", { filename: receipt.filename, fileId });
     });
+    await removeReplacedInstructions(entry.files);
   });
 }
 
@@ -106,4 +112,10 @@ export async function prepareCashbookSignatureAction(id: number, revision: numbe
     const { entry } = await requireCashbookEntry(user, id);
     return entry.state === "draft" ? await generateCashbookPdf(user, id, revision, details) : await prepareSecondCashbookSignature(user, id, revision, details);
   } catch (error) { return { error: error instanceof Error ? error.message : "Unterschrift konnte nicht vorbereitet werden." }; }
+}
+
+export async function trashCashbookAction(id:number,confirmation?:string,cashbookName?:string){
+ const user=await requireAdmin();
+ try{await moveToTrash(user,"cashbook",id,confirmation,{cashbookName});}catch(error){return {error:error instanceof Error&&!("cause" in error)?error.message:"Verschieben in den Papierkorb fehlgeschlagen."};}
+ refresh();revalidatePath("/admin/kassenbuecher");revalidatePath("/admin/papierkorb");redirect("/intern/kassenbuch");
 }

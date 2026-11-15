@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { canManageBoard } from "@/lib/authz";
 import { isResourceOwner } from "@/lib/board-ownership";
 import { internalApiContext } from "@/lib/api-context";
@@ -109,25 +110,25 @@ export async function serializeBoard(board: Board, user: User) {
       resubmitStatusId: board.resubmitStatusId,
     } : {}),
     role,
-    doneStatusId: board.doneStatusId,
+    doneStatusId: effectiveDoneStatusId(board),
     isApplicationBoard: board.isApplicationBoard,
     completedStatusId: board.completedStatusId,
     createdAt: board.createdAt,
   };
 }
 
-export function serializeStatus(s: BoardStatus, canManage = false) {
+export function serializeStatus(s: BoardStatus, canManage = false, archiveAllowed = true) {
   return {
     id: s.id,
     name: s.name,
     position: s.position,
-    isArchiveTrigger: s.isArchiveTrigger,
+    isArchiveTrigger: archiveAllowed && s.isArchiveTrigger,
     isLockColumn: s.isLockColumn,
-    // Der Anweisungs-Trigger ist im Web nur in den (verwalter-exklusiven)
-    // Board-Einstellungen sichtbar — daher nur für Verwalter ausgeben.
+    // Keep retired date flags false for existing clients. Administrative
+    // metadata visibility remains unchanged.
     ...(canManage ? {
-      isInstructionTrigger: s.isInstructionTrigger,
-      isTransferTrigger: s.isTransferTrigger,
+      isInstructionTrigger: false,
+      isTransferTrigger: false,
       isReceiptTrigger: s.isReceiptTrigger,
     } : {}),
   };

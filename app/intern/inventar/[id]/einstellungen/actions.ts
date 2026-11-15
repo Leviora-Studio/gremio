@@ -3,34 +3,21 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
 import { parseAccessLevel } from "@/lib/access-level";
 
 import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import {
-  attachments,
-  boards,
-  cards,
-  groups,
-  inventoryAttachments,
-  inventoryBoardAccess,
-  inventoryBoardFields,
-  inventoryBoards,
-  inventoryItems,
-  inventoryNumbering,
-  users,
-} from "@/lib/db/schema";
-import { deleteStoredFile } from "@/lib/attachments";
-import { requireInventoryBoardManage } from "@/lib/inventory";
-import { isForeignKeyViolation } from "@/lib/db-errors";
-import {
-  BoardDeleteBlockedError,
-  boardRoutingBlocker,
-  createLoanBoardForInventory,
-  deleteBoardCascade,
-} from "@/lib/boards";
+import { groups, inventoryBoardAccess, inventoryBoardFields, inventoryBoards, inventoryNumbering, users } from "@/lib/db/schema";
+
+import { requireInventoryBoardManage, requireInventorySettingsAccess } from "@/lib/inventory";
+
+import { createLoanBoardForInventory } from "@/lib/boards";
 import { INVENTORY_FIELD_KEYS } from "@/lib/inventory-fields";
 
 export type LoanBoardState = { error?: string; success?: string };
@@ -44,7 +31,7 @@ function clampInt(raw: FormDataEntryValue | null, min: number, max: number): num
 /** Sichtbare Felder des Boards setzen. */
 export async function updateInventoryFieldsAction(formData: FormData) {
   const boardId = Number(formData.get("boardId"));
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   const checked = new Set(formData.getAll("visible").map(String));
   // Upsert: ältere Boards haben evtl. noch keine Zeile für neu hinzugekommene
   // Feld-Schlüssel — dann anlegen statt nur updaten.
@@ -68,7 +55,7 @@ export async function updateInventoryNumberingAction(
   formData: FormData,
 ): Promise<LoanBoardState> {
   const boardId = Number(formData.get("boardId"));
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   const str = (k: string, max: number) =>
     String(formData.get(k) ?? "").slice(0, max);
   const values = {
@@ -144,54 +131,13 @@ export async function activateLoanTrackingAction(
  */
 export async function deactivateLoanTrackingAction(
   boardId: number,
+  confirmation?: string,
 ): Promise<{ error?: string } | void> {
-  const { board } = await requireInventoryBoardManage(boardId);
-  const loanBoardId = board.loanBoardId;
-  if (loanBoardId == null) return;
-  // Lösch-Blocker VOR dem Entkoppeln prüfen. `deleteBoardCascade` weist Boards
-  // ab, auf die ein Standort oder Feedback-Bereich routet — und lief unten das
-  // Entkoppeln bereits durch, blieb genau das zurück, was diese Funktion
-  // verhindern soll: ein Inventar ohne Leihboard-Verknüpfung und ein Board, das
-  // ohne `inventory_board_id` frei verwaltbar ist, aber weiter alle Leihkarten
-  // trägt (Done-Spalte/Archiv-Trigger hätten sie dort weggeräumt).
-  const blocked = await boardRoutingBlocker(loanBoardId);
-  if (blocked) return { error: blocked };
-  // Erst entkoppeln (hebt den Lösch-Schutz des System-Boards auf), dann löschen.
-  await db
-    .update(inventoryBoards)
-    .set({
-      loanBoardId: null,
-      loanActiveStatusId: null,
-      loanReturnedStatusId: null,
-    })
-    .where(eq(inventoryBoards.id, boardId));
-  await db
-    .update(boards)
-    .set({ inventoryBoardId: null })
-    .where(eq(boards.id, loanBoardId));
-  try {
-    await deleteBoardCascade(loanBoardId);
-  } catch (e) {
-    // Restfenster: Zwischen der Prüfung oben und dem Löschen kann ein Admin ein
-    // Routing setzen (RESTRICT-FK), oder die Datenbank fällt aus. Dann die
-    // Entkopplung zurücknehmen — sonst bliebe das Inventar dauerhaft ohne
-    // Leihboard zurück, während das Board mit allen Leihkarten weiterlebt.
-    await db
-      .update(boards)
-      .set({ inventoryBoardId: boardId })
-      .where(eq(boards.id, loanBoardId));
-    await db
-      .update(inventoryBoards)
-      .set({
-        loanBoardId,
-        loanActiveStatusId: board.loanActiveStatusId,
-        loanReturnedStatusId: board.loanReturnedStatusId,
-      })
-      .where(eq(inventoryBoards.id, boardId));
-    revLoanBoard(boardId);
-    if (e instanceof BoardDeleteBlockedError) return { error: e.message };
-    throw e;
-  }
+  const {user,board} = await requireInventoryBoardManage(boardId);
+  if(typeof confirmation!=="string"||confirmation.trim()!=="LÖSCHEN")return {error:"Bitte LÖSCHEN eingeben."};
+  if(board.loanBoardId==null)return;
+  try { await moveToTrash(user,"board",board.loanBoardId,confirmation,{trackingInventoryId:boardId}); }
+  catch(error){return {error:error instanceof Error?error.message:"Verschieben fehlgeschlagen."};}
   revLoanBoard(boardId);
 }
 
@@ -201,61 +147,13 @@ export async function deactivateLoanTrackingAction(
 
 export async function deleteInventoryBoardConfirmedAction(
   boardId: number,
+  confirmation?: unknown,
+  inventoryName?: unknown,
 ): Promise<{ error?: string } | void> {
-  await requireInventoryBoardManage(boardId);
-
-  // Dateipfade VOR dem Löschen sichern. Der Cascade räumt zwar alle Zeilen ab
-  // (inventory_items → inventory_attachments, boards → cards → attachments),
-  // die DATEIEN im Upload-Verzeichnis aber nicht. Ohne diesen Schritt blieben
-  // sämtliche Kaufbelege, Leihverträge und vor allem Studierendenausweise des
-  // Inventars dauerhaft auf der Platte liegen (Aufbewahrungs-/Datenschutz-
-  // problem) — gleiches Muster wie `deleteBoardCascade` und `removeCard`.
-  const inventarDateien = (
-    await db
-      .select({ path: inventoryAttachments.path })
-      .from(inventoryAttachments)
-      .innerJoin(
-        inventoryItems,
-        eq(inventoryItems.id, inventoryAttachments.itemId),
-      )
-      .where(eq(inventoryItems.boardId, boardId))
-  ).map((r) => r.path);
-  // Anhänge der Karten auf dem System-/Leihboard: Es hängt über
-  // `boards.inventory_board_id` (ON DELETE CASCADE) mit am Inventar.
-  const kartenDateien = (
-    await db
-      .select({ path: attachments.path })
-      .from(attachments)
-      .innerJoin(cards, eq(cards.id, attachments.cardId))
-      .innerJoin(boards, eq(boards.id, cards.boardId))
-      .where(eq(boards.inventoryBoardId, boardId))
-  ).map((r) => r.path);
-
-  try {
-    await db.delete(inventoryBoards).where(eq(inventoryBoards.id, boardId));
-  } catch (e) {
-    // Das Löschen räumt über `boards.inventory_board_id` (ON DELETE CASCADE)
-    // auch das Leihboard mit ab. Routet ein Standort oder Feedback-Bereich
-    // darauf (bzw. auf eine seiner Spalten), greift der RESTRICT-FK mitten im
-    // Cascade — ohne dieses catch endete das Löschen in einem HTTP 500 ohne
-    // jeden Hinweis, was zu tun ist. Gleiche Behandlung wie in
-    // `deleteBoardCascade`.
-    if (isForeignKeyViolation(e)) {
-      return {
-        error:
-          "Das Inventar kann nicht gelöscht werden: Ein Standort oder Feedback-Bereich routet auf sein Leihvorgang-Board. Bitte zuerst das Routing umstellen.",
-      };
-    }
-    throw e;
-  }
-  // Erst NACH erfolgreichem Löschen: Ein Rollback kann eine gelöschte Datei
-  // nicht zurückholen, ein übrig gebliebenes Fragment ohne Zeile ist folgenlos.
-  for (const p of [...inventarDateien, ...kartenDateien]) {
-    await deleteStoredFile(p);
-  }
-  revalidatePath(`/intern/inventar`);
-  // Außerhalb des try/catch: redirect() signalisiert über eine Exception.
-  redirect(`/intern/inventar`);
+  const {user} = await requireInventoryBoardManage(boardId);
+  try { await moveToTrash(user, "inventory", boardId, confirmation, { inventoryName }); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/intern", "layout"); redirect("/intern/inventar");
 }
 
 // --- Freigaben (wie Kanban-Boards) --------------------------------------
@@ -270,7 +168,7 @@ export async function addInventoryAccessUserAction(
   boardId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel) return;
   const userId = Number(formData.get("userId"));
@@ -293,7 +191,7 @@ export async function addInventoryAccessGroupAction(
   boardId: number,
   formData: FormData,
 ): Promise<void> {
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel) return;
   const groupId = Number(formData.get("groupId"));
@@ -301,7 +199,7 @@ export async function addInventoryAccessGroupAction(
   const exists = await db
     .select({ id: groups.id })
     .from(groups)
-    .where(eq(groups.id, groupId))
+    .where(trashAnd(activeRows.groups, eq(groups.id, groupId)))
     .limit(1);
   if (!exists.length) return;
   await db
@@ -316,7 +214,7 @@ export async function removeInventoryAccessAction(
   boardId: number,
   accessId: number,
 ): Promise<void> {
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   await db
     .delete(inventoryBoardAccess)
     .where(
@@ -329,7 +227,7 @@ export async function removeInventoryAccessAction(
 }
 
 export async function updateInventoryAccessLevelAction(boardId: number, accessId: number, formData: FormData): Promise<void> {
-  await requireInventoryBoardManage(boardId);
+  await requireInventorySettingsAccess(boardId);
   const accessLevel = parseAccessLevel(formData.get("accessLevel"));
   if (!accessLevel || !Number.isSafeInteger(accessId)) return;
   await db.update(inventoryBoardAccess).set({ accessLevel }).where(and(eq(inventoryBoardAccess.id, accessId), eq(inventoryBoardAccess.boardId, boardId)));

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { stageAttachmentTrash } from "@/lib/attachment-trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -96,7 +99,7 @@ export async function boardCatalog(
               name: accounts.name,
               position: accounts.position,
             })
-            .from(accounts)
+            .from(accounts).where(activeRows.accounts)
             .orderBy(asc(accounts.position), asc(accounts.id)),
         }
       : {
@@ -107,7 +110,7 @@ export async function boardCatalog(
               color: priorities.color,
               position: priorities.position,
             })
-            .from(priorities)
+            .from(priorities).where(activeRows.priorities)
             .orderBy(asc(priorities.position), asc(priorities.id)),
         },
   );
@@ -217,7 +220,7 @@ export async function activityApi(req: Request, id: string) {
   const rows = await db
     .select()
     .from(cardActivity)
-    .where(eq(cardActivity.cardId, r.card.id))
+    .where(trashAnd(activeRows.cardActivity, eq(cardActivity.cardId, r.card.id)))
     .orderBy(desc(cardActivity.id))
     .limit(limit + 1)
     .offset(offset);
@@ -258,33 +261,27 @@ export async function storeApiAttachment(
   purpose?: "receipt",
 ) {
   const saved = await saveAntragFile(cardId, file);
-  const oldPaths: string[] = [];
   let result: typeof attachments.$inferSelect;
   try {
     result = await db.transaction(async (tx) => {
       const [card] = await tx
         .select()
         .from(cards)
-        .where(eq(cards.id, cardId))
+        .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
         .for("update");
       if (!card) throw new Error("Card removed");
       if (card.lockedAt && purpose !== "receipt") throw new CardFrozenError();
       if (purpose === "receipt" && kind !== "other") throw new Error("Receipt requires other slot");
       let filename = saved.filename;
       if (purpose === "receipt") {
-        const existing = await tx.select({ filename: attachments.filename }).from(attachments).where(eq(attachments.cardId, cardId));
+        const existing = await tx.select({ filename: attachments.filename }).from(attachments).where(trashAnd(activeRows.attachments, eq(attachments.cardId, cardId)));
         filename = receiptFileName(card.number, nextReceiptIndex(card.number, existing.map(a => a.filename)), saved.filename);
       }
       let folderId: number | null = null;
       if (kind !== "other") {
-        const old = await tx
-          .delete(attachments)
-          .where(
-            and(eq(attachments.cardId, cardId), eq(attachments.kind, kind)),
-          )
-          .returning({ path: attachments.path, folderId: attachments.folderId });
+        const old = await tx.select().from(attachments).where(and(eq(attachments.cardId, cardId), eq(attachments.kind, kind)));
         folderId = old[0]?.folderId ?? null;
-        oldPaths.push(...old.map((a) => a.path));
+        for(const file of old)await stageAttachmentTrash(tx,cardId,file.id,userId);
       }
       const [att] = await tx
         .insert(attachments)
@@ -316,7 +313,6 @@ export async function storeApiAttachment(
     await deleteStoredFile(saved.relPath);
     throw e;
   }
-  for (const path of oldPaths) await deleteStoredFile(path);
   return result;
 }
 
@@ -326,7 +322,7 @@ export async function resolveApiAttachment(req: Request, id: string, attachmentI
   const aid = parseApiId(attachmentId);
   if (!aid) return apiError(404, "Anhang nicht gefunden.");
   const [attachment] = await db.select().from(attachments)
-    .where(and(eq(attachments.id, aid), eq(attachments.cardId, r.card.id)));
+    .where(trashAnd(activeRows.attachments, and(eq(attachments.id, aid), eq(attachments.cardId, r.card.id))));
   const visible = await getVisibleFieldKeys(r.board.id);
   if (!attachment || !isCardAttachmentVisible(attachment, visible))
     return apiError(404, "Anhang nicht gefunden.");
@@ -427,7 +423,7 @@ export async function attachmentsApi(
     await db
       .select()
       .from(attachments)
-      .where(eq(attachments.cardId, r.card.id))
+      .where(trashAnd(activeRows.attachments, eq(attachments.cardId, r.card.id)))
       .orderBy(asc(attachments.id))
   ).filter((a) => isCardAttachmentVisible(a, visible));
   const { limit, offset } = p.data;

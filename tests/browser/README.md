@@ -101,6 +101,11 @@ PostgreSQL and sealed synthetic owner/reader/group-writer sessions. At desktop
 and mobile widths it checks all board views, disabled card editing, attachment
 downloads, hidden public mutation tokens, finance plan writes, inventory/loan
 controls, settings guards and real grant updates on all three sharing pages.
+It also checks typed role promotion/revocation, standard group deletion (including
+lowercase input supported by the UI), and personal-topic deletion with the word
+inside the modal. Actual database outcomes verify transport to real Server Actions
+at both viewport sizes. Tracking-board confirmation also checks cancellation,
+input reset, and retained inventory-loan records after confirmed deletion.
 Use the same environment as `workflows-production.cjs`; optionally set
 `GREMIO_TEST_BUILD_DIR` to the separately built checkout/copy. No real files,
 Nextcloud connections or OIDC services are used. `access-levels-db.test.ts`
@@ -384,3 +389,157 @@ receipts, stale submission during file preparation and existing status tokens.
 TEST_APPLICATION_MODULES_UPGRADE_URL database to verify data/attachment preservation
 and legacy-module activation at migration 0101. Run module-switch tests separately
 from tests that submit to the shared public form.
+
+The access-level production fixture also appoints a limited board manager through
+the owner UI at desktop/mobile widths. It checks writer-only selection, the exact
+delegated settings sections, a real settings change, live group-write revocation,
+explicit withdrawal and unchanged finance management boundaries. The dedicated
+`board-management-db.test.ts` additionally covers application-board lock settings,
+email rules, excluded Server Actions, co-owners, inactive accounts and cashbooks.
+
+The access-level fixture also checks that date-trigger controls are absent on all
+boards, normal and application boards retain Nextcloud trigger selection, and application
+boards hide only the Done-column controls. `application-archive-trigger-db.test.ts`
+covers retained values, inactive Done rules/sweeps, restored archive assignment
+rules, template inheritance, public archive gates and a mocked Nextcloud upload; REST/MCP status-move behavior remains covered by API parity tests.
+
+The access-level production fixture also appoints an inventory manager through
+the owner UI, verifies exactly four settings sections, saves actual inventory
+numbering, follows the settings link from its loan board, and checks immediate
+loss of management after group-write revocation or explicit withdrawal.
+`inventory-management-db.test.ts` covers all allowed actions, nondelegable settings,
+linked-loan email rules, resource separation and inactive users in an isolated DB.
+
+The access-level production fixture verifies finance navigation on desktop/mobile
+for readers, users without finance access, live grant additions/removals and group
+membership changes. It checks that the old creation path redirects non-admins away,
+admins are redirected into the Admin Panel, and creation there assigns the admin
+as owner. `finance-creation-db.test.ts` covers direct action denial for ordinary
+owners/writers/readers/template managers and atomic template cloning by admins.
+
+Tracking-board removal is covered by the access-level production fixture at
+desktop/mobile widths: empty/wrong words disable confirmation, cancel keeps the
+board, reopening clears the word, and typing LÖSCHEN permits actual deletion.
+`loan-tracking-deletion-db.test.ts` requires an isolated workflow database and
+`UPLOAD_DIR` under `/private/tmp/gremio-cashbook-test-*`; it verifies backend
+confirmation, denied writer/delegate access, active/returned loan retention,
+item visibility, retained inventory document bytes and removal of card-only files.
+
+`typed-confirmations-db.test.ts` calls all typed deletion actions and their legacy
+form aliases directly with missing, wrong and valid confirmation values. It checks
+that rejected calls leave the original rows unchanged, and exercises live role
+word selection. Ownership, module-switch, budget-correction, cashbook-correction,
+emergency-marking and tracking-deletion checks live in their corresponding DB
+test files. Run module switching separately from public submission suites because
+it intentionally changes the isolated database's global active module.
+
+`frozen-card-archive-db.test.ts` exercises actual moves and locks through the shared
+UI service, REST and MCP with a synthetic Nextcloud uploader. It checks deferred
+archiving in lock columns, immediate archiving in ordinary columns, frozen-card
+moves, idempotence, retries/cancellation and unchanged content protections.
+`frozen-card-archive-migration.test.ts` requires an empty isolated database passed
+via `TEST_FROZEN_ARCHIVE_MIGRATION_DATABASE_URL` with a name starting
+`gremio_workflows_upgrade_test_`; it compares complete stored rows before/after
+0104 and verifies that only technical archive fields gain write access.
+
+The cashbook production fixture additionally assigns financial overviews to
+accounts through the admin UI and to the cashbook through its settings. It checks
+searchable in-app household title menus by code and name at desktop/mobile widths,
+then runs allocation corrections and the existing two-signature payment workflow.
+`budget-title-catalog-db.test.ts` checks catalog restrictions, historical retention
+and configuration permissions; `budget-title-catalog-migration.test.ts` uses an
+empty `gremio_workflows_upgrade_test_*` database supplied through
+`TEST_BUDGET_CATALOG_MIGRATION_DATABASE_URL` to verify the upgrade preserves all
+stored allocations, accounts, book settings and posted bookings.
+
+
+`recycle-bin-production.cjs` uses the separate production build, synthetic SSO,
+an isolated `gremio_workflows_test_*` database and temporary uploads. It checks
+admin-only application-board/cashbook deletion, desktop/mobile typed restore and
+permanent-delete dialogs, preserved frozen data/files/grants, public/API hiding,
+and actual final removal. Run with `node --import tsx` and the same environment
+as `access-levels-production.cjs`. `recycle-bin-migration.test.ts` uses an empty
+`TEST_TRASH_MIGRATION_DATABASE_URL` named `gremio_workflows_upgrade_test_*` to
+verify all pre-existing locks, allocations, posted entries and grants survive.
+
+
+`attachment-trash-production.cjs` tests the actual board file recycle bin on
+normal/application boards at 1400/390 pixels. It checks in-app removal, immediate
+404 downloads, retained bytes, reader/outsider restrictions, typed restore and
+permanent purge, exact attachment metadata restoration, and responsive layouts.
+Use `node --import tsx` with the same isolated database, separate build and Chrome
+settings as above. `attachment-trash-migration.test.ts` accepts an empty isolated
+`TEST_ATTACHMENT_TRASH_MIGRATION_DATABASE_URL` named `gremio_workflows_upgrade_test_*`.
+
+
+`archive-outbox-db.test.ts` tests durable enqueue/rollback, a killed synthetic
+worker, advisory-lock contention, post-upload acknowledgement rollback, and
+parallel deliveries without real Nextcloud IO. `archive-outbox-migration.test.ts`
+requires an empty isolated `TEST_ARCHIVE_OUTBOX_MIGRATION_DATABASE_URL` named
+`gremio_workflows_upgrade_test_*`; it verifies pending-job backfill and unchanged
+card/file/freeze/history data. No browser or external Nextcloud is required.
+
+
+`cashbook-archive-production.cjs` verifies the new owner-only archive settings,
+password-safe props, save/disable/reload, and completed status at 1400/390 pixels.
+Only synthetic records and local temporary files are used; it never tests a real
+Nextcloud connection. `cashbook-archive-db.test.ts` replaces only external
+Nextcloud IO and runs real authorization, immutable booking, checksum and retry
+logic. The migration test uses an empty isolated
+`TEST_CASHBOOK_ARCHIVE_MIGRATION_DATABASE_URL` named `gremio_workflows_upgrade_test_*`.
+
+
+`recycle-bin-production.cjs` also checks the additional exact-name confirmation
+for cashbooks, financial overviews and application boards in admin lists,
+and for normal boards in owner settings, at desktop/mobile widths. It checks
+disabled buttons, cancel/reopen reset, actual Server Actions, absent deletion
+controls in application/finance/cashbook settings (also for admins), and unchanged
+stored entries/plans. The name-confirmation DB tests check live rights, legacy
+board aliases and stale-name rejection under the deletion lock.
+
+
+The recycle-bin production check also tests inventory/meeting-area owner deletion
+with both typed confirmation stages and admin restoration at 1400/390 pixels.
+`area-inventory-delete-db.test.ts` covers name validation, live rights, descendant
+privacy/immutability, original contents, separately trashed sessions and 30-day
+file cleanup. `meeting-area-trash-migration.test.ts` requires an empty isolated
+`TEST_MEETING_AREA_TRASH_MIGRATION_DATABASE_URL` named
+`gremio_workflows_upgrade_test_*` to verify existing settings, sessions, documents,
+grants and prior trash entries survive the upgrade unchanged.
+
+
+`meeting-area-management-production.cjs` checks owner appointment, writer-only
+candidates, all delegated settings, protected controls absent from the DOM,
+normal session board bindings, live write/delegation revocation and independent
+admin access at 1400/390 pixels. Use the separate production build, isolated
+`gremio_workflows_test_*` DB, synthetic SSO and browser options above.
+`meeting-area-management-db.test.ts` tests the actual actions and settings
+services with direct/group grants, Word-template download and queued revocation.
+`meeting-area-management-migration.test.ts` requires an empty isolated
+`TEST_MEETING_MANAGEMENT_MIGRATION_DATABASE_URL` named
+`gremio_workflows_upgrade_test_*`; it verifies unchanged original rows and no
+automatic appointment on upgrade.
+
+
+`typed-deletions-production.cjs` drives the current account/profile/visibility
+confirmations, group/template names, typed inventory/document deletion, and
+board-card retention/reader visibility/restore/final purge at 1400/390 pixels.
+Use the same isolated DB, separate production build, synthetic SSO and browser
+options as above. `card-trash-db.test.ts` and `extended-confirmations-db.test.ts`
+exercise real authorization and actual malformed-input handling. The upgrade test
+uses an empty isolated `TEST_CARD_TRASH_MIGRATION_DATABASE_URL` named
+`gremio_workflows_upgrade_test_*`. It verifies all prior card/child/lock/archive
+values remain unchanged.
+
+The cashbook production workflow also checks that both signing steps replace the
+current instruction, superseded file IDs return 404, the viewer remains available
+after signing and the ZIP contains only one instruction alongside its sources.
+
+For independent PDF signature validation, create a temporary Python environment
+with pyHanko (tested with 0.35.2) and set `GREMIO_SIGNATURE_VALIDATOR_PYTHON` to its
+Python executable. The cashbook signature unit tests, cashbook database workflow
+and production browser workflow then validate synthetic PDF signatures offline,
+including byte coverage, unique field names and permitted incremental changes.
+The browser workflow additionally signs an ordinary card attachment using two
+different users and validates the saved file. No production certificates or
+PDFs are sent to an external validator. This is a test-only dependency.

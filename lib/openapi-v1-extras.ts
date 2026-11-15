@@ -217,7 +217,7 @@ export const extraPaths = {
   "/api/v1/cards/{id}/lock": {
     post: {
       tags: ["Karten"], operationId: "lockApplicationCard", summary: "Antrag dauerhaft sperren",
-      description: "Irreversible. Requires write scope, live board write access, active application board and the current lock column. No unlock operation exists. After locking, only column/position changes and new receipts are allowed. Cashbook functions are not exposed.",
+      description: "Irreversible. Requires write scope, live board write access, active application board and the current lock column. No unlock operation exists. A configured Nextcloud archive trigger runs only once the status is published, after the lock transaction commits. After locking, only column/position changes and new receipts are allowed. Cashbook functions are not exposed.",
       parameters: [pathId()], requestBody: body({ type: "object", additionalProperties: false, required: ["confirm", "expectedStatusId"], properties: { confirm: { const: true }, expectedStatusId: integerId } }),
       responses: responses({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
     },
@@ -230,7 +230,7 @@ export const extraPaths = {
     },
     patch: {
       tags: ["Karten"], operationId: "updateBudgetPlan", summary: "Haushaltstitel-Einplanung ersetzen",
-      description: "Write scope and live board write access. Full replacement with current revision; empty allocations clears the plan. Account changes require confirmAccountChange:true. Locked cards require correction.reason and correction.confirmation=BESTÄTIGEN. Invalid or stale writes return 409 without changes. Each allocation contains amount in integer cents, accountId and budgetTitle.",
+      description: "Write scope and live board write access. Full replacement with current revision; empty allocations clears the plan. Account changes require confirmAccountChange:true. New account/title pairs must belong to the expense plan assigned to the account; existing historical pairs may be retained but not multiplied. Missing mappings or out-of-catalog titles return 409. Locked cards require correction.reason and correction.confirmation=BESTÄTIGEN. Invalid or stale writes return 409 without changes. Each allocation contains amount in integer cents, accountId and budgetTitle.",
       parameters: [pathId()], requestBody: body(budgetPlan), responses: responses(budgetPlan),
     },
   },
@@ -380,7 +380,7 @@ export const extraPaths = {
       operationId: "uploadCardAttachment",
       summary: "Anhang hochladen",
       description:
-        "Write scope; enabled attachment field. Exactly one file and kind, optionally uploadPurpose=receipt with kind=other for automatically numbered receipts. Locked cards accept only new receipts, never replacements. Max 25 MiB, PDF except student_card also PNG/JPEG. Named slots replace existing files; other appends. Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.",
+        "Write scope; enabled attachment field. Exactly one file and kind, optionally uploadPurpose=receipt with kind=other for automatically numbered receipts. Locked cards accept only new receipts, never replacements. Max 25 MiB, PDF except student_card also PNG/JPEG. Named slots replace existing files; previous versions enter the board file recycle bin for 30 days. Other appends. Restore and permanent deletion are session-only board actions. Storage and rollback cleanup follow the card lock. Inventory system boards are read-only.",
       parameters: [pathId()],
       requestBody: {
         required: true,

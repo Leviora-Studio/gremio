@@ -6,9 +6,9 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import {
-  setBoardInOverview,
   setOverviewMinPrice,
 } from "@/lib/inventory-overview";
+import { setConfirmedInventoryFlag } from "@/lib/inventory-visibility";
 import { parseEuroToCents as parseEuro } from "@/lib/money";
 
 /** Mindestpreis-Eingabe → Cent (0 = kein Minimum). */
@@ -24,12 +24,11 @@ export async function setOverviewMinPriceAction(
   revalidatePath("/admin/inventar/gesamt");
 }
 
-export async function toggleBoardOverviewAction(
-  formData: FormData,
-): Promise<void> {
-  await requireAdmin();
-  const boardId = Number(formData.get("boardId"));
-  if (!Number.isInteger(boardId)) return;
-  await setBoardInOverview(boardId, formData.get("include") === "1");
-  revalidatePath("/admin/inventar/gesamt");
+export async function toggleBoardOverviewAction(formData:FormData){
+  const value=formData.get("include");if(value!=="0"&&value!=="1")return {error:"Ungültige Änderung."};
+  return setBoardOverviewConfirmedAction(Number(formData.get("boardId")),value==="1",formData.get("confirmation"));
+}
+export async function setBoardOverviewConfirmedAction(boardId:number,enabled:boolean,confirmation?:unknown){
+  const user=await requireAdmin();const result=await setConfirmedInventoryFlag(user,boardId,"includeInOverview",enabled,confirmation);
+  revalidatePath("/admin/inventar/gesamt");revalidatePath("/intern/inventar/gesamt");return result;
 }

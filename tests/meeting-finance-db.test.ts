@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -57,7 +58,7 @@ test("financial agenda planning is atomic, permission-filtered, revision-safe an
     assert.equal((await db.select().from(s.cards).where(eq(s.cards.id,card.id)))[0].statusId,source.id);
     const child=await planFinanceCard(writer,root,card.id,beforeRevision);
     const fresh=(await db.select().from(s.cards).where(eq(s.cards.id,card.id)))[0];
-    assert.equal(fresh.statusId,target.id);assert.equal(fresh.meeting,"2026-11-11","Berlin day, not UTC day");assert.ok(fresh.instructionDate,"existing status triggers run");
+    assert.equal(fresh.statusId,target.id);assert.equal(fresh.meeting,"2026-11-11","Berlin day, not UTC day");assert.equal(fresh.instructionDate,null,"retired date triggers do not run during meeting moves");
     assert.equal(fresh.requestedAmount,123456);assert.equal(fresh.budgetRevision,card.budgetRevision);
     assert.equal((await financeCandidates(owner,root)).some(c=>c.id===card.id),false);
     await assert.rejects(planFinanceCard(owner,root,card.id,await rev()),/bereits/);
@@ -98,8 +99,8 @@ test("financial agenda planning is atomic, permission-filtered, revision-safe an
     assert.equal((await db.select().from(s.meetingAreas).where(eq(s.meetingAreas.id,area.id)))[0].financeBoardId,null);
     await service.deleteTopic(owner,child);await service.deleteTopic(owner,child2);await markFinanceTopic(owner,root,false,await rev());
   } finally {
-    const [currentArea]=await db.select().from(s.meetingAreas).where(eq(s.meetingAreas.id,area.id));if(currentArea?.wordTemplatePath)await removeWordTemplate(owner,area.id,currentArea.wordTemplateRevision);
-    await db.delete(s.meetings).where(eq(s.meetings.id,mid));await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area.id));await db.delete(s.boards).where(eq(s.boards.id,board.id));await db.delete(s.boards).where(eq(s.boards.id,foreign.id));await db.delete(s.accounts).where(eq(s.accounts.id,account.id));for(const u of [owner,reader,writer])await db.delete(s.users).where(eq(s.users.id,u.id));
+    const [currentArea]=await db.select().from(s.meetingAreas).where(eq(s.meetingAreas.id,area.id));if(currentArea?.wordTemplatePath)await removeWordTemplate(owner,area.id,currentArea.wordTemplateRevision,"LÖSCHEN",currentArea.wordTemplateName);
+    await purgeTestResource("meeting",mid);await purgeTestMeetings(area.id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area.id));await db.delete(s.boards).where(eq(s.boards.id,board.id));await db.delete(s.boards).where(eq(s.boards.id,foreign.id));await db.delete(s.accounts).where(eq(s.accounts.id,account.id));for(const u of [owner,reader,writer])await db.delete(s.users).where(eq(s.users.id,u.id));
   }
 });
 

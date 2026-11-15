@@ -3,6 +3,9 @@
 
 "use server";
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -23,14 +26,14 @@ export async function restoreCardAction(
   const [card] = await db
     .select({ id: cards.id })
     .from(cards)
-    .where(and(eq(cards.id, cardId), eq(cards.boardId, boardId)))
+    .where(trashAnd(activeRows.cards, and(eq(cards.id, cardId), eq(cards.boardId, boardId))))
     .limit(1);
   if (!card) return;
 
   const [first] = await db
     .select({ id: boardStatuses.id })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position))
     .limit(1);
   if (!first) return;
@@ -39,11 +42,11 @@ export async function restoreCardAction(
     .select({ m: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
     .where(
-      and(
+      trashAnd(activeRows.cards, and(
         eq(cards.boardId, boardId),
         eq(cards.statusId, first.id),
         isNull(cards.archivedAt),
-      ),
+      )),
     );
   const position = (maxRow?.m ?? -1) + 1;
 
@@ -53,7 +56,7 @@ export async function restoreCardAction(
       archivedAt: null,
       statusId: first.id,
       position,
-      doneSince: doneSinceForStatus(board.doneStatusId, first.id, null),
+      doneSince: doneSinceForStatus(effectiveDoneStatusId(board), first.id, null),
       updatedAt: new Date(),
     })
     .where(eq(cards.id, cardId));

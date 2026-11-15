@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {FEEDBACK_REQUIRED_CARD_FIELD_KEYS,CARD_FIELD_LABELS,type CardFieldKey} from "@/lib/constants";
 import {ReceiptBrandingForm} from "@/components/admin/ReceiptBrandingForm";
 import {logoVersion} from "@/lib/receipt-branding";
@@ -20,7 +22,7 @@ export default async function UmfragenPage() {
 
   const allAreas = await db
     .select()
-    .from(feedbackAreas)
+    .from(feedbackAreas).where(activeRows.feedbackAreas)
     .orderBy(feedbackAreas.position, feedbackAreas.id);
 
   // Leih-System-Boards sind kein zulässiges Ziel (siehe
@@ -28,11 +30,11 @@ export default async function UmfragenPage() {
   const allBoards = await db
     .select()
     .from(boards)
-    .where(isNull(boards.inventoryBoardId))
+    .where(trashAnd(activeRows.boards, isNull(boards.inventoryBoardId)))
     .orderBy(boards.name);
   const allStatuses = await db
     .select()
-    .from(boardStatuses)
+    .from(boardStatuses).where(activeRows.boardStatuses)
     .orderBy(boardStatuses.position);
 
   const fieldRows=await db.select().from(boardCardFields);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
@@ -23,7 +25,7 @@ export default async function GroupsPage() {
       members: sql<number>`count(${userGroups.userId})`,
     })
     .from(groups)
-    .leftJoin(userGroups, eq(userGroups.groupId, groups.id))
+    .leftJoin(userGroups, trashAnd(activeRows.userGroups, eq(userGroups.groupId, groups.id))).where(activeRows.groups)
     .groupBy(groups.id)
     .orderBy(groups.name);
 
@@ -66,7 +68,7 @@ export default async function GroupsPage() {
                 Mitglieder
               </Link>
               <DeleteConfirm
-                action={deleteGroupAction.bind(null, g.id)}
+                action={deleteGroupAction.bind(null, g.id)} confirmName={g.name}
                 compact
                 buttonLabel="Löschen"
                 buttonClassName="btn-danger px-3 py-1.5"

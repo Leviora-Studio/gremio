@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, boards, boardStatuses, cards } from "@/lib/db/schema";
@@ -10,6 +12,7 @@ import {
 } from "@/lib/constants";
 import { dbErrorWithoutParams } from "@/lib/db-errors";
 import { isFeedbackToken } from "@/lib/public-feedback-submission";
+import { isArchiveTriggerEnabled } from "@/lib/board-trigger-policy";
 import { publicGates } from "@/lib/public-workflow";
 
 /**
@@ -57,8 +60,8 @@ async function isLoanTrackingToken(token: string): Promise<boolean> {
     const [row] = await db
       .select({ inventoryBoardId: boards.inventoryBoardId })
       .from(cards)
-      .innerJoin(boards, eq(boards.id, cards.boardId))
-      .where(eq(cards.token, token))
+      .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, cards.boardId)))
+      .where(trashAnd(activeRows.cards, eq(cards.token, token)))
       .limit(1);
     return row?.inventoryBoardId != null;
   } catch (e) {
@@ -93,8 +96,8 @@ export async function resolveApplicationCardId(
     [row] = await db
       .select({ id: cards.id, inventoryBoardId: boards.inventoryBoardId })
       .from(cards)
-      .innerJoin(boards, eq(boards.id, cards.boardId))
-      .where(eq(cards.token, token))
+      .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, cards.boardId)))
+      .where(trashAnd(activeRows.cards, eq(cards.token, token)))
       .limit(1);
   } catch (e) {
     // Drizzle-Fehlertexte enthalten die Query-Parameter — hier den geheimen
@@ -189,8 +192,8 @@ export async function getApplicationStatusByToken(
         isReceiptTrigger: boardStatuses.isReceiptTrigger,
       })
       .from(cards)
-      .leftJoin(boardStatuses, eq(boardStatuses.id, sql`${cards.publicStatusId}`))
-      .where(eq(cards.token, token))
+      .leftJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, sql`${cards.publicStatusId}`)))
+      .where(trashAnd(activeRows.cards, eq(cards.token, token)))
       .limit(1);
   } catch (e) {
     // Token ist Query-Parameter → nie im Fehlertext weiterreichen (Logs).
@@ -206,9 +209,10 @@ export async function getApplicationStatusByToken(
       receiptToStatusId: boards.receiptToStatusId,
       inventoryBoardId: boards.inventoryBoardId,
       attachmentFields: boards.attachmentFields,
+      isApplicationBoard: boards.isApplicationBoard,
     })
     .from(boards)
-    .where(eq(boards.id, row.boardId))
+    .where(trashAnd(activeRows.boards, eq(boards.id, row.boardId)))
     .limit(1);
   // Leih-Tracking-Karte: kein Antrag, sondern ein Leihvorgang mit eigenem
   // öffentlichen Weg (/inventar/status/{token}). Wie ein unbekannter Token
@@ -217,8 +221,8 @@ export async function getApplicationStatusByToken(
 
   // Liegt der Antrag in der Archiv-Spalte (Nextcloud-Trigger), ist er
   // abgeschlossen: kein öffentliches Nachreichen / Einreichen mehr.
-  const archived = !!row.isArchiveTrigger;
-  const target = board?.receiptToStatusId == null ? [] : await db.select({ id: boardStatuses.id }).from(boardStatuses).where(and(eq(boardStatuses.id, board.receiptToStatusId), eq(boardStatuses.boardId, row.boardId)));
+  const archived = !!board && isArchiveTriggerEnabled(board, row);
+  const target = board?.receiptToStatusId == null ? [] : await db.select({ id: boardStatuses.id }).from(boardStatuses).where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, board.receiptToStatusId), eq(boardStatuses.boardId, row.boardId))));
   const publicAccess = publicGates(archived, !!row.isReceiptTrigger, row.statusId, board ?? { resubmitStatusId: null, receiptToStatusId: null }, target.length > 0);
 
   const canResubmit = !row.lockedAt && publicAccess.canResubmit;
@@ -227,12 +231,12 @@ export async function getApplicationStatusByToken(
     .select()
     .from(attachments)
     .where(
-      and(
+      trashAnd(activeRows.attachments, and(
         eq(attachments.cardId, row.id),
         // Whitelist aus den Konstanten — der Studierendenausweis steht dort
         // bewusst NICHT drin und kann so nie öffentlich werden.
         inArray(attachments.kind, [...PUBLIC_ATTACHMENT_KINDS]),
-      ),
+      )),
     )
     .orderBy(asc(attachments.uploadedAt));
 

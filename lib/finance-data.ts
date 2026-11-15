@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -117,7 +119,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   const accountRows = await db
     .select({ id: accounts.id, name: accounts.name })
     .from(financeBoardAccounts)
-    .innerJoin(accounts, eq(accounts.id, financeBoardAccounts.accountId))
+    .innerJoin(accounts, trashAnd(activeRows.accounts, eq(accounts.id, financeBoardAccounts.accountId)))
     .where(eq(financeBoardAccounts.financeBoardId, fb.id))
     .orderBy(asc(accounts.name));
   const accountIds = accountRows.map((a) => a.id);
@@ -129,7 +131,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   const expenseAccountRows = await db
     .select({ id: accounts.id, name: accounts.name })
     .from(financeBoardExpenseAccounts)
-    .innerJoin(accounts, eq(accounts.id, financeBoardExpenseAccounts.accountId))
+    .innerJoin(accounts, trashAnd(activeRows.accounts, eq(accounts.id, financeBoardExpenseAccounts.accountId)))
     .where(eq(financeBoardExpenseAccounts.financeBoardId, fb.id))
     .orderBy(asc(accounts.name));
   const validOverride = expenseAccountRows.filter((a) => accountIdSet.has(a.id));
@@ -145,7 +147,7 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
   const items = await db
     .select()
     .from(financePlanItems)
-    .where(eq(financePlanItems.financeBoardId, fb.id))
+    .where(trashAnd(activeRows.financePlanItems, eq(financePlanItems.financeBoardId, fb.id)))
     .orderBy(asc(financePlanItems.position));
   const tops = items.filter((i) => i.parentId == null);
   const childrenOf = (pid: number) => items.filter((i) => i.parentId === pid);
@@ -173,18 +175,18 @@ export async function loadFinanceData(fb: FinanceBoard): Promise<FinanceData> {
           })
           .from(cards)
           .where(
-            and(
+            trashAnd(activeRows.cards, and(
               inArray(cards.boardId, accessibleIds),
               or(
                 and(eq(cards.budgetMode, "single"), inArray(cards.accountId, accountIds)),
                 and(eq(cards.budgetMode, "positions"), sql`exists (select 1 from ${cardBudgetPositions} where ${cardBudgetPositions.cardId} = ${cards.id} and ${inArray(cardBudgetPositions.accountId, accountIds)})`),
               ),
-            ),
+            )),
           )
       : [];
 
   const positionCardIds = sourceCards.filter((c) => c.budgetMode === "positions").map((c) => c.id);
-  const positions = positionCardIds.length ? await db.select().from(cardBudgetPositions).where(inArray(cardBudgetPositions.cardId, positionCardIds)).orderBy(asc(cardBudgetPositions.position)) : [];
+  const positions = positionCardIds.length ? await db.select().from(cardBudgetPositions).where(trashAnd(activeRows.cardBudgetPositions, inArray(cardBudgetPositions.cardId, positionCardIds))).orderBy(asc(cardBudgetPositions.position)) : [];
   const byCard = new Map<number, typeof positions>();
   for (const row of positions) { const rows = byCard.get(row.cardId) ?? []; rows.push(row); byCard.set(row.cardId, rows); }
   const cardRows: AntragRow[] = sourceCards.map((c) => ({ ...c, budgetTitle: c.budgetMode === "positions" ? budgetTitles(byCard.get(c.id) ?? []) : c.budgetTitle })).filter((c) => !!c.budgetTitle);

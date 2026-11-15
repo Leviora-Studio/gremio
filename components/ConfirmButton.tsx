@@ -20,7 +20,7 @@ export function ConfirmButton({
   confirmClassName = "btn-primary",
   requireTyped,
 }: {
-  action: () => Promise<{ error?: string } | void>;
+  action: (confirmation?: string) => Promise<{ error?: string } | void>;
   label: ReactNode;
   className?: string;
   title: string;
@@ -66,6 +66,8 @@ export function ConfirmButton({
               className="input w-48"
               placeholder={`${requireTyped} eingeben`}
               value={typed}
+              autoComplete="off"
+              disabled={pending}
               onChange={(e) => setTyped(e.target.value)}
             />
           </div>
@@ -81,7 +83,7 @@ export function ConfirmButton({
             className={confirmClassName}
             onClick={() =>
               startTransition(async () => {
-                const r = await action();
+                const r = await action(requireTyped ? typed : undefined);
                 if (r && "error" in r && r.error) {
                   setError(r.error);
                 } else {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -39,7 +41,7 @@ export async function GET(
   const statuses = await db
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, board.id))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, board.id)))
     .orderBy(asc(boardStatuses.position));
 
   const fields = await db
@@ -56,7 +58,7 @@ export async function GET(
   const canManage = (await canManageBoard(ctx.user, board));
   return NextResponse.json({
     board: await serializeBoard(board, ctx.user),
-    statuses: statuses.map((s) => serializeStatus(s, canManage)),
+    statuses: statuses.map((s) => serializeStatus(s, canManage, board.inventoryBoardId == null)),
     visibleFields: fields.map((f) => f.k),
   });
 }

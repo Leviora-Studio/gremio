@@ -1,3 +1,4 @@
+import { purgeTestResource } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
@@ -71,7 +72,8 @@ test("REST handlers preserve app parity: budgets, assignments, triggers, field v
       const managerView = await (await getBoard(request(manager.value), params(board.id))).json();
       assert.equal(managerView.board.receiptToStatusId, statuses[1].id);
       assert.deepEqual(managerView.statuses.map((s: { isReceiptTrigger: boolean }) => s.isReceiptTrigger), [true, true]);
-      assert.equal(managerView.statuses[1].isTransferTrigger, true);
+      assert.equal(managerView.statuses[1].isTransferTrigger, false);
+      assert.equal(managerView.statuses[1].isInstructionTrigger, false);
       assert.equal((await getBoard(request(stranger.value), params(board.id))).status, 404);
       assert.equal((await getBoard(request(restricted.value), params(board.id))).status, 404);
       await db.insert(apiTokenBoards).values({ tokenId: restricted.id, boardId: board.id });
@@ -157,12 +159,12 @@ test("REST handlers preserve app parity: budgets, assignments, triggers, field v
       assert.equal(singleBody.card.budgetMode, "single"); assert.equal(singleBody.card.accountId, accs[1].id); assert.deepEqual(singleBody.budgetPositions, []);
     });
 
-    await t.test("moves run both date triggers, reset resubmission and start the done timer", async () => {
+    await t.test("moves ignore retired date triggers, reset resubmission and start the done timer", async () => {
       await db.update(cards).set({ instructionDate: null, transferDate: null, resubmittedAt: new Date() }).where(eq(cards.id, cardId));
       const moved = await patchCard(request(editor.value, "PATCH", { statusId: statuses[1].id }), params(cardId));
       assert.equal(moved.status, 200);
       const [saved] = await db.select().from(cards).where(eq(cards.id, cardId));
-      assert.ok(saved.instructionDate); assert.ok(saved.transferDate); assert.ok(saved.doneSince); assert.equal(saved.resubmittedAt, null);
+      assert.equal(saved.instructionDate, null); assert.equal(saved.transferDate, null); assert.ok(saved.doneSince); assert.equal(saved.resubmittedAt, null);
     });
 
     await t.test("invalid paths/filters return JSON errors; revocation and deletion apply immediately", async () => {
@@ -177,11 +179,11 @@ test("REST handlers preserve app parity: budgets, assignments, triggers, field v
       assert.equal((await getCard(request(restricted.value), params(cardId))).status, 401);
       await db.delete(boardAccess).where(eq(boardAccess.boardId, board.id));
       assert.equal((await getCard(request(editor.value), params(cardId))).status, 404);
-      assert.equal((await deleteCard(request(manager.value, "DELETE"), params(cardId))).status, 200);
+      assert.equal((await deleteCard(request(manager.value, "DELETE",{confirmation:"LÖSCHEN"}), params(cardId))).status, 200);
       assert.equal((await getCard(request(manager.value), params(cardId))).status, 404);
     });
   } finally {
-    await db.delete(boards).where(eq(boards.id, board.id));
+    await purgeTestResource("board",board.id);
     await db.delete(accounts).where(inArray(accounts.id, accs.map((a) => a.id)));
     await db.delete(users).where(inArray(users.id, people.map((p) => p.id)));
   }

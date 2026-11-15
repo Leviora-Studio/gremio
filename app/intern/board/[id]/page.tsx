@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import Link from "next/link";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cards, boardCardFields, boardStatuses } from "@/lib/db/schema";
 import {
-  canManageBoard,
+  canConfigureBoardSettings,
   canEditBoard,
   getOfficeMoveRules,
   getBoardMemberUsers,
   requireBoardAccess,
 } from "@/lib/authz";
+import { canConfigureInventorySettings, getInventoryBoardById } from "@/lib/inventory";
 import { getPriorities } from "@/lib/priorities";
 import { getAccounts } from "@/lib/accounts";
 import { getAssigneesForCards } from "@/lib/assignees";
@@ -30,13 +34,20 @@ export default async function BoardPage({
   const boardId = Number(id);
   const { user, board } = await requireBoardAccess(boardId);
   const canEdit = await canEditBoard(user, board);
+  const [archivedCard] = effectiveDoneStatusId(board) == null
+    ? await db.select({ id: cards.id }).from(cards).where(trashAnd(activeRows.cards, and(eq(cards.boardId, boardId), isNotNull(cards.archivedAt)))).limit(1)
+    : [];
+  const showArchive = effectiveDoneStatusId(board) != null || !!archivedCard;
   const officeMoveRules = canEdit ? null : await getOfficeMoveRules(user, board);
-  const manage = (await canManageBoard(user, board));
+  const inventory = board.inventoryBoardId != null ? await getInventoryBoardById(board.inventoryBoardId) : null;
+  const manage = board.inventoryBoardId != null
+    ? !!inventory && await canConfigureInventorySettings(user, inventory)
+    : await canConfigureBoardSettings(user, board);
 
   const statuses = await db
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position));
 
   const priorities = await getPriorities();
@@ -69,7 +80,7 @@ export default async function BoardPage({
       accountId: cards.accountId,
     })
     .from(cards)
-    .where(and(eq(cards.boardId, boardId), isNull(cards.archivedAt)))
+    .where(trashAnd(activeRows.cards, and(eq(cards.boardId, boardId), isNull(cards.archivedAt))))
     .orderBy(asc(cards.position), asc(cards.id));
 
   // Zugewiesene (mehrere) je Karte in EINER Query nachladen.
@@ -179,7 +190,7 @@ export default async function BoardPage({
               avatarPath: user.avatarPath,
             }}
           />}
-          {board.doneStatusId != null && (
+          {showArchive && (
             <Link
               href={`/intern/board/${boardId}/archiv`}
               className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm"
@@ -209,6 +220,7 @@ export default async function BoardPage({
                 ⚙ Einstellungen
               </Link>
             ))}
+          <Link href={`/intern/board/${boardId}/papierkorb`} className="btn-secondary flex-1 px-2 text-xs sm:flex-none sm:px-4 sm:text-sm">Papierkorb</Link>
         </div>
       </div>
 

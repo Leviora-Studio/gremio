@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -32,14 +34,14 @@ export async function GET(
   const [att] = await db
     .select()
     .from(attachments)
-    .where(eq(attachments.id, attId))
+    .where(trashAnd(activeRows.attachments, eq(attachments.id, attId)))
     .limit(1);
   if (!att) return new Response("Not found", { status: 404 });
 
   const [card] = await db
     .select()
     .from(cards)
-    .where(eq(cards.id, att.cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, att.cardId)))
     .limit(1);
   if (!card) return new Response("Not found", { status: 404 });
 

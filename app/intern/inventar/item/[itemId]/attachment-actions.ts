@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+import { deleteConfirmationError } from "@/lib/confirmation";
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
@@ -113,12 +114,13 @@ export async function uploadLoanContractAction(
   return { ok: true };
 }
 
-export async function deleteInventoryAttachmentAction(
-  formData: FormData,
-): Promise<void> {
-  const att = await getInventoryAttachmentById(Number(formData.get("attId")));
-  if (!att) return;
-  const { item } = await assertItemAccess(att.itemId);
-  await deleteInventoryAttachment(att.id);
+export async function deleteInventoryAttachmentAction(formData:FormData):Promise<{error?:string}|void>{
+  return deleteInventoryAttachmentConfirmedAction(Number(formData.get("attId")),formData.get("confirmation"));
+}
+export async function deleteInventoryAttachmentConfirmedAction(attachmentId:number,confirmation?:unknown):Promise<{error?:string}|void>{
+  const invalid=deleteConfirmationError(confirmation);if(invalid)return invalid;
+  const att=await getInventoryAttachmentById(attachmentId);if(!att)return {error:"Datei nicht gefunden."};
+  const {item}=await assertItemAccess(att.itemId);await deleteInventoryAttachment(att.id);
   revalidatePath(`/intern/inventar/item/${item.id}`);
+  revalidatePath("/intern/inventar/loan/[loanId]","page");
 }

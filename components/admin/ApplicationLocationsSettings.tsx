@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {APPLICATION_REQUIRED_CARD_FIELD_KEYS,CARD_FIELD_LABELS,type CardFieldKey} from "@/lib/constants";
 import {ReceiptBrandingForm} from "@/components/admin/ReceiptBrandingForm";
 import {logoVersion} from "@/lib/receipt-branding";
@@ -22,7 +24,7 @@ export async function ApplicationLocationsSettings({module}:{module:ApplicationM
   const allLocations = await db
     .select()
     .from(locations)
-    .where(eq(locations.module,module))
+    .where(trashAnd(activeRows.locations, eq(locations.module,module)))
     .orderBy(locations.position);
 
   // Leih-System-Boards sind kein zulässiges Ziel (siehe setLocationTargetAction)
@@ -30,11 +32,11 @@ export async function ApplicationLocationsSettings({module}:{module:ApplicationM
   const allBoards = await db
     .select()
     .from(boards)
-    .where(and(isNull(boards.inventoryBoardId),module==="finance"?eq(boards.isApplicationBoard,true):undefined))
+    .where(trashAnd(activeRows.boards, and(isNull(boards.inventoryBoardId),module==="finance"?eq(boards.isApplicationBoard,true):undefined)))
     .orderBy(boards.name);
   const allStatuses = await db
     .select()
-    .from(boardStatuses)
+    .from(boardStatuses).where(activeRows.boardStatuses)
     .orderBy(boardStatuses.position);
 
   const fieldRows=await db.select().from(boardCardFields);

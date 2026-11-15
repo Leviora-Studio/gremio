@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardCardFields, boards } from "@/lib/db/schema";
@@ -21,7 +23,7 @@ export async function getVisibleFieldKeys(
       and(eq(boardCardFields.boardId, boardId), eq(boardCardFields.visible, true)),
     );
   const visible = new Set(rows.map((r) => r.fieldKey));
-  const [board] = await db.select({attachmentFields:boards.attachmentFields}).from(boards).where(eq(boards.id,boardId));
+  const [board] = await db.select({attachmentFields:boards.attachmentFields}).from(boards).where(trashAnd(activeRows.boards, eq(boards.id,boardId)));
   if (board && (board.attachmentFields == null || board.attachmentFields.includes("receipts"))) visible.add("receipts");
   return visible;
 }

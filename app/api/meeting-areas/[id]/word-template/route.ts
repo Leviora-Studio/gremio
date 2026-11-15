@@ -11,8 +11,8 @@ export async function GET(_request:Request,{params}:{params:Promise<{id:string}>
   const user=await getCurrentUser();if(!user)return new Response("Unauthorized",{status:401,headers});
   const id=parseApiId((await params).id);if(!id)return new Response("Not found",{status:404,headers});
   try{
-    const area=await requireArea(user,id,"manage");if(!area.wordTemplatePath||!area.wordTemplateName)return new Response("Nicht verfügbar",{status:404,headers});
-    const bytes=await readFile(absPath(area.wordTemplatePath));await requireArea(user,id,"manage");
+    const area=await requireArea(user,id,"settings");if(!area.wordTemplatePath||!area.wordTemplateName)return new Response("Nicht verfügbar",{status:404,headers});
+    const bytes=await readFile(absPath(area.wordTemplatePath));await requireArea(user,id,"settings");
     const mime=area.wordTemplateName.toLowerCase().endsWith(".dotx")?"application/vnd.openxmlformats-officedocument.wordprocessingml.template":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     return new Response(new Uint8Array(bytes),{headers:{...headers,"Content-Type":mime,"Content-Disposition":contentDisposition(area.wordTemplateName)}});
   }catch{return new Response("Nicht verfügbar",{status:404,headers});}

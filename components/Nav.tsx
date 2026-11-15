@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { accessibleCashbooks } from "@/lib/cashbook/access";
+import { getAccessibleFinanceBoards } from "@/lib/finance";
 import Link from "next/link";
 import type { User } from "@/lib/db/schema";
 import { logoutAction } from "@/lib/auth/actions";
@@ -10,7 +11,9 @@ import { BottomNav } from "./BottomNav";
 
 export async function Nav({ user }: { user: User }) {
   // Anzeigename aus dem SSO (konstant), Fallback auf Benutzername.
-  const hasCashbook = (await accessibleCashbooks(user)).length > 0;
+  const [cashbooks, financeBoards] = await Promise.all([accessibleCashbooks(user), getAccessibleFinanceBoards(user)]);
+  const hasCashbook = cashbooks.length > 0;
+  const hasFinance = financeBoards.length > 0;
   const displayName = user.name?.trim() || user.username;
   return (
     <>
@@ -63,12 +66,12 @@ export async function Nav({ user }: { user: User }) {
           </Link>
           {hasCashbook && <Link href="/intern/kassenbuch" className="font-medium text-slate-600 hover:text-brand-600">Kassenbuch</Link>}
           <Link href="/intern/sitzungen" className="font-medium text-slate-600 hover:text-brand-600">Sitzungen</Link>
-          <Link
+          {hasFinance && <Link
             href="/finanzen"
             className="font-medium text-slate-600 hover:text-brand-600"
           >
             Finanzen
-          </Link>
+          </Link>}
           <Link
             href="/intern/inventar"
             className="font-medium text-slate-600 hover:text-brand-600"
@@ -110,6 +113,7 @@ export async function Nav({ user }: { user: User }) {
       {/* Mobil (< md): untere Tab-Leiste im App-Stil. */}
       <BottomNav
         hasCashbook={hasCashbook}
+        hasFinance={hasFinance}
         role={user.role}
         displayName={displayName}
         avatarSrc={avatarUrl(user)}

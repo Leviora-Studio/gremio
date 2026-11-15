@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   requireInventoryBoardAccess,
   canManageInventoryBoard,
+  canConfigureInventorySettings,
   canEditInventoryBoard,
 } from "@/lib/inventory";
 import { getVisibleInventoryFieldKeys } from "@/lib/inventory-fields";
@@ -40,6 +41,7 @@ export default async function InventoryBoardPage({
   const { user, board } = await requireInventoryBoardAccess(Number(id));
   const canEdit = await canEditInventoryBoard(user, board);
   const manage = (await canManageInventoryBoard(user, board));
+  const configure = await canConfigureInventorySettings(user, board);
 
   const [visible, options, numbering, items, archived, loanCards, untracked] =
     await Promise.all([
@@ -98,7 +100,7 @@ export default async function InventoryBoardPage({
           >
             Archiv{archived.length > 0 ? ` (${archived.length})` : ""}
           </Link>
-          {manage && (
+          {configure && (
             <Link
               href={`/intern/inventar/${board.id}/einstellungen`}
               className="btn-secondary"

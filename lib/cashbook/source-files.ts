@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {createHash,randomUUID} from "node:crypto";
 import {mkdir,open,link,unlink,readFile} from "node:fs/promises";
 import {dirname} from "node:path";
@@ -28,7 +30,7 @@ async function publishCopy(path:string,bytes:Buffer,sha256:string){
 
 async function copyAttachment(bookId:number,cardId:number,source:typeof attachments.$inferSelect,kind:"application"|"receipt"):Promise<CashbookFile>{
  // Existing snapshots remain usable even if the board's original is subsequently unavailable.
- const matches=await db.select({files:cashbookEntries.files}).from(cashbookEntries).where(and(eq(cashbookEntries.cashbookId,bookId),sql`exists(select 1 from jsonb_array_elements(${cashbookEntries.files}) f where f->>'sourceAttachmentId'=${String(source.id)} and f->>'sourceCardId'=${String(cardId)})`)).limit(1);
+ const matches=await db.select({files:cashbookEntries.files}).from(cashbookEntries).where(trashAnd(activeRows.cashbookEntries, and(eq(cashbookEntries.cashbookId,bookId),sql`exists(select 1 from jsonb_array_elements(${cashbookEntries.files}) f where f->>'sourceAttachmentId'=${String(source.id)} and f->>'sourceCardId'=${String(cardId)})`))).limit(1);
  const existing=matches[0]?.files.find(f=>f.sourceAttachmentId===source.id&&f.sourceCardId===cardId&&f.kind===kind);
  if(existing){
   if(!existing.path.startsWith(`cashbooks/${bookId}/`))throw new Error("Die gespeicherte Datei liegt nicht im Kassenbuchbereich.");
@@ -44,11 +46,11 @@ async function copyAttachment(bookId:number,cardId:number,source:typeof attachme
 /** Called before acquiring database locks. All files are physical copies in the book's own storage. */
 export async function snapshotCashbookSources(user:User,book:Cashbook,data:CashbookPayment):Promise<CashbookFile[]>{
  if(data.business)return [];
- const [card]=data.cardId==null?[]:await db.select().from(cards).where(eq(cards.id,data.cardId));
- const [board]=card?await db.select().from(boards).where(eq(boards.id,card.boardId)):[];
+ const [card]=data.cardId==null?[]:await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id,data.cardId)));
+ const [board]=card?await db.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id,card.boardId))):[];
  if(!card?.lockedAt||!board?.isApplicationBoard||!book.config.sourceBoardIds.includes(board.id)||!await canAccessBoard(user,board))throw new Error("Der ausgewählte Antrag ist nicht zum Kopieren freigegeben.");
  const visible=await getVisibleFieldKeys(board.id);
- const sourceFiles=(await db.select().from(attachments).where(eq(attachments.cardId,card.id))).filter(file=>isCardAttachmentVisible(file,visible));
+ const sourceFiles=(await db.select().from(attachments).where(trashAnd(activeRows.attachments, eq(attachments.cardId,card.id)))).filter(file=>isCardAttachmentVisible(file,visible));
  const application=sourceFiles.find(file=>file.kind==="finance_request"&&file.mime==="application/pdf");
  if(!application)throw new Error("Für diesen Antrag ist kein freigegebenes Antrags-PDF vorhanden. Für die Buchung wird das PDF aus dem Feld Finanzantrag benötigt.");
  const receipts=data.receiptIds.map(id=>sourceFiles.find(file=>file.id===id&&file.uploadPurpose==="receipt"&&file.mime==="application/pdf"));

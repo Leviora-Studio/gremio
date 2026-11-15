@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
+import { budgetTitleFixture } from "./helpers/budget-title-fixtures";
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -12,6 +13,7 @@ import * as s from "../lib/db/schema";
 import { env } from "../lib/env";
 import { generateApiToken } from "../lib/api-token";
 import { PATCH, DELETE, GET } from "../app/api/v1/cards/[id]/route";
+import { GET as getBoard } from "../app/api/v1/boards/[id]/route";
 import { lockCardApi, budgetPlanApi } from "../lib/api-application-cards";
 import { commentsApi, attachmentsApi } from "../lib/api-card-extras";
 import { callMcpTool, mcpTools } from "../lib/mcp-tools";
@@ -32,9 +34,11 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   const [owner, writer, reader, outsider] = await db.insert(s.users).values(["owner", "writer", "reader", "outside"].map(name => ({ username: `${tag}-${name}` }))).returning();
   const [board, other] = await db.insert(s.boards).values([{ name: tag, ownerId: owner.id, isApplicationBoard: true, legacyFinanceFields:true }, { name: tag, ownerId: owner.id }]).returning();
   const [incoming, accepted, archived] = await db.insert(s.boardStatuses).values([{ boardId: board.id, name: "Incoming" }, { boardId: board.id, name: "Accepted", isLockColumn: true, isReceiptTrigger: true }, { boardId: board.id, name: "Archive", isArchiveTrigger: true }]).returning();
+  await db.update(s.boards).set({ doneStatusId: accepted.id, doneSweepTime: "00:00", completedStatusId: accepted.id }).where(eq(s.boards.id, board.id));
   await db.insert(s.boardAccess).values([{ boardId: board.id, userId: writer.id, accessLevel: "write" }, { boardId: board.id, userId: reader.id, accessLevel: "read" }]);
   await db.insert(s.boardCardFields).values(["notes", "number", "assignee", "finance_request", "other_pdfs", "account", "budget_title", "approved_amount"].map(fieldKey => ({ boardId: board.id, fieldKey, visible: true })));
   const [account] = await db.insert(s.accounts).values({ name: tag }).returning();
+  await budgetTitleFixture(owner.id,["HT 1","HT 2","1300"],[account.id]);
   const [card, pending] = await db.insert(s.cards).values([{ boardId: board.id, statusId: incoming.id, title: "Frozen application", applicant: "Synthetic", token: randomUUID(), number: "AN-0001", accountId: account.id, approvedAmount: 10000 }, { boardId: board.id, statusId: accepted.id, title: "Initially pending", applicant: "Synthetic", token: randomUUID() }]).returning();
   const token = async (userId: number, scope: "read" | "write", boardId?: number) => {
     const generated = generateApiToken();
@@ -61,6 +65,10 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
     assert.equal((await budgetPlanApi(request(bearer, "PATCH", plan), String(card.id))).status, status);
     assert.equal((await lockCardApi(request(bearer, "POST", { confirm: true, expectedStatusId: accepted.id }), String(card.id))).status, status);
   }
+  const invalidCatalogPlan={...plan,allocations:[{amountCents:5000,budgetTitle:"Not in the account plan"}]};
+  assert.equal((await budgetPlanApi(request(write,"PATCH",invalidCatalogPlan),String(card.id))).status,409);
+  assert.equal((await callMcpTool(mcp(),"update_budget_plan",{id:card.id,data:invalidCatalogPlan})).isError,true);
+  assert.equal((await db.select().from(s.cardBudgetPlans).where(eq(s.cardBudgetPlans.cardId,card.id))).length,0);
   assert.equal((await budgetPlanApi(request(write, "PATCH", plan), String(card.id))).status, 200);
   assert.equal((await budgetPlanApi(request(write, "PATCH", plan), String(card.id))).status, 409);
   assert.equal((await fresh()).approvedAmount, 10000);
@@ -69,6 +77,7 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   const old = await (await upload(write, "finance_request")).json();
   const comment = await (await commentsApi(request(write, "POST", { body: "Before lock" }), String(card.id))).json();
   assert.equal((await PATCH(request(write, "PATCH", { statusId: accepted.id, assigneeUserIds: [writer.id] }), params(card.id))).status, 200);
+  assert.equal((await fresh()).doneSince, null, "application moves ignore historical Done configuration");
   assert.equal((await getApplicationStatusByToken(card.token))?.statusName, "Incoming");
   assert.equal((await lockCardApi(request(write, "POST", { expectedStatusId: accepted.id }), String(card.id))).status, 400);
   assert.equal((await lockCardApi(request(write, "POST", { confirm: true, expectedStatusId: incoming.id }), String(card.id))).status, 409);
@@ -83,7 +92,7 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   for (const key of ["lockedAt", "lockedBy", "publicStatusId", "files", "bookingDate"]) assert.equal((await PATCH(request(admin, "PATCH", { [key]: null }), params(card.id))).status, 400);
   assert.deepEqual(await fresh(), frozen, "rejected combined requests must not partially move the card");
   for (const method of ["POST", "PATCH", "DELETE"]) assert.equal((await commentsApi(request(write, method, method === "DELETE" ? undefined : { body: "After lock" }), String(card.id), String(comment.comment.id))).status, 409);
-  assert.equal((await DELETE(request(admin, "DELETE"), params(card.id))).status, 409);
+  assert.equal((await DELETE(request(admin, "DELETE",{confirmation:"LÖSCHEN"}), params(card.id))).status, 409);
   assert.equal((await callMcpTool(mcp(owner), "delete_card", { id: card.id })).isError, true);
   assert.equal((await budgetPlanApi(request(write, "PATCH", { ...plan, revision: 1 }), String(card.id))).status, 409);
   assert.equal((await callMcpTool(mcp(), "update_budget_plan", { id: card.id, data: { ...plan, revision: 1 } })).isError, true);
@@ -106,6 +115,10 @@ test("REST and MCP honor irreversible freezes, application scopes and public sta
   assert.equal((await callMcpTool(mcp(), "update_card", { id: card.id, data: { statusId: accepted.id } })).isError, false);
   assert.equal((await getApplicationStatusByToken(card.token))?.statusName, "Accepted");
   assert.equal((await PATCH(request(write, "PATCH", { statusId: archived.id }), params(card.id))).status, 200);
+  const boardView = await (await getBoard(request(admin), params(board.id))).json();
+  assert.equal(boardView.statuses.find((status: { id: number }) => status.id === archived.id).isArchiveTrigger, true);
+  assert.equal(boardView.board.doneStatusId, null);
+  assert.equal(boardView.board.completedStatusId, accepted.id, "payment completion remains independent of Done");
   assert.equal((await getApplicationStatusByToken(card.token))?.canReceipt, false);
   await assert.rejects(insertPublicAttachment(card.id, "receipt", { filename: "x.pdf", relPath: "never-written.pdf", mime: "application/pdf", size: 1 }));
   const correction = {revision:1,allocations:[{amountCents:9000,budgetTitle:"1300",accountId:account.id}],confirmAccountChange:true,correction:{reason:"Update the approved allocation",confirmation:"BESTÄTIGEN"}};

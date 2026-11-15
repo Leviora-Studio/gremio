@@ -5,7 +5,6 @@ import { PDF_MIME } from "@/lib/constants";
 import { validateUpload } from "@/lib/attachments";
 import { logActivity } from "@/lib/activity";
 import { maybeArchive } from "@/lib/archive";
-import { maybeSetTriggerDates } from "@/lib/instruction";
 import { applyStatusTriggerAssignments, applyTriggerAssignments } from "@/lib/trigger-assignments";
 import { allowFormRequest } from "@/lib/rate-limit";
 import { resolveApplicationCardId } from "@/lib/public-status";
@@ -44,7 +43,6 @@ export async function submitPublicAction(token: string, _prev: PublicUploadState
     const result = await submitPublicWorkflow(cardId, purpose);
     await logActivity(cardId, null, "status", purpose === "receipt" ? "Quittung eingereicht (öffentlich)" : "Nachreichung eingereicht (öffentlich)");
     if (result.target != null) {
-      await maybeSetTriggerDates(cardId, result.target);
       await applyStatusTriggerAssignments(cardId, result.target, ["receipt"]);
       await maybeArchive(cardId);
     } else {

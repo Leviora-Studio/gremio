@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { startTrashScheduler } from "@/lib/trash";
 import { startMcpCredentialSweeper } from "@/lib/mcp-oauth";
 import { join } from "node:path";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -95,10 +96,11 @@ export async function runStartupBootstrap(): Promise<void> {
   // Done-Spalten-Archivierung: Minuten-Scheduler starten.
   startDoneArchiveScheduler();
   startEmailWorker();
-  // Nextcloud-Archiv-Retry: fehlgeschlagene Uploads periodisch wiederholen.
+  // Durable Nextcloud outbox: recover interrupted/skipped calls and failed uploads.
   startArchiveRetryScheduler();
   // Idempotenz-Schlüssel der öffentlichen API nach Ablauf der Frist entfernen.
   startIdempotencySweeper();
   startMcpCredentialSweeper();
+  startTrashScheduler();
   console.log("[bootstrap] Migrationen angewendet (kein Auto-Seed).");
 }

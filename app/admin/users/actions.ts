@@ -8,19 +8,21 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth";
+import { typedConfirmationError,roleConfirmationError } from "@/lib/confirmation";
 
 export type State = { error?: string; success?: string };
 
 export async function setRoleAction(
   userId: number,
   role: "admin" | "template_manager" | "user",
-): Promise<void> {
+  confirmation?: unknown,
+): Promise<State | void> {
   const me = await requireAdmin();
   if (!Number.isSafeInteger(userId) || userId < 1 || userId > 2147483647 || !["admin", "template_manager", "user"].includes(role)) return;
   // Sich selbst nie die Admin-Rechte entziehen.
   if (role !== "admin" && userId === me.id) return;
 
-  await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Aktive Admins per FOR UPDATE sperren → parallele Degradierungen werden
     // serialisiert (verhindert den TOCTOU-Race „0 Admins übrig").
     const admins = await tx
@@ -34,6 +36,10 @@ export async function setRoleAction(
     // Recheck after the same locks used by setUserActiveAction are acquired.
     const [actor] = await tx.select().from(users).where(eq(users.id, me.id)).for("update");
     if (!actor?.isActive || actor.role !== "admin") return;
+    const [target] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+    if (!target) return { error: "Nutzer nicht gefunden." };
+    const confirmationError = roleConfirmationError(confirmation, target.role, role);
+    if (confirmationError) return confirmationError;
 
     const demotingAdmin = role !== "admin" && admins.some((a) => a.id === userId);
     if (demotingAdmin && admins.filter((a) => a.id !== userId).length < 1) {
@@ -42,13 +48,15 @@ export async function setRoleAction(
     await tx.update(users).set({ role }).where(eq(users.id, userId));
   });
   revalidatePath("/admin/users");
+  return result;
 }
 
 
 /** Local access switch; never changes the upstream SSO account. */
-export async function setUserActiveAction(userId: number, active: boolean): Promise<State> {
+export async function setUserActiveAction(userId: number, active: boolean,confirmation?:unknown): Promise<State> {
   const me = await requireAdmin();
   if (!Number.isSafeInteger(userId) || userId < 1 || typeof active !== "boolean") return {error:"Ungültiger Nutzer."};
+  const invalid=typedConfirmationError(confirmation,active?"REAKTIVIEREN":"DEAKTIVIEREN");if(invalid)return invalid;
   if (!active && me.id === userId) return {error:"Du kannst dein eigenes Konto nicht deaktivieren."};
   const result = await db.transaction(async tx => {
     const admins = await tx.select({id:users.id}).from(users).where(and(eq(users.role,"admin"),eq(users.isActive,true))).orderBy(users.id).for("update");

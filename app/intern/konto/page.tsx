@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { desc, eq, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
@@ -46,7 +48,7 @@ export default async function KontoPage() {
     ? await db
         .select({ tokenId: apiTokenBoards.tokenId, boardName: boards.name })
         .from(apiTokenBoards)
-        .innerJoin(boards, eq(boards.id, apiTokenBoards.boardId))
+        .innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, apiTokenBoards.boardId)))
         .where(inArray(apiTokenBoards.tokenId, tokenIds))
     : [];
   const boardsByToken = new Map<number, string[]>();

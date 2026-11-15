@@ -55,7 +55,7 @@ export function CreateFinanceBoardForm({
               href="/vorlagen/finanzen"
               className="text-brand-600 underline"
             >
-              Admin → Finanz-Templates
+              Vorlagen → Finanzvorlagen
             </Link>
             .
           </p>

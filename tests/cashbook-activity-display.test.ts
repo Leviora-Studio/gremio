@@ -41,3 +41,24 @@ test("office processing, dates, assignments and literal text have unambiguous la
     assert.equal(display("date", "2026-11-14", {}), "14.11.2026");
     assert.equal(display("purpose", "posted", {}), "posted");
 });
+
+
+test("application and receipt references use historical numbers and copied filenames, never database IDs", () => {
+    const files = [
+        {kind: "receipt" as const, filename: "AN-2026-0042_Q1.pdf", sourceAttachmentId: 3, sourceCardId: 1},
+        {kind: "receipt" as const, filename: "AN-2026-0042_Q2.pdf", sourceAttachmentId: 7, sourceCardId: 1},
+        {kind: "receipt" as const, filename: "Other-application.pdf", sourceAttachmentId: 8, sourceCardId: 9},
+    ];
+    const before = {cardId: 1, number: "AN-2026-0042", receiptIds: [3,7]};
+    const after = {cardId: 9, number: "AN-2026-0053", receiptIds: [8]};
+    assert.equal(display("cardId", 1, {}, {payment: before,files}), "AN-2026-0042");
+    assert.equal(display("cardId", 9, {}, {payment: after,files}), "AN-2026-0053");
+    assert.equal(display("receiptIds", [3,7], {}, {payment: before,files}), "AN-2026-0042_Q1.pdf\nAN-2026-0042_Q2.pdf");
+    assert.equal(display("receiptIds", [8], {}, {payment: after,files}), "Other-application.pdf");
+    assert.equal(display("receiptIds", [8], {}, {payment: before,files}), "Quittung (Dateiname nicht mehr verfügbar)");
+    assert.equal(display("cardId", 1, {}, {payment: after,files}), "Antrag (Nummer nicht protokolliert)");
+    assert.equal(display("cardId", 1, {}), "Antrag (Nummer nicht protokolliert)");
+    assert.equal(display("receiptIds", [3], {}), "Quittung (Dateiname nicht mehr verfügbar)");
+    assert.equal(display("cardId", null, {}), "Nicht angegeben");
+    assert.equal(display("receiptIds", [], {}), "Nicht angegeben");
+});

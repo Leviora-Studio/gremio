@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -9,7 +12,7 @@ import { getInventoryBoardById, canManageInventoryBoard } from "@/lib/inventory"
 import { getVisibleFieldKeys } from "@/lib/board-fields";
 import { isCardAttachmentVisible } from "@/lib/card-attachment-visibility";
 import { absPath, deleteStoredFile, saveNamedBuffer, saveNamedFile, validateUpload } from "@/lib/attachments";
-import { canManageMeeting, meetingAccessLevel, MeetingError, requireArea, requireMeeting, requireTopic, visibleTopics } from "./access";
+import { canConfigureAreaSettings, lockAreaSettings, canManageMeeting, meetingAccessLevel, MeetingError, requireArea, requireMeeting, requireTopic, visibleTopics } from "./access";
 import {scheduleFinancialCard,finishFinancialMove,type FinancialMove} from "./finance-status";
 import { defaultTopicsInput, type DefaultTopic } from "./presets";
 import { agendaTopics } from "./agenda";
@@ -19,7 +22,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export async function touchMeeting(tx: Tx, id: number, revision?: number, openOnly = true) {
   // Area settings lock the area before updating its meetings. Use the same order
   // here, including financial planning, which also reads the area under a lock.
-  const [meeting] = await tx.select({ areaId: meetings.areaId }).from(meetings).where(eq(meetings.id, id));
+  const [meeting] = await tx.select({ areaId: meetings.areaId }).from(meetings).where(trashAnd(activeRows.meetings, eq(meetings.id, id)));
   if (meeting) await tx.select({ id: meetingAreas.id }).from(meetingAreas).where(eq(meetingAreas.id, meeting.areaId)).for("share");
   const rows = await tx.update(meetings).set({ revision: sql`${meetings.revision} + 1` }).where(and(eq(meetings.id, id), revision == null ? undefined : eq(meetings.revision, revision), openOnly ? ne(meetings.state, "closed") : undefined)).returning({ id: meetings.id });
   if (!rows.length) throw new MeetingError("Die Sitzung wurde zwischenzeitlich geändert. Bitte neu laden.");
@@ -29,7 +32,7 @@ async function editTopic<T>(user: User, id: number, change: (tx: Tx, topic: type
   const { topic, meeting } = await requireTopic(user, id, true);
   return db.transaction(async tx => {
     if (meeting) await touchMeeting(tx, meeting.id);
-    const [current] = await tx.select().from(meetingTopics).where(eq(meetingTopics.id, id)).for("update");
+    const [current] = await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id, id))).for("update");
     if (!current || current.meetingId !== topic.meetingId) throw new MeetingError("Der TOP wurde zwischenzeitlich geändert. Bitte neu laden.");
     await requireTopic(user, id, true);
     return change(tx, current);
@@ -55,10 +58,10 @@ export async function applyAreaDefaultsToMeeting(user:User,id:number,revision:nu
   await db.transaction(async tx=>{
     const [area]=await tx.select().from(meetingAreas).where(eq(meetingAreas.id,meeting.areaId)).for("update");
     await requireMeeting(user,id,"write");await touchMeeting(tx,id,revision);
-    const [current]=await tx.select().from(meetings).where(eq(meetings.id,id));
+    const [current]=await tx.select().from(meetings).where(trashAnd(activeRows.meetings, eq(meetings.id,id)));
     if(current.defaultsApplied)throw new MeetingError("Die Standard-TOPs wurden für diese Sitzung bereits übernommen.");
     const defaults=defaultTopicsInput.parse(area?.defaultTopics??[]);if(!defaults.length&&!area?.includeMiscellaneous)throw new MeetingError("Für diesen Bereich sind keine Standard-TOPs hinterlegt.");
-    const [max]=await tx.select({n:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(eq(meetingTopics.meetingId,id));
+    const [max]=await tx.select({n:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.meetingId,id)));
     await insertMeetingDefaults(tx,id,user.id,defaults,max.n,area?.includeMiscellaneous??false);
     await tx.update(meetings).set({defaultsApplied:true}).where(eq(meetings.id,id));
   });
@@ -88,8 +91,8 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   if (previous.areaId !== area.id) throw new MeetingError("Die Bereichszuordnung kann nicht über Sitzungseinstellungen geändert werden.");
   await db.transaction(async tx => {
     await tx.select({ id: meetingAreas.id }).from(meetingAreas).where(eq(meetingAreas.id, area.id)).for("share");
-    const [current] = await tx.select().from(meetings).where(eq(meetings.id, id)).for("update");
-    if (current?.state === "closed" && values.state !== "closed" && !canManageMeeting(user, previous)) {
+    const [current] = await tx.select().from(meetings).where(trashAnd(activeRows.meetings, eq(meetings.id, id))).for("update");
+    if (current?.state === "closed" && values.state !== "closed" && !await canConfigureAreaSettings(user, area)) {
       throw new MeetingError("Nur die Sitzungsverwaltung darf eine abgeschlossene Sitzung wieder öffnen.");
     }
     await touchMeeting(tx, id, revision, false);
@@ -98,21 +101,28 @@ export async function saveMeeting(user: User, id: number | null, raw: unknown, r
   return id;
 }
 export async function saveAreaGrant(user: User, areaId: number, subject: "user" | "group", subjectId: number, level: "read" | "write" | "remove") {
-  await requireArea(user, areaId, "manage");
+  await requireArea(user, areaId, "settings");
   if (!["user", "group"].includes(subject) || !["read", "write", "remove"].includes(level) || !Number.isSafeInteger(subjectId) || subjectId < 1) throw new MeetingError("Ungültige Freigabe.");
   const table = subject === "user" ? users : groups;
-  const [target] = await db.select({ id: table.id }).from(table).where(eq(table.id, subjectId));
+  const [target] = await db.select({ id: table.id }).from(table).where(and(eq(table.id, subjectId),subject==="group"?sql`${groups.deletedAt} is null`:undefined));
   if (!target) throw new MeetingError("Person oder Gruppe nicht vorhanden.");
   const field = subject === "user" ? meetingAreaAccess.userId : meetingAreaAccess.groupId;
-  if (level === "remove") { await db.delete(meetingAreaAccess).where(and(eq(meetingAreaAccess.areaId, areaId), eq(field, subjectId))); return; }
-  await db.insert(meetingAreaAccess).values({ areaId, userId: subject === "user" ? subjectId : null, groupId: subject === "group" ? subjectId : null, accessLevel: level }).onConflictDoUpdate({ target: [meetingAreaAccess.areaId, field], set: { accessLevel: level } });
+  await db.transaction(async tx => {
+  await lockAreaSettings(tx,user,areaId);
+  if (level === "remove") { await tx.delete(meetingAreaAccess).where(and(eq(meetingAreaAccess.areaId, areaId), eq(field, subjectId))); return; }
+  await tx.insert(meetingAreaAccess).values({ areaId, userId: subject === "user" ? subjectId : null, groupId: subject === "group" ? subjectId : null, accessLevel: level }).onConflictDoUpdate({ target: [meetingAreaAccess.areaId, field], set: { accessLevel: level } });
+  });
 }
 export async function bindMeetingBoard(user: User, meetingId: number, boardId: number, remove = false) {
-  await requireMeeting(user, meetingId, "manage");
+  const meeting=await requireMeeting(user, meetingId, "settings");
   const board = await getBoardById(boardId);
   if (!board || !(await manageSourceBoard(user, board))) throw new MeetingError("Die Anbindung erfordert Verwaltungsrechte für Sitzung und Board.");
-  if (remove) await db.delete(meetingBoards).where(and(eq(meetingBoards.meetingId, meetingId), eq(meetingBoards.boardId, boardId)));
-  else await db.insert(meetingBoards).values({ meetingId, boardId }).onConflictDoNothing();
+  await db.transaction(async tx=>{
+  await lockAreaSettings(tx,user,meeting.areaId);
+  await requireMeeting(user,meetingId,"settings");
+  if (remove) await tx.delete(meetingBoards).where(and(eq(meetingBoards.meetingId, meetingId), eq(meetingBoards.boardId, boardId)));
+  else await tx.insert(meetingBoards).values({ meetingId, boardId }).onConflictDoNothing();
+  });
 }
 async function validateParent(user: User, meetingId: number | null, parentId: number | null, topicId?: number, previousParent?: number | null) {
   if(parentId==null)return null;
@@ -121,7 +131,7 @@ async function validateParent(user: User, meetingId: number | null, parentId: nu
   if(parent.transferred)throw new MeetingError("Der Haupt-TOP wurde bereits weitergegeben.");
   if(parent.meetingId!==meetingId||parent.parentId!=null)throw new MeetingError("Unter-TOPs können nur einem Haupt-TOP derselben Sitzung zugeordnet werden.");
   if(parentId!==previousParent&&!["scheduled","treated"].includes(parent.state))throw new MeetingError("Bitte zuerst den Haupt-TOP einplanen.");
-  if(topicId!=null){const [child]=await db.select({id:meetingTopics.id}).from(meetingTopics).where(eq(meetingTopics.parentId,topicId)).limit(1);if(child)throw new MeetingError("Ein Haupt-TOP mit Unter-TOPs kann nicht selbst untergeordnet werden.");}
+  if(topicId!=null){const [child]=await db.select({id:meetingTopics.id}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.parentId,topicId))).limit(1);if(child)throw new MeetingError("Ein Haupt-TOP mit Unter-TOPs kann nicht selbst untergeordnet werden.");}
   return parent;
 }
 export async function createTopic(user: User, meetingId: number | null, raw: unknown, cardId?: number) {
@@ -149,7 +159,7 @@ export async function createTopic(user: User, meetingId: number | null, raw: unk
   if (cardId != null) await readableCard(user, cardId);
   const [topic] = await db.transaction(async tx => {
     if (meetingId != null) await touchMeeting(tx, meetingId);
-    const [max] = await tx.select({ n: sql<number>`coalesce(max(${meetingTopics.position}), -1) + 1` }).from(meetingTopics).where(meetingId == null ? eq(meetingTopics.createdBy, user.id) : eq(meetingTopics.meetingId, meetingId));
+    const [max] = await tx.select({ n: sql<number>`coalesce(max(${meetingTopics.position}), -1) + 1` }).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, meetingId == null ? eq(meetingTopics.createdBy, user.id) : eq(meetingTopics.meetingId, meetingId)));
     const result = await tx.insert(meetingTopics).values({ ...values, meetingId, createdBy: user.id, position: max.n }).returning();
     if (cardId != null) await tx.insert(meetingTopicCards).values({ topicId: result[0].id, cardId });
     return result;
@@ -199,7 +209,7 @@ export async function transferTopic(user: User, id: number, targetMeetingId: num
   try {
     for(const source of sources){
       const item={topic:source,files:[] as Awaited<ReturnType<typeof saveNamedBuffer>>[],links:await visibleTopicLinks(user,source.id)};prepared.push(item);
-      const docs=await db.select().from(meetingDocuments).where(eq(meetingDocuments.topicId,source.id));
+      const docs=await db.select().from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.topicId,source.id)));
       for(const doc of docs)item.files.push(await saveNamedBuffer("meeting-topics/copies",doc.filename,await readFile(absPath(doc.path)),doc.mime));
     }
     for(const source of sources)await requireTopic(user,source.id);
@@ -212,21 +222,21 @@ export async function transferTopic(user: User, id: number, targetMeetingId: num
       const origin=topic.originTopicId??(meeting==null?topic.id:null);
       let predecessor=topic.id;
       if(origin!=null){
-        const [root]=await tx.select().from(meetingTopics).where(eq(meetingTopics.id,origin)).for("update");
+        const [root]=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id,origin))).for("update");
         if(!root||!meeting&&(root.state==="treated"||root.resolvedAt!=null))throw new MeetingError("Dieses Thema wurde bereits behandelt.");
-        if(!meeting){const [last]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(eq(meetingTopics.originTopicId,origin)).orderBy(sql`${meetingTopics.id} desc`).limit(1);predecessor=last?.id??topic.id;}
-        const active=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.transferred,false),inArray(meetingTopics.state,["proposed","scheduled"])));
+        if(!meeting){const [last]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.originTopicId,origin))).orderBy(sql`${meetingTopics.id} desc`).limit(1);predecessor=last?.id??topic.id;}
+        const active=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.transferred,false),inArray(meetingTopics.state,["proposed","scheduled"]))));
         if(active.some(row=>row.id!==topic.id))throw new MeetingError("Das Thema ist bereits für eine Sitzung vorgeschlagen oder eingeplant. Bitte zuerst dort vertagen oder zurückziehen.");
       }
-      const [fresh]=await tx.select().from(meetingTopics).where(eq(meetingTopics.id,id)).for("update");
+      const [fresh]=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id,id))).for("update");
       if(!fresh||fresh.transferred)throw new MeetingError("Das Thema wurde bereits weitergegeben. Bitte neu laden.");
-      const targetTopics=await tx.select().from(meetingTopics).where(eq(meetingTopics.meetingId,target.id));
+      const targetTopics=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.meetingId,target.id)));
       if(topic.isFinanceTopic&&targetTopics.some(t=>t.isFinanceTopic&&!t.transferred))throw new MeetingError("Die Zielsitzung hat bereits einen Finanzanträge-TOP. Bitte die Anträge dort einzeln einplanen.");
       const financeParent=topic.isFinanceItem?targetTopics.find(t=>t.isFinanceTopic&&!t.transferred):null;
       if(topic.isFinanceItem&&!financeParent)throw new MeetingError("Bitte in der Zielsitzung zuerst einen Finanzanträge-TOP festlegen.");
       if(financeParent)await requireTopic(user,financeParent.id);
       if(sources.some(source=>source.financeCardId!=null&&targetTopics.some(t=>!t.transferred&&t.financeCardId===source.financeCardId)))throw new MeetingError("Ein Finanzantrag ist in der Zielsitzung bereits vorhanden.");
-      const [max]=await tx.select({n:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(eq(meetingTopics.meetingId,target.id));
+      const [max]=await tx.select({n:sql<number>`coalesce(max(${meetingTopics.position}),-1)+1`}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.meetingId,target.id)));
       let newRoot=0;
       for(const [index,item] of prepared.entries()){
         const {id:_id,createdAt:_createdAt,...content}=item.topic;
@@ -243,10 +253,10 @@ export async function transferTopic(user: User, id: number, targetMeetingId: num
 /** Keep a private master until one of its submitted occurrences is treated. */
 async function syncPersonalCompletion(tx:Tx,origin:number|null){
   if(origin==null)return;
-  const [root]=await tx.select().from(meetingTopics).where(eq(meetingTopics.id,origin)).for("update");if(!root||root.meetingId!=null)return;
-  const active=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.transferred,false),inArray(meetingTopics.state,["proposed","scheduled"])));
+  const [root]=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id,origin))).for("update");if(!root||root.meetingId!=null)return;
+  const active=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.transferred,false),inArray(meetingTopics.state,["proposed","scheduled"]))));
   if(active.length>1)throw new MeetingError("Das Thema ist bereits für eine andere Sitzung vorgeschlagen oder eingeplant.");
-  const [treated]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.state,"treated"))).limit(1);
+  const [treated]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, and(eq(meetingTopics.originTopicId,origin),eq(meetingTopics.state,"treated")))).limit(1);
   await tx.update(meetingTopics).set({state:treated?"treated":"proposed",...(active.length?{resolvedAt:null}:{})}).where(eq(meetingTopics.id,origin));
 }
 export async function setTopicStatus(user:User,id:number,state:string,revision:number,section?:"opening"|"public"|"non_public"){
@@ -270,7 +280,7 @@ export async function reorderTopics(user: User, meetingId: number, ids: number[]
   if (ids.length > 1000 || ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length) throw new MeetingError("Ungültige Reihenfolge.");
   await db.transaction(async tx => {
     await touchMeeting(tx, meetingId, revision);
-    const rows = await tx.select().from(meetingTopics).where(eq(meetingTopics.meetingId, meetingId)).orderBy(asc(meetingTopics.position), asc(meetingTopics.id));
+    const rows = await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.meetingId, meetingId))).orderBy(asc(meetingTopics.position), asc(meetingTopics.id));
     const allowed=rows.filter(row=>!row.confidential||canManageMeeting(user,meeting));
     const allowedIds=new Set(allowed.map(t=>t.id));
     const filtered=allowed.filter(row=>(row.parentId==null||allowedIds.has(row.parentId))&&!row.hiddenAfterTransfer);
@@ -285,7 +295,7 @@ export async function reorderTopics(user: User, meetingId: number, ids: number[]
 }
 export async function readableCard(user: User, cardId: number, write = false) {
   if (!Number.isSafeInteger(cardId) || cardId < 1 || cardId > 2147483647) throw new MeetingError("Karte nicht verfügbar.");
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId));
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId)));
   const board = card && await getBoardById(card.boardId);
   if (!card || !board || !(await canAccessBoard(user, board, write ? "write" : "read"))) throw new MeetingError("Karte nicht verfügbar.");
   return { card, board };
@@ -302,14 +312,14 @@ export async function linkTopicCard(user: User, topicId: number, cardId: number,
 /** Only this filtered projection may reach a page or client. No locked-card metadata. */
 export async function visibleTopicLinks(user: User, topicId: number) {
   await requireTopic(user, topicId);
-  const rows = await db.select({ card: cards, board: boards }).from(meetingTopicCards).innerJoin(cards, eq(cards.id, meetingTopicCards.cardId)).innerJoin(boards, eq(boards.id, cards.boardId)).where(eq(meetingTopicCards.topicId, topicId));
+  const rows = await db.select({ card: cards, board: boards }).from(meetingTopicCards).innerJoin(cards, trashAnd(activeRows.cards, eq(cards.id, meetingTopicCards.cardId))).innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, cards.boardId))).where(eq(meetingTopicCards.topicId, topicId));
   const result: { id: number; title: string; boardName: string }[] = [];
   for (const row of rows) if (await canAccessBoard(user, row.board)) result.push({ id: row.card.id, title: row.card.title, boardName: row.board.name });
   return result;
 }
 export async function visibleMeetingBoards(user: User, meetingId: number) {
   await requireMeeting(user, meetingId);
-  const rows = await db.select({ board: boards }).from(meetingBoards).innerJoin(boards, eq(boards.id, meetingBoards.boardId)).where(eq(meetingBoards.meetingId, meetingId));
+  const rows = await db.select({ board: boards }).from(meetingBoards).innerJoin(boards, trashAnd(activeRows.boards, eq(boards.id, meetingBoards.boardId))).where(eq(meetingBoards.meetingId, meetingId));
   const result = [];
   for (const { board } of rows) if (await canAccessBoard(user, board)) result.push(board);
   return result;
@@ -330,7 +340,7 @@ export async function addMeetingDocument(user: User, topicId: number, file: File
 export async function copyCardDocument(user: User, topicId: number, attachmentId: number, disclose: boolean) {
   await requireTopic(user, topicId, true);
   if (!disclose) throw new MeetingError("Bitte die eigenständige Freigabe der Dateikopie bestätigen.");
-  const [attachment] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+  const [attachment] = await db.select().from(attachments).where(trashAnd(activeRows.attachments, eq(attachments.id, attachmentId)));
   if (!attachment || attachment.kind === "student_card" || !DOCUMENT_MIME.includes(attachment.mime)) throw new MeetingError("Diese Datei kann nicht übernommen werden.");
   const { board } = await readableCard(user, attachment.cardId, true);
   const [link] = await db.select().from(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, attachment.cardId)));
@@ -341,7 +351,7 @@ export async function copyCardDocument(user: User, topicId: number, attachmentId
   try {
     await editTopic(user, topicId, async tx => {
       const { board: currentBoard } = await readableCard(user, attachment.cardId, true);
-      const [currentAttachment] = await tx.select().from(attachments).where(eq(attachments.id, attachmentId));
+      const [currentAttachment] = await tx.select().from(attachments).where(trashAnd(activeRows.attachments, eq(attachments.id, attachmentId)));
       const [currentLink] = await tx.select().from(meetingTopicCards).where(and(eq(meetingTopicCards.topicId, topicId), eq(meetingTopicCards.cardId, attachment.cardId)));
       if (!currentLink || !currentAttachment || currentAttachment.path !== attachment.path || currentAttachment.kind === "student_card" || !isCardAttachmentVisible(currentAttachment, await getVisibleFieldKeys(currentBoard.id))) throw new MeetingError("Die Quelldatei wurde geändert oder ist nicht mehr freigegeben.");
       await tx.insert(meetingDocuments).values({ topicId, filename: saved.filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: user.id });
@@ -350,10 +360,10 @@ export async function copyCardDocument(user: User, topicId: number, attachmentId
 }
 export async function topicDocuments(user: User, topicId: number) {
   await requireTopic(user, topicId);
-  return db.select({ id: meetingDocuments.id, filename: meetingDocuments.filename, mime: meetingDocuments.mime, size: meetingDocuments.size }).from(meetingDocuments).where(eq(meetingDocuments.topicId, topicId));
+  return db.select({ id: meetingDocuments.id, filename: meetingDocuments.filename, mime: meetingDocuments.mime, size: meetingDocuments.size }).from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.topicId, topicId)));
 }
 export async function removeMeetingDocument(user: User, id: number) {
-  const [doc] = await db.select().from(meetingDocuments).where(eq(meetingDocuments.id, id));
+  const [doc] = await db.select().from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.id, id)));
   if (!doc) throw new MeetingError("Datei nicht verfügbar.");
   await editTopic(user, doc.topicId, async tx => {
     await tx.delete(meetingDocuments).where(and(eq(meetingDocuments.id, id), eq(meetingDocuments.topicId, doc.topicId)));
@@ -361,25 +371,11 @@ export async function removeMeetingDocument(user: User, id: number) {
   await deleteStoredFile(doc.path);
 }
 export async function deleteTopic(user: User, id: number) {
-  const files = await editTopic(user, id, async (tx, topic) => {
-    if(topic.isFinanceTopic){const [child]=await tx.select({id:meetingTopics.id}).from(meetingTopics).where(and(eq(meetingTopics.parentId,id),eq(meetingTopics.isFinanceItem,true))).limit(1);if(child)throw new MeetingError("Bitte zuerst die Finanzanträge-Unter-TOPs entfernen. Die Karten selbst bleiben dabei erhalten.");}
-    const paths = await tx.select({ path: meetingDocuments.path }).from(meetingDocuments).where(eq(meetingDocuments.topicId, id));
-    await tx.delete(meetingTopics).where(eq(meetingTopics.id, id));
-    return paths;
-  });
-  for (const file of files) await deleteStoredFile(file.path);
+  await moveToTrash(user,"topic",id,"LÖSCHEN");
 }
 
 export async function deleteMeeting(user: User, id: number) {
-  await requireMeeting(user, id, "manage");
-  const files = await db.transaction(async tx => {
-    await tx.select({ id: meetings.id }).from(meetings).where(eq(meetings.id, id)).for("update");
-    await requireMeeting(user, id, "manage");
-    const paths = await tx.select({ path: meetingDocuments.path }).from(meetingDocuments).innerJoin(meetingTopics, eq(meetingTopics.id, meetingDocuments.topicId)).where(eq(meetingTopics.meetingId, id));
-    await tx.delete(meetings).where(eq(meetings.id, id));
-    return paths;
-  });
-  for (const file of files) await deleteStoredFile(file.path);
+  await moveToTrash(user,"meeting",id,"LÖSCHEN");
 }
 
 export async function saveArea(user: User, id: number | null, name: string, description: string) {
@@ -387,8 +383,8 @@ export async function saveArea(user: User, id: number | null, name: string, desc
   name=sanitizeSingleLine(name);description=sanitizeMultiLine(description);
   if(!name||name.length>200||description.length>5000||!user.isActive)throw new MeetingError("Bitte einen Bereichsnamen angeben (max. 200 Zeichen).");
   if(id==null){const [area]=await db.insert(meetingAreas).values({name,description,ownerId:user.id}).returning();return area.id;}
-  await requireArea(user,id,"manage");
-  await db.transaction(async tx=>{await tx.update(meetingAreas).set({name,description}).where(eq(meetingAreas.id,id));await tx.update(meetings).set({committee:name,revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,id));});
+  await requireArea(user,id,"settings");
+  await db.transaction(async tx=>{await lockAreaSettings(tx,user,id);await tx.update(meetingAreas).set({name,description}).where(eq(meetingAreas.id,id));await tx.update(meetings).set({committee:name,revision:sql`${meetings.revision}+1`}).where(and(activeRows.meetings,eq(meetings.areaId,id)));});
   return id;
 }
 
@@ -402,11 +398,11 @@ export async function personalTopicForAction(user:User,id:number):Promise<number
   const inheritedPrivate=topic.parentId!=null&&(await requireTopic(user,topic.parentId)).topic.confidential;
   const links=await visibleTopicLinks(user,id),files:Awaited<ReturnType<typeof saveNamedBuffer>>[]=[];
   try{
-    const docs=await db.select().from(meetingDocuments).where(eq(meetingDocuments.topicId,id));
+    const docs=await db.select().from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.topicId,id)));
     for(const doc of docs)files.push(await saveNamedBuffer("meeting-topics/personal",doc.filename,await readFile(absPath(doc.path)),doc.mime));
     await requireTopic(user,id);
     const result=await db.transaction(async tx=>{
-      const [fresh]=await tx.select().from(meetingTopics).where(eq(meetingTopics.id,id)).for("update");
+      const [fresh]=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id,id))).for("update");
       if(!fresh||fresh.createdBy!==user.id||fresh.state!=="withdrawn")throw new MeetingError("Das Thema wurde geändert. Bitte neu laden.");
       if(fresh.originTopicId!=null)return {id:fresh.originTopicId,created:false};
       const [root]=await tx.insert(meetingTopics).values({title:topic.title,description:topic.description,motion:topic.motion,presenter:topic.presenter,kind:topic.kind,durationMinutes:topic.durationMinutes,confidential:topic.confidential||!!inheritedPrivate,createdBy:user.id,state:"proposed"}).returning({id:meetingTopics.id});
@@ -425,9 +421,9 @@ export async function resolvePersonalTopic(user:User,id:number){
   const {topic,meeting}=await requireTopic(user,id);
   if(meeting||topic.createdBy!==user.id)throw new MeetingError("Nur die einreichende Person kann ihr eigenes Thema als erledigt markieren.");
   await db.transaction(async tx=>{
-    const [root]=await tx.select().from(meetingTopics).where(eq(meetingTopics.id,id)).for("update");
+    const [root]=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.id,id))).for("update");
     if(!root||root.resolvedAt)return;
-    const occurrences=await tx.select().from(meetingTopics).where(eq(meetingTopics.originTopicId,id)).orderBy(sql`${meetingTopics.id} desc`);
+    const occurrences=await tx.select().from(meetingTopics).where(trashAnd(activeRows.meetingTopics, eq(meetingTopics.originTopicId,id))).orderBy(sql`${meetingTopics.id} desc`);
     if(occurrences[0])await requireTopic(user,occurrences[0].id);
     if(occurrences.some(t=>!t.transferred&&["proposed","scheduled"].includes(t.state))||occurrences[0]?.state!=="withdrawn")throw new MeetingError("Nur ein aktuell zurückgezogenes Thema ohne aktive Einplanung kann als erledigt markiert werden.");
     await tx.update(meetingTopics).set({resolvedAt:new Date()}).where(eq(meetingTopics.id,id));
@@ -436,11 +432,12 @@ export async function resolvePersonalTopic(user:User,id:number){
 }
 
 export async function saveAgendaSettings(user: User, areaId: number, raw: unknown) {
-  await requireArea(user,areaId,"manage");
+  await requireArea(user,areaId,"settings");
   const parsed=agendaSettingsInput.safeParse(raw);
   if(!parsed.success)throw new MeetingError("Bitte gültige Nummerierungen und eine Bereichsreihenfolge wählen.");
   await db.transaction(async tx=>{
+    await lockAreaSettings(tx,user,areaId);
     await tx.update(meetingAreas).set(parsed.data).where(eq(meetingAreas.id,areaId));
-    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(eq(meetings.areaId,areaId));
+    await tx.update(meetings).set({revision:sql`${meetings.revision}+1`}).where(and(activeRows.meetings,eq(meetings.areaId,areaId)));
   });
 }

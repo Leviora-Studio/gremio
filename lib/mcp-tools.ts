@@ -171,10 +171,10 @@ export const mcpTools: Definition[] = [
   },
   {
     name: "delete_card",
-    description: "Karte mit ALLEN Anhängen unwiderruflich löschen.",
+    description: "Karte mit ihren Inhalten und Anhängen für 30 Tage in den Board-Papierkorb verschieben. Erfordert confirmation=LÖSCHEN.",
     method: "DELETE",
     path: "/api/v1/cards/{id}",
-    schema: z.object({ id }).strict(),
+    schema: z.object({ id, confirmation: z.literal("LÖSCHEN") }).strict(),
     run: (req, a) => deleteCard(req, params(a.id)),
   },
   ...(["users", "accounts", "priorities"] as const).map((kind) => ({
@@ -356,6 +356,9 @@ export async function callMcpTool(
     form.set("kind", String(a.kind));
     if (a.uploadPurpose !== undefined) form.set("uploadPurpose", String(a.uploadPurpose));
     body = form;
+  } else if (tool.name === "delete_card") {
+    body=JSON.stringify({confirmation:a.confirmation});
+    headers={"content-type":"application/json"};
   } else if (a.data !== undefined) {
     body = JSON.stringify(a.data);
     headers = { "content-type": "application/json" };

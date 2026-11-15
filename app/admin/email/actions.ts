@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -43,7 +45,7 @@ export async function verifySmtpAction(_previous: EmailState): Promise<EmailStat
 export async function saveEmailConfirmationAction(kind: "application" | "feedback" | "inventory", resourceId: number, form: FormData): Promise<void> {
   await requireAdmin();
   if (!["application", "feedback", "inventory"].includes(kind) || !Number.isSafeInteger(resourceId) || resourceId < 1 || resourceId > 2147483647) return;
-  const [resource] = kind === "inventory" ? await db.select({ id: inventoryBoards.id }).from(inventoryBoards).where(eq(inventoryBoards.id, resourceId)) : await db.select({ id: boards.id }).from(boards).where(eq(boards.id, resourceId));
+  const [resource] = kind === "inventory" ? await db.select({ id: inventoryBoards.id }).from(inventoryBoards).where(trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, resourceId))) : await db.select({ id: boards.id }).from(boards).where(trashAnd(activeRows.boards, eq(boards.id, resourceId)));
   if (!resource) return;
   const enabled = form.get("enabled") === "on";
   if (kind === "inventory") await db.insert(emailConfirmationSettings).values({ kind, inventoryBoardId: resourceId, enabled }).onConflictDoUpdate({ target: emailConfirmationSettings.inventoryBoardId, set: { enabled } });

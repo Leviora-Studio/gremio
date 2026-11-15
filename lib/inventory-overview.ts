@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -83,13 +85,13 @@ export async function getOverviewItems(): Promise<{
     .from(inventoryItems)
     .innerJoin(
       inventoryBoards,
-      eq(inventoryBoards.id, inventoryItems.boardId),
+      trashAnd(activeRows.inventoryBoards, eq(inventoryBoards.id, inventoryItems.boardId)),
     )
     .where(
-      and(
+      trashAnd(activeRows.inventoryItems, and(
         eq(inventoryBoards.includeInOverview, true),
         gte(inventoryItems.price, minPrice),
-      ),
+      )),
     )
     .orderBy(asc(inventoryBoards.name), asc(inventoryItems.name));
 

@@ -61,8 +61,10 @@ paths:
       operationId: lockApplicationCard
       summary: Antrag dauerhaft sperren
       description: Irreversible. Requires write scope, live board write access, active application board
-        and the current lock column. No unlock operation exists. After locking, only column/position
-        changes and new receipts are allowed. Cashbook functions are not exposed.
+        and the current lock column. No unlock operation exists. A configured Nextcloud archive
+        trigger runs only once the status is published, after the lock transaction commits. After
+        locking, only column/position changes and new receipts are allowed. Cashbook functions are
+        not exposed.
       parameters:
         - name: id
           in: path
@@ -189,10 +191,12 @@ paths:
       operationId: updateBudgetPlan
       summary: Haushaltstitel-Einplanung ersetzen
       description: Write scope and live board write access. Full replacement with current revision; empty
-        allocations clears the plan. Account changes require confirmAccountChange:true. Locked cards
-        require correction.reason and correction.confirmation=BESTÄTIGEN. Invalid or stale writes
-        return 409 without changes. Each allocation contains amount in integer cents, accountId and
-        budgetTitle.
+        allocations clears the plan. Account changes require confirmAccountChange:true. New
+        account/title pairs must belong to the expense plan assigned to the account; existing
+        historical pairs may be retained but not multiplied. Missing mappings or out-of-catalog
+        titles return 409. Locked cards require correction.reason and
+        correction.confirmation=BESTÄTIGEN. Invalid or stale writes return 409 without changes. Each
+        allocation contains amount in integer cents, accountId and budgetTitle.
       parameters:
         - name: id
           in: path
@@ -705,8 +709,10 @@ paths:
       description: Write scope; enabled attachment field. Exactly one file and kind, optionally
         uploadPurpose=receipt with kind=other for automatically numbered receipts. Locked cards
         accept only new receipts, never replacements. Max 25 MiB, PDF except student_card also
-        PNG/JPEG. Named slots replace existing files; other appends. Storage and rollback cleanup
-        follow the card lock. Inventory system boards are read-only.
+        PNG/JPEG. Named slots replace existing files; previous versions enter the board file recycle
+        bin for 30 days. Other appends. Restore and permanent deletion are session-only board
+        actions. Storage and rollback cleanup follow the card lock. Inventory system boards are
+        read-only.
       parameters:
         - name: id
           in: path
@@ -911,7 +917,10 @@ paths:
         **Berechtigung:** Board-Zugriff. `isInstructionTrigger`, `isTransferTrigger`,
         `isReceiptTrigger` an den Spalten sowie `ownerId`, `receiptToStatusId`, `resubmitStatusId`
         am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator). Mehrere Spalten
-        können Archiv- und Quittungs-Auslöser sein.
+        können Quittungs-Auslöser sein. Nextcloud-Archiv-Trigger stehen auf normalen Boards und
+        Antragsboards zur Verfügung. Die Done-Spalte ist ausschließlich auf normalen Boards
+        verfügbar; Antragsboards liefern `doneStatusId: null`. Die kompatiblen
+        Datums-Trigger-Metadaten sind nur für Eigentümer/Admins enthalten und immer false.
       parameters:
         - name: id
           in: path
@@ -1253,10 +1262,11 @@ paths:
 
 
         **Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein
-        Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum,
-        Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt
-        Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem
-        `position` wird an eine bestimmte Stelle einsortiert.
+        Aktivitätseintrag entsteht und die weiterhin verfügbaren Trigger greifen wie in der
+        Oberfläche (Nextcloud-Archiv auf normalen Boards und Antragsboards; Done nur auf normalen
+        Boards; keine automatische Datumssetzung). Ein Statuswechsel setzt Nachreichungsmarkierung
+        und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine
+        bestimmte Stelle einsortiert.
 
 
         **Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true`
@@ -1321,7 +1331,9 @@ paths:
       operationId: deleteCard
       summary: Karte löschen
       description: >-
-        Löscht die Karte und ihre Anhänge (Dateien inklusive). Unwiderruflich.
+        Verschiebt die ungesperrte Karte mit ihren Inhalten und Anhängen für 30 Tage in den
+        Papierkorb des Boards. Erfordert den JSON-Body `{"confirmation":"LÖSCHEN"}`.
+        Wiederherstellung und endgültige Löschung erfolgen über die Oberfläche.
 
 
         **Berechtigung:** Board-Schreibrecht **und** `scope=write`. Jeder Nutzer mit
@@ -1336,9 +1348,24 @@ paths:
             type: integer
             format: int32
             minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirmation
+              properties:
+                confirmation:
+                  type: string
+                  const: LÖSCHEN
+              additionalProperties: false
+            example:
+              confirmation: LÖSCHEN
       responses:
         "200":
-          description: Karte gelöscht.
+          description: Karte in den Board-Papierkorb verschoben.
           content:
             application/json:
               schema:
@@ -1351,6 +1378,7 @@ paths:
                     const: true
               example:
                 ok: true
+        "400": *a21
         "401": *a8
         "403": *a24
         "404": *a25
@@ -1670,7 +1698,8 @@ components:
             - integer
             - "null"
           format: int32
-          description: Spalte, die vom Done-Sweep archiviert wird (null = aus).
+          description: Spalte, die vom Done-Sweep archiviert wird (null = aus). Auf Antragsboards immer null;
+            dort gibt es kein automatisches Erledigt-Archiv.
         receiptToStatusId:
           type:
             - integer
@@ -1708,13 +1737,18 @@ components:
             bestätigt.
         isArchiveTrigger:
           type: boolean
-          description: Erreicht eine Karte diese Spalte, greift die Nextcloud-Archivierung.
+          description: Beim Erreichen greift die optionale Nextcloud-Archivierung auf normalen Boards und
+            Antragsboards.
         isInstructionTrigger:
           type: boolean
-          description: Setzt beim Erreichen das Anweisungsdatum. Nur für Board-Verwalter enthalten.
+          description: Veraltetes Kompatibilitätsfeld, immer false. Nur für Eigentümer/Admins enthalten; keine
+            automatische Datumssetzung.
+          deprecated: true
         isTransferTrigger:
           type: boolean
-          description: Setzt beim Erreichen das Überweisungsdatum. Nur für Board-Verwalter enthalten.
+          description: Veraltetes Kompatibilitätsfeld, immer false. Nur für Eigentümer/Admins enthalten; keine
+            automatische Datumssetzung.
+          deprecated: true
         isReceiptTrigger:
           type: boolean
           description: Quittungs-Quellspalte; mehrere erlaubt. Benötigt receiptToStatusId, Archiv-Sperre hat

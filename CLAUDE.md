@@ -46,7 +46,7 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 
 > **Rollenwechsel** macht nur der Admin (geschützt durch Tipp-Wörter: `ADMIN` zum Befördern zum Admin, `TEMPLATE` zum Template-Verwalter, `ENTZIEHEN` zum Herabstufen). Der letzte Admin und man selbst können nicht degradiert werden.
 2. **Board-Eigentümer** — `owner_id` und zusätzliche Einträge in `board_owners`, `finance_board_owners` bzw. `inventory_board_owners` bilden gleichberechtigte Eigentümer. Wer ein Board erstellt, bleibt zunächst dessen einziger Eigentümer. Alle Eigentümer dürfen es vollständig verwalten; Admins dürfen unabhängig davon jedes Board verwalten.
-3. **Board-Freigabe** (`board_access`) — Eigentümer/Admin geben ein Board **an einen Nutzer oder eine Gruppe** mit **Lesend** (`read`) oder **Lesend und schreibend** (`write`) frei. Direkte und Gruppenfreigaben werden kombiniert; jede passende Schreibfreigabe hat Vorrang. Das *Verwalten* des Boards bleibt Eigentümer/Admin vorbehalten.
+3. **Board-Freigabe** (`board_access`) — Eigentümer/Admin geben ein Board **an einen Nutzer oder eine Gruppe** mit **Lesend** (`read`) oder **Lesend und schreibend** (`write`) frei. Direkte und Gruppenfreigaben werden kombiniert; jede passende Schreibfreigabe hat Vorrang. Vollständige Verwaltung bleibt Eigentümern/Admins vorbehalten; normale Boards und Antragsboards können zusätzlich die unten beschriebenen begrenzten Verwaltungsrechte vergeben.
 
 > **Gruppen erstellen/verwalten darf nur der Admin.** User können vorhandene Gruppen nur zu ihren eigenen Boards einladen, aber keine Gruppen anlegen/ändern.
 
@@ -57,11 +57,19 @@ Drei Konzepte: **globale Rolle**, **Board-Eigentümer** und **Board-Freigabe**.
 - **Passwort/Anzeigename/E-Mail:** werden **zentral im SSO** gepflegt, nicht in Gremio. `/intern/konto` zeigt sie nur an und bietet „Profil neu abgleichen" (`resyncProfileAction`). Es gibt **keine** Passwort-Ändern- oder Passwort-Reset-Funktion.
 - **Konten:** `/admin/users` vergibt Rollen und kann Konten lokal deaktivieren/reaktivieren. Die Sperre wird bei jeder Anfrage geprüft, ändert das SSO-Konto nicht, widerruft über `users.session_version` alle bisherigen Browsersitzungen. Reaktivierung erfordert eine neue Anmeldung. Selbstdeaktivierung und das Deaktivieren des letzten aktiven Admins werden verhindert. Eine endgültige Kontolöschung erfolgt weiterhin im SSO.
 - **Profilbild:** optional je Nutzer (Upload/Ersetzen/Entfernen unter `/intern/konto`). Ohne Bild → generierter Avatar aus den **Initialen des Benutzernamens** (z.B. deterministische Farbe). Bild wird quadratisch zugeschnitten/verkleinert gespeichert.
-- **Board-Stati:** pro Board konfigurierbar (siehe Workflow); Archiv-Trigger pro Board wählbar
-- **Board-Zugriff:** Lesen oder Lesen und Schreiben; Verwalten bleibt Eigentümern/Admins vorbehalten
+- **Board-Stati:** pro Board konfigurierbar (siehe Workflow); Nextcloud-Archiv-Trigger auf normalen Boards und Antragsboards wählbar; Done nur auf normalen Boards
+- **Board-Zugriff:** Lesen oder Lesen und Schreiben; vollständige Verwaltung bleibt Eigentümern/Admins vorbehalten. Bei normalen Boards und Antragsboards sind ausdrücklich delegierte Teilbereiche möglich
 - Ein Nutzer kann in **mehreren Gruppen** sein (n:m)
 - **Mehrere Eigentümer:** Eigentümer und Admins dürfen aktive Personen zusätzlich ernennen. Nur Admins dürfen andere Eigentümer entfernen; jede Person darf selbst austreten. Alle Änderungen verlangen serverseitig `ERNENNEN` bzw. `ENTZIEHEN`. Der letzte Eigentümer kann auch von Admins nicht entfernt werden.
 - **Eigentümer deaktiviert:** Das Board bleibt bestehen. Es gibt keine automatische Ernennung eines Admins; ein Admin muss sich bei Bedarf ausdrücklich zum Eigentümer machen, bevor er den letzten anderen entfernt. `owner_id` bleibt als kompatibler Verweis auf genau einen tatsächlichen Eigentümer erhalten. Beim Austritt dieser Person wird unter Ressourcensperre ein verbleibender Eigentümer eingetragen. Zusätzliche Eigentümer erzeugen keine impliziten Quell-Board-Freigaben für Finanzboards.
+
+### Begrenzte Verwaltungsrechte für Boards
+
+Eigentümer/Admins vergeben am Ende der normalen Board-Einstellungen im Bereich **„Verwaltungsrechte vergeben“** zusätzliche personenbezogene Rechte (`board_managers`, Migration `0102_board_managers`). Auswählbar sind ausschließlich aktive Personen mit bereits bestehendem Schreibzugriff, direkt oder über eine Gruppe. Bestehende Boards erhalten beim Update keine automatischen Verwaltungsfreigaben. Eigentümer und Admins brauchen keine zusätzliche Ernennung.
+
+Die Delegation erlaubt genau **Sperrspalten und Zahlungsabschluss**, **Email-Settings**, **Freigaben**, **Spalten**, **Kartenfelder**, **Automatische Antragsnummer**, **Trigger-Spalten**, **Standard-Konto** und **Nextcloud-Archiv**. Jede zugehörige Server Action prüft `requireBoardSettingsAccess`; der Einstellungsbutton und die Seite verwenden dieselbe Live-Berechtigung. Ohne aktuellen Schreibzugriff oder bei deaktiviertem Konto ruht die Delegation sofort, auch nach Gruppenänderungen; bei erneutem Schreibzugriff wird sie wieder wirksam. Eigentümer/Admins können sie unabhängig davon vollständig entziehen.
+
+`canManageBoard`/`requireBoardManage` bleiben bewusst auf vollständige Verwaltung beschränkt. **Allgemein/Umbenennen**, **Bürokraft**, **Anweisungsformular**, **Eigentümerschaft/Löschen** und die **Vergabe/der Entzug von Verwaltungsrechten** sind nicht delegiert; direkte Aufrufe der betreffenden Aktionen werden ebenfalls abgewiesen. Die Delegation gilt nur für normale Boards und Antragsboards, nicht für Leih-System-Boards, Finanzboards oder Kassenbücher. Inventare haben eine separate, auf vier Bereiche begrenzte Delegation (siehe unten). Vollständige Verwaltungsprüfungen bleiben unverändert. Delegierte Personen sind in REST/MCP weiterhin Mitglieder, keine Eigentümer. Es gibt keine neuen Bearer-/MCP-Endpunkte für Einstellungen oder die Ernennung; öffentliche API und Status-Token bleiben unverändert.
 
 ### Datenmodell (PostgreSQL)
 
@@ -175,7 +183,22 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 - **Migration 0070:** Alle vorhandenen Personen- und Gruppenfreigaben in `board_access`, `finance_board_access` und `inventory_board_access` erhalten `access_level='write'` (`NOT NULL DEFAULT 'write'`, DB-Constraint für `read|write`). Neue UI-Freigaben starten mit Lesend; die Auswahl ist serverseitig validiert. Freigaben können geändert oder entfernt werden; die effektiven Rechte werden bei jedem Aufruf live geprüft.
 - **Nur lesend:** keine Kartenanlage/-änderung/-löschung, Statuswechsel, Wiederherstellung, Kommentare, Uploads, PDF-Bearbeitung/Signierung, Datei-/Ordnerorganisation, Inventaränderungen, Mängel- oder Leihaktionen. Lesen, Suche, Filter und Downloads bleiben möglich. Status-Links mit öffentlichen Bearbeitungsmöglichkeiten werden nur Schreibern angezeigt.
 - **Finanz-Schreibrecht:** Haushaltsplan über `/finanzen/{id}/plan` bearbeiten (Bestätigungsdialog vor Anzeige der Eingabefelder, auch bei Direktaufruf); Einstellungen, Konten/Quellen und Freigaben bleiben Eigentümer/Admin vorbehalten. Die Bearbeitung in den Einstellungen verwendet denselben Planeditor. Er weist auf automatisches Speichern hin; jede Position zeigt ausstehende Änderungen, laufendes Speichern, erfolgreichen Abschluss oder einen Fehler mit Wiederholungsmöglichkeit an. Fehler erhalten den Eingabeentwurf.
+- **Hinweis bei Finanz-Freigaben:** Der Freigabebereich erklärt ausdrücklich, dass Schreibzugriff das Anlegen, Ändern und Löschen von Haushaltsplanpositionen und Unterpunkten einschließlich Titeln und Planbeträgen erlaubt. Boardverwaltung bleibt Eigentümern/Admins vorbehalten; Rechte auf Antragsboards oder Kassenbücher werden dadurch nicht erweitert. Leserechte einschließlich Ansichts- und Exportfunktionen werden ebenfalls erläutert.
 - **API/MCP:** Schreiben benötigt zugleich live Schreibrecht am Board und Token-/Grant-`scope=write`; reine Lesefreigaben ergeben bei Schreibaufrufen `403`. Externe Endpunkte und öffentliche Token-Verträge bleiben unverändert.
+
+### Typed confirmations
+
+Every in-app dialog that asks the user to type a confirmation word sends the actual
+input to its Server Action. The server validates it before mutations, in addition
+to the existing live authorization checks. `DeleteConfirm` forwards its input only
+when `requireWord` is enabled; click-only dialogs keep their existing behavior.
+`lib/confirmation.ts` shares deletion and role-change word rules. Role changes
+select the expected word from the locked, current target role, not from client
+state. Legacy exported deletion form actions also require the `confirmation`
+field, so their former checkbox cannot bypass the typed confirmation.
+See `docs/CONFIRMATION_AUDIT.md` for the complete dialog inventory and regression
+coverage. These are session-bound safeguards; REST/MCP contracts and permissions
+are unchanged. Confirmation words express intent and do not replace authorization.
 
 ### Bootstrap & Sicherheit
 - Erst-Admin via SSO: der in `.env` als `ADMIN_USER` gesetzte SSO-Benutzer wird beim **ersten Login** automatisch Admin (JIT-Provisioning; kein Passwort in dieser App, kein Admin-Seed)
@@ -190,8 +213,8 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 > **WICHTIG — Abgrenzung:** Die App ist eigenständig. Anträge/Karten und Kanban-Boards leben **ausschließlich in PostgreSQL**, nicht in Nextcloud Deck. Nextcloud dient ausschließlich der optionalen, abschließenden Archivierung von Kartenanhängen.
 
 - **Archivierung ist eine reine Board-Einstellung** (an/aus pro Board, Default: **aus**). **Keine globale Verbindung** — jedes Board bringt seine **eigene Nextcloud** mit: URL + Zugangsdaten + Zielordner.
-- **Trigger-Status pro Board** (Status-Spalte mit `is_archive_trigger`). Erreicht ein Antrag diese Spalte **und** ist die Archivierung für das Board aktiv, werden die aktuell am Antrag hängenden Dateien automatisch in einen Unterordner des board-eigenen Zielordners hochgeladen.
-- Konfiguriert wird das in den **Board-Einstellungen** (Eigentümer/Admin), nicht im globalen Admin Panel.
+- **Nextcloud-Trigger-Status pro Board (normale Boards und Antragsboards)** (Status-Spalte mit `is_archive_trigger`). Erreicht ein Antrag diese Spalte **und** ist die Archivierung für das Board aktiv, werden die aktuell am Antrag hängenden Dateien automatisch in einen Unterordner des board-eigenen Zielordners hochgeladen. Maßgeblich ist der bestätigte öffentliche Status: In einer noch unbestätigten Sperrspalte findet kein Upload statt. Das dauerhafte Sperren speichert den Archivauftrag in derselben Transaktion; die Übertragung startet nach dem Commit; normale Archivspalten und weitere Spaltenwechsel bereits gesperrter Karten lösen sie unmittelbar aus. Erfolgreiche Archive bleiben einmalig je Karte.
+- Konfiguriert wird das in den **Board-Einstellungen** (Eigentümer/Admin oder ausdrücklich ernannte Board-Verwalter), nicht im globalen Admin Panel.
 - Zugriff über WebDAV / Nextcloud-API; keine weitere Nextcloud-Funktionalität.
 - **Sicherheit:** Zugangsdaten **verschlüsselt** in der DB (AES-256-GCM via Node-`crypto`, Schlüssel aus `.env`). Empfehlung: Nextcloud-**App-Passwort** statt Hauptpasswort. Passwortfeld im UI nur schreibend („gesetzt"-Anzeige, ersetzen statt anzeigen).
 - Archivordner verwenden den konfigurierten, bereinigten Namen ohne automatisch ergänzte Karten-ID. Gleichnamige Ordner werden wiederverwendet. Uploads verwenden bedingtes Anlegen: Bereits vorhandene identische Dateien werden bei Wiederholungen wiederverwendet. Bei anderem Inhalt wird die Gremio-Datei daneben als `Name_Gremio.ext` abgelegt; weitere Konflikte verwenden `Name_Gremio_2.ext`, `Name_Gremio_3.ext` usw. Auch identische Ausweichdateien werden bei Wiederholungen wiederverwendet. Ausweichnamen respektieren die UTF-8-Bytegrenze und reservieren die Pfade anderer Anhänge; vorhandene Dateien werden nie überschrieben. Der Inhaltsvergleich liest höchstens bis zur ersten Abweichung und hat eine Zeitgrenze. Vorhandene abgeschlossene Archive werden nicht umbenannt.
@@ -201,19 +224,19 @@ card_activity  (id, card_id FK→cards ON DELETE CASCADE, user_id FK→users NUL
 
 ## Workflow
 
-> Stati sind **pro Board konfigurierbar** (anlegen/umbenennen/sortieren/löschen, Archiv-Trigger setzen — in den **Board-Einstellungen** durch Eigentümer/Admin). Beim Erstellen eines Boards werden die Spalten aus einem **Template** kopiert (von Admin **oder** Template-Verwalter unter `/vorlagen/boards` verwaltet, siehe „Board-Templates"). Das per `db:seed` angelegte Default-Template heißt **„Antragsboard"** und hat **7 Spalten**: *Eingegangen · Geplant für Sitzung · Abgelehnt · Warten auf Nachreichung · Angenommen · Quittungen erhalten · Anweisung erfolgt* (letztere = Archiv-Trigger). Der folgende Ablauf beschreibt den fachlichen Gremien-Prozess dahinter (Spaltennamen müssen damit nicht 1:1 übereinstimmen).
+> Stati sind **pro Board konfigurierbar** (anlegen/umbenennen/sortieren/löschen, Archiv-Trigger setzen — in den **Board-Einstellungen** durch Eigentümer/Admin oder ausdrücklich ernannte Board-Verwalter). Beim Erstellen eines Boards werden die Spalten aus einem **Template** kopiert (von Admin **oder** Template-Verwalter unter `/vorlagen/boards` verwaltet, siehe „Board-Templates"). Das per `db:seed` angelegte Default-Template heißt **„Antragsboard"** und hat **7 Spalten**: *Eingegangen · Geplant für Sitzung · Abgelehnt · Warten auf Nachreichung · Angenommen · Quittungen erhalten · Anweisung erfolgt* (letztere = Archiv-Trigger). Der folgende Ablauf beschreibt den fachlichen Gremien-Prozess dahinter (Spaltennamen müssen damit nicht 1:1 übereinstimmen).
 >
 > **Grundsatz — keine Schritt-Automatismen:** Der fachliche Ablauf unten besteht aus **manuellen** Tätigkeiten des Gremiums. Insbesondere werden **nie Anhänge automatisch gelöscht**, und Statuswechsel ziehen keine inhaltliche Bearbeitung nach sich.
 >
 > Die **vollständige Liste** der Automatismen — alle an eine pro Board konfigurierte Spalte oder Uhrzeit gebunden, alle standardmäßig **aus**:
 > 1. **Nextcloud-Archivierung** — Archiv-Trigger-Spalte erreicht **und** Archivierung am Board aktiv → Dateien werden hochgeladen (bei Fehlschlag automatischer Retry).
-> 2. **Anweisungsdatum** (`instruction_date`) — wird beim Erreichen der Anweisungs-Trigger-Spalte gesetzt.
-> 3. **Überweisungsdatum** (`transfer_date`) — analog, eigener Trigger.
-> 4. **Done-Sweep** — Karten in der „Done"-Spalte werden täglich zur eingestellten Uhrzeit archiviert (nur ausgeblendet, nichts gelöscht).
+> 2. **Anweisungsdatum** (`instruction_date`) — altes Kartenfeld bleibt erhalten und manuell bearbeitbar; keine automatische Datumssetzung mehr.
+> 3. **Überweisungsdatum** (`transfer_date`) — altes Kartenfeld bleibt erhalten und manuell bearbeitbar; keine automatische Datumssetzung mehr.
+> 4. **Done-Sweep (nur normale Boards)** — Karten in der „Done"-Spalte werden täglich zur eingestellten Uhrzeit archiviert (nur ausgeblendet, nichts gelöscht).
 > 5. **Quittungs-Gate** — erst beim abschließenden öffentlichen Einreichen wandert die Karte aus einer aktuell ausgewählten Quellspalte in die gemeinsame Zielspalte. Beliebig viele Quellen, keine historische Freigabe.
 > 6. **Antragsnummer** — wird bei aktiver Board-Nummerierung automatisch vergeben.
 > 7. **Leihvorgang-Sync** (Inventar) — die Spalte der Leihkarte setzt den Vorgangsstatus (siehe „Inventar- & Entleihsystem").
-> 8. **Trigger-Zuweisungen** — jeder Board-Trigger (Anweisungsdatum, Überweisungsdatum, Nachreichung, Rückmeldung, Done-Spalte, Nextcloud-Archiv) kann beim Auslösen optional **alle Zuweisungen entfernen** und/oder **zusätzlich Nutzer zuweisen** (siehe „Trigger-Zuweisungen").
+> 8. **Trigger-Zuweisungen** — jeder verfügbare Board-Trigger (Nachreichung, Rückmeldung, Nextcloud-Archiv; Done-Spalte nur auf normalen Boards) kann beim Auslösen optional **alle Zuweisungen entfernen** und/oder **zusätzlich Nutzer zuweisen** (siehe „Trigger-Zuweisungen").
 
 ### Trigger-Zuweisungen
 
@@ -222,7 +245,7 @@ In den Board-Einstellungen hat jeder Trigger zwei optionale Zuweisungs-Aktionen:
 **„Alle Zuweisungen entfernen"** (Haken) und **„Zusätzlich zuweisen zu"**
 (Nutzer mit Board-Zugriff; leer = niemand zusätzlich). Reihenfolge: erst
 entfernen, dann zuweisen. Ausgelöst wird
-- bei **Anweisungsdatum, Überweisungsdatum, Done-Spalte, Nextcloud-Archiv** durch
+- bei **Done-Spalte (nur normale Boards) und Nextcloud-Archiv** durch
   das **Erreichen** der jeweiligen Spalte per Verschieben (Board, Kartendetail,
   REST/MCP, öffentliche Rückmeldung) — Nextcloud auch bei deaktivierter
   Archivierung, Done nicht erst beim Sweep. Neu angelegte Karten lösen nicht aus.
@@ -326,7 +349,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /api/attachment/{id}/fields → Ausfüllbare AcroForm-Felder eines PDF-Anhangs (für den In-App-Editor; Board-Zugriff)
 /api/v1/...              → REST-API mit persönlichen Bearer-Tokens — siehe docs/API.md
 /login                   → Login-Seite (SSO)
-/finanzen                → Finanzübersichten: Liste + Anlegen (jeder Nutzer; Freigabe wie Boards)
+/finanzen                → Liste der zugänglichen Finanzübersichten; kein Anlegen außerhalb des Admin-Panels
 /finanzen/{id}           → Finanzansicht: 1) Haushaltsplan 2) Live-Ausgaben 3) tatsächliche Ausgaben 4) Antragsübersicht
 /finanzen/{id}/einstellungen → Name, betroffene Konten (mehrere möglich; optionaler Teilmengen-Override für die Ausgaben-Berechnung Live/Tatsächlich), Quell-Boards mit optionaler Verfallen-Spalte je Quelle, Freigaben, Haushaltsplan-Editor (Eigentümer/Admin)
 /finanzen/{id}/export    → XLSX/CSV-Export der Finanzübersicht
@@ -338,14 +361,14 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /intern/board/{id}       → Kanban-Board (Board-Zugriff erforderlich)
 /intern/board/{id}/archiv → Erledigte (weggeräumte) Karten des Boards + wiederherstellen
 /intern/board/{id}/statistik → Auswertung des Boards (Kennzahlen, Verteilungen)
-/intern/board/{id}/einstellungen → Board verwalten: Stati + Freigaben + Kartenfelder + Nextcloud-Archiv (Eigentümer/Admin)
+/intern/board/{id}/einstellungen → Board verwalten: Stati + Freigaben + Kartenfelder + Nextcloud-Archiv (Eigentümer/Admin oder begrenzte Verwaltungsrechte für die freigegebenen Bereiche)
 /intern/card/{id}      → Detailansicht eines Antrags
 /intern/inventar         → Zugängliche Inventar-Boards (persönlich sortierbar)
 /intern/inventar/neu     → Inventar-Board erstellen (jeder eingeloggte Nutzer)
 /intern/inventar/gesamt  → Gesamtinventar (Anlagenverzeichnis) — Nur-Ansicht für alle eingeloggten Nutzer
 /intern/inventar/{id}    → Inventarliste: Gegenstände + laufende Leihvorgänge (Board-Zugriff)
 /intern/inventar/{id}/archiv → Defekte/verlorene Gegenstände
-/intern/inventar/{id}/einstellungen → Felder, Inventarnummern, Optionen, Freigaben, Leihboard, Eigentum/Löschen (Eigentümer/Admin)
+/intern/inventar/{id}/einstellungen → volle Verwaltung durch Eigentümer/Admin; delegierte Verwaltung nur für Email-Settings, Freigaben, Felder und automatische Inventarnummer
 /intern/inventar/item/{itemId} → Detailansicht eines Gegenstands (Vorgänge, Mängel, Belege)
 /intern/inventar/loan/{loanId} → Detailansicht eines Leihvorgangs
 /vorlagen                → Vorlagen-Bereich (Admin ODER Template-Verwalter): Einstieg zu Board- und Finanzvorlagen
@@ -357,7 +380,7 @@ Bei Einreichung: App erzeugt den Antrag auf `target_board_id` in Spalte `target_
 /admin/users             → Nutzerverwaltung (Rollen, lokale Deaktivierung/Reaktivierung; endgültiges Löschen im SSO)
 /admin/groups            → Gruppenverwaltung (anlegen, Mitglieder) — nur Admin
 /admin/boards            → Übersicht/Verwaltung ALLER Boards (Admin-Aufsicht)
-/admin/finanzboards      → Übersicht/Verwaltung ALLER Finanzboards (Admin-Aufsicht)
+/admin/finanzboards      → Finanzübersichten anlegen und alle Finanzboards verwalten (nur Admin)
 /admin/inventar          → Inventare: öffentliche Sichtbarkeit je Inventar-Board schalten (nur Admin)
 /admin/inventar/gesamt   → Gesamtinventar konfigurieren: einbezogene Boards + Mindestpreis (nur Admin)
 /admin/standorte         → Standorte: anlegen/umbenennen/löschen + aktivieren/deaktivieren + Ziel-Board/-Spalte (nur Admin)
@@ -386,7 +409,7 @@ liegt im vorhandenen `user_task_prefs.config`-JSONB; bei älteren Einstellungen
 werden fehlende Abschnitte ergänzt und entfernte Abschnitte ignoriert, ohne
 zuvor ausgeblendete Abschnitte wieder einzuschalten.
 
-**Board-Einstellungen** erreicht man **am jeweiligen Board** (Button in der Board-Ansicht, nur für Eigentümer/Admin sichtbar) → `/intern/board/{id}/einstellungen`, **nicht** über die Startseite.
+**Board-Einstellungen** erreicht man **am jeweiligen Board** (Button in der Board-Ansicht, für Eigentümer/Admin und berechtigte Board-Verwalter sichtbar) → `/intern/board/{id}/einstellungen`, **nicht** über die Startseite.
 
 ### Status-Token
 - Wird bei Einreichung zufällig generiert (30-stellig, ~175 bit)
@@ -424,8 +447,8 @@ Eine Karte (= Antrag) hat die folgenden Felder. **Welche Felder auf den Karten e
 | Beantragter Betrag | Euro | `requested_amount` (Cent) |
 | Genehmigter Betrag | Euro | `approved_amount` (Cent); Eingabe in Euro, Anzeige „… €" |
 | Tatsächliche Ausgaben | Euro | `actual_amount` (Cent); überschreibt in den Ausgaben-Views den genehmigten Betrag, sobald gesetzt |
-| Anweisungsdatum | Datum | `instruction_date`; auto-gesetzt beim Erreichen der pro Board wählbaren Trigger-Spalte (analog Archiv-Trigger), zusätzlich für alle Nutzer mit Board-Zugriff editierbar |
-| Überweisungsdatum | Datum | `transfer_date`; auto-gesetzt beim Erreichen der pro Board wählbaren Trigger-Spalte (analog Anweisungsdatum, eigener Trigger), zusätzlich für alle Nutzer mit Board-Zugriff editierbar |
+| Anweisungsdatum | Datum | `instruction_date`; altes Kartenfeld, manuell mit Schreibzugriff editierbar, keine automatische Datumssetzung |
+| Überweisungsdatum | Datum | `transfer_date`; altes Kartenfeld, manuell mit Schreibzugriff editierbar, keine automatische Datumssetzung |
 | Konto | Auswahl | optionales Auswahlfeld; **Optionen frei vom Admin verwaltbar** (`/admin/accounts`, Tabelle `accounts`); `cards.account_id` FK→accounts (ON DELETE SET NULL) |
 | Finanzantrag | PDF | Dokument-Slot (= der per Formular hochgeladene Finanzantrag) |
 | Anlage A | PDF | Dokument-Slot |
@@ -753,7 +776,7 @@ Aus einem externen Security-Review bewusst so belassene Punkte — damit klar is
 - **Inventar als Finanzquelle:** Bei Leih-System-Boards wird der vollständige Board-Kontext geprüft. Maßgeblich sind ausschließlich die aktuellen Inventarfreigaben und Inventareigentümer, auch bei zusätzlichen Eigentümern. Alte normale Board-Freigaben/-Eigentümer gewähren weder Finanzquellenzugriff noch einen Eintrag in Board-Listen oder boardübergreifenden API-Suchen.
 - **Archivierte Karten zählen in der Finanzauswertung mit** (Done-Archiv blendet nur die Board-/Aufgaben-Ansicht aus). Für „tatsächliche Ausgaben" sollen abgeschlossene Anträge mitzählen.
 - **„Weitere PDFs" (`other`) sind über den Status-Token öffentlich** herunterladbar (Spec) — dort **keine** vertraulichen internen Dokumente ablegen. Der **Studierendenausweis** bleibt intern.
-- **Board-Zugriffsmodell:** Leser sehen Inhalte; Nutzer mit Schreibrecht dürfen Karten/Anhänge bearbeiten und löschen sowie aktivierte Nummern und Triggerdaten ändern. Einstellungen bleiben Eigentümer/Admin vorbehalten. Manuelles Archivieren bleibt ausgeschlossen; Wiederherstellen erfordert Schreibrecht.
+- **Board-Zugriffsmodell:** Leser sehen Inhalte; Nutzer mit Schreibrecht dürfen Karten/Anhänge bearbeiten und löschen sowie aktivierte Nummern und Triggerdaten ändern. Vollständige Verwaltung bleibt Eigentümern/Admins vorbehalten; ausdrücklich ernannte Board-Verwalter erhalten nur die oben genannten Einstellungsbereiche. Manuelles Archivieren bleibt ausgeschlossen; Wiederherstellen erfordert Schreibrecht.
 - **REST-API ⊆ Web-App (nie mehr Rechte):** Board-Lese-/Schreibrecht via `canAccessBoard`/`canEditBoard`, Token-`scope` (read/write) und Board-Beschränkung schränken nur **ein**. Deaktivierte Board-Felder (`board_card_fields`) werden über die API **weder gelesen noch geschrieben** — exakt wie die Web-Oberfläche sie ausblendet.
 - **REST-Vertragsabgleich:** Die interne API umfasst Boards/Karten einschließlich Katalogen, Suche, Kommentaren, Verlauf und Anhängen (siehe `docs/API.md` und `docs/MCP.md`). Die öffentliche API bleibt auf Anträge/Feedback begrenzt. `POST` kann Haushaltspositionen atomar anlegen, `PATCH` ersetzt sie mit `budgetRevision`; `lib/api-card-response.ts` liest Summen/Revision/Positionen im selben Snapshot. Reine Zuständigen-PATCHes einschließlich `[]` werden gespeichert. Trigger-Metadaten für Quittungen/Überweisungen sind für Board-Verwalter vollständig; Listen liefern Summen, Details die Positionen. Siehe `docs/API_PARITY_AUDIT.md` für Abdeckung und bewusst nicht externe Web-Funktionen.
 - **Öffentliche allgemeine Uploads sind append-only**, unabhängig vom Quittungs-Gate (bis 30 PDFs je Karte) — gewollt; Archiv-Trigger sperren sie, gegen Missbrauch zusätzlich ratenbegrenzt.
@@ -940,7 +963,7 @@ Die Tagesordnung besteht aus scheduled/treated/deferred/withdrawn TOPs. Vertagte
 
 `meeting_documents` speichert eigenständige Sitzungsunterlagen mit neuen Dateipfaden. Upload und Übernahme erfordern TOP-Schreibrecht und eine ausdrückliche Freigabe. Quellübernahme zusätzlich nur mit Board-Schreibrecht, vorhandener Kartenverknüpfung und sichtbarem Anhang; student_card ist ausgeschlossen. PDFs/PNG/JPEG bis zum bestehenden Uploadlimit sind zugelassen. Eine freigegebene Kopie bleibt nach Entzug der Board-Rechte oder Löschen der Quelldatei eigenständig verfügbar; TOP-/Sitzungsrechte werden bei jedem Download geprüft. Ändern von vertraulich auf offen erfordert eine zusätzliche Bestätigung für Inhalt UND Dateien. Dateiverarbeitung findet außerhalb von DB-Sperren statt.
 
-Dokument- und Kartenverknüpfungsänderungen sperren vor dem DB-Schreiben zuerst die offene Sitzung und anschließend den TOP, prüfen den Zugriff erneut und erhöhen dieselbe Sitzungsrevision wie Inhaltsänderungen. Dadurch werden alte TOP-Formulare nach einer Unterlagenänderung abgewiesen; ein paralleler Sitzungsabschluss, eine Weitergabe oder Löschung verhindert nachträgliche Uploads. Fehlgeschlagene Uploads entfernen ausschließlich ihre neu angelegte Datei. Beim Löschen eines TOPs/einer Sitzung wird die Liste zu entfernender Dateien innerhalb derselben DB-Sperre ermittelt und erst nach dem Commit physisch gelöscht.
+Dokument- und Kartenverknüpfungsänderungen sperren vor dem DB-Schreiben zuerst die offene Sitzung und anschließend den TOP, prüfen den Zugriff erneut und erhöhen dieselbe Sitzungsrevision wie Inhaltsänderungen. Dadurch werden alte TOP-Formulare nach einer Unterlagenänderung abgewiesen; ein paralleler Sitzungsabschluss, eine Weitergabe oder Löschung verhindert nachträgliche Uploads. Fehlgeschlagene Uploads entfernen ausschließlich ihre neu angelegte Datei. TOPs und Sitzungen werden zunächst 30 Tage im Papierkorb aufbewahrt; erst bei der endgültigen Löschung werden Dateipfade unter DB-Sperren ermittelt und nach dem Commit lokal entfernt.
 
 PDF-Export `/api/meetings/[id]/pdf` ist sitzungsgebunden und ausschließlich Eigentümern/Admins zugänglich: sämtliche sichtbaren Tagesordnungs-TOPs einschließlich vertraulicher Inhalte, deren eigene Texte und freigegebene Dateinamen. Die Darstellung bleibt unabhängig von der optionalen Wordvorlage. Gewöhnliche Kartenreferenzen werden nicht expandiert; Finanz-Unter-TOPs ergänzen die unten beschriebenen Finanzangaben nach aktuellen Board-/Feldrechten des Exportierenden. Downloads `/api/meeting-document/[id]` und PDF-Export sind ausschließlich sessiongebunden, mit no-store/no-referrer; keine Erweiterung der Bearer-API oder MCP-Scopes. Neue Kernlogik: `lib/meetings/`; Migrationen `0073_standalone_meetings.sql` und `0074_meeting_areas.sql`. Die Bereichsmigration legt für jede bestehende Sitzung einen eigenen Bereich mit exakt ihren bisherigen Freigaben an; gleiche Bezeichnungen werden niemals automatisch zusammengeführt. TOPs, Dokumentpfade und IDs bleiben erhalten.
 
@@ -1021,7 +1044,7 @@ Migrationen 0082/0083 ergänzen `meeting_topics.origin_topic_id` (privater Urspr
 
 Migration 0084 ergänzt `meeting_topic_activity` mit privatem Ursprung, referenzierter Sitzungsausprägung, Status, Ereigniszeitpunkt und einer Kennzeichnung für übernommene Altstände. Datenbanktrigger protokollieren die Erstellung einer Sitzungsausprägung sowie tatsächliche Änderungen von Status bzw. Zuordnung innerhalb derselben Transaktion. Dadurch bleiben „Vorgeschlagen“, „Eingeplant“, „Vertagt“, erneutes Vorschlagen, Behandlung und spätere Rücknahmen als getrennte Ereignisse erhalten. Gleicher Status oder reine Inhalts-/Weitergabemarkierungsänderungen erzeugen keine doppelten Ereignisse. Rollbacks verwerfen auch das Ereignis. Es gibt keine UI-/API-Funktion zum Bearbeiten einzelner Ereignisse. Die bisherigen App-Live-Benachrichtigungen werden auch für die neue Tabelle eingerichtet.
 
-`personalTopicHistory` liest diese Ereignisse chronologisch nach Ereigniszeit und ID, statt den jeweils aktuellen Status der Sitzungseinträge zu einer vermeintlichen Historie umzudeuten. `TopicTrail` zeigt jeden Schritt mit Sitzung und Zeitpunkt. Namen und Links werden weiterhin nur nach aktuellen TOP-/Sitzungsrechten aufgelöst; gelöschte oder nicht mehr zugängliche Ausprägungen werden nicht offengelegt. Fremde persönliche Ursprünge bleiben gesperrt. Normale Zielverweise in Sitzungsübersichten zeigen dagegen weiterhin den aktuellen Zustand der Zielsitzungsausprägung. Bei ausdrücklichem Löschen eines persönlichen Ursprungs werden auch dessen Ereignisse entfernt; beim Löschen einer Sitzungsausprägung bleiben die Ereignisdatensätze mit leerer Referenz erhalten, werden aber nicht als zugänglicher Verlauf ausgegeben.
+`personalTopicHistory` liest diese Ereignisse chronologisch nach Ereigniszeit und ID, statt den jeweils aktuellen Status der Sitzungseinträge zu einer vermeintlichen Historie umzudeuten. `TopicTrail` zeigt jeden Schritt mit Sitzung und Zeitpunkt. Namen und Links werden weiterhin nur nach aktuellen TOP-/Sitzungsrechten aufgelöst; gelöschte oder nicht mehr zugängliche Ausprägungen werden nicht offengelegt. Fremde persönliche Ursprünge bleiben gesperrt. Normale Zielverweise in Sitzungsübersichten zeigen dagegen weiterhin den aktuellen Zustand der Zielsitzungsausprägung. Bei endgültigem Löschen eines persönlichen Ursprungs werden auch dessen Ereignisse entfernt; beim endgültigen Löschen einer Sitzungsausprägung bleiben die Ereignisdatensätze mit leerer Referenz erhalten, werden aber nicht als zugänglicher Verlauf ausgegeben. Während der 30 Tage im Papierkorb bleiben die Originalreferenzen gespeichert und werden in normalen Ansichten nicht aufgelöst.
 
 Vorhandene Sitzungsausprägungen erhalten ausschließlich einen als solchen gekennzeichneten bekannten Altstand. Überschriebene frühere Zustände werden nicht rekonstruiert oder mit erfundenen Zeitpunkten versehen. Die Oberfläche zeigt dafür „Bisheriger Stand“ und einen Hinweis auf den unbekannten früheren Änderungszeitpunkt. Ab der Migration ist jede tatsächliche Zustandsänderung ein zusätzliches Ereignis. Das Einsortieren behandelter Themen unter „Vergangene Themen“ und die Aufbewahrung vertagter TOPs bleiben unverändert.
 
@@ -1073,7 +1096,7 @@ Prüfungen: `tests/word-template.test.ts` (synthetische alternative Vorlagen; op
 
 ## Sitzungsbereichsvorlagen und Standard-TOPs
 
-Migration `0090_meeting_area_templates.sql` ergänzt zentrale `meeting_area_templates`, die unabhängige JSON-Kopie `meeting_areas.default_topics` samt Quelle und Revision sowie `meetings.defaults_applied`. Unter `/vorlagen/sitzungsbereiche` verwalten Admins und Vorlagenverwalter benannte Vorlagen mit Haupt-/Unter-TOPs, Beschreibung, Beschlussvorschlag, Vortragenden, Art, Dauer, Bereich und optionaler Vertraulichkeit. Bereichseigentümer/Admins wählen unter Bereichseinstellungen → Standard-TOPs eine zentrale Vorlage aus und bearbeiten die übernommene Kopie. Änderungen oder Löschung der zentralen Vorlage ändern keine Bereichskopie oder Sitzung. Entfernen der Vorlage setzt lediglich die Quellenreferenz auf NULL. Revisionsprüfungen verhindern veraltete Änderungen. Neue Vorlagen lösen die bestehende inhaltsfreie App-Live-Benachrichtigung aus.
+Migration `0090_meeting_area_templates.sql` ergänzt zentrale `meeting_area_templates`, die unabhängige JSON-Kopie `meeting_areas.default_topics` samt Quelle und Revision sowie `meetings.defaults_applied`. Unter `/vorlagen/sitzungsbereiche` verwalten Admins und Vorlagenverwalter benannte Vorlagen mit Haupt-/Unter-TOPs, Beschreibung, Beschlussvorschlag, Vortragenden, Art, Dauer, Bereich und optionaler Vertraulichkeit. Bereichseigentümer/Admins wählen unter Bereichseinstellungen → Standard-TOPs eine zentrale Vorlage aus und bearbeiten die übernommene Kopie. Änderungen oder Löschung der zentralen Vorlage ändern keine Bereichskopie oder Sitzung. Die Quellenreferenz bleibt während der Papierkorbfrist erhalten und wird erst bei endgültiger Löschung auf NULL gesetzt. Revisionsprüfungen verhindern veraltete Änderungen. Neue Vorlagen lösen die bestehende inhaltsfreie App-Live-Benachrichtigung aus.
 
 `saveMeeting` sperrt den Bereich beim Anlegen und kopiert dessen aktuelle Standard-TOPs in derselben Transaktion als normale `scheduled`-TOPs mit neuen IDs und Elternbezügen. Für Sitzungen, die noch keine Defaults übernommen haben, gibt es die ausdrückliche Aktion „Standard-TOPs übernehmen“; Sitzungsrevision und `defaults_applied` verhindern parallele oder wiederholte Übernahme. Automatische Nachträge in vorhandene Sitzungen gibt es nicht. Standard-TOPs sind in der Sitzung nach denselben Regeln bearbeitbar, sortierbar, vertagbar und löschbar wie andere TOPs. Leser können weder Vorlagenkonfiguration ändern noch Defaults übernehmen. Vertrauliche Defaults sind nach der Übernahme weiterhin nur für Eigentümer/Admins sichtbar.
 
@@ -1176,9 +1199,16 @@ Spaltenwechsel. Datenbanktrigger schützen Kartenfelder, Haushaltspositionen,
 Einplanungen, Zuweisungen, Kommentare, bestehende Dateien und Ordner einschließlich
 Löschung. Spaltenwechsel samt Reihenfolge und technischem Änderungszeitpunkt bleiben
 möglich. Bereits gesperrte Karten veröffentlichen weitere Spaltenwechsel unmittelbar.
-Automatische Feld-/Zuweisungstrigger, Nextcloud-Archivierung und Done-Archivierung
-verändern eingefrorene Karten nicht. Neue Dateien dürfen ausschließlich als Quittung
-hinzukommen. Der eigene Quittungsbereich verwendet intern dasselbe fortlaufende
+Automatische Feld-/Zuweisungstrigger und Done-Archivierung verändern eingefrorene
+Karten nicht. Migration `0104_frozen_card_archiving.sql` erlaubt ausschließlich die
+technischen Nextcloud-Archivmetadaten (Archivlink und Retry-Zustand) zusätzlich zu
+den bestehenden Spaltenwechseln. Ein gesetzter Archivlink einer gesperrten Karte
+kann weder ersetzt noch entfernt werden. Ein Datenbanktrigger speichert den Auftrag
+mit dem Status-/Sperr-Commit; `lockApplicationCard` beschleunigt die Übertragung nach dem Commit, gemeinsam für Oberfläche, REST und MCP. Der Archiver
+prüft bestätigten öffentlichen Status und eine ausstehende Sperre erneut; auch
+Retries können vor der Bestätigung keine Dateien übertragen. Fehler bleiben nach
+der Sperre wiederholbar, Inhalte und Sperre bleiben unverändert. Neue Dateien dürfen
+ausschließlich als Quittung hinzukommen. Der eigene Quittungsbereich verwendet intern dasselbe fortlaufende
 `<Antragsnummer>_Q<n>.pdf`-Namensschema wie öffentlich. Bestehende öffentlich als
 Quittung markierte Anhänge erscheinen dort ohne Änderung ihrer Bytes. Gesperrte
 öffentliche Anträge erlauben keine allgemeinen Nachträge; Quittungen bleiben nach
@@ -1327,7 +1357,7 @@ Alle folgenden Pfade sind relativ zu `UPLOAD_DIR` (lokaler Docker-Stack:
 
 - Antrags-PDF: `cashbooks/<Kassenbuch-ID>/applications/<Karten-ID>/<Anhang-ID>/<SHA256>.pdf`
 - Ausgewählte Quittung: `cashbooks/<Kassenbuch-ID>/receipts/<Karten-ID>/<Anhang-ID>/<SHA256>.pdf`
-- Anweisungsformulare, signierte Fassungen und direkt hochgeladene
+- Aktuelles Anweisungsformular und direkt hochgeladene
   Geschäftsbedarfsquittungen: `cashbooks/<Kassenbuch-ID>/<Vorgangs-ID>/<UUID>-<Dateiname>`
 - Anweisungsformularvorlage: `cashbooks/<Kassenbuch-ID>/templates/<UUID>-Anweisungsvorlage.pdf`
 
@@ -1345,9 +1375,16 @@ muss nicht erneut gelesen werden. Andere Kassenbücher erhalten eigene physische
 Kopien. Kopien werden dem Vorgang sofort zugeordnet und über dessen geschützte
 Dateiansicht und ZIP bereitgestellt. Formular-Regenerierung verwendet diese
 Kassenbuchkopien, statt die Originaldateien erneut zu kopieren. Vor Vorlage und
-Anweisung werden alle aktuellen Unterlagen geprüft. Frühe Fassungen und schon
-bestehende alte Ablagepfade bleiben erhalten; Änderungen einer Auswahl markieren
-frühere Unterlagen lediglich als früheren Stand. Gemeinsame Archivdateien werden
+Anweisung werden alle aktuellen Unterlagen geprüft. Frühere Quellunterlagen bleiben
+bei geänderter Auswahl als früherer Stand erhalten. Das Anweisungsformular wird
+bei Generierung, Vorbereitung und Unterschrift dagegen ersetzt: Es bleibt genau
+ein aktuelles Formular am Vorgang, mit unverändertem Anzeigenamen
+`<Antrags-/Geschäftsbedarfsnummer>_Anweisung.pdf`. Neue Bytes werden zuerst unter
+einem neuen UUID-Pfad geschrieben und revisionsgeprüft zugeordnet; erst nach
+dem Commit werden ersetzte Formulardateien ohne weitere Vorgangsreferenz
+entfernt. Änderungen am Entwurf, Quittungen oder eine Rückgabe verwerfen das
+ungültige Formular ebenso. Aktivitäten mit Zeitpunkten, Akteuren und Prüfsummen
+bleiben erhalten. Bereits gebuchte Altbestände werden nicht umgeschrieben. Gemeinsame Archivdateien werden
 bei einem fehlgeschlagenen Speicherversuch nicht gelöscht, da parallele Vorgänge
 sie bereits verwenden könnten. Sämtliche Dateioperationen erfolgen außerhalb von
 Datenbanksperren.
@@ -1600,3 +1637,244 @@ eingerichtete Uploads werden abgewiesen. Die Einreichung prüft Modul und Routin
 unter Sperren erneut, nachdem Dateien außerhalb der Transaktion vorbereitet wurden.
 Ein Wechsel währenddessen legt keine Karte an und räumt ausschließlich neue
 Dateikopien auf. Keine neuen öffentlichen oder Bearer-/MCP-Endpunkte.
+
+### Verfügbare Board-Trigger
+
+Die Einstellungsoptionen **Anweisungsdatum setzen** und **Überweisungsdatum setzen** entfallen auf sämtlichen Boards einschließlich zugehöriger Trigger-Zuweisungen. Die automatische Datumssetzung wurde aus allen Statuswegen (Oberfläche, Sitzungen, öffentliche Einreichung, REST/MCP) entfernt. Bereits gespeicherte Datumswerte bleiben erhalten; alte Kartenfelder bleiben nach ihren bisherigen Sichtbarkeits-/Schreibrechten nutzbar.
+
+Der **Nextcloud-Archiv-Trigger** bleibt auf normalen Boards **und Antragsboards** wie bisher verfügbar: Auswahl, Ausführung, Trigger-Zuweisungen, öffentliche Archiv-Uploadsperre und Übernahme aus Board-Vorlagen. Vorhandene Konfigurationen, Dateien und Nextcloud-Links bleiben erhalten. Die Kartensperre und ihre bisherigen Schutzregeln ändern sich nicht.
+
+Nur die **Done-Spalte (automatisches Erledigt-Archiv)** entfällt auf Antragsboards. `lib/board-trigger-policy.ts` behandelt dort alte Done-Konfigurationen und zugehörige Zuweisungen als inaktiv; der Setter lehnt auch direkte Änderungen ab. Sämtliche Statuswege setzen für Antragsboards keinen Done-Zeitpunkt mehr, und der periodische Sweep überspringt sie unabhängig von alten Zeitstempeln. REST/MCP liefern `doneStatusId: null`; Suchfilter und Statistiken behandeln eine alte Done-Spalte als gewöhnliche Spalte. Bereits archivierte Karten bleiben über das Archiv erreichbar und werden nicht automatisch wiederhergestellt. Zahlungsabschluss (`completedStatusId`) bleibt unabhängig davon erhalten. Normale Boards behalten Done und Nextcloud.
+
+REST/MCP behalten ihre Antwortstruktur: alte Datums-Triggerfelder für Eigentümer/Admins sind stets `false`, Archiv-Trigger werden unverändert entsprechend der tatsächlichen Einstellung ausgegeben. Öffentliche Statusabfrage und Uploadvalidierung nutzen dieselbe wirksame Archivregel. Für diese Änderung ist keine zusätzliche Migration oder Datenbereinigung erforderlich.
+
+### Begrenzte Verwaltungsrechte für Inventare
+
+Am Ende der Inventar-Einstellungen vergeben Eigentümer/Admins im Bereich **„Verwaltungsrechte vergeben“** personenbezogene Verwaltungsrechte an aktive Personen mit bereits bestehendem direktem oder Gruppen-Schreibzugriff. `inventory_board_managers` (Migration `0103_inventory_board_managers`) ist unabhängig von normalen Board-Verwaltungsrechten; beim Update wird niemand automatisch ernannt. Die Auswahl, Prüfung und mobile Darstellung verwenden dieselbe gemeinsame Logik wie bei Boards (`lib/board-management.ts`, `ManagementGrantSettings`).
+
+Delegierte Personen sehen und bearbeiten ausschließlich **Email-Settings**, **Freigaben**, **Felder** und **Automatische Inventarnummer**. E-Mail-Regeln betreffen das tatsächlich zugeordnete Leihvorgangsboard und sind nur bei eingerichtetem Aufgabentracking verfügbar; die Zuordnung wird serverseitig geprüft. Ohne aktuellen Schreibzugriff bzw. bei deaktiviertem Konto ruhen die Verwaltungsrechte sofort; bei erneutem Schreibzugriff gelten sie wieder. Eigentümer/Admins können sie jederzeit vollständig entziehen. Eigene Schreibrechte dürfen über Freigaben ebenfalls entzogen werden, wodurch der Verwaltungszugriff endet.
+
+`canManageInventoryBoard`/`requireInventoryBoardManage` bleiben unverändert auf Eigentümer/Admin beschränkt. Umbenennen/Beschreibung, Aufgabentracking/Leihboard, Eigentümerschaft, Löschen sowie Vergabe/Entzug der Verwaltungsrechte sind nicht delegiert. Die vier erlaubten Bereiche prüfen separat `canConfigureInventorySettings`/`requireInventorySettingsAccess`. Die Einstellungslinks im Inventar und verknüpften System-Board berücksichtigen diese Teilrechte; normale Board-Einstellungen auf System-Boards bleiben gesperrt. REST/MCP gewinnen keine neuen Endpunkte, Eigentümerrollen oder Verwaltungsmetadaten. Finanzboards, Kassenbücher und öffentliche Rechte bleiben unverändert.
+
+### Finanzübersichten: Admin-Anlage und Navigation nach Zugriff
+
+Finanzübersichten werden ausschließlich von aktiven Administrationskonten unter **Admin-Panel → Finanzboards** angelegt. Der vorhandene Anlege-Dialog einschließlich optionaler Haushaltsplan-Vorlage steht dort; `createFinanceBoardAction` verlangt serverseitig `requireAdmin`, auch bei direkten Aufrufen oder alten geöffneten Formularen. Die Anlege-Buttons auf Startseite und Finanzliste entfallen. Der alte Pfad `/finanzen/neu` verlangt ebenfalls Adminrechte und leitet dann auf `/admin/finanzboards` weiter. Vorlage und ihre Unterpositionen werden weiterhin atomar übernommen; der angemeldete Admin wird zunächst Eigentümer. Bestehende Eigentümerschaften, Freigaben, Daten und Verwaltungs-/Planbearbeitungsrechte ändern sich nicht.
+
+Der Reiter **Finanzen** wird im Desktop-Header und in der mobilen Tab-Leiste nur angezeigt, wenn `getAccessibleFinanceBoards(user)` mindestens eine Übersicht liefert. Direkte und Gruppen-Lesefreigaben, Schreibfreigaben und zusätzliche Eigentümer werden berücksichtigt; entfallene Rechte/deaktivierte Konten wirken bei der nächsten Aktualisierung. Admins behalten ihren bisherigen Lesezugriff auf alle vorhandenen Finanzboards, sehen den Reiter aber bei einer leeren Instanz ebenfalls nicht. Das Admin-Panel bleibt zum Anlegen unabhängig davon zugänglich. Direkte Aufrufe der Finanzliste ohne Freigaben zeigen nur den leeren Hinweis, keine Anlegefunktion und keine fremden Übersichten. Keine neuen API-/MCP-Endpunkte oder Datenbankmigrationen.
+
+### Leihvorgangsboard entfernen
+
+Das Entfernen des Aufgabentrackingboards in den Inventar-Einstellungen verlangt im In-App-Bestätigungsdialog die Eingabe **`LÖSCHEN`**. `ConfirmButton` übergibt die tatsächlich eingegebene Bestätigung; `deactivateLoanTrackingAction` prüft Eigentümer/Admin und das Wort serverseitig vor jeder Änderung. Fehlende/falsche Bestätigung sowie reine Schreib-/Verwaltungsrechte reichen nicht zum Löschen.
+
+Das System-Board samt Karten, Kommentaren, Aktivitäten und Kartenanhängen bleibt 30 Tage im Papierkorb erhalten. Laufende und abgeschlossene `inventory_loans`, Stückzuordnungen und `inventory_attachments` einschließlich echter Dateien bleiben am Gegenstand sichtbar; ihre Kartenverknüpfung und die Tracking-Konfiguration werden beim Verschieben gelöst und im Papierkorb zur Wiederherstellung gespeichert. Ein zwischenzeitlich neu eingerichtetes Trackingboard wird nicht überschrieben: vor der Wiederherstellung muss es entfernt werden. Erst die endgültige Löschung entfernt das alte Board und seine lokalen Kartendateien. Inventardateien, Vorgangsstatus und übrige Leihdaten bleiben erhalten.
+
+## Household title catalogs
+
+Migration `0105_budget_title_sources.sql` adds nullable, restricted foreign keys
+`accounts.finance_board_id` and `cashbooks.finance_board_id`. Existing accounts,
+books, allocations, corrections and posted entries are unchanged. Admins assign
+an account's catalog in `/admin/accounts`, including during creation. Cashbook
+owners/admins assign a readable financial overview in the cashbook settings.
+This is a catalog association only: it does not add access grants, change the
+financial overview's cashbook/source configuration or change any totals.
+
+`lib/budget-title-catalog.ts` exposes only expense title codes and names, excluding
+empty codes, incomes and plan amounts. Duplicate codes form a single option with
+the distinct names. The existing searchable in-app `Select` displays
+`code — name`. Application planning uses each row's account association; a
+confirmed account change resets the title. Cashbook drafts and corrections use
+the cashbook association, including business expenses. Account/catalog access is
+not financial-overview read access: authorized application/cashbook writers may
+select the configured codes/names without receiving financial-overview access.
+
+The shared planning writer validates UI, REST and MCP writes against the selected
+account's live catalog inside the transaction. Cashbook draft and correction
+writers likewise validate the book's live catalog, including a check before
+source-file copying. Missing associations and empty catalogs block new titles.
+Existing persisted titles/pairs can be retained when they disappear from a plan;
+this never adds options to new entries and cannot multiply historical allocation
+rows. Existing amounts, codes and audit history are not migrated or rewritten.
+A referenced financial overview cannot be deleted until its catalog assignments
+are removed; the UI returns an explanation. No cashbook bearer API or MCP tools
+and no public API/catalog endpoints are added.
+
+`budget-title-catalog-db.test.ts` checks admin/owner guards, account-specific
+catalogs, incomes/amount privacy, invalid values, catalog changes, retained
+historical entries and corrections. The production cashbook browser test covers
+account assignment, book assignment and searchable title selection at desktop
+and mobile widths, followed by the existing signature/payment workflow.
+
+
+## 30-day recycle bin (migration 0106)
+
+Alle Löschaktionen mit Worteingabe `LÖSCHEN` verwenden `lib/trash.ts`: Boards und Leih-System-Boards, Finanzübersichten, Inventare, Kassenbücher, Gruppen, Konten, Prioritäten, Standorte beider Formularmodule, Feedback-Bereiche, Board-/Finanz-/Sitzungsbereichsvorlagen, Sitzungen sowie persönliche Themen und TOPs. Klickbestätigungen ohne Worteingabe behalten ihr bisheriges Verhalten. Antragsboards und Kassenbücher dürfen ausschließlich aktive Admins löschen; für andere Typen bleiben die bisherigen Eigentümer-/Vorlagenverwaltungsrechte erforderlich. Auch Legacy-Server-Actions prüfen das tatsächlich eingegebene Wort. Kassenbuch-Löschen steht Admins in der Verwaltung und bei entsprechendem Zugriff in den Einstellungen zur Verfügung.
+
+`deleted_at` blendet den Eintrag mitsamt abhängigen Daten in normalen Listen, direkten Links, Downloads, Exporten, öffentlichen Formularen/Status-Tokens und REST/MCP aus. Gelöschte Gruppen vermitteln keine Zugriffsrechte. Daten, Freigaben, eingefrorene Werte und lokale Dateien bleiben unverändert gespeichert; Datenbank-Trigger verhindern weitere Inhaltsänderungen im Papierkorb. Katalog-/Quellenverknüpfungen bleiben bis zur endgültigen Löschung erhalten. Aktives Standort-/Feedback-Routing blockiert weiterhin das Löschen seines Zielboards. Namen können während der Aufbewahrung weiterhin reserviert sein.
+
+Unter `/admin/papierkorb` sehen ausschließlich Admins Name/Typ, löschende Person, Löschzeit und Ablauf. `WIEDERHERSTELLEN` stellt vor Ablauf von exakt 720 Stunden die Originaldaten einschließlich Dateien und Freigaben wieder her; `ENDGÜLTIG` entfernt sie sofort unwiderruflich. Beide Wörter werden serverseitig geprüft (getrimmt, Groß-/Kleinschreibung relevant). Fehlende Eltern oder inzwischen neu belegte Verknüpfungen verhindern die Wiederherstellung mit einem Hinweis, statt bestehende Daten zu überschreiben. Beim Löschen eines Haupt-TOPs bleiben aktive Unter-TOPs eigenständig und erben nötigenfalls dessen Vertraulichkeit; Wiederherstellung verbindet unveränderte Kinder wieder. Neue Finanz-TOPs dürfen Papierkorb-Slots ersetzen; ein solcher Konflikt muss vor Wiederherstellung behoben werden.
+
+Ein beim Produktionsstart gestarteter Scheduler prüft minütlich, ob der tägliche Lauf ab **03:00 Europe/Berlin** fällig ist; `maintenance_runs` speichert den letzten lokalen Tag, sodass Neustarts keinen zusätzlichen Tageslauf verursachen. Nach einem späteren Start wird die Prüfung nachgeholt. Der Lauf entfernt Einträge mit mindestens 30 vollen Tagen Aufbewahrung. Ab Ablauf ist auch bis zum nächsten Tageslauf keine Wiederherstellung mehr möglich.
+
+Die endgültige Löschung eines ganzen Boards/Inventars/Kassenbuchs umfasst auch darin gesperrte Karten, Haushaltsplan-Korrekturhistorien und unveränderliche Buchungen. Die Ausnahme in den bestehenden DB-Schutzfunktionen ist auf die konkrete Papierkorb-ID und deren aufgezeichnete Nachkommen innerhalb derselben Transaktion begrenzt; normale Einzeländerungen und Einzellöschungen bleiben geschützt. Kein globales Abschalten von Triggern. Korrekturketten werden geordnet gelöscht; überlebende Fremdschlüssel werden nur im zulässigen Umfang gelöst. Bereits separat gelöschte Kinder desselben Containers werden im Papierkorb mit abgeschlossen.
+
+Vor dem DB-Commit wird eine dauerhafte Liste lokaler Dateipfade gespeichert (`state=purging`). Dateizugriffe erfolgen danach ohne DB-Sperren. Weiterhin referenzierte Dateien bleiben erhalten. Fehlgeschlagene lokale Bereinigung bleibt im Papierkorb sichtbar und wird erneut versucht; eine nach begonnenem Purge gelöschte Ressource lässt sich nicht mehr wiederherstellen. Entfernte **Nextcloud-Archive bleiben unberührt**. Es gibt keine neuen externen API- oder MCP-Funktionen für Papierkorb oder Kassenbuch; Wiederherstellung und endgültige Löschung sind ausschließlich sessiongebundene Admin-Aktionen.
+
+
+## Board file recycle bin (migration 0107)
+
+Jedes Board einschließlich Antragsboards hat rechts neben den bisherigen Kopfaktionen den Button **Papierkorb** (`/intern/board/{id}/papierkorb`). Board-Leserechte erlauben das Einsehen; Wiederherstellung und endgültige Löschung benötigen aktuellen Schreibzugriff. Ausgeblendete Anhangsfelder bleiben auch im Papierkorb unsichtbar. Pfade und interne JSON-Metadaten werden nicht an den Browser ausgegeben.
+
+`stageAttachmentTrash` schreibt bei ausdrücklichem Löschen und beim Ersetzen benannter Slots atomar einen `trash_entries`-Eintrag mit `kind=attachment`, vollständigen Anhangsmetadaten, ursprünglicher Board-/Karten-ID und Kartenbezeichnung, Löschperson, Löschzeit und 720-Stunden-Frist. Anschließend wird nur die aktive Anhangsreferenz entfernt. Die echte Datei bleibt unverändert am bisherigen lokalen Pfad. Web-Uploads und Bearer-/MCP-Uploads verwenden beim Ersetzen dieselbe Routine. PDF-Bearbeitung ohne Löschen bleibt unverändert; es wird keine allgemeine Dateiversionierung eingeführt.
+
+Die boardgebundenen Server Actions prüfen die tatsächlich eingegebenen Wörter **WIEDERHERSTELLEN** / **ENDGÜLTIG** serverseitig (getrimmt, case-sensitive) und erneut aktive Person, Board, Schreibrechte, Zugehörigkeit und Anhangsfeld. Wiederherstellung behält ID, Dateiname, Uploaddatum, Pfad und ursprüngliche Kartenzuordnung. Ein inzwischen entfernter Ordner führt zur Ablage direkt an der Karte. Belegte Slots werden niemals überschrieben. Gelöschte oder inzwischen dauerhaft gesperrte Karten erlauben keine Wiederherstellung; eine Sperre wird nicht umgangen. Die Datei kann trotzdem endgültig entfernt werden, da sie bereits vor der Sperre kein aktiver Karteninhalt mehr war. Löschung, Wiederherstellung und manuelle endgültige Löschung stehen im internen Kartenverlauf.
+
+Der bestehende tägliche Lauf ab 03:00 Europe/Berlin entfernt Datei-Papierkorbeinträge ab 720 Stunden. Dieselbe dauerhafte Nach-Commit-Dateibereinigung wie beim globalen Papierkorb schützt weiter referenzierte Dateien und erlaubt Wiederholungen bei IO-Fehlern. Beim Löschen einer Karte bleiben zuvor in den Papierkorb verschobene Dateien bis zur Frist dort sichtbar, können aber mangels Karte nicht zurückgeholt werden. Wird das ganze Board/Inventar endgültig gelöscht, umfasst der Datei-Snapshot auch dessen Papierkorbdateien; die zugehörigen Papierkorbeinträge werden mit abgeschlossen. Die globale Admin-Papierkorbseite listet ganze Ressourcen, Dateien erscheinen ausschließlich beim zugehörigen Board. Eigenständige Kassenbuchkopien und Nextcloud-Archive bleiben unberührt. Keine zusätzlichen Bearer-/MCP-Endpunkte für Papierkorbverwaltung.
+
+
+### 30-day retention upgrade (0108)
+
+`lib/trash-retention.ts` defines one shared 30-full-day (720-hour) retention for resources and attachments. Migration `0108` extends every existing `trashed` entry to at least `deleted_at + 720 hours`, retaining any longer deadline. This includes entries whose previous five-day restore window elapsed but whose data has not yet been purged. Original deletion timestamps, content, permissions and paths stay unchanged. Completed/restored/purging history is preserved; a purge already begun remains irreversible and is retried. The DB enforces the 30-day minimum for recoverable entries. Manual `ENDGÜLTIG` deletion remains available immediately with the existing confirmation/authorization checks. The daily 03:00 Europe/Berlin schedule is unchanged.
+
+
+## Durable Nextcloud archive outbox (migration 0109)
+
+`nextcloud_archive_jobs` stores one pending job per card (FK cascade), request time, attempt count, last attempt and a generic error. It contains no credentials or public API metadata. An AFTER trigger on card insertion and status/public-status/lock changes runs after the existing freeze trigger and inserts the job in the same transaction. Rollback also rolls back the job. The shared SQL eligibility predicate requires an active ordinary/application board, configured/enabled Nextcloud archive, confirmed public status equal to the current archive-trigger column and the irreversible lock when that column requires it. System boards and unconfirmed lock columns never queue. Board archive configuration/status changes and restoration also queue eligible cards. Migration backfills already-eligible, unarchived cards without rewriting any stored content, flags, locks, links or activities.
+
+`maybeArchive` idempotently ensures a job before acquiring the nonblocking per-card advisory lock. Lock contention leaves the job pending. The worker starts 30 seconds after production startup and retries all pending jobs every ten minutes, including requests that never reached their first attempt and legacy failure flags. A process exit releases its session advisory lock; no expiring lease or in-memory queue is required to recover the durable request. All delivery DB work uses that same checked-out client, preventing pool starvation under parallel uploads. File/network IO occurs outside row-lock transactions.
+
+On success the recorded Nextcloud folder, cleared failure flags, single success activity and outbox acknowledgement commit atomically. If the process dies after remote upload but before this commit, the job remains and is retried. Delivery is **at least once**, not a distributed exactly-once transaction: existing conditional WebDAV PUT/content comparison keeps identical retries from overwriting archives. Failures retain the job; `archive_pending` remains a failure indicator rather than being set merely because a fresh job is waiting. No bearer/MCP operation can alter job/link bookkeeping.
+
+Every attempt rechecks current applicability. Leaving/disabling a trigger cancels pending work under a fresh card lock; moving back or re-enabling queues again. Trashed boards pause pending delivery and restoration resumes it; final card/container deletion cascades the corresponding jobs. Already recorded successful archives are not uploaded again. These rules apply to ordinary moves, locks, public workflows, meeting financial moves, REST and MCP because enqueueing is below the individual call sites.
+
+`archive-outbox-db.test.ts` uses a synthetic upload, kills a separate worker mid-upload, holds the advisory lock to force a skipped call, rolls back status changes, rejects a local success acknowledgement after remote success, and drives more concurrent uploads than the connection pool size. `archive-outbox-migration.test.ts` verifies backfill and exact preservation of historical content, locked cards, failed and successful archive metadata. Tests never contact a real Nextcloud or touch normal app storage.
+
+
+## Optional Nextcloud archiving for cashbooks (migration 0110)
+
+The current cashbook owner configures an independent WebDAV connection under cashbook settings → Nextcloud-Archivierung: enabled, HTTPS URL, username, encrypted app password and root folder. `cashbook_archive` is separate from the general cashbook JSON so ciphertext never appears in client props, PDF config or audit snapshots. Blank passwords retain the existing secret. The configuration uses its own revision; current owner/active-user checks are repeated under the cashbook lock. Read/write/office grants and an additional admin read grant do not grant this setting. A saved connection can be tested with the existing SSRF/TLS-protected Nextcloud helper. No cashbook operation is added to REST/MCP.
+
+Only the transition from submitted to posted when the assigned second signer authorizes the instruction inserts `cashbook_archive_jobs`, in the same transaction and after booking-number assignment. The trigger requires the enabled complete connection, both signatures and an original instruction (`corrects_id IS NULL`). Old posted entries are not backfilled, enabling the feature does not export historical entries, and correction INSERTs do not create new archive requests. Booking-date/office/flag updates do not queue again.
+
+After commit the service attempts delivery immediately; the durable worker also runs 30 seconds after production startup and every ten minutes together with board archives. Nonblocking per-entry advisory locks serialize uploads and skipped/interrupted calls stay pending. The same checked-out client handles all delivery DB operations. Disabled or trashed cashbooks pause requests rather than deleting them; re-enabling/restoration resumes on the next worker pass. Local file/network IO occurs outside row-lock transactions.
+
+The folder is **`<booking number> <application/business number>`** under the configured root; `data.number` is the immutable request/business reference. Existing Nextcloud sanitization handles unsafe path characters. Every file in the posted entry's `files` array is included. New workflows retain only the current instruction PDF with both signatures; replaced intermediate forms are not attached or archived. Legacy posted entries retain their original file arrays, including historical/obsolete forms and signature versions. All included checksums are verified, including legacy historical files. The shared archive layout deterministically separates equal filenames; conditional PUT/content comparison protects existing files and retry data. Uploads use the cashbook's real independent file copies, not application-board originals.
+
+A success path/timestamp and append-only `nextcloud_archived` activity commit atomically in the separate job table; posted payment fields and revision are untouched. Failed attempts retain the job and a generic error, and the first failure has a `nextcloud_archive_failed` history entry. The entry view shows queued/paused/retrying/completed status and the resulting internal folder path. Successful archive metadata and job assignment are immutable; only scoped whole-cashbook purge can delete them. The activity actor is the instruction authorizer while the UI labels these automated events as System. Credentials are never in activity details. Nextcloud copies survive local recycle-bin/final deletion.
+
+`cashbook-archive-db.test.ts` covers permissions (including nonowner admin readers), encrypted/retained secrets, no history export, both number variants, all file versions, raw-commit queueing, lock contention, failed uploads/acknowledgements, checksum errors, pause/restore, corrections and unchanged accounting. `cashbook-archive-migration.test.ts` verifies untouched old books/corrections/files, default-disabled behavior and queue creation only for a newly authorized instruction. Browser checks use synthetic users and do not contact a real Nextcloud.
+
+
+### Resource deletion: admin-only containers and typed names
+
+Financial overviews, application boards and cashbooks expose deletion **only in the admin panel**, never in their settings (including for admins). Finance/cashbook/application-board deletion rechecks the active admin role in `moveToTrash` under the deletion lock. The former finance settings action is removed; the generic board settings action and its legacy form alias reject application boards even for admins. The dedicated admin board action is shared by the Boards and Antragsboards admin tabs. Ownership management remains available in settings with its existing permissions.
+
+Normal boards remain deletable by owners/admins in board settings and by admins in the admin list. Every board/application-board, finance and cashbook deletion first requires `LÖSCHEN`, then the exact, case-sensitive full current name in the warning modal before `Löschen` becomes available. Reopening clears the name input. `DeleteConfirm` forwards both actual inputs; actions pass `boardName`, `financeName` or `cashbookName` to `moveToTrash`, which compares the name against the current locked row after live authorization. Missing, non-string, wrong, case-changed, whitespace-modified and stale names cannot bypass the confirmation through direct action calls. Legacy board form actions read the actual `boardName` form input. The separate inventory tracking-removal flow retains its existing `LÖSCHEN` confirmation and inventory ownership checks.
+
+The 30-day retention, admin-only restoration, `ENDGÜLTIG` purge and all preserved contents remain unchanged. No bearer API/MCP deletion function is introduced. `board-delete-name-db.test.ts`, `finance-delete-name-db.test.ts` and `cashbook-delete-name-db.test.ts` cover current names, authorization and preserved contents; the recycle-bin production browser test checks the admin dialogs, absent settings buttons and normal-owner deletion at desktop/mobile widths.
+
+
+### Meeting area and inventory deletion with two typed confirmations
+
+Owners/admins delete inventories and meeting areas in their settings using the existing in-app `DeleteConfirm`: first `LÖSCHEN`, then the exact current full name in the warning dialog. Inventory coowners retain equal rights; delegated inventory managers and read/write grants grant no deletion rights. Both actual inputs are checked server-side under the resource lock (`inventoryName` / `areaName`), including stale-name rejection.
+
+Migration `0111_meeting_area_recycle_bin` adds only nullable `meeting_areas.deleted_at` and registers `meeting_area` in the existing 30-day recycle bin. Deletion preserves the area's settings, grants, Word template, sessions, TOPs, histories and documents without changing children. Normal reads and authorization hide all descendants for every user, including admins; database parent guards reject further edits. Admin restoration reactivates the area with exact original contents; independently trashed child sessions/TOPs stay trashed and cannot be restored until the area is active. Final manual/daily purge removes contained sessions/TOPs and local documents/Word template via the scoped purge and durable post-commit file cleanup, while independent personal topics and linked source cards remain. No REST/MCP scope is added. Migration and workflow tests use isolated PostgreSQL databases and synthetic files only.
+
+
+### Delegated settings rights for meeting areas (migration 0112)
+
+Owners/admins appoint active writers under **Bereichseinstellungen → Verwaltungsrechte vergeben**. `meeting_area_managers` stores separate personal delegations; direct/group write access is still required at every check. Any write grant wins over read grants. Losing write access, leaving a writing group, a trashed group/area or account deactivation suspends the delegation; restored write access reactivates it. Existing areas receive no automatic delegates. The shared candidate/appointment logic in `lib/board-management.ts` and the existing in-app `ManagementGrantSettings` are reused. Only owners/admins can appoint/remove delegates, with current identity/ownership checked under the area lock.
+
+Delegates can change all current area settings: **Allgemein, Tagesordnung, Standard-TOPs, Wordexport, Finanzanträge, Freigaben**, and session board bindings. Session settings also permit reopening closed sessions; source-board permissions stay independent. Settings mutations serialize on the area, then recheck live identity and delegation. Original Word-template inspection/download is available through the session-bound route with the same settings guard. Template-file operations remain outside row locks; revisions and post-commit cleanup remain enforced. Updating settings skips independently trashed sessions.
+
+`requireArea(...,"settings")` / `canConfigureAreaSettings` deliberately remain separate from full `manage`/`canManageMeeting`. Delegation grants no ownership, deletion, appointment rights, confidential-TOP access or confidential session exports. The settings page renders deletion and appointment controls only for owners/admins and contains one deletion section. Individual session settings use the same settings/deletion distinction. No REST/MCP operations or bearer scope are added. The new table participates in the area recycle-bin guards/cascade purge and app refresh notifications.
+
+`meeting-area-management-db.test.ts` covers direct/group grants, all settings groups and original-template download, denied deletion/appointment, independent board rights, self-downgrade, queued-save revocation and recycle-bin restoration. Production browser tests cover owner appointment, delegate settings, absent protected controls, live revocation and admin access on desktop/mobile. The upgrade test verifies all original rows remain unchanged and no delegates are automatically appointed.
+
+
+### Typed content deletion, card bin and extended confirmations (migration 0113)
+
+Deleting an individual card requires actual `LÖSCHEN` and moves it into **Board → Papierkorb → Gelöschte Karten** for 30 days. Discarding an autosaved new card uses the same typed flow and bin without consuming a request number. Readers can view sanitized bin metadata; current board writers/owners/admins can restore with `WIEDERHERSTELLEN` or purge with `ENDGÜLTIG`. Locked cards remain undeletable for everyone. Inventory tracking cards are still managed through inventory operations.
+
+`cards.deleted_at` preserves identity, status, token, fields, budgets, comments, assignments and attachment records/bytes. Shared visibility filters hide cards and descendants from boards, finance calculations, status tokens, REST, MCP and file downloads; database root/parent guards reject edits to trashed cards/children. Restoring a card preserves its original contents and records an activity event. Independently trashed files stay in the file bin and can be restored after their card returns. Existing parent-board deletion/restoration preserves individual card-bin states; whole-board purge includes card-bin entries and orphaned file-bin content. Daily 30-day cleanup uses the same scoped purge, with file IO only after commit and reference checks protecting independent copies. Board done sweeps/settings skip trashed cards. Nextcloud jobs pause for trashed cards; eligibility excludes them and restoration queues eligible work. No automatic migration of card contents or existing archives takes place.
+
+REST `DELETE /api/v1/cards/{id}` now requires a strict JSON body `{ "confirmation": "LÖSCHEN" }`; MCP `delete_card` requires the same explicit `confirmation` argument. Both use the shared lifecycle and existing live user/write/token/board restrictions. Restore/purge remain session-bound UI actions. The public API adds no operation: deleted status tokens/documents return unavailable.
+
+Inventory item deletion, individual loan deletion, inventory attachment removal (including loan contracts) and meeting-document removal require actual `LÖSCHEN` in their existing in-app flow and server actions, including legacy form aliases. These remain immediate deletions, not new recycle bins. Typed immediate-delete dialogs display the immediate-removal message instead of the generic 30-day text.
+
+Admin account deactivation/reactivation requires exact uppercase `DEAKTIVIEREN` / `REAKTIVIEREN`, retaining live-admin, self-protection, last-admin and session-version rules. Profile certificate and signature-image removal requires `ENTFERNEN`; existing signed documents remain unaffected. Admin inventory publication/hiding requires `ÖFFENTLICH` / `VERBERGEN`, and inclusion/exclusion from the overview requires `EINBEZIEHEN` / `AUSSCHLIESSEN`. Visibility mutations recheck the active admin under the resource lock.
+
+Group deletion and named board/finance/meeting-area template deletion additionally require the exact current full name in the second dialog after `LÖSCHEN`; the shared lifecycle checks it under the row lock. Existing 30-day behavior and template revisions stay intact. Removing stored Word/PDF form templates requires `LÖSCHEN` plus the current filename; removal remains immediate, protected by existing settings rights and revision/row locks. Instantiated copies remain unchanged.
+
+`card-trash-db.test.ts` covers full retention, privacy, scoped rights, frozen cards, REST/MCP confirmation, restoration and expiry/file cleanup. `extended-confirmations-db.test.ts` checks missing/wrong/malformed inputs and current/legacy mutation paths. `card-trash-migration.test.ts` verifies unchanged historical rows. The typed-deletions production browser test drives all new dialog families at desktop/mobile widths with synthetic users/files.
+
+
+## Ein aktuelles Anweisungsformular
+
+`lib/cashbook/instruction-files.ts` ersetzt ausschließlich Formulare (`form`,
+`prepared`, `signed`); Antragskopien und Quittungen bleiben unabhängig davon
+erhalten. Signaturaktionen übernehmen Positionen für das zweite Ort-/Datumsfeld.
+Nach der ersten Unterschrift enthalten die Metadaten Länge und SHA-256 des exakt
+signierten PDF-Präfixes. Wiederholtes Vorbereiten der zweiten Unterschrift baut
+aus diesem unveränderten Präfix auf, sodass frühere Ort-/Datumsangaben ersetzt
+werden und die erste CMS-Signatur erhalten bleibt. Die zweite Signatur wird
+inkrementell angehängt. Offene Altvorgänge mit kompatiblem Formular werden beim nächsten Schritt auf
+eine aktuelle Datei reduziert. Enthält eine bereits erstsignierte Altvorlage kein
+vorbereitetes zweites Signaturdatumsfeld, muss sie begründet zurückgegeben und
+neu erstellt werden; die vorhandene Unterschrift wird nicht still beschädigt. Gebuchte Dateien und vorhandene Nextcloud-Archive
+bleiben unverändert. Keine Migration oder neue API-/MCP-Funktion.
+
+Die Workflowprüfung in `tests/cashbook-db.test.ts` kontrolliert konkurrierende
+Generierung, physische Entfernung der Zwischenstände, Vorbereitung mit geänderten
+Signaturangaben, offene Altvorgänge und beide CMS-Signaturen per OpenSSL.
+
+
+Kassenbuch-Verlaufsangaben zu Anträgen zeigen die im jeweiligen Ereignis gespeicherte
+Antragsnummer statt der internen Karten-ID. Ausgewählte Quittungen erscheinen
+zeilenweise mit ihren Dateinamen aus den eigenständigen Kassenbuchkopien, auch
+aus früheren Quittungsauswahlen. Vorher/Nachher verwendet jeweils den zugehörigen
+Stand; aktuelle Karten- oder Anhangsdaten werden dafür nicht abgefragt. Das gilt
+auch für bestehende Ereignisse, ohne diese umzuschreiben. Fehlen bei Altbeständen
+Nummer oder Dateiname, wird dies ausdrücklich benannt statt eine interne ID als
+Antrags-/Quittungsnummer auszugeben. Kassenbuchrechte bleiben die Zugriffsgrenze.
+
+
+## Mehrfachunterschriften ohne beschädigte PDF-Revisionen
+
+`signPdf` erkennt vorhandene Signaturwörterbücher und verwendet für weitere
+Unterschriften automatisch `signPdfIncremental`. Das gilt über den gemeinsamen
+`applyEditsAndSign`-Kern für Kartenanhänge, Inventardateien und Anweisungsformulare
+sowie für das Kassenbuch. `lib/pdf-incremental.ts` hängt nur geänderte/neue Objekte
+mit korrektem `/Prev` an; bereits signierte Bytes und Signaturwörterbücher dürfen
+nicht neu geschrieben werden. Keine Änderung der Zertifikats- oder Zugriffsrechte.
+
+Der Upstream-Platzhalter wird nach Anlage auf einen eindeutigen freien Feldnamen
+`Signature1`, `Signature2`, … umbenannt. Die sichtbare Signatur liegt vollständig
+im Appearance-Stream des neuen Widgets, einschließlich Unterschriftsbild,
+Seitenrotation und CropBox. Signieren zeichnet nicht mehr in bereits signierte
+Seiteninhalte. Explizite spätere PDF-Bearbeitungen speichern ebenfalls inkrementell;
+sie sind weiterhin inhaltliche Änderungen, die Prüfprogramme entsprechend bewerten
+können, keine unveränderte Folgesignatur.
+
+Beim Kassenbuch bleiben nach dem Flatten ausschließlich schreibgeschützte
+`GremioSecondSignerPlaceDate`-Felder an den vorbereiteten Positionen bestehen.
+Überzählige/verwaiste Widget-Verweise des pdf-lib-Flatten werden vor dem ersten
+Signieren entfernt. Jedes Datums-Widget ist mit seinem Feldwörterbuch vereinigt;
+die serverseitige Vorbereitung ergänzt nur dessen Wert und Appearance. Beim
+Neuvorbereiten wird weiterhin vom exakt erstsignierten Präfix ausgegangen.
+Der Sign-only-Viewer rendert diese schreibgeschützten Angaben in die Canvas;
+er bietet keine PDF-Text- oder Feldbearbeitung an.
+
+Bereits beschädigte signierte PDFs werden nicht nachträglich verändert oder als
+repariert ausgegeben. Dafür ist ein unbeschädigtes Ausgangsdokument mit erneuter
+Unterschrift nötig. Fehlendes Zertifikatsvertrauen ist von beschädigten
+Signaturbytes zu unterscheiden und wird durch diese Änderung nicht umgangen.
+
+Prüfungen: `cashbook-signatures.test.ts` (zwei/drei Signaturen, eigene Contents-Lücke,
+eindeutige Felder, unveränderte Seiten), der reale Kassenbuch-Datenbankablauf und
+der Produktionsbrowserablauf für Kassenbuch und normale Kartenanhänge. Mit
+`GREMIO_SIGNATURE_VALIDATOR_PYTHON` führen sie zusätzlich den unabhängigen
+pyHanko-Prüfer aus `tests/helpers/pdf-signature-validation.py` aus: Signaturintegrität,
+Revisionsabdeckung und zulässige Folgeänderungen werden offline geprüft.
+Nur synthetische Testzertifikate werden dort als vertrauenswürdig gesetzt; dies
+ist ausdrücklich keine Vertrauensrichtlinie für produktive Dokumente. Keine neue
+Produktionsabhängigkeit und keine Datenbankmigration.

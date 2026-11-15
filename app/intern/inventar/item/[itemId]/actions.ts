@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+import { deleteConfirmationError } from "@/lib/confirmation";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -107,13 +108,14 @@ export async function returnLoanAction(fd: FormData): Promise<void> {
   revItem(item);
 }
 
-export async function deleteLoanAction(fd: FormData): Promise<void> {
-  const loan = await getLoanById(Number(fd.get("loanId")));
-  if (!loan) return;
-  const { item } = await assertItemAccess(loan.itemId);
-  await deleteLoan(loan.id);
-  revItem(item);
-  redirect(`/intern/inventar/item/${item.id}`);
+export async function deleteLoanAction(fd: FormData): Promise<{error?:string}|void> {
+  return deleteLoanConfirmedAction(Number(fd.get("loanId")),fd.get("confirmation"));
+}
+export async function deleteLoanConfirmedAction(loanId:number,confirmation?:unknown):Promise<{error?:string}|void>{
+  const invalid=deleteConfirmationError(confirmation);if(invalid)return invalid;
+  const loan=await getLoanById(loanId);if(!loan)return {error:"Vorgang nicht gefunden."};
+  const {item}=await assertItemAccess(loan.itemId);
+  await deleteLoan(loan.id);revItem(item);redirect(`/intern/inventar/item/${item.id}`);
 }
 
 export async function approveLoanAction(fd: FormData): Promise<void> {

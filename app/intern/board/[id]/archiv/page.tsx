@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import Link from "next/link";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -32,8 +34,8 @@ export default async function BoardArchivePage({
       statusName: boardStatuses.name,
     })
     .from(cards)
-    .leftJoin(boardStatuses, eq(boardStatuses.id, cards.statusId))
-    .where(and(eq(cards.boardId, boardId), isNotNull(cards.archivedAt)))
+    .leftJoin(boardStatuses, trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, cards.statusId)))
+    .where(trashAnd(activeRows.cards, and(eq(cards.boardId, boardId), isNotNull(cards.archivedAt))))
     .orderBy(desc(cards.archivedAt))).map(row => maskHiddenCardFields(row, visible));
 
   return (

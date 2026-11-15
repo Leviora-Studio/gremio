@@ -3,6 +3,10 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { asc, eq, max } from "drizzle-orm";
@@ -45,10 +49,11 @@ export async function renameFinanceTemplateAction(
   return { success: "Gespeichert." };
 }
 
-export async function deleteFinanceTemplateAction(id: number): Promise<void> {
-  await requireTemplateManager();
-  await db.delete(financeTemplates).where(eq(financeTemplates.id, id));
-  revalidatePath("/vorlagen/finanzen");
+export async function deleteFinanceTemplateAction(id: number, confirmation?: unknown,entityName?:unknown): Promise<{ error?: string } | void> {
+  const user=await requireTemplateManager();
+  try { await moveToTrash(user, "finance_template", id, confirmation,{entityName}); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/vorlagen/finanzen"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }
 
 /** Finanz-Template inkl. Haushaltsplan-Positionen duplizieren (Name „… - copy"). */
@@ -57,14 +62,14 @@ export async function duplicateFinanceTemplateAction(id: number): Promise<void> 
   const [orig] = await db
     .select()
     .from(financeTemplates)
-    .where(eq(financeTemplates.id, id))
+    .where(trashAnd(activeRows.financeTemplates, eq(financeTemplates.id, id)))
     .limit(1);
   if (!orig) return;
 
   const items = await db
     .select()
     .from(financeTemplateItems)
-    .where(eq(financeTemplateItems.templateId, id))
+    .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.templateId, id)))
     .orderBy(asc(financeTemplateItems.position));
 
   let newId: number | undefined;
@@ -130,7 +135,7 @@ export async function addFinanceTemplateItemAction(
         kind: financeTemplateItems.kind,
       })
       .from(financeTemplateItems)
-      .where(eq(financeTemplateItems.id, parentId))
+      .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.id, parentId)))
       .limit(1);
     if (!p || p.t !== templateId) return;
     effectiveKind = p.kind;
@@ -138,7 +143,7 @@ export async function addFinanceTemplateItemAction(
   const [row] = await db
     .select({ m: max(financeTemplateItems.position) })
     .from(financeTemplateItems)
-    .where(eq(financeTemplateItems.templateId, templateId));
+    .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.templateId, templateId)));
   await db.insert(financeTemplateItems).values({
     templateId,
     parentId: parentId ?? null,
@@ -152,7 +157,7 @@ async function templateOfItem(itemId: number): Promise<number | null> {
   const [it] = await db
     .select({ t: financeTemplateItems.templateId })
     .from(financeTemplateItems)
-    .where(eq(financeTemplateItems.id, itemId))
+    .where(trashAnd(activeRows.financeTemplateItems, eq(financeTemplateItems.id, itemId)))
     .limit(1);
   return it?.t ?? null;
 }

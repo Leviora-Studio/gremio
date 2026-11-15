@@ -3,10 +3,13 @@
 
 import {
   PDFArray,
+  PDFContentStream,
   PDFDict,
   PDFDocument,
   PDFName,
   PDFPage,
+  PDFRef,
+  PDFString,
   StandardFonts,
   concatTransformationMatrix,
   popGraphicsState,
@@ -16,6 +19,7 @@ import {
 import { SignPdf } from "@signpdf/signpdf";
 import { P12Signer } from "@signpdf/signer-p12";
 import { pdflibAddPlaceholder } from "@signpdf/placeholder-pdf-lib";
+import { appendPdfRevision, documentHasSignatures } from "@/lib/pdf-incremental";
 import { placeVisibleBox, sanitizeWinAnsi } from "@/lib/pdf-edit";
 
 // Sichtbare Platzierung der Signatur: Anteile der Seitenmaße von OBEN-LINKS.
@@ -77,7 +81,8 @@ function prepareAcroFormForSigning(doc: PDFDocument): void {
  * Signatur-Box gezeichnet (das Signatur-Widget selbst zeichnet nichts).
  */
 export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
-  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
+  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true, updateMetadata: false });
+  if (documentHasSignatures(doc)) return signPdfIncremental(pdf, opts);
   // AcroForm fürs Signieren vorbereiten: Felder retten + NeedAppearances entfernen
   // (sonst zeigt Adobe die Signatur bei Formularen nicht an — s. Helfer).
   prepareAcroFormForSigning(doc);
@@ -89,29 +94,51 @@ export async function signPdf(pdf: Buffer, opts: SignOptions): Promise<Buffer> {
   const pl = opts.placement;
   if (pl && pages[pl.page]) {
     targetPage = pages[pl.page];
-    widgetRect = await drawSignatureBox(doc, targetPage, pl, opts);
+    const { rect } = placeVisibleBox(targetPage, pl, {width:60,height:28});
+    widgetRect = [rect.x, rect.y, rect.x+rect.width, rect.y+rect.height];
   }
 
-  pdflibAddPlaceholder({
-    pdfPage: targetPage,
-    reason: opts.reason ?? "Digitale Signatur",
-    contactInfo: "",
-    name: opts.signerName,
-    location: opts.location ?? "",
-    signingTime: new Date(),
-    widgetRect,
-    appName: "Gremio",
-    // Reservierter Platz für die CMS-Signatur. Default (8192) ist für echte
-    // Zertifikate mit Kette/größeren Schlüsseln zu klein ("Signature exceeds
-    // placeholder length"). 30000 Byte bieten reichlich Reserve.
-    signatureLength: 30000,
-  });
+  await addSignaturePlaceholder(doc, targetPage, opts, widgetRect);
+
+
 
   // @signpdf braucht die ByteRange/Contents im Klartext → keine Object Streams.
   const withPlaceholder = await doc.save({ useObjectStreams: false });
   const signer = new P12Signer(opts.p12, { passphrase: opts.passphrase });
   const signed = await new SignPdf().sign(Buffer.from(withPlaceholder), signer);
   return signed;
+}
+
+/** The upstream placeholder always uses Signature1; PDF field names must be unique. */
+async function addSignaturePlaceholder(doc: PDFDocument, page: PDFPage, opts: SignOptions, widgetRect: number[]) {
+  const usedNames = new Set(doc.getForm().getFields().map(field => field.getName()));
+  let counter = 1;
+  while (usedNames.has(`Signature${counter}`)) counter++;
+  pdflibAddPlaceholder({pdfPage:page, reason:opts.reason ?? "Digitale Signatur", contactInfo:"", name:opts.signerName,
+    location:opts.location ?? "", signingTime:new Date(), widgetRect, appName:"Gremio", signatureLength:30000});
+  const fields = doc.catalog.lookup(PDFName.of("AcroForm"), PDFDict).lookup(PDFName.of("Fields"), PDFArray);
+  const widget = fields.lookup(fields.size()-1, PDFDict);
+  widget.set(PDFName.of("T"), PDFString.of(`Signature${counter}`));
+  if (!opts.placement) return;
+  const box = placeVisibleBox(page, opts.placement, {width:60,height:28});
+  const scratch = PDFPage.create(doc);
+  scratch.setSize(box.width,box.height);
+  await drawSignatureBox(doc,scratch,{page:0,xRatio:0,yRatio:0,wRatio:1,hRatio:1},opts);
+  const contents = scratch.node.lookup(PDFName.of("Contents"),PDFArray);
+  const bytes = Buffer.concat(contents.asArray().map(ref => {
+    const stream = doc.context.lookup(ref);
+    if (!(stream instanceof PDFContentStream)) throw new Error("Signaturdarstellung nicht lesbar.");
+    return Buffer.from(stream.getUnencodedContents());
+  }));
+  const appearance = doc.context.flateStream(bytes,{Type:"XObject",Subtype:"Form",BBox:[0,0,box.width,box.height],
+    Matrix:[...box.matrix.slice(0,4),box.matrix[4]-box.rect.x,box.matrix[5]-box.rect.y],Resources:scratch.node.Resources()});
+  const ap = widget.lookup(PDFName.of("AP"),PDFDict);
+  const previous = ap.get(PDFName.of("N"));
+  if (previous instanceof PDFRef) doc.context.delete(previous);
+  ap.set(PDFName.of("N"),doc.context.register(appearance));
+  // Temporary drawing page/streams are not part of the document or its revision.
+  for (const ref of contents.asArray()) if (ref instanceof PDFRef) doc.context.delete(ref);
+  doc.context.delete(scratch.ref);
 }
 
 /**
@@ -244,31 +271,6 @@ export async function drawSignatureBox(
   return [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height];
 }
 
-/** Append changed objects without rewriting bytes covered by existing signatures. */
-async function appendPdfRevision(pdf: Buffer, mutate: (doc: PDFDocument) => Promise<void>): Promise<Buffer> {
-  const doc = await PDFDocument.load(pdf);
-  const before = new Map(doc.context.enumerateIndirectObjects().map(([ref, value]) => [ref.toString(), value.toString()]));
-  const previous = [...pdf.toString("latin1").matchAll(/startxref\s+(\d+)\s+%%EOF/g)].at(-1);
-  if (!previous) throw new Error("Die PDF-Querverweistabelle ist nicht lesbar.");
-  await mutate(doc);
-  await doc.flush();
-  const chunks: Buffer[]=[pdf,Buffer.from("\n")];let offset=pdf.length+1;
-  const xref:{number:number;generation:number;offset:number}[]=[];
-  for (const [ref,value] of doc.context.enumerateIndirectObjects()) {
-    if(before.get(ref.toString())===value.toString())continue;
-    const prefix=Buffer.from(`${ref.objectNumber} ${ref.generationNumber} obj\n`);
-    const data=Buffer.alloc(value.sizeInBytes());value.copyBytesInto(data,0);
-    const suffix=Buffer.from("\nendobj\n");xref.push({number:ref.objectNumber,generation:ref.generationNumber,offset});chunks.push(prefix,data,suffix);offset+=prefix.length+data.length+suffix.length;
-  }
-  const start=offset;
-  let table="xref\n";
-  for(const ref of xref.sort((a,b)=>a.number-b.number))table+=`${ref.number} 1\n${String(ref.offset).padStart(10,"0")} ${String(ref.generation).padStart(5,"0")} n \n`;
-  const info=doc.context.trailerInfo;
-  table+=`trailer\n<< /Size ${doc.context.largestObjectNumber+1} /Root ${info.Root} /Prev ${previous[1]}${info.Info?` /Info ${info.Info}`:""}${info.ID?` /ID ${info.ID}`:""} >>\nstartxref\n${start}\n%%EOF\n`;
-  chunks.push(Buffer.from(table));
-  return Buffer.concat(chunks);
-}
-
 async function drawAdditionalText(doc: PDFDocument, annotations: NonNullable<SignOptions["additionalText"]>) {
   for (const annotation of annotations) {
     const target = doc.getPages()[annotation.placement.page];
@@ -284,7 +286,23 @@ async function drawAdditionalText(doc: PDFDocument, annotations: NonNullable<Sig
   }
 }
 
-/** Prepare the second signer's place/date for preview while retaining the first signature. */
+/** Fill an existing signature-specific field without changing signed page contents. */
+export function appendPdfSignatureDetails(pdf: Buffer, fieldName: string, value: string): Promise<Buffer> {
+  return appendPdfRevision(pdf, async doc => {
+    let field;
+    try { field = doc.getForm().getTextField(fieldName); }
+    catch { throw new Error("Dieses ältere Formular muss zur Überarbeitung zurückgegeben und neu erstellt werden, damit beide Unterschriften gültig bleiben."); }
+    const fields = doc.getForm().getFields().filter(candidate => candidate.getName() === fieldName || candidate.getName().startsWith(`${fieldName}_`));
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (const candidate of fields) {
+      field = doc.getForm().getTextField(candidate.getName());
+      field.setText(sanitizeWinAnsi(value));
+      field.updateAppearances(font);
+    }
+  });
+}
+
+/** Append explicitly requested page text; this is a content change, not a pure signature. */
 export function appendPdfTextIncremental(pdf: Buffer, annotations: NonNullable<SignOptions["additionalText"]>): Promise<Buffer> {
   return appendPdfRevision(pdf, doc => drawAdditionalText(doc, annotations));
 }
@@ -296,8 +314,8 @@ export async function signPdfIncremental(pdf: Buffer, opts: SignOptions): Promis
     await drawAdditionalText(doc, opts.additionalText ?? []);
     const page = doc.getPages()[opts.placement?.page ?? 0];
     if (!page) throw new Error("Ungültige Signaturseite.");
-    const rect = opts.placement ? await drawSignatureBox(doc, page, opts.placement, opts) : [0,0,0,0] as [number,number,number,number];
-    pdflibAddPlaceholder({ pdfPage:page, reason:opts.reason??"Zweite Unterschrift", contactInfo:"", name:opts.signerName,location:opts.location??"",signingTime:new Date(),widgetRect:rect,appName:"Gremio",signatureLength:30000 });
+    const box = opts.placement ? placeVisibleBox(page,opts.placement,{width:60,height:28}).rect : {x:0,y:0,width:0,height:0};
+    await addSignaturePlaceholder(doc,page,opts,[box.x,box.y,box.x+box.width,box.y+box.height]);
   });
   return new SignPdf().sign(prepared,new P12Signer(opts.p12,{passphrase:opts.passphrase}));
 }

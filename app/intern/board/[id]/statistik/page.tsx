@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows as trashActiveRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -84,12 +87,12 @@ export default async function BoardStatsPage({
       doneSince: cards.doneSince,
     })
     .from(cards)
-    .where(eq(cards.boardId, boardId))).map(row => maskHiddenCardFields(row, visible));
+    .where(trashAnd(trashActiveRows.cards, eq(cards.boardId, boardId)))).map(row => maskHiddenCardFields(row, visible));
 
   const statuses = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)
-    .where(eq(boardStatuses.boardId, boardId))
+    .where(trashAnd(trashActiveRows.boardStatuses, eq(boardStatuses.boardId, boardId)))
     .orderBy(asc(boardStatuses.position));
 
   const priorities = await getPriorities();
@@ -111,7 +114,7 @@ export default async function BoardStatsPage({
   // zählen bei „Überfällig" und „Zugewiesen" nicht mit (auch wenn ihre Deadline
   // längst vergangen ist).
   const isActive = (r: (typeof rows)[number]) =>
-    r.archivedAt == null && r.statusId !== board.doneStatusId;
+    r.archivedAt == null && r.statusId !== effectiveDoneStatusId(board);
   const activeRows = rows.filter(isActive);
   const overdue = activeRows.filter((r) => r.deadline && r.deadline < today).length;
   const fromForm = rows.filter((r) => r.locationId != null).length;
@@ -121,7 +124,7 @@ export default async function BoardStatsPage({
 
   // Nach Spalte — die Done-Spalte ausblenden (dafür gibt es „Erledigt").
   const byStatus = statuses
-    .filter((s) => s.id !== board.doneStatusId)
+    .filter((s) => s.id !== effectiveDoneStatusId(board))
     .map((s) => ({
       name: s.name,
       count: rows.filter((r) => r.statusId === s.id).length,

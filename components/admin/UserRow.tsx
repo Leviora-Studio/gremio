@@ -3,6 +3,7 @@
 
 "use client";
 
+import { roleConfirmationWord } from "@/lib/confirmation";
 import { Avatar } from "@/components/Avatar";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { setRoleAction, setUserActiveAction } from "@/app/admin/users/actions";
@@ -32,18 +33,6 @@ const ROLE_MESSAGE: Record<Role, string> = {
     "Der Nutzer darf zusätzlich Board- und Finanz-Templates verwalten (sonst wie ein normaler Nutzer).",
   user: "Der Nutzer wird ein normaler Benutzer ohne Sonderrechte.",
 };
-
-/**
- * Tipp-Schutzwort je Rollenwechsel:
- * → Admin: ADMIN · → Template-Verwalter (befördern): TEMPLATE ·
- * Admin entziehen bzw. Template-Verwalter entziehen: ENTZIEHEN.
- */
-function requiredWord(current: Role, target: Role): string {
-  if (target === "admin") return "ADMIN";
-  if (current === "admin") return "ENTZIEHEN"; // Admin-Rechte werden entzogen
-  if (target === "template_manager") return "TEMPLATE"; // Nutzer → Template-Verwalter
-  return "ENTZIEHEN"; // Template-Verwalter → Nutzer
-}
 
 export function UserRow({
   user,
@@ -98,11 +87,12 @@ export function UserRow({
             message={user.isActive ? "Der Zugriff auf Gremio wird gesperrt. Bestehende Browsersitzungen werden ungültig. Inhalte bleiben erhalten. Das SSO-Konto wird nicht verändert." : "Der Nutzer darf sich wieder über das SSO anmelden. Frühere Browsersitzungen werden nicht wieder freigeschaltet."}
             confirmLabel={user.isActive ? "Nutzer deaktivieren" : "Nutzer reaktivieren"}
             confirmClassName={user.isActive ? "btn-danger" : "btn-primary"}
+            requireTyped={user.isActive?"DEAKTIVIEREN":"REAKTIVIEREN"}
           />}
           {targets.map((r) => {
             // Admin-Rechte abgeben (admin → andere Rolle) nur, wenn erlaubt.
             if (user.role === "admin" && (isSelf || isProtectedAdmin)) return null;
-            const word = requiredWord(user.role, r);
+            const word = roleConfirmationWord(user.role, r);
             return (
               <ConfirmButton
                 key={r}

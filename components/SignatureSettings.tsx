@@ -3,6 +3,7 @@
 
 "use client";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { useActionState } from "react";
 import { FileInput } from "@/components/FileInput";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -42,11 +43,7 @@ export function SignatureSettings({
             alt="Unterschrift"
             className="max-h-24 max-w-full bg-white"
           />
-          <form action={removeSignatureAction} className="mt-3">
-            <SubmitButton className="btn-secondary btn-sm text-red-600">
-              Unterschriftsbild entfernen
-            </SubmitButton>
-          </form>
+          <div className="mt-3"><ConfirmButton action={removeSignatureAction} className="btn-secondary btn-sm text-red-600" label="Unterschriftsbild entfernen" title="Unterschriftsbild entfernen" message="Die gespeicherte Datei wird entfernt. Bereits signierte Dokumente bleiben unverändert." confirmLabel="Entfernen" confirmClassName="btn-danger" requireTyped="ENTFERNEN"/></div>
         </div>
       )}
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
@@ -23,10 +24,10 @@ export default async function AdminBoardsPage() {
       ownerId: boards.ownerId,
       inventoryBoardId: boards.inventoryBoardId,
       ownerName: users.username,
-      cards: sql<number>`(select count(*) from ${cards} where ${cards.boardId} = ${boards.id})`,
+      cards: sql<number>`(select count(*) from ${cards} where ${cards.boardId} = ${boards.id} and ${cards.deletedAt} is null)`,
     })
     .from(boards)
-    .leftJoin(users, eq(users.id, boards.ownerId))
+    .leftJoin(users, eq(users.id, boards.ownerId)).where(activeRows.boards)
     .orderBy(boards.name);
 
 
@@ -65,6 +66,7 @@ export default async function AdminBoardsPage() {
                     <OwnerSettings kind="board" id={b.id}/>
                     <DeleteConfirm
                       action={deleteBoardAdminConfirmedAction.bind(null, b.id)}
+                      confirmName={b.name}
                       buttonLabel="Löschen"
                       compact
                       title={`Board „${b.name}" löschen`}

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { and as trashAnd } from "drizzle-orm";
+import { activeRows } from "@/lib/trash-visibility";
 import Link from "next/link";
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -26,8 +28,8 @@ export default async function TemplatesPage() {
     .from(boardTemplates)
     .leftJoin(
       boardTemplateStatuses,
-      eq(boardTemplateStatuses.templateId, boardTemplates.id),
-    )
+      trashAnd(activeRows.boardTemplateStatuses, eq(boardTemplateStatuses.templateId, boardTemplates.id)),
+    ).where(activeRows.boardTemplates)
     .groupBy(boardTemplates.id)
     .orderBy(asc(boardTemplates.name));
 
@@ -80,7 +82,7 @@ export default async function TemplatesPage() {
                 </SubmitButton>
               </form>
               <DeleteConfirm
-                action={deleteTemplateAction.bind(null, t.id)}
+                action={deleteTemplateAction.bind(null, t.id)} confirmName={t.name}
                 compact
                 buttonLabel="Löschen"
                 buttonClassName="btn-danger px-3"

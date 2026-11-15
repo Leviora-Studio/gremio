@@ -2,6 +2,12 @@
 // Copyright (C) 2026 Leviora Studio
 import { formatDateTime } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
+import type { CashbookFile } from "@/lib/cashbook-types";
+
+export type CashbookActivityContext = {
+    payment?: Record<string, unknown> | null;
+    files?: Pick<CashbookFile, "kind" | "filename" | "sourceAttachmentId" | "sourceCardId">[];
+};
 
 const labels: Record<string, string> = {
     amount: "Betrag", budgetTitle: "Haushaltstitel", holder: "Kontoinhaber", iban: "IBAN",
@@ -36,11 +42,20 @@ export function cashbookActivityChanges(detail: Record<string, unknown>) {
     return { rows, comparison: rows.some(row => row.hasBefore), hasComparison: before != null && after != null };
 }
 
-export function formatCashbookActivityValue(key: string, value: unknown, people: Record<string, string>): string {
+export function formatCashbookActivityValue(key: string, value: unknown, people: Record<string, string>, context: CashbookActivityContext = {}): string {
     if (isEmpty(value)) {
         if (key === "bookingDate") return "Noch nicht eingetragen";
         if (key === "secondSignerId") return "Noch nicht zugewiesen";
         return "Nicht angegeben";
+    }
+    if (key === "cardId") {
+        const number = context.payment?.cardId === value ? context.payment?.number : null;
+        return typeof number === "string" && number.trim() ? number : "Antrag (Nummer nicht protokolliert)";
+    }
+    if (key === "receiptIds" && Array.isArray(value)) {
+        return value.map(id => context.files?.find(file => file.kind === "receipt" && file.sourceAttachmentId === id
+            && (context.payment?.cardId == null || file.sourceCardId === context.payment.cardId))?.filename
+            ?? "Quittung (Dateiname nicht mehr verfügbar)").join("\n");
     }
     if (key === "officeDone" && typeof value === "boolean") return value ? "Erledigt" : "Noch zu erledigen";
     if (key === "amount" && typeof value === "number") return formatCents(value);

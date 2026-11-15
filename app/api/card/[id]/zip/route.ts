@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -33,7 +35,7 @@ export async function GET(
   const [card] = await db
     .select()
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
     .limit(1);
   if (!card) return new Response("Not found", { status: 404 });
 
@@ -47,11 +49,11 @@ export async function GET(
     await db
     .select()
     .from(attachments)
-    .where(eq(attachments.cardId, cardId))
+    .where(trashAnd(activeRows.attachments, eq(attachments.cardId, cardId)))
     .orderBy(asc(attachments.uploadedAt))
   ).filter((attachment) => isCardAttachmentVisible(attachment, visible));
 
-  const folders = await db.select().from(attachmentFolders).where(eq(attachmentFolders.cardId, cardId));
+  const folders = await db.select().from(attachmentFolders).where(trashAnd(activeRows.attachmentFolders, eq(attachmentFolders.cardId, cardId)));
   // Only include folders containing visible attachments; hidden fields stay hidden.
   const visibleFolders = folders.filter((folder) => atts.some((a) => a.folderId === folder.id));
   const layout = attachmentArchiveLayout(visibleFolders, atts);

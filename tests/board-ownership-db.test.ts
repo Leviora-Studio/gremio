@@ -20,7 +20,9 @@ test("equal board owners, typed confirmation, admin removal and serialized last-
   const table=kind==="board"?boards:kind==="finance"?financeBoards:inventoryBoards;
   const [resource]=await db.insert(table).values({name:"Ownership fixture",ownerId:original.id}).returning();let systemId:number|undefined;
   try{
-   await assert.rejects(changeOwnership(original,kind,resource.id,added.id,"add",""));
+   for(const word of ["", "ernennen", "ENTZIEHEN", "LÖSCHEN"])await assert.rejects(changeOwnership(original,kind,resource.id,added.id,"add",word));
+   for(const word of ["", "entziehen", "ERNENNEN", "LÖSCHEN"])await assert.rejects(changeOwnership(admin,kind,resource.id,original.id,"remove",word));
+   assert.equal((await resourceOwners(kind,resource.id)).length,1);
    await assert.rejects(changeOwnership(outsider,kind,resource.id,added.id,"add","ERNENNEN"));
    await assert.rejects(changeOwnership(admin,kind,resource.id,original.id,"remove","ENTZIEHEN"),/letzte Eigentümer/);
    await changeOwnership(original,kind,resource.id,added.id,"add","ERNENNEN");assert.equal((await resourceOwners(kind,resource.id)).length,2);assert.equal(await isResourceOwner(kind,resource,added.id),true);

@@ -3,6 +3,9 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+import { activeRows } from "@/lib/trash-visibility";
+
 import { revalidatePath } from "next/cache";
 import { eq, max } from "drizzle-orm";
 import { z } from "zod";
@@ -35,7 +38,7 @@ export async function createPriorityAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Ungültig." };
   }
-  const [row] = await db.select({ m: max(priorities.position) }).from(priorities);
+  const [row] = await db.select({ m: max(priorities.position) }).from(priorities).where(activeRows.priorities);
   await db.insert(priorities).values({
     label: parsed.data.label,
     color: parsed.data.color,
@@ -66,9 +69,9 @@ export async function updatePriorityAction(
   return { success: "Gespeichert." };
 }
 
-export async function deletePriorityAction(id: number): Promise<void> {
-  await requireAdmin();
-  // cards.priority_id ist ON DELETE SET NULL → Karten bleiben erhalten.
-  await db.delete(priorities).where(eq(priorities.id, id));
-  revalidatePath("/admin/priorities");
+export async function deletePriorityAction(id: number, confirmation?: unknown): Promise<{ error?: string } | void> {
+  const user=await requireAdmin();
+  try { await moveToTrash(user, "priority", id, confirmation); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/priorities"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }

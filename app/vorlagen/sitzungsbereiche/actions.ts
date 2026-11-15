@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { deleteConfirmationError } from "@/lib/confirmation";
 import {requireTemplateManager,requireUser} from "@/lib/auth";
 import {redirect} from "next/navigation";
 import {revalidatePath} from "next/cache";
@@ -15,8 +16,15 @@ export async function saveMeetingTemplateAction(id:number|null,_previous:Meeting
  try{saved=await saveMeetingTemplate(user,id,String(form.get("name")??""),String(form.get("description")??""),formTopics(form),Number(form.get("revision")));refresh();}catch(e){return error(e);}
  if(id==null)redirect(`/vorlagen/sitzungsbereiche/${saved}`);return {success:"Sitzungsbereichsvorlage gespeichert."};
 }
-export async function deleteMeetingTemplateAction(id:number,revision:number):Promise<MeetingActionState|void>{
- const user=await requireTemplateManager();try{await deleteMeetingTemplate(user,id,revision);refresh();}catch(e){return error(e);}redirect("/vorlagen/sitzungsbereiche");
+export async function deleteMeetingTemplateAction(id:number,revision:number, confirmation?: unknown,entityName?:unknown):Promise<MeetingActionState|void>{
+  const user = await requireTemplateManager();
+  const confirmationError = deleteConfirmationError(confirmation);
+  if (confirmationError) return confirmationError;
+  try {
+    await deleteMeetingTemplate(user, id, revision,entityName);
+    refresh();
+  } catch (e) { return error(e); }
+  redirect("/vorlagen/sitzungsbereiche");
 }
 export async function saveAreaDefaultsAction(areaId:number,_previous:MeetingActionState,form:FormData):Promise<MeetingActionState>{
  const user=await requireUser();try{await saveAreaDefaults(user,areaId,formTopics(form),Number(form.get("revision")),form.get("includeMiscellaneous")==="on");refresh();return {success:"Standard-TOPs für neue Sitzungen gespeichert."};}catch(e){return error(e);}

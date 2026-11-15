@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -205,12 +207,12 @@ export async function listInventoryItems(
     .select()
     .from(inventoryItems)
     .where(
-      conditions && conditions.length
+      trashAnd(activeRows.inventoryItems, conditions && conditions.length
         ? and(
             eq(inventoryItems.boardId, boardId),
             inArray(inventoryItems.condition, conditions),
           )
-        : eq(inventoryItems.boardId, boardId),
+        : eq(inventoryItems.boardId, boardId)),
     )
     .orderBy(asc(inventoryItems.name), asc(inventoryItems.id));
   if (!items.length) return [];
@@ -274,7 +276,7 @@ export async function getInventoryItemById(
   const [row] = await db
     .select()
     .from(inventoryItems)
-    .where(eq(inventoryItems.id, id))
+    .where(trashAnd(activeRows.inventoryItems, eq(inventoryItems.id, id)))
     .limit(1);
   return row;
 }
@@ -431,7 +433,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
     await db
       .select({ path: inventoryAttachments.path })
       .from(inventoryAttachments)
-      .where(eq(inventoryAttachments.itemId, id))
+      .where(trashAnd(activeRows.inventoryAttachments, eq(inventoryAttachments.itemId, id)))
   ).map((r) => r.path);
 
   // Vorgänge, die dieses Stück als Leit-Stück haben — sie verschwinden per
@@ -439,7 +441,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
   const leadLoans = await db
     .select({ id: inventoryLoans.id, cardId: inventoryLoans.cardId })
     .from(inventoryLoans)
-    .where(eq(inventoryLoans.itemId, id));
+    .where(trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.itemId, id)));
   // Karten dieser Vorgänge (sonst verwaist auf dem Leihboard).
   const leadCardIds = leadLoans
     .map((r) => r.cardId)
@@ -455,7 +457,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
           .from(inventoryLoanItems)
           .innerJoin(
             inventoryLoans,
-            eq(inventoryLoans.id, inventoryLoanItems.loanId),
+            trashAnd(activeRows.inventoryLoans, eq(inventoryLoans.id, inventoryLoanItems.loanId)),
           )
           .where(
             and(
@@ -496,7 +498,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
       const kartenDateien = await tx
         .select({ path: attachments.path })
         .from(attachments)
-        .where(inArray(attachments.cardId, leadCardIds));
+        .where(trashAnd(activeRows.attachments, inArray(attachments.cardId, leadCardIds)));
       filePaths.push(...kartenDateien.map((a) => a.path));
       await tx.delete(cards).where(inArray(cards.id, leadCardIds));
     }
@@ -531,13 +533,13 @@ export async function listInventoryGroupNames(
     .selectDistinct({ groupName: inventoryItems.groupName })
     .from(inventoryItems)
     .where(
-      opts.publicOnly
+      trashAnd(activeRows.inventoryItems, opts.publicOnly
         ? and(
             eq(inventoryItems.boardId, boardId),
             eq(inventoryItems.lendable, true),
             eq(inventoryItems.condition, "active"),
           )
-        : eq(inventoryItems.boardId, boardId),
+        : eq(inventoryItems.boardId, boardId)),
     );
   return rows
     .map((r) => (r.groupName ?? "").trim())
@@ -565,12 +567,12 @@ export async function getAvailableGroupUnits(
     .select({ id: inventoryItems.id })
     .from(inventoryItems)
     .where(
-      and(
+      trashAnd(activeRows.inventoryItems, and(
         eq(inventoryItems.boardId, boardId),
         eq(inventoryItems.groupName, groupName),
         eq(inventoryItems.condition, "active"),
         eq(inventoryItems.lendable, true),
-      ),
+      )),
     )
     .orderBy(asc(inventoryItems.number), asc(inventoryItems.id));
   if (!rows.length) return { units: [], available: 0 };

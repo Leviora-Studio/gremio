@@ -3,6 +3,11 @@
 
 "use server";
 
+import { moveToTrash, TrashError } from "@/lib/trash";
+import { stageAttachmentTrash } from "@/lib/attachment-trash";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { moveCardAction } from "@/app/intern/board/actions";
 import { redirect } from "next/navigation";
 import { emailAddressSchema } from "@/lib/email-validation";
@@ -44,7 +49,6 @@ import {
 } from "@/lib/activity";
 import { setCardAssignees } from "@/lib/assignees";
 import { parseEuroToCents } from "@/lib/money";
-import { maybeSetTriggerDates } from "@/lib/instruction";
 import { applyStatusTriggerAssignments } from "@/lib/trigger-assignments";
 import {
   CARD_ATTACHMENT_FIELD,
@@ -68,7 +72,7 @@ async function loadCard(cardId: number, write = true) {
   ) {
     notFound();
   }
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) notFound();
   const board = await getBoardById(card.boardId);
   if (!board || !(await (write ? canEditBoard(user, board) : canAccessBoard(user, board)))) notFound();
@@ -261,7 +265,7 @@ export async function saveCardAction(
       const [p] = await db
         .select({ id: priorities.id })
         .from(priorities)
-        .where(eq(priorities.id, v))
+        .where(trashAnd(activeRows.priorities, eq(priorities.id, v)))
         .limit(1);
       update.priorityId = p ? v : null;
     } else {
@@ -274,7 +278,7 @@ export async function saveCardAction(
       const [acc] = await db
         .select({ id: accounts.id })
         .from(accounts)
-        .where(eq(accounts.id, v))
+        .where(trashAnd(activeRows.accounts, eq(accounts.id, v)))
         .limit(1);
       update.accountId = acc ? v : null;
     } else {
@@ -329,7 +333,7 @@ export async function saveBudgetPositionsAction(cardId: number, rows: unknown, r
   const visible = await visibleFields(board.id);
   try {
     const result = await db.transaction(async (tx) => {
-      const [fresh] = await tx.select().from(cards).where(eq(cards.id, card.id)).for("update");
+      const [fresh] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, card.id))).for("update");
       if (!fresh) throw new BudgetValidationError("Karte nicht gefunden.");
       return writeBudgetPositions(tx, fresh, rows, revision, visible);
     });
@@ -367,7 +371,7 @@ export async function setCardStatusAction(
   const [target] = await db
     .select({ id: boardStatuses.id, name: boardStatuses.name })
     .from(boardStatuses)
-    .where(and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, board.id)))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, statusId), eq(boardStatuses.boardId, board.id))))
     .limit(1);
   if (!target) return;
   const statusChanged = card.statusId !== statusId;
@@ -379,11 +383,11 @@ export async function setCardStatusAction(
       .select({ m: max(cards.position) })
       .from(cards)
       .where(
-        and(
+        trashAnd(activeRows.cards, and(
           eq(cards.boardId, board.id),
           eq(cards.statusId, statusId),
           isNull(cards.archivedAt),
-        ),
+        )),
       );
     newPosition = (posRow?.m ?? -1) + 1;
   }
@@ -401,7 +405,7 @@ export async function setCardStatusAction(
             // (sonst „Phantom"-Karte mit neuem Status, die ausgeblendet bleibt).
             ...(card.lockedAt ? {} : { archivedAt: null }),
             doneSince: doneSinceForStatus(
-              board.doneStatusId,
+              effectiveDoneStatusId(board),
               statusId,
               card.doneSince,
             ),
@@ -413,7 +417,7 @@ export async function setCardStatusAction(
     const [old] = await db
       .select({ name: boardStatuses.name })
       .from(boardStatuses)
-      .where(eq(boardStatuses.id, card.statusId))
+      .where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.id, card.statusId)))
       .limit(1);
     await logActivity(
       card.id,
@@ -421,7 +425,7 @@ export async function setCardStatusAction(
       "status",
       `${old?.name ?? "?"} → ${target.name}`,
     );
-    await maybeSetTriggerDates(card.id, statusId);
+
     await applyStatusTriggerAssignments(card.id, statusId);
     // Aufgabentracking: nur auf System-/Leihboards den verknüpften Vorgang aus
     // der Kartenspalte ableiten (wie moveCardAction) — spart auf normalen Boards
@@ -459,10 +463,7 @@ export async function uploadAttachmentAction(
       CARD_ATTACHMENT_FIELD[kind] as keyof typeof CARD_FIELD_LABELS
     ];
 
-  // Alte Slot-Dateien erst NACH erfolgreichem Commit von der Platte löschen:
-  // Bei Rollback (z. B. paralleler Upload in denselben Slot → Unique-Verletzung)
-  // bliebe sonst die DB-Zeile, aber die Datei wäre weg („Datei fehlt").
-  const oldPaths: string[] = [];
+  // Replaced slot files share the same 30-day recycle bin as manual deletions.
   try {
     await db.transaction(async (tx) => {
       // Alle Datei-Erstellungen derselben Karte serialisieren. Das stellt auch
@@ -471,18 +472,17 @@ export async function uploadAttachmentAction(
       await tx
         .select({ id: cards.id })
         .from(cards)
-        .where(eq(cards.id, card.id))
+        .where(trashAnd(activeRows.cards, eq(cards.id, card.id)))
         .for("update");
       let folderId: number | null = null;
       if (kind !== "other") {
         const existing = await tx
           .select()
           .from(attachments)
-          .where(and(eq(attachments.cardId, card.id), eq(attachments.kind, kind)));
+          .where(trashAnd(activeRows.attachments, and(eq(attachments.cardId, card.id), eq(attachments.kind, kind))));
         for (const ex of existing) {
           folderId = ex.folderId;
-          oldPaths.push(ex.path);
-          await tx.delete(attachments).where(eq(attachments.id, ex.id));
+          await stageAttachmentTrash(tx, card.id, ex.id, user.id);
         }
       }
       await tx.insert(attachments).values({
@@ -513,10 +513,9 @@ export async function uploadAttachmentAction(
     }
     return { error: "Upload fehlgeschlagen. Bitte erneut versuchen." };
   }
-  // Erst jetzt (nach Commit) die ersetzten Dateien von der Platte löschen.
-  for (const p of oldPaths) await deleteStoredFile(p);
 
   revalidatePath(`/intern/card/${card.id}`);
+  revalidatePath(`/intern/board/${board.id}/papierkorb`);
   return { success: "Datei hochgeladen." };
 }
 
@@ -535,84 +534,34 @@ export async function deleteAttachmentAction(
   const [att] = await db
     .select()
     .from(attachments)
-    .where(and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id)))
+    .where(trashAnd(activeRows.attachments, and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id))))
     .limit(1);
   if (!att) return;
   const visible = await visibleFields(board.id);
   if (!isCardAttachmentVisible(att, visible)) return;
-  // Karte + Anhang sperren, damit paralleles PDF-Ersetzen weder eine neue Datei
-  // verwaist noch nach dem Löschen wieder eine DB-Zeile aktualisiert.
-  const deleted = await db.transaction(async (tx) => {
-    const [lockedCard] = await tx
-      .select({ id: cards.id })
-      .from(cards)
-      .where(eq(cards.id, card.id))
-      .for("update");
-    if (!lockedCard) return null;
-    const [current] = await tx
-      .select()
-      .from(attachments)
-      .where(
-        and(eq(attachments.id, attachmentId), eq(attachments.cardId, card.id)),
-      )
-      .for("update");
-    if (!current) return null;
-    await tx.delete(attachments).where(eq(attachments.id, current.id));
-    await tx
-      .update(cards)
-      .set({ updatedAt: new Date() })
-      .where(eq(cards.id, card.id));
-    const label =
-      CARD_FIELD_LABELS[
-        CARD_ATTACHMENT_FIELD[
-          current.kind
-        ] as keyof typeof CARD_FIELD_LABELS
-      ];
-    await tx.insert(cardActivity).values({
-      cardId: card.id,
-      userId: user.id,
-      type: "attachment_removed",
-      detail: `Datei entfernt: ${current.filename} (${label})`,
-    });
-    return current;
-  });
-  if (!deleted) return;
-  await deleteStoredFile(deleted.path);
+  await db.transaction(async tx => { await stageAttachmentTrash(tx, card.id, att.id, user.id); });
+  revalidatePath(`/intern/board/${board.id}/papierkorb`);
   revalidatePath(`/intern/card/${card.id}`);
 }
 
-async function removeCard(cardId: number): Promise<number> {
-  const { board, card } = await loadCard(cardId);
-  const paths = await db.transaction(async (tx) => {
-    const [lockedCard] = await tx
-      .select({ id: cards.id })
-      .from(cards)
-      .where(eq(cards.id, card.id))
-      .for("update");
-    if (!lockedCard) return [];
-    const rows = await tx
-      .select({ path: attachments.path })
-      .from(attachments)
-      .where(eq(attachments.cardId, card.id));
-    // Erst die Karte löschen (CASCADE entfernt die attachments-Zeilen), DANN
-    // außerhalb der Sperre die Dateien. Alle Datei-Schreiber sperren dieselbe
-    // Karte und können deshalb nicht zwischen Snapshot und DELETE einfügen.
-    await tx.delete(cards).where(eq(cards.id, card.id));
-    return rows.map((row) => row.path);
-  });
-  for (const path of paths) await deleteStoredFile(path);
+async function removeCard(cardId: number, confirmation: unknown) {
+  const {user,board}=await loadCard(cardId);
+  await moveToTrash(user,"card",cardId,confirmation);
+  revalidatePath(`/intern/board/${board.id}`);
+  revalidatePath(`/intern/board/${board.id}/papierkorb`);
+  revalidatePath(`/intern/card/${cardId}`);
   return board.id;
 }
-
-export async function deleteCardAction(cardId: number): Promise<void> {
-  const boardId = await removeCard(cardId);
+export async function deleteCardAction(cardId: number, confirmation?: unknown): Promise<{error?:string}|void> {
+  let boardId:number;
+  try { boardId=await removeCard(cardId,confirmation); }
+  catch(error){if(error instanceof TrashError)return {error:error.message};throw error;}
   redirect(`/intern/board/${boardId}`);
 }
-
-/** Wie löschen, aber ohne Redirect (für das Verwerfen im Neue-Karte-Popup). */
-export async function discardCardAction(cardId: number): Promise<void> {
-  const boardId = await removeCard(cardId);
-  revalidatePath(`/intern/board/${boardId}`);
+/** A new, autosaved card is retained in the bin when explicitly discarded. */
+export async function discardCardAction(cardId: number, confirmation?: unknown): Promise<{error?:string}|void> {
+  try { await removeCard(cardId,confirmation); }
+  catch(error){if(error instanceof TrashError)return {error:error.message};throw error;}
 }
 
 // ---------------------------------------------------------------------------

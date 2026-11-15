@@ -48,8 +48,12 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await query('insert into board_card_fields(board_id,field_key,visible) values ($1,$2,true)', [board.id, field]);
     const token = randomUUID().replaceAll('-', '').slice(0, 30);
     const card = (await query("insert into cards(board_id,status_id,title,applicant,token,number) values ($1,$2,'Browser application','Synthetic applicant',$3,'AN-UI') returning id", [board.id, statuses[0].id, token])).rows[0];
+    await query("insert into locations(name,module,enabled,target_board_id,target_status_id) values ($1,'locations',true,$2,$3)",['Legacy browser location '+board.id,board.id,statuses[0].id]);
+    await query("update application_form_modules set active_module='locations',revision=revision+1 where id=1");
     const account=(await query("insert into accounts(name) values ($1) returning id,name",['Browser standard '+board.id])).rows[0];
     const otherAccount=(await query("insert into accounts(name) values ($1) returning id,name",['Browser alternate '+board.id])).rows[0];
+    const catalog=(await query('insert into finance_boards(name,owner_id) values ($1,$2) returning id,name',['Browser title catalog '+board.id,owner.id])).rows[0];
+    await query("insert into finance_plan_items(finance_board_id,haushaltstitel,title,kind) values ($1,'1200','Materials','expense'),($1,'1300','Travel','expense'),($1,'9999','Income only','income')",[catalog.id]);
     await query('update boards set default_account_id=$1 where id=$2',[account.id,board.id]);
     const doc = await PDFDocument.create();
     doc.addPage();
@@ -96,6 +100,19 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         const ownerPage = await session(owner), otherPage = await session(outsider);
         await otherPage.goto(base + '/intern');
         assert.equal(await otherPage.getByRole('link', { name: 'Kassenbuch', exact: true }).count(), 0);
+        await ownerPage.goto(base + '/admin/accounts');
+        for(const item of [account,otherAccount]){
+          const row=ownerPage.locator('.card').filter({has:ownerPage.getByRole('button',{name:`Finanzboard für Konto ${item.name}`,exact:true})});
+          await row.getByRole('button',{name:`Finanzboard für Konto ${item.name}`,exact:true}).click();
+          await ownerPage.getByRole('option',{name:catalog.name,exact:true}).click();
+          await row.getByRole('button',{name:'Zuordnung speichern',exact:true}).click();
+          await waitDb('select finance_board_id from accounts where id=$1',[item.id],rows=>rows[0].finance_board_id===catalog.id);
+        }
+        await ownerPage.setViewportSize({width:390,height:1000});
+        await ownerPage.getByRole('button',{name:`Finanzboard für Konto ${account.name}`,exact:true}).evaluate(element=>element.scrollIntoView({block:'center'}));
+        await ownerPage.screenshot({path:join(output,'account-finance-catalog-mobile.png'),fullPage:false});
+        assert.ok(await ownerPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+        await ownerPage.setViewportSize({width:1400,height:1000});
         await ownerPage.goto(base + '/intern/kassenbuch');
         await ownerPage.getByLabel('Name', { exact: true }).fill('Browser cashbook');
         await ownerPage.getByRole('button', { name: 'Kassenbuch erstellen', exact: true }).click();
@@ -109,6 +126,8 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await ownerPage.getByLabel('Text und Variablen', { exact: false }).fill('{{purpose}} {{number}} HT{{budgetTitle}}');
         await ownerPage.getByLabel("Kürzel der Buchungsnummer",{exact:true}).fill("KÖT");
         await ownerPage.getByLabel("Stellen der Buchungsnummer",{exact:true}).fill("4");
+        await ownerPage.getByRole('button',{name:'Finanzboard für Haushaltstitel',exact:true}).click();
+        await ownerPage.getByRole('option',{name:catalog.name,exact:true}).click();
         await ownerPage.getByRole('button', { name: 'Einstellungen speichern', exact: true }).click();
         await waitDb('select revision from cashbooks where id=$1', [bookId], rows => rows[0].revision === 2);
         await query('update cards set status_id=$1 where id=$2', [statuses[1].id, card.id]);
@@ -116,7 +135,19 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await ownerPage.getByText('Sperrbestätigung ausstehend', { exact: true }).waitFor();
         await ownerPage.getByRole('button',{name:'Haushaltstitel einplanen',exact:true}).click();
         await ownerPage.getByLabel('Betrag Zeile 1',{exact:true}).fill('150');
-        await ownerPage.getByLabel('Haushaltstitel Zeile 1',{exact:true}).fill('1200');
+        await ownerPage.getByRole('button',{name:'Haushaltstitel Zeile 1',exact:true}).click();
+        await ownerPage.getByPlaceholder('Titelnummer oder Bezeichnung suchen …',{exact:true}).fill('Materials');
+        assert.equal(await ownerPage.getByRole('option',{name:'9999 — Income only',exact:true}).count(),0);
+        await ownerPage.screenshot({path:join(output,'budget-title-search-desktop.png'),fullPage:false});
+        await ownerPage.getByRole('option',{name:'1200 — Materials',exact:true}).click();
+        await ownerPage.setViewportSize({width:390,height:1000});
+        await ownerPage.getByRole('button',{name:'Haushaltstitel Zeile 1',exact:true}).evaluate(element=>element.scrollIntoView({block:'center'}));
+        await ownerPage.getByRole('button',{name:'Haushaltstitel Zeile 1',exact:true}).click();
+        await ownerPage.getByPlaceholder('Titelnummer oder Bezeichnung suchen …',{exact:true}).fill('Materials');
+        await ownerPage.screenshot({path:join(output,'budget-title-search-mobile.png'),fullPage:false});
+        assert.ok(await ownerPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+        await ownerPage.getByRole('option',{name:'1200 — Materials',exact:true}).click();
+        await ownerPage.setViewportSize({width:1400,height:1000});
         assert.match(await ownerPage.getByRole('button',{name:'Konto Zeile 1',exact:true}).innerText(),new RegExp(account.name));
         await ownerPage.getByRole('button',{name:'Einplanung speichern',exact:true}).click();
         await waitDb('select revision from card_budget_plans where card_id=$1',[card.id],rows=>rows[0]?.revision===1);
@@ -141,7 +172,8 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await ownerPage.getByRole('button',{name:'Konto Zeile 1',exact:true}).click();
         await ownerPage.getByRole('option',{name:otherAccount.name,exact:true}).click();
         await ownerPage.getByRole('dialog',{name:'Konto ändern',exact:true}).getByRole('button',{name:'Konto wechseln',exact:true}).click();
-        await ownerPage.getByLabel('Haushaltstitel Zeile 1',{exact:true}).fill('1300');
+        await ownerPage.getByRole('button',{name:'Haushaltstitel Zeile 1',exact:true}).click();
+        await ownerPage.getByRole('option',{name:'1300 — Travel',exact:true}).click();
         await ownerPage.getByLabel('Begründung (Pflichtfeld)',{exact:true}).fill('Correct approved allocation and account');
         await ownerPage.getByRole('button',{name:'Korrektureintrag prüfen',exact:true}).click();
         const allocationReview=ownerPage.getByRole('dialog',{name:'Korrektureintrag verbindlich bestätigen',exact:true});
@@ -173,7 +205,7 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         const apiCard = `${base}/api/v1/cards/${card.id}`;
         assert.equal((await fetch(apiCard, { headers: bearerHeaders })).status, 200);
         assert.equal((await fetch(apiCard, { method: 'PATCH', headers: bearerHeaders, body: JSON.stringify({ title: 'Forbidden HTTP mutation' }) })).status, 409);
-        assert.equal((await fetch(apiCard, { method: 'DELETE', headers: bearerHeaders })).status, 409);
+        assert.equal((await fetch(apiCard, { method: 'DELETE', headers: bearerHeaders, body: JSON.stringify({confirmation:'LÖSCHEN'}) })).status, 409);
         publicData = await (await fetch(base + '/api/public/v1/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ statusUrl: base + '/status/' + token }) })).json();
         assert.equal(publicData.status.name, 'Accepted');
         assert.equal(publicData.availableActions.canUploadDocuments, false);
@@ -197,20 +229,33 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await ownerPage.getByText('2 verfügbar · 0 ausgewählt',{exact:true}).waitFor();
         await ownerPage.getByLabel('AN-UI_Q1.pdf', { exact: true }).check();
         await ownerPage.getByText('2 verfügbar · 1 ausgewählt',{exact:true}).waitFor();
-        for (const [label, value] of [['Betrag', '125,50'], ['Haushaltstitel', '1200'], ['Kontoinhaber', 'Synthetic holder'], ['IBAN', 'DE89370400440532013000'], ['Bank', 'Synthetic bank'], ['Verwendungszweck (optional)', 'Materials']])
+        for (const [label, value] of [['Betrag', '125,50'], ['Kontoinhaber', 'Synthetic holder'], ['IBAN', 'DE89370400440532013000'], ['Bank', 'Synthetic bank'], ['Verwendungszweck (optional)', 'Materials']])
             await ownerPage.getByLabel(label, { exact: true }).fill(value);
+        await ownerPage.getByRole('button',{name:'Haushaltstitel',exact:true}).click();
+        await ownerPage.getByPlaceholder('Titelnummer oder Bezeichnung suchen …',{exact:true}).fill('1200');
+        await ownerPage.getByRole('option',{name:'1200 — Materials',exact:true}).click();
         assert.equal(await ownerPage.getByLabel('Ort',{exact:true}).count(),0);
         await ownerPage.getByRole('button', { name: 'Anweisungsformular erstellen', exact: true }).click();
         await ownerPage.waitForURL(/\/kassenbuch\/vorgang\/\d+/);
         const entryId = Number(ownerPage.url().split('/').at(-1));
         assert.equal((await query('select data from cashbook_entries where id=$1',[entryId])).rows[0].data.place,'');
+        const createdEvent = ownerPage.locator('section').filter({has: ownerPage.getByRole('heading',{name:'Aktivitätsverlauf',exact:true})}).locator('div.rounded-lg').filter({hasText:'Vorgang angelegt'}).first();
+        const applicationReference = createdEvent.getByRole('row').filter({hasText:'Verknüpfter Antrag'});
+        await applicationReference.getByRole('cell',{name:'AN-UI',exact:true}).waitFor();
+        const receiptReference = createdEvent.getByRole('row').filter({hasText:'Ausgewählte Quittungen'});
+        await receiptReference.getByRole('cell',{name:'AN-UI_Q1.pdf',exact:true}).waitFor();
         // A valid unrestricted owner API token still cannot fetch cashbook files/ZIPs.
         for (const suffix of ['file', 'zip']) assert.equal((await fetch(`${base}/api/cashbook/${entryId}/${suffix}`, { headers: bearerHeaders })).status, 403);
         assert.equal((await otherPage.request.get(`${base}/api/cashbook/${entryId}/file`)).status(), 403);
         assert.equal((await ownerPage.request.get(`${base}/api/cashbook/${entryId}/file`)).status(), 200);
         await ownerPage.getByRole('button', { name: 'Signieren', exact:true }).waitFor();
-        async function sign(page) { if(!(await page.getByLabel('Ort der Unterschrift',{exact:true}).inputValue())) await page.getByLabel('Ort der Unterschrift',{exact:true}).fill(page===ownerPage?'Köthen':'Berlin'); await page.getByRole('button',{name:'Signieren',exact:true}).click(); await page.locator('.react-pdf__Page canvas').first().waitFor({ timeout: 30000 }); assert.equal(await page.getByRole('button', { name: '✎ Text', exact: true }).count(), 0, 'sign-only viewer has no text editing'); await page.getByRole('button', { name: '✒ Signieren', exact: true }).click(); const area = await page.locator('.react-pdf__Page').first().boundingBox(); await page.mouse.move(area.x + area.width * .1, area.y + area.height * .35); await page.mouse.down(); await page.mouse.move(area.x + area.width * .4, area.y + area.height * .43, { steps: 8 }); await page.mouse.up(); await page.getByRole('button', { name: 'Speichern', exact: true }).click(); await waitDb('select first_signed_at,second_signed_at from cashbook_entries where id=$1', [entryId], rows => page === ownerPage ? !!rows[0].first_signed_at : !!rows[0].second_signed_at); await page.locator('.react-pdf__Page canvas').first().waitFor({ state: 'detached', timeout: 30000 }); }
+        async function sign(page) { if(!(await page.getByLabel('Ort der Unterschrift',{exact:true}).inputValue())) await page.getByLabel('Ort der Unterschrift',{exact:true}).fill(page===ownerPage?'Köthen':'Berlin'); await page.getByRole('button',{name:'Signieren',exact:true}).click(); await page.locator('.react-pdf__Page canvas').first().waitFor({ timeout: 30000 }); assert.equal(await page.getByRole('button', { name: '✎ Text', exact: true }).count(), 0, 'sign-only viewer has no text editing'); if(page!==ownerPage)await page.screenshot({path:join(output,'second-before-signing.png'),fullPage:true}); await page.getByRole('button', { name: '✒ Signieren', exact: true }).click(); const area = await page.locator('.react-pdf__Page').first().boundingBox(); await page.mouse.move(area.x + area.width * .1, area.y + area.height * .35); await page.mouse.down(); await page.mouse.move(area.x + area.width * .4, area.y + area.height * .43, { steps: 8 }); await page.mouse.up(); await page.getByRole('button', { name: 'Speichern', exact: true }).click(); await waitDb('select first_signed_at,second_signed_at from cashbook_entries where id=$1', [entryId], rows => page === ownerPage ? !!rows[0].first_signed_at : !!rows[0].second_signed_at); await page.locator('.react-pdf__Page canvas').first().waitFor({ state: 'detached', timeout: 30000 }); }
+        const firstForm = (await query('select files from cashbook_entries where id=$1',[entryId])).rows[0].files.find(file=>file.kind==='form');
         await sign(ownerPage);
+        const firstSigned = (await query('select files from cashbook_entries where id=$1',[entryId])).rows[0].files;
+        assert.equal(firstSigned.filter(file=>['form','prepared','signed'].includes(file.kind)).length,1);
+        assert.equal((await ownerPage.request.get(`${base}/api/cashbook/${entryId}/file?file=${firstForm.id}`)).status(),404);
+        assert.equal((await ownerPage.request.get(`${base}/api/cashbook/${entryId}/file`)).status(),200);
         await ownerPage.reload();
         await ownerPage.getByRole('button', { name: 'Zur Unterschrift vorlegen', exact: true }).click();
         assert.equal(await ownerPage.getByRole('button',{name:'Zweite unterschreibende Person',exact:true}).isDisabled(),true);
@@ -231,8 +276,19 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         const preparedPdf=await secondPage.request.get(`${base}/api/cashbook/${entryId}/file`);
         const preparedText=await require('../../lib/pdf-text').extractPdfText(await preparedPdf.body());
         assert.match(preparedText.text,/Berlin, 01\./);
+        const finalPdf = join(output,'cashbook-final.pdf');writeFileSync(finalPdf,await preparedPdf.body());
+        require('../helpers/pdf-signature-validation').validatePdfInteroperability(finalPdf,2);
         await secondPage.screenshot({path:join(output,'second-signature-details.png'),fullPage:true});
         await secondPage.reload();
+        const currentFiles = (await query('select files from cashbook_entries where id=$1',[entryId])).rows[0].files;
+        assert.equal(currentFiles.filter(file=>['form','prepared','signed'].includes(file.kind)).length,1);
+        await secondPage.getByRole('button', {name:/Formular ansehen/}).waitFor();
+        const filesSection = secondPage.locator('section').filter({has: secondPage.getByRole('heading',{name:'Unterlagen',exact:true})});
+        assert.equal(await filesSection.getByRole('button',{name:/AN-UI_Anweisung\.pdf/}).count(),1);
+        assert.equal((await secondPage.request.get(`${base}/api/cashbook/${entryId}/file?file=${firstSigned.find(file=>file.kind==='signed').id}`)).status(),404);
+        const documentsZip = await secondPage.request.get(`${base}/api/cashbook/${entryId}/zip`);
+        assert.equal(documentsZip.status(),200);
+        assert.equal(exportZip(await documentsZip.body()).size,3,'ZIP contains application, receipt and only the final instruction');
         await secondPage.getByRole('button', { name: 'Anweisung erteilen', exact: true }).click();
         await secondPage.getByRole('dialog').getByRole('button', { name: 'Anweisung erteilen', exact: true }).click();
         await waitDb('select state from cashbook_entries where id=$1', [entryId], rows => rows[0].state === 'posted');
@@ -378,6 +434,7 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         for(const name of ['Finanzantrag','Anlage A','Anlage B','Studierendenausweis','Quittungen'])assert.equal(await applicationCreate.getByRole('checkbox',{name,exact:true}).isChecked(),true);
         for(const name of ['Anlage A','Anlage B','Studierendenausweis'])await applicationCreate.getByRole('checkbox',{name,exact:true}).uncheck();
         const applicationName='Browser application module '+randomUUID();await applicationCreate.getByLabel('Name',{exact:true}).fill(applicationName);
+        await applicationCreate.locator('button[aria-haspopup=listbox]').click();await ownerPage.getByRole('option',{name:moduleTemplate.name,exact:true}).click();
         await applicationCreate.getByRole('button',{name:'Antragsboard erstellen',exact:true}).click();await ownerPage.waitForURL(/\/intern\/board\/\d+$/);
         const applicationId=Number(new URL(ownerPage.url()).pathname.split('/').at(-1));
         const applicationBoard=(await query('select * from boards where id=$1',[applicationId])).rows[0];assert.equal(applicationBoard.is_application_board,true);assert.deepEqual(applicationBoard.attachment_fields,['finance_request','receipts']);
@@ -403,15 +460,38 @@ function exportZip(buffer){const entries=new Map();let offset=0;while(offset+30<
         await ownerPage.setViewportSize({width:390,height:1000});await ownerPage.screenshot({path:join(output,'finance-form-module-mobile.png'),fullPage:true});assert.ok(await ownerPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await ownerPage.setViewportSize({width:1400,height:1000});
         const publicPage=await browser.newPage();await publicPage.goto(base);assert.equal(await publicPage.locator('input[name=student_card]').count(),0);await publicPage.getByRole('button',{name:'Standort',exact:true}).click();await publicPage.getByRole('option',{name:moduleLocationName,exact:true}).click();
         assert.equal(await publicPage.locator('input[name="student_card"]').count(),0);assert.equal(await publicPage.locator('input[name="annex_a"]').count(),0);
-        await publicPage.getByLabel('Antragsgegenstand *',{exact:true}).fill('Public finance module UI');await publicPage.getByLabel('E-Mail-Adresse *',{exact:true}).fill('synthetic@example.org');await publicPage.getByLabel('Antragsteller *',{exact:true}).fill('Synthetic applicant');await publicPage.locator('input[name="finance_request"]').setInputFiles({name:'application.pdf',mimeType:'application/pdf',buffer:pdf});
+        const publicSubmissionTitle='Public finance module UI '+applicationId;await publicPage.getByLabel('Antragsgegenstand *',{exact:true}).fill(publicSubmissionTitle);await publicPage.getByLabel('E-Mail-Adresse *',{exact:true}).fill('synthetic@example.org');await publicPage.getByLabel('Antragsteller *',{exact:true}).fill('Synthetic applicant');await publicPage.locator('input[name="finance_request"]').setInputFiles({name:'application.pdf',mimeType:'application/pdf',buffer:pdf});
         await publicPage.screenshot({path:join(output,'public-finance-form.png'),fullPage:true});await publicPage.waitForTimeout(3500);await publicPage.getByRole('button',{name:'Antrag einreichen',exact:true}).click();await publicPage.waitForURL(/\/status\//);
-        const publicSubmitted=(await query("select id,board_id from cards where title='Public finance module UI'")).rows;assert.equal(publicSubmitted.length,1);assert.equal(publicSubmitted[0].board_id,applicationId);assert.deepEqual((await query('select kind from attachments where card_id=$1',[publicSubmitted[0].id])).rows,[{kind:'finance_request'}]);
+        const publicSubmitted=(await query("select id,board_id from cards where title=$1",[publicSubmissionTitle])).rows;assert.equal(publicSubmitted.length,1);assert.equal(publicSubmitted[0].board_id,applicationId);assert.deepEqual((await query('select kind from attachments where card_id=$1',[publicSubmitted[0].id])).rows,[{kind:'finance_request'}]);
         await ownerPage.goto(`${base}/admin/finanzantraege-formular`);await ownerPage.getByRole('button',{name:'Modul deaktivieren',exact:true}).click();moduleDialog=ownerPage.getByRole('dialog',{name:'Modul deaktivieren',exact:true});await moduleDialog.getByLabel('Zur Bestätigung DEAKTIVIEREN eingeben',{exact:true}).fill('DEAKTIVIEREN');await moduleDialog.getByRole('button',{name:'Modul deaktivieren',exact:true}).click();await waitDb('select active_module from application_form_modules',[],rows=>rows[0]?.active_module===null);
         await ownerPage.goto(`${base}/admin/standorte`);await ownerPage.getByRole('button',{name:'Modul aktivieren',exact:true}).click();moduleDialog=ownerPage.getByRole('dialog',{name:'Modul aktivieren',exact:true});await moduleDialog.getByLabel('Zur Bestätigung BESTÄTIGEN eingeben',{exact:true}).fill('BESTÄTIGEN');await moduleDialog.getByRole('button',{name:'Modul aktivieren',exact:true}).click();await waitDb('select active_module from application_form_modules',[],rows=>rows[0]?.active_module==='locations');
 
         await ownerPage.goto(`${base}/intern/kassenbuch/${bookId}`);
         await ownerPage.screenshot({ path: join(output, 'cashbook-desktop.png'), fullPage: true });
-        console.log('Cashbook production workflow passed: ' + output);
+        // Two real attachment save actions must preserve the first signer's PDF revision.
+        const signingBoard=(await query("insert into boards(name,owner_id) values ('Attachment signature regression',$1) returning id",[owner.id])).rows[0];
+        const signingStatus=(await query("insert into board_statuses(board_id,name) values ($1,'Open') returning id",[signingBoard.id])).rows[0];
+        await query("insert into board_card_fields(board_id,field_key,visible) values ($1,'other_pdfs',true)",[signingBoard.id]);
+        await query("insert into board_access(board_id,user_id,access_level) values ($1,$2,'write')",[signingBoard.id,second.id]);
+        const signingCard=(await query("insert into cards(board_id,status_id,title,applicant,token) values ($1,$2,'Signature regression','Synthetic',$3) returning id",[signingBoard.id,signingStatus.id,randomUUID()])).rows[0];
+        const signingFile=(await query("insert into attachments(card_id,kind,filename,path,mime,size) values ($1,'other','Signing.pdf','receipt.pdf','application/pdf',$2) returning id,path",[signingCard.id,pdf.length])).rows[0];
+        let previousPath=signingFile.path;
+        for (const [index,signer] of [owner,second].entries()) {
+            const page=await session(signer);await page.goto(`${base}/intern/card/${signingCard.id}`);
+            await page.getByRole('button',{name:/Signing\.pdf/}).click();
+            await page.locator('.react-pdf__Page canvas').first().waitFor();
+            await page.getByRole('button',{name:'✒ Signieren',exact:true}).click();
+            const bounds=await page.locator('.react-pdf__Page').first().boundingBox();
+            await page.mouse.move(bounds.x+bounds.width*(index === 1 ? .55 : .1),bounds.y+bounds.height*.45);await page.mouse.down();
+            await page.mouse.move(bounds.x+bounds.width*(index === 1 ? .85 : .4),bounds.y+bounds.height*.55,{steps:8});await page.mouse.up();
+            await page.getByRole('button',{name:'Speichern',exact:true}).click();
+            const changed=await waitDb('select path from attachments where id=$1',[signingFile.id],rows=>rows[0].path!==previousPath);previousPath=changed[0].path;
+            await page.locator('.react-pdf__Page canvas').first().waitFor({state:'detached'});
+            if(index===1){await page.getByRole('button',{name:/Signing\.pdf/}).click();await page.locator('.react-pdf__Page canvas').first().waitFor();await page.screenshot({path:join(output,'attachment-two-signatures.png'),fullPage:true});}
+            await page.context().close();
+        }
+        require('../helpers/pdf-signature-validation').validatePdfInteroperability(join(process.env.UPLOAD_DIR,previousPath),2);
+        console.log('Cashbook and attachment signature workflows passed: ' + output);
     }
     catch (error) {
         if (browser) {

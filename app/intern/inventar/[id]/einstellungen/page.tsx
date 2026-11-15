@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { BoardEmailSettings } from "@/components/board/BoardEmailSettings";
 import { ACCESS_LEVEL_OPTIONS } from "@/lib/access-level";
 import Link from "next/link";
@@ -12,7 +14,9 @@ import {
   inventoryBoardAccess,
   users,
 } from "@/lib/db/schema";
-import { requireInventoryBoardManage } from "@/lib/inventory";
+import { canManageInventoryBoard, requireInventorySettingsAccess } from "@/lib/inventory";
+import { InventoryManagementSettings } from "@/components/inventory/InventoryManagementSettings";
+import { getInventoryManagementPeople } from "@/lib/board-management";
 import { LoanBoardEditor } from "@/components/inventory/LoanBoardEditor";
 import {
   getInventoryBoardFields,
@@ -46,7 +50,9 @@ export default async function InventoryBoardSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { board } = await requireInventoryBoardManage(Number(id));
+  const { user, board } = await requireInventorySettingsAccess(Number(id));
+  const fullManagement = await canManageInventoryBoard(user, board);
+  const managementPeople = fullManagement ? await getInventoryManagementPeople(board.id) : null;
   const [fields, numbering, access, allUsers, allGroups, loanBoardRow] =
     await Promise.all([
       getInventoryBoardFields(board.id),
@@ -63,8 +69,8 @@ export default async function InventoryBoardSettingsPage({
         })
         .from(inventoryBoardAccess)
         .leftJoin(users, eq(users.id, inventoryBoardAccess.userId))
-        .leftJoin(groups, eq(groups.id, inventoryBoardAccess.groupId))
-        .where(eq(inventoryBoardAccess.boardId, board.id)),
+        .leftJoin(groups, trashAnd(activeRows.groups, eq(groups.id, inventoryBoardAccess.groupId)))
+        .where(trashAnd(activeRows.inventoryBoardAccess, eq(inventoryBoardAccess.boardId, board.id))),
       db
         .select({ id: users.id, username: users.username })
         .from(users)
@@ -72,13 +78,13 @@ export default async function InventoryBoardSettingsPage({
         .orderBy(users.username),
       db
         .select({ id: groups.id, name: groups.name })
-        .from(groups)
+        .from(groups).where(activeRows.groups)
         .orderBy(groups.name),
       board.loanBoardId
         ? db
             .select({ id: boards.id, name: boards.name })
             .from(boards)
-            .where(eq(boards.id, board.loanBoardId))
+            .where(trashAnd(activeRows.boards, eq(boards.id, board.loanBoardId)))
             .limit(1)
         : Promise.resolve([]),
     ]);
@@ -99,8 +105,10 @@ export default async function InventoryBoardSettingsPage({
         <h1 className="text-2xl font-bold">Inventar-Einstellungen</h1>
       </div>
 
+      {!fullManagement && <p className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-slate-700">Du hast begrenzte Verwaltungsrechte für dieses Inventar. Hier siehst du die dafür freigegebenen Einstellungen.</p>}
+
       {/* Allgemein */}
-      <CollapsibleSection title="Allgemein" defaultOpen>
+      {fullManagement && <CollapsibleSection title="Allgemein" defaultOpen>
         <form action={renameInventoryBoardAction} className="space-y-4">
           <input type="hidden" name="boardId" value={board.id} />
           <div>
@@ -131,7 +139,7 @@ export default async function InventoryBoardSettingsPage({
             Speichern
           </button>
         </form>
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {board.loanBoardId != null && <CollapsibleSection title="Email-Settings"><BoardEmailSettings boardId={board.loanBoardId} /></CollapsibleSection>}
 
@@ -267,13 +275,13 @@ export default async function InventoryBoardSettingsPage({
       </CollapsibleSection>
 
       {/* Aufgabentracking: Leihvorgänge als Karten auf einem Kanban-Board */}
-      <CollapsibleSection title="Aufgabentracking (Leihvorgänge als Karten)">
+      {fullManagement && <CollapsibleSection title="Aufgabentracking (Leihvorgänge als Karten)">
         <LoanBoardEditor
           boardId={board.id}
           loanBoard={loanBoard}
           suggestedName={`${board.name} – Leihvorgänge`}
         />
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {/* Inventarnummer */}
       <CollapsibleSection title="Automatische Inventarnummer">
@@ -291,18 +299,22 @@ export default async function InventoryBoardSettingsPage({
       </CollapsibleSection>
 
       {/* Eigentum & Löschen */}
-      <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
+      {fullManagement && <CollapsibleSection title="Eigentum & Löschen" className="border-red-200">
         <div className="mb-4">
 
           <OwnerSettings kind="inventory" id={board.id}/>
         </div>
         <DeleteConfirm
           action={deleteInventoryBoardConfirmedAction.bind(null, board.id)}
+          confirmName={board.name}
           buttonLabel="Inventar löschen"
           title={`Inventar „${board.name}" löschen`}
           message="Das Inventar wird inkl. aller Gegenstände, Vorgänge und Dateien unwiderruflich gelöscht."
         />
-      </CollapsibleSection>
+      </CollapsibleSection>}
+      {managementPeople && <CollapsibleSection title="Verwaltungsrechte vergeben">
+        <InventoryManagementSettings boardId={board.id} {...managementPeople} />
+      </CollapsibleSection>}
     </div>
   );
 }

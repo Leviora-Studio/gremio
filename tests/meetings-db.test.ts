@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -15,7 +16,7 @@ import { buildMeetingAgendaPdf } from "../lib/meetings/pdf";
 import { berlinInputDate, parseBerlinDate } from "../lib/meetings/validation";
 import { absPath, saveNamedBuffer } from "../lib/attachments";
 after(()=>pool.end());
-const meetingValues={title:"Planning",committee:"Committee",startsAt:"2026-11-10T18:00",submissionDeadline:"2026-11-09T18:00",location:"Room 1",chair:"Chair",state:"planning"};
+const meetingValues={title:"Planning",committee:"Committee",startsAt:berlinInputDate(new Date(Date.now()+31*86400000)),submissionDeadline:berlinInputDate(new Date(Date.now()+30*86400000)),location:"Room 1",chair:"Chair",state:"planning"};
 const topicValues={title:"Public TOP",description:"Shared description",motion:"Shared motion",presenter:"Person",kind:"decision",durationMinutes:15,confidential:false,state:"scheduled",outcome:""};
 
 test("Berlin meeting dates are host-independent and reject invalid dates and DST gaps",()=>{
@@ -149,12 +150,12 @@ test("independent meeting grants, confidential TOPs, safe references and explici
     await db.delete(s.attachments).where(eq(s.attachments.id,att.id));
     assert.deepEqual(await readFile(absPath(copy.path)),bytes,"deleting source leaves shared copy intact");
   } finally {
-    if(meetingId)await service.deleteMeeting(owner,meetingId);
-    if(targetId)await service.deleteMeeting(owner,targetId);
-    if(secondMeetingId)await service.deleteMeeting(owner,secondMeetingId);
-    if(futureMeetingId)await service.deleteMeeting(owner,futureMeetingId);
-    if(backlogId)await service.deleteTopic(owner,backlogId);
-    for(const id of [areaId,targetAreaId])if(id)await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,id));
+    if(meetingId)await purgeTestResource("meeting",meetingId);
+    if(targetId)await purgeTestResource("meeting",targetId);
+    if(secondMeetingId)await purgeTestResource("meeting",secondMeetingId);
+    if(futureMeetingId)await purgeTestResource("meeting",futureMeetingId);
+    if(backlogId)await purgeTestResource("topic",backlogId);
+    for(const id of [areaId,targetAreaId])if(id){await purgeTestMeetings(id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,id));}
     await db.delete(s.boards).where(eq(s.boards.id,board.id));
     await db.delete(s.groups).where(eq(s.groups.id,group.id));
     for(const user of [owner,reader,writer,boardOnly,outsider,admin])await db.delete(s.users).where(eq(s.users.id,user.id));
@@ -219,8 +220,8 @@ test("only planners assign one-level subtopics; order, exports, copies and inher
     const privateRoot=await service.createTopic(owner,meeting,{...topicValues,title:"Another private main",confidential:true});
     await service.createTopic(owner,meeting,{...topicValues,title:"Another private child",parentId:privateRoot});
   }finally{
-    await service.deleteMeeting(owner,meeting);await service.deleteMeeting(owner,target);
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));
+    await purgeTestResource("meeting",meeting);await purgeTestResource("meeting",target);
+    await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));
     for(const user of [owner,reader,writer])await db.delete(s.users).where(eq(s.users.id,user.id));
   }
 });
@@ -250,8 +251,8 @@ test("owner agenda PDFs include confidential sub-TOPs, including deferred, withd
     text=await exportText();
     assert.ok(text.includes("Secret withdrawn child"),"owner export includes remaining confidential historical children");
   }finally{
-    await service.deleteMeeting(owner,meeting);await service.deleteMeeting(owner,target);
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));
+    await purgeTestResource("meeting",meeting);await purgeTestResource("meeting",target);
+    await purgeTestMeetings(area);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,area));
     await db.delete(s.users).where(eq(s.users.id,owner.id));
   }
 });

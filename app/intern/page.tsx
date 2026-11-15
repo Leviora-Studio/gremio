@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { additionalOwnedIds } from "@/lib/board-ownership";
 import Link from "next/link";
 import { and, eq, inArray, isNull, lte } from "drizzle-orm";
@@ -71,7 +73,7 @@ export default async function InternHome() {
         .from(cards)
         .innerJoin(boardsTable, eq(boardsTable.id, cards.boardId))
         .where(
-          and(
+          trashAnd(activeRows.cards, and(
             inArray(cards.boardId, accessibleBoardIds),
             eq(cards.archivePending, true),
             isNull(cards.nextcloudLink),
@@ -79,7 +81,7 @@ export default async function InternHome() {
               cards.archiveFirstFailedAt,
               new Date(Date.now() - 24 * 60 * 60 * 1000),
             ),
-          ),
+          )),
         )
     : [];
   const boardsNode = (
@@ -119,9 +121,6 @@ export default async function InternHome() {
     <div className="space-y-3">
       <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-2xl font-bold">Finanzübersichten</h2>
-        <Link href="/finanzen/neu" className="btn-primary">
-          + Neue Finanzübersicht
-        </Link>
       </div>
       {financeBoards.length === 0 ? (
         <div className="card p-8 text-center text-slate-500">

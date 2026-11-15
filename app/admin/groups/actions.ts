@@ -3,6 +3,8 @@
 
 "use server";
 
+import { moveToTrash } from "@/lib/trash";
+
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -73,10 +75,11 @@ export async function renameGroupAction(
   return { success: "Gespeichert." };
 }
 
-export async function deleteGroupAction(groupId: number): Promise<void> {
-  await requireAdmin();
-  await db.delete(groups).where(eq(groups.id, groupId));
-  revalidatePath("/admin/groups");
+export async function deleteGroupAction(groupId: number, confirmation?: unknown,entityName?:unknown): Promise<{ error?: string } | void> {
+  const user=await requireAdmin();
+  try { await moveToTrash(user, "group", groupId, confirmation,{entityName}); }
+  catch(error) { return {error:error instanceof Error ? error.message : "Verschieben in den Papierkorb fehlgeschlagen."}; }
+  revalidatePath("/admin/groups"); revalidatePath("/intern", "layout"); revalidatePath("/");
 }
 
 export async function addMemberAction(

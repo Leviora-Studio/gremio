@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 "use server";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { canManageBoard, getBoardById } from "@/lib/authz";
-import { canManageInventoryBoard, getInventoryBoardById } from "@/lib/inventory";
+import { canConfigureBoardSettings, getBoardById } from "@/lib/authz";
+import { canConfigureInventorySettings, getInventoryBoardById } from "@/lib/inventory";
 import { db } from "@/lib/db";
 import { boardEmailRules, boardStatuses } from "@/lib/db/schema";
 import { parseEmailRecipients } from "@/lib/email-validation";
@@ -14,10 +16,10 @@ import { parseEmailRecipients } from "@/lib/email-validation";
 export async function saveBoardEmailRuleAction(boardId:number,statusId:number,_previous:{error?:string;success?:string},form:FormData):Promise<{error?:string;success?:string}> {
   const user=await requireUser();const board=await getBoardById(boardId);
   if(!board)notFound();
-  if(board.inventoryBoardId!=null){const inventory=await getInventoryBoardById(board.inventoryBoardId);if(!inventory||inventory.loanBoardId!==board.id||!(await canManageInventoryBoard(user,inventory)))notFound();}
-  else if(!(await canManageBoard(user,board)))notFound();
+  if(board.inventoryBoardId!=null){const inventory=await getInventoryBoardById(board.inventoryBoardId);if(!inventory||inventory.loanBoardId!==board.id||!(await canConfigureInventorySettings(user,inventory)))notFound();}
+  else if(!(await canConfigureBoardSettings(user,board)))notFound();
   if(!Number.isSafeInteger(statusId)||statusId<1||statusId>2147483647)return {error:"Ungültige Spalte."};
-  const [status]=await db.select({id:boardStatuses.id}).from(boardStatuses).where(and(eq(boardStatuses.id,statusId),eq(boardStatuses.boardId,board.id)));
+  const [status]=await db.select({id:boardStatuses.id}).from(boardStatuses).where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id,statusId),eq(boardStatuses.boardId,board.id))));
   if(!status)return {error:"Die Spalte gehört nicht zu diesem Board."};
   const enabled=form.get("enabled")==="on";const raw=String(form.get("recipients")??"");
   if(raw.length>15000)return {error:"Zu viele Empfangsadressen."};

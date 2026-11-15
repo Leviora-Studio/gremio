@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+import { typedConfirmationError } from "@/lib/confirmation";
 
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -213,8 +214,9 @@ export async function uploadCertificateAction(
 }
 
 /** Entfernt das gespeicherte Signatur-Zertifikat. */
-export async function removeCertificateAction(): Promise<void> {
+export async function removeCertificateAction(confirmation?:unknown): Promise<{error?:string}|void> {
   const user = await requireUser();
+  const invalid=typedConfirmationError(confirmation,"ENTFERNEN");if(invalid)return invalid;
   await db
     .update(users)
     .set({
@@ -264,8 +266,9 @@ export async function uploadSignatureAction(
   return { success: "Unterschriftsbild gespeichert." };
 }
 
-export async function removeSignatureAction(): Promise<void> {
+export async function removeSignatureAction(confirmation?:unknown): Promise<{error?:string}|void> {
   const user = await requireUser();
+  const invalid=typedConfirmationError(confirmation,"ENTFERNEN");if(invalid)return invalid;
   if (user.signaturePath) await deleteSignatureFile(user.signaturePath);
   await db
     .update(users)

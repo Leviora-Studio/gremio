@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -201,7 +203,7 @@ export const POST = withPublicApi500(async function POST(req: Request) {
     const [card] = await db
       .select({ token: cards.token, number: cards.number })
       .from(cards)
-      .where(eq(cards.id, result.value.cardId))
+      .where(trashAnd(activeRows.cards, eq(cards.id, result.value.cardId)))
       .limit(1);
     if (!card?.token) {
       return publicApiError(

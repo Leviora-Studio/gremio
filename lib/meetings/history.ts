@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import {asc,eq,inArray} from "drizzle-orm";
 import {db} from "@/lib/db";
 import {meetingTopics,meetingTopicActivity,type User} from "@/lib/db/schema";
@@ -8,7 +10,7 @@ export type TopicHistoryEntry={id:number;meetingId:number;meetingTitle:string;st
 /** Resolve each destination separately; membership of a source never grants destination access. */
 export async function topicDestinations(user:User,ids:number[]){
  const result:Record<number,TopicHistoryEntry[]>={};if(!ids.length)return result;
- const rows=await db.select({id:meetingTopics.id,previous:meetingTopics.previousTopicId}).from(meetingTopics).where(inArray(meetingTopics.previousTopicId,ids)).orderBy(asc(meetingTopics.id));
+ const rows=await db.select({id:meetingTopics.id,previous:meetingTopics.previousTopicId}).from(meetingTopics).where(trashAnd(activeRows.meetingTopics, inArray(meetingTopics.previousTopicId,ids))).orderBy(asc(meetingTopics.id));
  for(const row of rows){try{const {topic,meeting}=await requireTopic(user,row.id);if(meeting)(result[row.previous!]??=[]).push({id:topic.id,meetingId:meeting.id,meetingTitle:meeting.title,state:topic.state,transferred:topic.transferred});}catch{/* No destination metadata without live access. */}}
  return result;
 }

@@ -57,9 +57,10 @@ export function LoanBoardEditor({
             className="btn-secondary text-red-600"
             label="Entfernen"
             title="Leihvorgang-Board entfernen?"
-            message="Das Board und alle darauf liegenden Vorgangs-Karten werden gelöscht. Die Vorgänge selbst bleiben erhalten, verlieren aber ihre Karte."
+            message="Das Tracking-Board mit seinen Karten, Kommentaren und Anhängen wird für 30 Tage in den Papierkorb verschoben. Admins können es wiederherstellen. Laufende und abgeschlossene Leihvorgänge sowie ihre Inventar-Dokumente bleiben erhalten; die Tracking-Verknüpfung wird vorübergehend entfernt."
             confirmLabel="Entfernen"
             confirmClassName="btn-danger"
+            requireTyped="LÖSCHEN"
           />
         </div>
       </div>

@@ -3,6 +3,8 @@
 
 "use server";
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -51,7 +53,7 @@ export async function createInstructionPdfAction(
     return { ok: false, error: "Zu viele Anfragen. Bitte kurz warten." };
   }
 
-  const [card] = await db.select().from(cards).where(eq(cards.id, cardId)).limit(1);
+  const [card] = await db.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).limit(1);
   if (!card) return { ok: false, error: "Karte nicht gefunden." };
   if (card.lockedAt) return {ok:false,error:"Diese Karte ist dauerhaft gesperrt."};
   const board = await getBoardById(card.boardId);
@@ -107,7 +109,7 @@ export async function createInstructionPdfAction(
       const [locked] = await tx
         .select({ id: cards.id, number: cards.number })
         .from(cards)
-        .where(eq(cards.id, card.id))
+        .where(trashAnd(activeRows.cards, eq(cards.id, card.id)))
         .for("update");
       if (!locked) throw new Error("card-missing");
 
@@ -130,7 +132,7 @@ export async function createInstructionPdfAction(
       const existing = await tx
         .select({ filename: attachments.filename })
         .from(attachments)
-        .where(eq(attachments.cardId, card.id));
+        .where(trashAnd(activeRows.attachments, eq(attachments.cardId, card.id)));
       const nextName = nextInstructionFilename(
         existing.map((row) => row.filename),
         locked.number,

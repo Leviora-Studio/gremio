@@ -1,9 +1,13 @@
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { effectiveDoneStatusId } from "@/lib/board-trigger-policy";
 import { and, eq, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, boards, boardStatuses, cards } from "@/lib/db/schema";
 import { MAX_PUBLIC_OTHER_FILES } from "@/lib/constants";
 import { nextReceiptIndex, receiptFileName, saveAntragFile, deleteStoredFile } from "@/lib/attachments";
 import { doneSinceForStatus } from "@/lib/done-archive";
+import { isArchiveTriggerEnabled } from "@/lib/board-trigger-policy";
 
 export type UploadPurpose = "general" | "resubmission" | "receipt";
 export class PublicWorkflowError extends Error {}
@@ -18,17 +22,18 @@ async function lockedWorkflow(tx: Tx, cardId: number) {
   // Row locks also serialize against ordinary internal card moves. Recheck
   // gates AFTER locking; advisory locks alone do not protect against moves.
   await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5055}, ${cardId})`);
-  const [identity] = await tx.select({ boardId: cards.boardId }).from(cards).where(eq(cards.id, cardId));
+  const [identity] = await tx.select({ boardId: cards.boardId }).from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId)));
   if (!identity) throw new PublicWorkflowError("Antrag nicht gefunden.");
-  const [board] = await tx.select().from(boards).where(eq(boards.id, identity.boardId)).for("share");
-  const [card] = await tx.select().from(cards).where(eq(cards.id, cardId)).for("update");
+  const [board] = await tx.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id, identity.boardId))).for("share");
+  const [card] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).for("update");
   if (!card) throw new PublicWorkflowError("Antrag nicht gefunden.");
-  const statuses = await tx.select().from(boardStatuses).where(eq(boardStatuses.boardId, card.boardId)).for("share");
+  const statuses = await tx.select().from(boardStatuses).where(trashAnd(activeRows.boardStatuses, eq(boardStatuses.boardId, card.boardId))).for("share");
   const status = statuses.find((s) => s.id === card.publicStatusId);
   if (!board || !statuses.some(s => s.id === card.statusId) || board.inventoryBoardId != null) throw new PublicWorkflowError("Antrag nicht gefunden.");
-  const gates = publicGates(!!status?.isArchiveTrigger, !!status?.isReceiptTrigger, card.publicStatusId ?? 0, board, statuses.some((s) => s.id === board.receiptToStatusId));
+  const archived = isArchiveTriggerEnabled(board, status);
+  const gates = publicGates(archived, !!status?.isReceiptTrigger, card.publicStatusId ?? 0, board, statuses.some((s) => s.id === board.receiptToStatusId));
   if (!gates.canUploadDocuments) throw new PublicWorkflowError("Dieser Antrag ist bereits archiviert. Es können keine Dateien mehr eingereicht werden.");
-  if (card.lockedAt) { gates.canResubmit = false; gates.canReceipt = !status?.isArchiveTrigger; }
+  if (card.lockedAt) { gates.canResubmit = false; gates.canReceipt = !archived; }
   if (board.attachmentFields!=null && !board.attachmentFields.includes("receipts")) gates.canReceipt=false;
   return { card, board, gates };
 }
@@ -38,7 +43,7 @@ export async function insertPublicAttachment(cardId: number, purpose: UploadPurp
     const { card, gates } = await lockedWorkflow(tx, cardId);
     if (card.lockedAt && purpose !== "receipt") throw new PublicWorkflowError("Dieser Antrag ist gesperrt. Nur Quittungen können ergänzt werden.");
     if ((purpose === "receipt" && !gates.canReceipt) || (purpose === "resubmission" && !gates.canResubmit)) throw new PublicWorkflowError("Dieser Einreichungsbereich ist aktuell nicht freigeschaltet.");
-    const existing = await tx.select({ filename: attachments.filename }).from(attachments).where(and(eq(attachments.cardId, cardId), eq(attachments.kind, "other")));
+    const existing = await tx.select({ filename: attachments.filename }).from(attachments).where(trashAnd(activeRows.attachments, and(eq(attachments.cardId, cardId), eq(attachments.kind, "other"))));
     if (existing.length >= MAX_PUBLIC_OTHER_FILES) throw new PublicWorkflowError("Maximale Anzahl an Dateien erreicht.");
     const filename = purpose === "receipt" ? receiptFileName(card.number, nextReceiptIndex(card.number, existing.map((a) => a.filename)), saved.filename) : saved.filename;
     await tx.insert(attachments).values({ cardId, kind: "other", uploadPurpose: purpose, filename, path: saved.relPath, mime: saved.mime, size: saved.size, uploadedBy: null });
@@ -68,8 +73,8 @@ export async function submitPublicWorkflow(cardId: number, purpose: "receipt" | 
     if (card.lockedAt && gates.canReceipt && board.receiptToStatusId == null) return {boardId:board.id,target:null};
     if (!gates.canReceipt || board.receiptToStatusId == null) throw new PublicWorkflowError("Quittungseinreichung ist aktuell nicht freigeschaltet.");
     const target = board.receiptToStatusId;
-    const [row] = await tx.select({ m: max(cards.position) }).from(cards).where(and(eq(cards.boardId, board.id), eq(cards.statusId, target)));
-    await tx.update(cards).set({ statusId: target, position: (row?.m ?? -1) + 1, ...(card.lockedAt ? {} : { resubmittedAt: null }), doneSince: doneSinceForStatus(board.doneStatusId, target, card.doneSince), updatedAt: new Date() }).where(eq(cards.id, cardId));
+    const [row] = await tx.select({ m: max(cards.position) }).from(cards).where(trashAnd(activeRows.cards, and(eq(cards.boardId, board.id), eq(cards.statusId, target))));
+    await tx.update(cards).set({ statusId: target, position: (row?.m ?? -1) + 1, ...(card.lockedAt ? {} : { resubmittedAt: null }), doneSince: doneSinceForStatus(effectiveDoneStatusId(board), target, card.doneSince), updatedAt: new Date() }).where(eq(cards.id, cardId));
     return { boardId: board.id, target };
   });
 }

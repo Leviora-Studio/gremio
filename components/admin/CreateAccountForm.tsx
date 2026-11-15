@@ -6,7 +6,9 @@
 import { useActionState, useEffect, useRef } from "react";
 import { createAccountAction, type State } from "@/app/admin/accounts/actions";
 
-export function CreateAccountForm() {
+import { Select } from "@/components/Select";
+
+export function CreateAccountForm({financeBoards=[]}:{financeBoards?:{id:number;name:string}[]}) {
   const [state, action, pending] = useActionState(
     createAccountAction,
     {} as State,
@@ -32,6 +34,7 @@ export function CreateAccountForm() {
           required
         />
       </div>
+      <div className="min-w-56 flex-1"><label className="label" htmlFor="new-account-finance">Finanzboard für Haushaltstitel</label><Select key={state.success} id="new-account-finance" portal searchable name="financeBoardId" disabled={pending} options={[{value:"",label:"Nicht zugeordnet"},...financeBoards.map(board=>({value:String(board.id),label:board.name}))]}/></div>
       <button type="submit" disabled={pending} className="btn-primary">
         {"Anlegen"}
       </button>

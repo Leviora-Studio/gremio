@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -55,11 +56,11 @@ test('central templates and area snapshots create independent default TOPs atomi
   await assert.rejects(service.reorderTopics(writer,first,[miscellaneous.id,...numbered.filter(t=>t.id!==miscellaneous.id).map(t=>t.id)],currentMeeting.revision));
   await assert.rejects(service.saveTopic(writer,miscellaneous.id,{...miscellaneous,section:'non_public'},currentMeeting.revision,false),/Sonstiges/);
   await assert.rejects(service.setTopicStatus(writer,miscellaneous.id,'scheduled',currentMeeting.revision,'opening'),/Sonstiges/);
-  await deleteMeetingTemplate(manager,templateId,0);templateId=undefined;
-  assert.equal((await requireArea(owner,areaId)).defaultTopicsTemplateId,null);assert.equal((await requireArea(owner,areaId)).defaultTopics.length,1);
+  const retainedTemplateId=templateId;await deleteMeetingTemplate(manager,templateId,0,(await db.select().from(s.meetingAreaTemplates).where(eq(s.meetingAreaTemplates.id,templateId)))[0].name);
+  assert.equal((await requireArea(owner,areaId)).defaultTopicsTemplateId,retainedTemplateId);assert.equal((await requireArea(owner,areaId)).defaultTopics.length,1);
   await service.setTopicStatus(writer,root.id,'deferred',(await requireMeeting(writer,first)).revision);assert.equal((await visibleTopics(writer,first)).find(t=>t.id===root.id)?.section,'opening');
   await assert.rejects(service.saveMeeting(reader,null,{areaId,title:'Denied',startsAt:'',submissionDeadline:'',location:'',chair:'',state:'planning'}),/Zugriff/);
  }finally{
-  for(const id of meetingIds)await service.deleteMeeting(owner,id);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));if(templateId)await db.delete(s.meetingAreaTemplates).where(eq(s.meetingAreaTemplates.id,templateId));await db.delete(s.users).where(inArray(s.users.id,people.map(p=>p.id)));
+  for(const id of meetingIds)await purgeTestResource("meeting",id);await purgeTestMeetings(areaId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));if(templateId)await purgeTestResource("meeting_template",templateId);await db.delete(s.users).where(inArray(s.users.id,people.map(p=>p.id)));
  }
 });

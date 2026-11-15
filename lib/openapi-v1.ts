@@ -263,7 +263,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "getBoard",
         summary: "Board mit Spalten und sichtbaren Feldern",
         description:
-          "Board, seine Status-Spalten (nach `position`) und die am Board **aktivierten** Kartenfelder.\n\n**Berechtigung:** Board-Zugriff. `isInstructionTrigger`, `isTransferTrigger`, `isReceiptTrigger` an den Spalten sowie `ownerId`, `receiptToStatusId`, `resubmitStatusId` am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator). Mehrere Spalten können Archiv- und Quittungs-Auslöser sein.",
+          "Board, seine Status-Spalten (nach `position`) und die am Board **aktivierten** Kartenfelder.\n\n**Berechtigung:** Board-Zugriff. `isInstructionTrigger`, `isTransferTrigger`, `isReceiptTrigger` an den Spalten sowie `ownerId`, `receiptToStatusId`, `resubmitStatusId` am Board erscheinen nur für Board-Verwalter (Eigentümer oder Administrator). Mehrere Spalten können Quittungs-Auslöser sein. Nextcloud-Archiv-Trigger stehen auf normalen Boards und Antragsboards zur Verfügung. Die Done-Spalte ist ausschließlich auf normalen Boards verfügbar; Antragsboards liefern `doneStatusId: null`. Die kompatiblen Datums-Trigger-Metadaten sind nur für Eigentümer/Admins enthalten und immer false.",
         parameters: [
           {
             name: "id",
@@ -436,7 +436,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "updateCard",
         summary: "Karte ändern oder verschieben",
         description:
-          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die Trigger (Anweisungsdatum, Überweisungsdatum, Nextcloud-Archiv) greifen wie in der Oberfläche. Ein Statuswechsel setzt Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden. Alternativ erlaubt eine konfigurierte Bürokraft-Regel mit bestehendem Leserecht und `scope=write` ausschließlich einen Body mit genau `statusId`, wenn die aktive Karte aus einer erlaubten Ausgangsspalte in eine erlaubte andere Zielspalte wechselt. Schreibfreigaben haben Vorrang; Misch-Patches, Positionsänderungen und Wiederherstellungen sind für reine Bürokraft-Berechtigungen gesperrt.",
+          "Ändert die übergebenen Felder; nicht übergebene bleiben unberührt, `null` löscht ein Feld.\n\n**Verschieben:** `statusId` setzen — die Karte landet am Ende der Zielspalte, ein Aktivitätseintrag entsteht und die weiterhin verfügbaren Trigger greifen wie in der Oberfläche (Nextcloud-Archiv auf normalen Boards und Antragsboards; Done nur auf normalen Boards; keine automatische Datumssetzung). Ein Statuswechsel setzt Nachreichungsmarkierung und Done-Archivierungsfrist entsprechend zurück. Mit zusätzlichem `position` wird an eine bestimmte Stelle einsortiert.\n\n**Wiederherstellen:** `archived: false` holt eine weggeräumte Karte zurück. `archived: true` wird mit `400` abgelehnt — manuelles Archivieren gibt es auch im Web nicht.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`; alle aktivierten Kartenfelder einschließlich `number`, `instructionDate` und `transferDate` dürfen geändert werden. Alternativ erlaubt eine konfigurierte Bürokraft-Regel mit bestehendem Leserecht und `scope=write` ausschließlich einen Body mit genau `statusId`, wenn die aktive Karte aus einer erlaubten Ausgangsspalte in eine erlaubte andere Zielspalte wechselt. Schreibfreigaben haben Vorrang; Misch-Patches, Positionsänderungen und Wiederherstellungen sind für reine Bürokraft-Berechtigungen gesperrt.",
         parameters: [
           {
             name: "id",
@@ -491,7 +491,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
         operationId: "deleteCard",
         summary: "Karte löschen",
         description:
-          "Löscht die Karte und ihre Anhänge (Dateien inklusive). Unwiderruflich.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`. Jeder Nutzer mit Board-Schreibrecht darf löschen; reine Lesefreigaben erlauben keine Änderungen. Direkte und Gruppenfreigaben werden kombiniert, die höchste Stufe gilt.",
+          "Verschiebt die ungesperrte Karte mit ihren Inhalten und Anhängen für 30 Tage in den Papierkorb des Boards. Erfordert den JSON-Body `{\"confirmation\":\"LÖSCHEN\"}`. Wiederherstellung und endgültige Löschung erfolgen über die Oberfläche.\n\n**Berechtigung:** Board-Schreibrecht **und** `scope=write`. Jeder Nutzer mit Board-Schreibrecht darf löschen; reine Lesefreigaben erlauben keine Änderungen. Direkte und Gruppenfreigaben werden kombiniert, die höchste Stufe gilt.",
         parameters: [
           {
             name: "id",
@@ -501,9 +501,10 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
             schema: { type: "integer", format: "int32", minimum: 1 },
           },
         ],
+        requestBody: { required:true, content:{ "application/json":{ schema:{ type:"object", required:["confirmation"],properties:{confirmation:{type:"string",const:"LÖSCHEN"}},additionalProperties:false}, example:{confirmation:"LÖSCHEN"} } } },
         responses: {
           200: {
-            description: "Karte gelöscht.",
+            description: "Karte in den Board-Papierkorb verschoben.",
             content: {
               "application/json": {
                 schema: {
@@ -515,6 +516,7 @@ Die **öffentliche** API für native Apps ist getrennt dokumentiert unter \`/api
               },
             },
           },
+          400: badRequest,
           401: unauthorized,
           403: forbiddenWrite,
           404: notFoundCard,
@@ -636,7 +638,7 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           doneStatusId: {
             type: ["integer", "null"],
             format: "int32",
-            description: "Spalte, die vom Done-Sweep archiviert wird (null = aus).",
+            description: "Spalte, die vom Done-Sweep archiviert wird (null = aus). Auf Antragsboards immer null; dort gibt es kein automatisches Erledigt-Archiv.",
           },
           receiptToStatusId: {
             type: ["integer", "null"], format: "int32",
@@ -659,16 +661,18 @@ Der Token gilt nur im Rahmen der Rechte seines Nutzers. Die Anmeldung an dieser 
           isLockColumn: { type: "boolean", description: "Öffentlicher Status wird bei ungesperrten Anträgen erst nach ausdrücklicher Sperre bestätigt." },
           isArchiveTrigger: {
             type: "boolean",
-            description: "Erreicht eine Karte diese Spalte, greift die Nextcloud-Archivierung.",
+            description: "Beim Erreichen greift die optionale Nextcloud-Archivierung auf normalen Boards und Antragsboards.",
           },
           isInstructionTrigger: {
             type: "boolean",
             description:
-              "Setzt beim Erreichen das Anweisungsdatum. Nur für Board-Verwalter enthalten.",
+              "Veraltetes Kompatibilitätsfeld, immer false. Nur für Eigentümer/Admins enthalten; keine automatische Datumssetzung.",
+            deprecated: true,
           },
           isTransferTrigger: {
             type: "boolean",
-            description: "Setzt beim Erreichen das Überweisungsdatum. Nur für Board-Verwalter enthalten.",
+            description: "Veraltetes Kompatibilitätsfeld, immer false. Nur für Eigentümer/Admins enthalten; keine automatische Datumssetzung.",
+            deprecated: true,
           },
           isReceiptTrigger: {
             type: "boolean",

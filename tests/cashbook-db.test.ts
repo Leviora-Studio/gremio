@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { validatePdfInteroperability } from "./helpers/pdf-signature-validation";
+import { budgetTitleFixture } from "./helpers/budget-title-fixtures";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile, readFile, readdir, stat, lstat, unlink } from "node:fs/promises";
 import { join,dirname } from "node:path";
 import forge from "node-forge";
@@ -15,6 +18,7 @@ import { getApplicationStatusByToken } from "../lib/public-status";
 import { extractPdfText } from "../lib/pdf-text";
 import { lockApplicationCard } from "../lib/card-lock";
 import { defaultCashbookConfig, type CashbookPayment } from "../lib/cashbook-types";
+import { isInstructionFile, removeReplacedInstructions } from "../lib/cashbook/instruction-files";
 import {snapshotCashbookSources} from "../lib/cashbook/source-files";
 import { createCashbook, saveCashbookGrant, saveCashbookConfig, saveCashbookDraft, transitionCashbook, correctCashbookEntry, markCashbookInstructionIncorrect } from "../lib/cashbook/service";
 import { cashbookPermission, requireCashbookEntry } from "../lib/cashbook/access";
@@ -80,13 +84,13 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     }
     await writeFile(join(folder, "template.pdf"), await template.save());
     const config = { ...defaultCashbookConfig, bookingNumbering:{prefix:"KÖT",digits:4}, speakerId: owner.id, financeId: second.id, officeId: office.id, sourceBoardIds: [board.id], templatePath: "template.pdf", mapping };
+    const catalogId = await budgetTitleFixture(owner.id,["1200","1300"],[account.id],[bookId]);
     await saveCashbookConfig(owner, bookId, 0, config);
     const payment: CashbookPayment = { cardId: card.id, business: false, number: "ignored", receiptIds: [receipt.id], amount: 2500, budgetTitle: "1200", holder: "Synthetic holder", iban: "DE89370400440532013000", bank: "Synthetic bank", purpose: "Materials", place: "Köthen", date: "2026-11-13" };
     const [sourceBook]=await db.select().from(s.cashbooks).where(eq(s.cashbooks.id,bookId));
     assert.deepEqual((await cashbookCandidates(owner,sourceBook)).find(c=>c.id===card.id)?.receipts,[{id:receipt.id,filename:receipt.filename}]);
     await db.update(s.boardCardFields).set({visible:false}).where(and(eq(s.boardCardFields.boardId,board.id),eq(s.boardCardFields.fieldKey,"other_pdfs")));
-    assert.deepEqual((await cashbookCandidates(owner,sourceBook)).find(c=>c.id===card.id)?.receipts,[],"hidden receipt filenames are not exposed as selectable candidates");
-    await assert.rejects(snapshotCashbookSources(owner,sourceBook,payment),/Quittungen/);
+    assert.deepEqual((await cashbookCandidates(owner,sourceBook)).find(c=>c.id===card.id)?.receipts,[{id:receipt.id,filename:receipt.filename}],"the independent receipt area does not depend on general files");
     await db.update(s.boardCardFields).set({visible:true}).where(and(eq(s.boardCardFields.boardId,board.id),eq(s.boardCardFields.fieldKey,"other_pdfs")));
     const firstCopies=await Promise.all(Array.from({length:3},()=>snapshotCashbookSources(owner,sourceBook,payment)));
     assert.deepEqual(firstCopies[0],firstCopies[1]);
@@ -114,6 +118,7 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     for(const otherId of parallel){const files=(await db.select().from(s.cashbookEntries).where(eq(s.cashbookEntries.id,otherId)))[0].files;assert.deepEqual(files.map(f=>f.path),archived.map(f=>f.path),"same book reuses its own verified copies");}
     const separateBookId=await createCashbook(owner,"Separate archive");
     await saveCashbookConfig(owner,separateBookId,0,{...config,financeId:null});
+    await db.update(s.cashbooks).set({financeBoardId:catalogId}).where(eq(s.cashbooks.id,separateBookId));
     const separateEntryId=await saveCashbookDraft(owner,separateBookId,null,0,payment,"speaker");
     const separateFiles=(await db.select().from(s.cashbookEntries).where(eq(s.cashbookEntries.id,separateEntryId)))[0].files;
     assert.notEqual(separateFiles[0].path,archivedApplication.path,"each cashbook has its own storage area");
@@ -131,19 +136,37 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     const originalPaymentData=(await current()).data;
     await generateCashbookPdf(owner,id,await rev());
     await assert.rejects(signCashbookPdf(owner,id,await rev(),{page:0,xRatio:.1,yRatio:.8,wRatio:.3,hRatio:.1}),/Ort/);
-    await generateCashbookPdf(owner, id, await rev(), {place:"Köthen",date:"2026-11-14"});
+    const originalForm = (await current()).files.find(isInstructionFile)!;
+    const generationRevision = await rev();
+    const generations = await Promise.allSettled([1, 2].map(() => generateCashbookPdf(owner, id, generationRevision, {place:"Köthen",date:"2026-11-14"})));
+    assert.equal(generations.filter(result => result.status === "fulfilled").length, 1, "only one concurrent replacement can commit");
+    await assert.rejects(stat(join(folder, originalForm.path)), {code:"ENOENT"});
+    const onlyInstruction = async (kind: string) => {
+        const files = (await current()).files.filter(isInstructionFile);
+        assert.equal(files.length, 1, "only the current instruction remains attached");
+        assert.equal(files[0].kind, kind);
+        assert.equal(files[0].filename, "AN-001_Anweisung.pdf");
+        assert.deepEqual(await readdir(join(folder, `cashbooks/${bookId}/${id}`)), [files[0].path.split("/").at(-1)], "no intermediate form files remain on disk");
+        return files[0];
+    };
+    await onlyInstruction("form");
     assert.deepEqual((await current()).data,originalPaymentData,"signature details never rewrite payment data");
     const ownForm=(await current()).files.find(file=>file.kind==="form"&&!file.obsolete)!;
     assert.equal(ownForm.signatureDetails?.date,"2026-11-14");
     assert.match((await extractPdfText(await readFile(join(folder,ownForm.path)))).text,/Köthen, 14\.11\.2026/);
     const placement = { page: 0, xRatio: .1, yRatio: .8, wRatio: .3, hRatio: .1 };
     await signCashbookPdf(owner, id, await rev(), placement);
+    await onlyInstruction("signed");
+    await assert.rejects(stat(join(folder, ownForm.path)), {code:"ENOENT"});
     await transitionCashbook(owner, id, await rev(), "submit", {});
     await assert.rejects(db.update(s.cashbookEntries).set({ data: { ...payment, holder: "Changed while frozen" } }).where(eq(s.cashbookEntries.id, id)));
     await assert.rejects(saveCashbookDraft(owner, bookId, id, await rev(), payment, "speaker"));
     await assert.rejects(requireCashbookEntry(office, id));
     await assert.rejects(transitionCashbook(second, id, await rev(), "return", { comment: "" }));
+    const returnedFile = await onlyInstruction("signed");
     await transitionCashbook(second, id, await rev(), "return", { comment: "Please correct the amount." });
+    assert.equal((await current()).files.filter(isInstructionFile).length, 0);
+    await assert.rejects(stat(join(folder, returnedFile.path)), {code:"ENOENT"});
     await saveCashbookDraft(owner, bookId, id, await rev(), { ...payment, amount: 5000 }, "speaker");
     await generateCashbookPdf(owner, id, await rev(), {place:"Köthen",date:"2026-11-14"});
     await signCashbookPdf(owner, id, await rev(), placement);
@@ -154,20 +177,54 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     await assert.rejects(prepareSecondCashbookSignature(second, id, await rev(), {place:"",date:"2026-11-14"}));
     await assert.rejects(prepareSecondCashbookSignature(second, id, await rev(), {place:"Berlin",date:"2026-02-30"}));
     const frozenPayment = (await current()).data;
+    const firstSignedFile = await onlyInstruction("signed");
+    const firstSignedBytes = await readFile(join(folder, firstSignedFile.path));
+    // Simulate an in-progress entry from an older release without the new metadata.
+    const legacyForm = await storeCashbookFile(bookId, id, await readFile(join(folder, "template.pdf")), "Old-form.pdf", "form");
+    legacyForm.secondPlaceDate = firstSignedFile.secondPlaceDate;
+    await db.update(s.cashbookEntries).set({files: (await current()).files.map(file => {
+        if (!isInstructionFile(file)) return file;
+        const {secondPlaceDate: _positions, firstSignature: _prefix, ...legacy} = file;
+        return legacy;
+    }).concat(legacyForm)}).where(eq(s.cashbookEntries.id, id));
     const beforePrepare = await rev();
     await prepareSecondCashbookSignature(second, id, beforePrepare, {place:"Leipzig",date:"2026-11-14"});
+    const previousPreparation = await onlyInstruction("prepared");
+    await assert.rejects(stat(join(folder, firstSignedFile.path)), {code:"ENOENT"});
+    await assert.rejects(stat(join(folder, legacyForm.path)), {code:"ENOENT"});
     await assert.rejects(prepareSecondCashbookSignature(second, id, beforePrepare, {place:"Stale",date:"2026-11-14"}));
     await prepareSecondCashbookSignature(second, id, await rev(), {place:"Berlin",date:"2026-11-15"});
-    const preparedFile = (await current()).files.find(f=>f.kind==="prepared"&&!f.obsolete)!;
+    const preparedFile = await onlyInstruction("prepared");
+    await assert.rejects(stat(join(folder, previousPreparation.path)), {code:"ENOENT"});
     const preparedBytes = await readFile(join(folder,preparedFile.path));
     const preparedText = (await extractPdfText(preparedBytes)).text;
+    assert.ok(preparedBytes.subarray(0,firstSignedBytes.length).equals(firstSignedBytes), "repreparing retains the exact first signature");
     assert.match(preparedText,/Berlin, 15\.11\.2026/);
     assert.doesNotMatch(preparedText,/Leipzig/);
     assert.deepEqual((await current()).data,frozenPayment);
     await signCashbookPdf(second, id, await rev(), { ...placement, xRatio: .55 });
+    const finalFile = await onlyInstruction("signed");
+    await assert.rejects(stat(join(folder, preparedFile.path)), {code:"ENOENT"});
+    const finalBytes = await readFile(join(folder, finalFile.path));
+    validatePdfInteroperability(join(folder,finalFile.path),2);
+    assert.ok(finalBytes.subarray(0, firstSignedBytes.length).equals(firstSignedBytes));
+    const ranges = [...finalBytes.toString("latin1").matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)];
+    assert.equal(ranges.length, 2);
+    for (const [index, match] of ranges.entries()) {
+        const [a,b,c,d] = match.slice(1).map(Number);
+        const content = join(folder, `verify-content-${index}`), signature = join(folder, `verify-signature-${index}`);
+        await writeFile(content, Buffer.concat([finalBytes.subarray(a,a+b),finalBytes.subarray(c,c+d)]));
+        await writeFile(signature, Buffer.from(finalBytes.subarray(b+1,c-1).toString("latin1").replace(/\s/g,""),"hex"));
+        const verified = spawnSync("openssl", ["cms","-verify","-binary","-inform","DER","-in",signature,"-content",content,"-noverify","-out",join(folder,`verified-${index}`)], {encoding:"utf8"});
+        assert.equal(verified.status,0,verified.stderr);
+    }
     await assert.rejects(prepareSecondCashbookSignature(second,id,await rev(),{place:"Changed after signing",date:"2026-11-16"}));
     await transitionCashbook(second, id, await rev(), "authorize", {});
     assert.equal((await current()).state, "posted");
+    await onlyInstruction("signed");
+    await removeReplacedInstructions([finalFile]);
+    assert.ok((await readFile(join(folder, finalFile.path))).equals(finalBytes), "cleanup preserves files referenced by posted entries");
+    await assert.rejects(generateCashbookPdf(owner, id, await rev()));
     assert.equal((await current()).bookingNumber,"KÖT-0001");
     await assert.rejects(db.update(s.cashbookEntries).set({bookingNumber:"KÖT-9999"}).where(eq(s.cashbookEntries.id,id)));
     assert.equal((await requireCashbookEntry(office, id)).permission, "office");
@@ -220,6 +277,11 @@ test("irreversible card freeze, two signatures, returns, office processing, corr
     await transitionCashbook(office, id, await rev(), "office", { done: false });
     await transitionCashbook(owner, id, await rev(), "bookingDate", { date: "2026-11-13" });
     await assert.rejects(transitionCashbook(owner, id, await rev(), "bookingDate", { date: "2026-11-14" }));
+    const beforeRejectedCorrection = await current();
+    for (const confirmation of ["", "bestätigen", "MARKIEREN"]) {
+      await assert.rejects(correctCashbookEntry(owner, id, await rev(), { ...payment, amount: 4000 }, "Corrected amount", confirmation));
+      assert.deepEqual(await current(), beforeRejectedCorrection);
+    }
     const correction = await correctCashbookEntry(owner, id, await rev(), { ...payment, amount: 4000 }, "Corrected amount", "BESTÄTIGEN");
     assert.equal((await current()).data.amount, 5000);
     await assert.rejects(correctCashbookEntry(owner, id, await rev(), { ...payment, amount: 3000 }, "Again", "BESTÄTIGEN"));

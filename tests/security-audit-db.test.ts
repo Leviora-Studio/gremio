@@ -1,3 +1,4 @@
+import { purgeTestResource, purgeTestMeetings } from "./helpers/trash-cleanup";
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 import "dotenv/config";
@@ -33,8 +34,8 @@ test("only meeting management can reopen a closed session", async () => {
     await service.saveMeeting(owner, meetingId, values, closed.revision);
     assert.equal((await requireMeeting(owner, meetingId)).state, "planning");
   } finally {
-    await db.delete(s.meetings).where(eq(s.meetings.areaId, areaId));
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id, areaId));
+    await purgeTestMeetings(areaId);
+    await purgeTestMeetings(areaId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));
     await db.delete(s.users).where(inArray(s.users.id, people.map(person => person.id)));
   }
 });
@@ -49,15 +50,15 @@ test("deleting a confidential parent preserves access protection for its survivi
     const meetingId = await service.saveMeeting(owner, null, { ...meetingValues, areaId });
     const parentId = await service.createTopic(owner, meetingId, { ...topicValues, confidential: true });
     const childId = await service.createTopic(owner, meetingId, { ...topicValues, parentId });
-    await service.deleteTopic(owner, parentId);
+    await service.deleteTopic(owner,parentId);
     const { topic } = await requireTopic(owner, childId);
     assert.equal(topic.parentId, null);
     assert.equal(topic.confidential, true);
     await assert.rejects(requireTopic(reader, childId), /Zugriff/);
     assert.equal((await visibleTopics(reader, meetingId)).length, 0);
   } finally {
-    await db.delete(s.meetings).where(eq(s.meetings.areaId, areaId));
-    await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id, areaId));
+    await purgeTestMeetings(areaId);
+    await purgeTestMeetings(areaId);await db.delete(s.meetingAreas).where(eq(s.meetingAreas.id,areaId));
     await db.delete(s.users).where(inArray(s.users.id, people.map(person => person.id)));
   }
 });

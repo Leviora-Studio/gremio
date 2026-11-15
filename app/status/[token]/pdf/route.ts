@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { getReceiptBranding } from "@/lib/receipt-branding";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -30,7 +32,7 @@ export async function GET(
     [antrag] = await db
       .select()
       .from(cards)
-      .where(eq(cards.token, token))
+      .where(trashAnd(activeRows.cards, eq(cards.token, token)))
       .limit(1);
   } catch (e) {
     // Kein Durchreichen: Drizzle-Fehlertexte enthalten die Query-Parameter —

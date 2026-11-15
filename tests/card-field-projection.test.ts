@@ -28,7 +28,7 @@ test("history never discloses disabled values, legacy filenames, paths or unknow
     assert.equal(visibleActivityDetail(event, new Set([type])), event.detail);
     assert.equal(event.detail, "Previously visible private value");
   }
-  for (const type of ["attachment_added", "attachment_removed", "attachment_organized", "attachment_folder_created", "archive", "archive_failed", "legacy_event", "toString"]) {
+  for (const type of ["attachment_added", "attachment_removed", "attachment_trashed", "attachment_restored", "attachment_purged", "attachment_organized", "attachment_folder_created", "archive", "archive_failed", "legacy_event", "toString"]) {
     assert.ok(!String(visibleActivityDetail({ type, detail: "Private filename and archive path" }, new Set(["other_pdfs"]))).includes("Private"));
   }
   assert.equal(visibleActivityDetail({ type: "status", detail: "Open → Done" }, new Set()), "Open → Done");

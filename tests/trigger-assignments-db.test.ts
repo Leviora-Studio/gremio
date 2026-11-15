@@ -9,6 +9,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db, pool } from "../lib/db";
 import {
   boardAccess, boardCardFields, boards, boardStatuses, boardTriggerAssignments,
+  boardTriggerAssignees,
   cardActivity, cardAssignees, cards, users,
 } from "../lib/db/schema";
 import {
@@ -44,13 +45,15 @@ test("board triggers clear and add assignees, log the change and respect hidden 
     const [card] = await db.insert(cards).values({ boardId: board.id, statusId: open.id, title: suffix, applicant: "Test", token: suffix }).returning();
     await db.insert(cardAssignees).values({ cardId: card.id, userId: a.id });
 
-    assert.deepEqual(await statusTriggerKinds(instr.id), ["instruction", "archive"]);
+    assert.deepEqual(await statusTriggerKinds(instr.id), ["archive"]);
+    assert.match((await setTriggerAssignmentConfig(board.id, "instruction", true, [b.id])).error ?? "", /nicht verfügbar/);
+    assert.match((await setTriggerAssignmentConfig(board.id, "transfer", true, [b.id])).error ?? "", /nicht verfügbar/);
     assert.deepEqual(await statusTriggerKinds(done.id), ["done"]);
-    assert.match((await setTriggerAssignmentConfig(board.id, "instruction", false, [outsider.id])).error ?? "", /Zugriff/);
-    assert.equal((await setTriggerAssignmentConfig(board.id, "instruction", true, [b.id])).success, "Zuweisungen gespeichert.");
+    assert.match((await setTriggerAssignmentConfig(board.id, "archive", false, [outsider.id])).error ?? "", /Zugriff/);
+    assert.equal((await setTriggerAssignmentConfig(board.id, "archive", true, [b.id])).success, "Zuweisungen gespeichert.");
     assert.equal((await setTriggerAssignmentConfig(board.id, "done", true, [])).success, "Zuweisungen gespeichert.");
     assert.deepEqual(await getTriggerAssignmentConfigs(board.id), new Map([
-      ["instruction", { clearAssignees: true, userIds: [b.id] }],
+      ["archive", { clearAssignees: true, userIds: [b.id] }],
       ["done", { clearAssignees: true, userIds: [] }],
     ]));
 
@@ -59,7 +62,7 @@ test("board triggers clear and add assignees, log the change and respect hidden 
 
     await applyStatusTriggerAssignments(card.id, instr.id);
     assert.deepEqual(await assigned(), [b.id]);
-    assert.deepEqual(await log(), [["assignee", null, `Automatisch (Trigger „Anweisungsdatum"): Zugewiesen: ${b.username} · Entfernt: ${a.username}`]]);
+    assert.deepEqual(await log(), [["assignee", null, `Automatisch (Trigger „Nextcloud-Archiv"): Zugewiesen: ${b.username} · Entfernt: ${a.username}`]]);
 
     await applyStatusTriggerAssignments(card.id, instr.id);
     assert.equal((await log()).length, 1, "no-op runs are not logged");
@@ -82,6 +85,14 @@ test("board triggers clear and add assignees, log the change and respect hidden 
     // Empty configuration removes the row entirely.
     await setTriggerAssignmentConfig(board.id, "resubmit", false, []);
     assert.equal((await db.select().from(boardTriggerAssignments).where(eq(boardTriggerAssignments.boardId, board.id))).some((r) => r.trigger === "resubmit"), false);
+
+    // Historical date assignment rules remain stored, but are ignored even
+    // when invoked directly as an event rather than through a status move.
+    await db.insert(boardTriggerAssignments).values({ boardId: board.id, trigger: "instruction", clearAssignees: true });
+    await db.insert(boardTriggerAssignees).values({ boardId: board.id, trigger: "instruction", userId: owner.id });
+    assert.equal((await getTriggerAssignmentConfigs(board.id)).has("instruction"), false);
+    await applyTriggerAssignments(card.id, ["instruction", "transfer"]);
+    assert.deepEqual(await assigned(), [a.id]);
   } finally {
     await db.delete(cards).where(eq(cards.boardId, board.id));
     await db.delete(boards).where(eq(boards.id, board.id));

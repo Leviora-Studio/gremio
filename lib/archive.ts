@@ -1,21 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
 
-import { and, eq, isNull } from "drizzle-orm";
-import { db, pool } from "@/lib/db";
+import { retryCashbookArchives } from "@/lib/cashbook/archive";
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
+import { and, asc, eq, isNotNull, or, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { db, pool, schema } from "@/lib/db";
 import {
+  nextcloudArchiveJobs,
+  cardActivity,
   attachments,
   attachmentFolders,
   boardArchive,
+  boards,
   boardStatuses,
   cards,
   type Card,
 } from "@/lib/db/schema";
 import { decryptSecret } from "@/lib/crypto";
 import { uploadAntragArchive } from "@/lib/nextcloud";
-import { logActivity } from "@/lib/activity";
 import { loadBudgetPositions } from "@/lib/card-budget-db";
 import { budgetTitles } from "@/lib/card-budget";
+import { isBoardTriggerAvailable } from "@/lib/board-trigger-policy";
 import {
   DEFAULT_ARCHIVE_FOLDER_FIELDS,
   DEFAULT_ARCHIVE_FOLDER_SEPARATOR,
@@ -71,17 +78,20 @@ export function buildArchiveFolderName(
 const ARCHIVE_LOCK_NS = 0x5747; // "GW"
 
 /**
- * Einzige automatische Aktion der App: Erreicht eine Karte die Archiv-Trigger-
- * Spalte eines Boards mit aktivierter Nextcloud-Archivierung, werden alle
- * aktuellen Anhänge hochgeladen. Idempotent (nur einmal pro Karte).
+ * Ist der bestätigte öffentliche Kartenstatus eine Archiv-Trigger-Spalte und
+ * die Nextcloud-Archivierung des Boards aktiv, werden alle aktuellen Anhänge
+ * hochgeladen. Sperrspalten warten auf die Sperre. Nur einmal pro Karte.
  *
  * Pro Karte serialisiert über ein nicht-blockierendes Postgres-Advisory-Lock:
  * verhindert, dass zwei zeitgleiche Auslöser (z.B. Statuswechsel + Retry-Tick)
  * den `nextcloudLink`-Guard beide passieren und doppelt hochladen (TOCTOU).
- * Läuft bereits eine Archivierung für die Karte, kehren wir sofort zurück.
+ * Läuft bereits eine Archivierung, bleibt der dauerhafte Auftrag für den Worker bestehen.
  */
 export async function maybeArchive(cardId: number): Promise<void> {
-  if (!Number.isInteger(cardId)) return;
+  if (!Number.isSafeInteger(cardId) || cardId < 1 || cardId > 2147483647) return;
+  // Save before trying the nonblocking delivery lock. A skipped call must leave
+  // work behind; card/status database triggers already cover the commit gap.
+  await db.execute(sql`select queue_nextcloud_archive(${cardId})`);
   // Lock auf einer fest ausgecheckten Verbindung halten (session-scoped), damit
   // Erwerb und Freigabe garantiert auf demselben pg-Client laufen.
   const client = await pool.connect();
@@ -92,7 +102,7 @@ export async function maybeArchive(cardId: number): Promise<void> {
     );
     if (!res.rows[0]?.locked) return; // andere Archivierung dieser Karte läuft bereits
     try {
-      await archiveLocked(cardId);
+      await archiveLocked(cardId, drizzle(client, { schema }));
     } finally {
       await client.query("SELECT pg_advisory_unlock($1, $2)", [
         ARCHIVE_LOCK_NS,
@@ -104,33 +114,46 @@ export async function maybeArchive(cardId: number): Promise<void> {
   }
 }
 
+/** Cancel only after a fresh check under the card lock. A concurrent move
+ * back into a trigger queues a new job after this transaction instead of losing it. */
+type ArchiveDb = typeof db;
+async function discardInapplicableArchive(cardId: number, connection: ArchiveDb): Promise<void> {
+  await connection.transaction(async tx => {
+    const [card] = await tx.select().from(cards).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).for("update");
+    if (!card) return;
+    const result = await tx.execute<{ eligible: boolean }>(sql`select nextcloud_archive_eligible(${cardId}) as eligible`);
+    if (result.rows[0]?.eligible) return;
+    await tx.delete(nextcloudArchiveJobs).where(eq(nextcloudArchiveJobs.cardId, cardId));
+    if (card.archivePending) await tx.update(cards).set({ archivePending: false, archiveFirstFailedAt: null, archiveLastAttemptAt: null, archiveLastError: null }).where(eq(cards.id, cardId));
+  });
+}
+
 /** Eigentliche Archivierungslogik — läuft unter dem Advisory-Lock der Karte. */
-async function archiveLocked(cardId: number): Promise<void> {
-  const [card] = await db
+async function archiveLocked(cardId: number, connection: ArchiveDb): Promise<void> {
+  const [card] = await connection
     .select()
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(trashAnd(activeRows.cards, eq(cards.id, cardId)))
     .limit(1);
-  if (!card || card.lockedAt || card.nextcloudLink) return; // nicht gefunden oder bereits archiviert
+  if (!card) return; // missing/deleted boards stay paused; hard deletion cascades jobs
+  if (card.nextcloudLink) { await discardInapplicableArchive(cardId, connection); return; }
 
-  // Eine offene Retry-Markierung räumen, sobald die Archivierung nicht (mehr)
-  // anwendbar ist (Archiv aus/entfernt, oder Karte hat die Trigger-Spalte
-  // verlassen) — sonst würde sie ewig erneut versucht / auf dem Dashboard hängen.
-  const clearPending = async () => {
-    if (card.archivePending) {
-      await db
-        .update(cards)
-        .set({
-          archivePending: false,
-          archiveFirstFailedAt: null,
-          archiveLastAttemptAt: null,
-          archiveLastError: null,
-        })
-        .where(eq(cards.id, cardId));
-    }
-  };
+  const clearPending = () => discardInapplicableArchive(cardId, connection);
 
-  const [archive] = await db
+  const [board] = await connection.select().from(boards).where(trashAnd(activeRows.boards, eq(boards.id, card.boardId))).limit(1);
+  if (!board || !isBoardTriggerAvailable(board, "archive")) {
+    await clearPending();
+    return;
+  }
+
+  // A move awaiting an irreversible lock has not published its target status.
+  // Never archive it (including retries) before that confirmation commits.
+  if (card.publicStatusId == null || card.publicStatusId !== card.statusId) {
+    await clearPending();
+    return;
+  }
+
+  const [archive] = await connection
     .select()
     .from(boardArchive)
     .where(eq(boardArchive.boardId, card.boardId))
@@ -147,30 +170,34 @@ async function archiveLocked(cardId: number): Promise<void> {
     return;
   }
 
-  const [status] = await db
+  const [status] = await connection
     .select()
     .from(boardStatuses)
-    .where(eq(boardStatuses.id, card.statusId))
+    .where(trashAnd(activeRows.boardStatuses, and(eq(boardStatuses.id, card.publicStatusId), eq(boardStatuses.boardId, board.id))))
     .limit(1);
-  if (!status || !status.isArchiveTrigger) {
+  if (!status || !status.isArchiveTrigger || (board.isApplicationBoard && status.isLockColumn && !card.lockedAt)) {
     await clearPending();
     return;
   }
 
-  const files = await db
+  const files = await connection
     .select()
     .from(attachments)
-    .where(eq(attachments.cardId, cardId));
+    .where(trashAnd(activeRows.attachments, eq(attachments.cardId, cardId)));
 
-  const folders = await db.select().from(attachmentFolders).where(eq(attachmentFolders.cardId, cardId));
+  const folders = await connection.select().from(attachmentFolders).where(trashAnd(activeRows.attachmentFolders, eq(attachmentFolders.cardId, cardId)));
 
   const now = new Date();
+  const [attempt] = await connection.update(nextcloudArchiveJobs).set({
+    attempts: sql`${nextcloudArchiveJobs.attempts} + 1`, lastAttemptAt: now,
+  }).where(eq(nextcloudArchiveJobs.cardId, cardId)).returning({ cardId: nextcloudArchiveJobs.cardId });
+  if (!attempt) return;
   try {
     const password = decryptSecret(archive.ncPasswordEnc);
     // Ordnername aus der Board-Konfiguration (Felder + Trennzeichen);
     // sanitizeSegment in uploadAntragArchive säubert ihn final.
     const subfolder = buildArchiveFolderName(
-      card.budgetMode === "positions" ? { ...card, budgetTitle: budgetTitles(await loadBudgetPositions(card.id)) } : card,
+      card.budgetMode === "positions" ? { ...card, budgetTitle: budgetTitles(await loadBudgetPositions(card.id, connection)) } : card,
       archive.folderFields,
       archive.folderSeparator,
     );
@@ -181,19 +208,18 @@ async function archiveLocked(cardId: number): Promise<void> {
       folders,
       files: files.map((f) => ({ id: f.id, relPath: f.path, filename: f.filename, folderId: f.folderId })),
     });
-    await db
-      .update(cards)
-      .set({
-        nextcloudLink: folder,
-        archivePending: false,
-        archiveFirstFailedAt: null,
-        archiveLastAttemptAt: now,
-        archiveLastError: null,
-      })
-      .where(eq(cards.id, cardId));
+    // Commit success, visible history and acknowledgement together. A crash
+    // after remote PUT but before this commit leaves the job retryable.
+    await connection.transaction(async tx => {
+      const [saved] = await tx.update(cards).set({
+        nextcloudLink: folder, archivePending: false, archiveFirstFailedAt: null,
+        archiveLastAttemptAt: now, archiveLastError: null,
+      }).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).returning({ id: cards.id });
+      if (!saved) throw new Error("Card no longer available for archive acknowledgement");
+      await tx.insert(cardActivity).values({ cardId, userId: null, type: "archive", detail: `Nach Nextcloud archiviert: ${folder}` });
+      await tx.delete(nextcloudArchiveJobs).where(eq(nextcloudArchiveJobs.cardId, cardId));
+    });
     console.log(`[archive] Karte #${cardId} nach Nextcloud archiviert: ${folder}`);
-    // Sichtbarer Beleg an der Karte (die Archivierung ist sonst unsichtbar).
-    await logActivity(cardId, null, "archive", `Nach Nextcloud archiviert: ${folder}`);
   } catch (e) {
     // Erster Fehlschlag (vorher nicht „pending")? → Aktivitäts-Zeile schreiben.
     // Bei Folge-Retrys nur Zeitstempel aktualisieren (kein Feed-Spam).
@@ -204,33 +230,29 @@ async function archiveLocked(cardId: number): Promise<void> {
     console.error(`[archive] Karte #${cardId} fehlgeschlagen:`, e);
     const generic =
       "Nextcloud-Archivierung fehlgeschlagen (wird automatisch erneut versucht) — bitte Verbindung und Zugangsdaten prüfen.";
-    await db
-      .update(cards)
-      .set({
-        archivePending: true,
-        archiveFirstFailedAt: card.archiveFirstFailedAt ?? now,
-        archiveLastAttemptAt: now,
-        archiveLastError: generic,
-      })
-      .where(eq(cards.id, cardId));
-    if (firstFailure) {
-      await logActivity(cardId, null, "archive_failed", generic).catch(() => {});
-    }
+    await connection.transaction(async tx => {
+      await tx.update(nextcloudArchiveJobs).set({ lastError: generic }).where(eq(nextcloudArchiveJobs.cardId, cardId));
+      const [failed] = await tx.update(cards).set({
+        archivePending: true, archiveFirstFailedAt: card.archiveFirstFailedAt ?? now,
+        archiveLastAttemptAt: now, archiveLastError: generic,
+      }).where(trashAnd(activeRows.cards, eq(cards.id, cardId))).returning({ id: cards.id });
+      if (failed && firstFailure) await tx.insert(cardActivity).values({ cardId, userId: null, type: "archive_failed", detail: generic });
+    });
   }
 }
 
 /**
- * Versucht alle ausstehenden Archivierungen erneut (Karten in der Trigger-Spalte,
- * deren Upload bisher fehlschlug). maybeArchive prüft Anwendbarkeit selbst und
+ * Verarbeitet dauerhafte Archivaufträge und übernimmt alte Fehlermarkierungen,
+ * einschließlich noch nie gestarteter Aufträge nach einem Abbruch. maybeArchive prüft selbst und
  * räumt Markierungen, wenn nicht mehr nötig. Läuft bis zum Erfolg — endlos im
  * Minuten-/10-Minuten-Takt (der Dashboard-Hinweis nach 24 h macht Dauerfehler
  * sichtbar).
  */
 export async function retryPendingArchives(): Promise<number> {
-  const pending = await db
-    .select({ id: cards.id })
-    .from(cards)
-    .where(and(eq(cards.archivePending, true), isNull(cards.nextcloudLink)));
+  const pending = await db.select({ id: cards.id }).from(cards)
+    .leftJoin(nextcloudArchiveJobs, eq(nextcloudArchiveJobs.cardId, cards.id))
+    .where(trashAnd(activeRows.cards, or(isNotNull(nextcloudArchiveJobs.cardId), eq(cards.archivePending, true))))
+    .orderBy(asc(nextcloudArchiveJobs.requestedAt), asc(cards.id));
   for (const c of pending) {
     await maybeArchive(c.id).catch((e) =>
       console.error(`[archive-retry] Karte #${c.id}:`, e),
@@ -247,11 +269,12 @@ export async function retryPendingArchives(): Promise<number> {
 // --- Retry-Scheduler (eine Instanz je Prozess) -----------------------------
 const g = globalThis as unknown as { __archiveRetryStarted?: boolean };
 
-/** Startet den Retry-Scheduler für fehlgeschlagene Nextcloud-Archivierungen. */
+/** Starts the durable archive worker after startup, then every ten minutes. */
 export function startArchiveRetryScheduler(): void {
   if (g.__archiveRetryStarted) return;
   g.__archiveRetryStarted = true;
   const tick = () => {
+    retryCashbookArchives().catch(error=>console.error("[cashbook-archive] Worker failed",error instanceof Error?error.name:"Error"));
     retryPendingArchives().catch((e) =>
       console.error("[archive-retry] Lauf fehlgeschlagen:", e),
     );

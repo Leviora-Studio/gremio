@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Leviora Studio
+import { activeRows } from "@/lib/trash-visibility";
+import { and as trashAnd } from "drizzle-orm";
 import { PDFDocument, StandardFonts, rgb, PDFString } from "pdf-lib";
 import { env } from "@/lib/env";
 import { eq } from "drizzle-orm";
@@ -69,7 +71,7 @@ export async function buildMeetingAgendaPdf(user: User, id: number): Promise<Uin
     if(topic.description)line(topic.description);
     if(topic.motion?.trim()){line("Beschlussvorschlag",true);line(topic.motion);line("Abstimmung: Dafür / Dagegen / Enthaltung",true);}
     if(topic.outcome){line("Ergebnis / Notiz",true);line(topic.outcome);}
-    const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(eq(meetingDocuments.topicId,topic.id));
+    const docs=await db.select({filename:meetingDocuments.filename}).from(meetingDocuments).where(trashAnd(activeRows.meetingDocuments, eq(meetingDocuments.topicId,topic.id)));
     if(docs.length){line("Freigegebene Sitzungsunterlagen",true);for(const doc of docs)line(doc.filename);}
   }
   }

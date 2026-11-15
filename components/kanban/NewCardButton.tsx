@@ -5,6 +5,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DeleteConfirm } from "@/components/DeleteConfirm";
 import { Modal } from "@/components/Modal";
 import { CardEditor } from "@/components/antrag/CardEditor";
 import {
@@ -74,14 +75,11 @@ export function NewCardButton({
     router.refresh();
   }
 
-  async function discard() {
-    if (closing.current) return;
-    closing.current = true;
-    const id = cardId;
-    setOpen(false);
-    setCardId(null);
-    if (id) await discardCardAction(id);
-    router.refresh();
+  async function discard(confirmation?:string) {
+    if(closing.current||cardId==null)return;
+    closing.current=true;
+    try{const result=await discardCardAction(cardId,confirmation);if(result?.error)return result;setOpen(false);setCardId(null);router.refresh();}
+    finally{closing.current=false;}
   }
 
   const has = (k: string) => visible.includes(k);
@@ -107,9 +105,7 @@ export function NewCardButton({
         title="Neue Karte"
         headerActions={
           <>
-            <button onClick={discard} className="btn-danger btn-sm">
-              Verwerfen
-            </button>
+            <DeleteConfirm action={discard} recycleBinMessage="Die bereits gespeicherte neue Karte wird mit ihren Inhalten und Anhängen für 30 Tage in den Board-Papierkorb verschoben. Schreibberechtigte können sie dort wiederherstellen oder endgültig löschen." wordInModal buttonLabel="Verwerfen" buttonClassName="btn-danger btn-sm" title="Neue Karte verwerfen"/>
             <button onClick={keep} disabled={unsaved} title={unsaved ? "Bitte zuerst alle Felder gültig ausfüllen und das automatische Speichern abwarten." : undefined} className="btn-primary btn-sm">
               Fertig
             </button>

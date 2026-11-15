@@ -715,6 +715,90 @@
       "when": 1793588400000,
       "tag": "0101_application_board_modules",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1793592000000,
+      "tag": "0102_board_managers",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1793595600000,
+      "tag": "0103_inventory_board_managers",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1793599200000,
+      "tag": "0104_frozen_card_archiving",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1793602800000,
+      "tag": "0105_budget_title_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1793606400000,
+      "tag": "0106_recycle_bin",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1793610000000,
+      "tag": "0107_attachment_recycle_bin",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1793613600000,
+      "tag": "0108_trash_retention_30_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1793617200000,
+      "tag": "0109_nextcloud_archive_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1793620800000,
+      "tag": "0110_cashbook_nextcloud_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1793624400000,
+      "tag": "0111_meeting_area_recycle_bin",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1793628000000,
+      "tag": "0112_meeting_area_managers",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1793631600000,
+      "tag": "0113_card_recycle_bin",
+      "breakpoints": true
     }
   ]
 }

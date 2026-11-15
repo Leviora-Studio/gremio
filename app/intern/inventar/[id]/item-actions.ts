@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 "use server";
+import { deleteConfirmationError } from "@/lib/confirmation";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -185,6 +186,7 @@ export async function deleteInventoryItemAction(
   _prev: ItemActionState,
   formData: FormData,
 ): Promise<ItemActionState> {
+  const invalid=deleteConfirmationError(formData.get("confirmation"));if(invalid)return invalid;
   const itemId = Number(formData.get("itemId"));
   const item = await getInventoryItemById(itemId);
   if (!item) return { error: "Gegenstand nicht gefunden." };
