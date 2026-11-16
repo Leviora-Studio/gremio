@@ -153,6 +153,19 @@ Authorization: Bearer grm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 `GET /api/v1` zeigt den aktiven Scope des Tokens (`token.scope`,
 `token.boards`).
 
+### CORS (optional)
+
+Ohne Konfiguration setzt `/api/v1` keine CORS-Header. Mit
+`CORS_ALLOWED_ORIGINS` in der `.env` (kommagetrennte, exakte Origins wie
+`https://app.example.org`) dürfen diese Seiten die API aus dem Browser aufrufen:
+Preflights erlauben `GET, POST, PATCH, DELETE` sowie die Header
+`Authorization, Content-Type`; `Retry-After` und `Content-Disposition` sind
+lesbar. `Access-Control-Allow-Credentials` wird nie gesetzt — der Browser
+schickt keine Gremio-Sitzung mit, jede Anfrage braucht weiterhin einen
+Bearer-Token mit passendem Scope. `*` ist nicht erlaubt. Dieselbe Liste gilt für
+die öffentliche API (siehe `docs/PUBLIC_API.md`); MCP und OAuth bleiben davon
+unberührt.
+
 ## Konventionen
 
 - Alle Bodies und Antworten sind `application/json`.

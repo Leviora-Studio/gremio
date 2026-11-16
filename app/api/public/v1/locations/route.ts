@@ -19,7 +19,8 @@ export const runtime = "nodejs";
  * Ziel hätte keinen Platz für die Karte und darf gar nicht erst angeboten
  * werden.
  *
- * Bewusst OHNE CORS-Header: native Apps unterliegen keinem Browser-CORS.
+ * Keine eigenen CORS-Header: native Apps unterliegen keinem Browser-CORS;
+ * optionale Freigaben setzt zentral `middleware.ts` (`CORS_ALLOWED_ORIGINS`).
  */
 export const GET = withPublicApi500(async function GET() {
   const limited = await enforceRateLimits([RL_LOCATIONS]);

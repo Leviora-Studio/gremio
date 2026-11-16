@@ -17,7 +17,8 @@ export const runtime = "nodejs";
  *
  * Liefert exakt die Bereiche, die auch im öffentlichen Formular erscheinen:
  * aktiviert UND mit einer Zielspalte, die wirklich zum Ziel-Board gehört.
- * Ohne Authentifizierung und bewusst ohne CORS-Header.
+ * Ohne Authentifizierung und ohne eigene CORS-Header (optional zentral über
+ * `middleware.ts` / `CORS_ALLOWED_ORIGINS`).
  *
  * `withPublicApi500` wie beim Schwester-Endpunkt `/locations`: Die
  * Spezifikation sichert für ALLE öffentlichen Endpunkte einen 500er als

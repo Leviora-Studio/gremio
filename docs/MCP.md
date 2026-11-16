@@ -129,7 +129,9 @@ its PDF.js/CMap/font/native dependencies; no Python runtime is required.
 Current interoperability target: desktop/server-side MCP clients using DCR and
 PKCE. Client metadata documents, confidential client secrets, legacy SSE and
 cross-origin browser-only clients are not implemented. Requests carrying a foreign
-Origin are rejected; no wildcard credentialed CORS is enabled. Test the intended
+Origin are rejected; no wildcard credentialed CORS is enabled. The optional
+`CORS_ALLOWED_ORIGINS` setting applies only to `/api/public/v1` and `/api/v1`,
+not to `/api/mcp` or the OAuth endpoints. Test the intended
 client with the actual HTTPS reverse proxy before release.
 
 See `docs/API.md` for the REST contract. Finance/inventory management,

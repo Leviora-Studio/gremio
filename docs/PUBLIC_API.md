@@ -50,11 +50,31 @@ zwischengeschalteter Backend-Server, kein API-Token.
 
 ## CORS
 
-Diese API setzt **bewusst keine CORS-Header** — insbesondere kein
-`Access-Control-Allow-Origin: *`. Native Clients unterliegen keinem
-Browser-CORS und brauchen sie nicht; ein pauschales Freigeben würde die
-Endpunkte nur unnötig aus beliebigen Webseiten heraus aufrufbar machen.
-Aus einem Browser ist die API damit nicht cross-origin nutzbar. Das ist gewollt.
+Standardmäßig setzt diese API **keine CORS-Header**. Native Clients unterliegen
+keinem Browser-CORS und brauchen sie nicht. Aus einem Browser ist die API dann
+nicht cross-origin nutzbar.
+
+Soll eine eigene Webseite die API direkt aus dem Browser aufrufen, trägt der
+Betreiber deren Origin in der `.env` ein:
+
+```bash
+CORS_ALLOWED_ORIGINS="https://www.example.org,https://app.example.org"
+```
+
+- Nur exakt gelistete Origins (Schema + Host + ggf. Port, ohne Pfad) erhalten
+  `Access-Control-Allow-Origin`; `*` und Muster sind nicht erlaubt.
+- Preflight-Anfragen (`OPTIONS`) werden beantwortet: Methoden `GET, POST`,
+  Header `Content-Type, Idempotency-Key`, Cache 600 Sekunden.
+- `Retry-After` ist für Skripte lesbar (`Access-Control-Expose-Headers`).
+- `Access-Control-Allow-Credentials` wird nie gesetzt; die API verwendet keine
+  Cookies.
+- Alle Antworten unter `/api/public/v1` tragen dann `Vary: Origin`.
+- Die Variable wird zur Laufzeit gelesen (Containerneustart genügt). Ein
+  ungültiger Eintrag verhindert den Start.
+
+Rate-Limits, Idempotenz und alle übrigen Regeln gelten unverändert; CORS ist
+keine Zugriffskontrolle, sondern erlaubt nur dem Browser, die Antwort an die
+Seite weiterzugeben.
 
 ---
 
