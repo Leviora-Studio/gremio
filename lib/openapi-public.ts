@@ -112,12 +112,14 @@ export const openApiPublicSpec = {
     //        Leerzeichen); POST /feedback lehnt unbekannte JSON-Felder mit
     //        400 ab (vorher still ignoriert).
     // 1.2.0: Pflicht-Kontaktadresse bei neuen Einreichungen; Clients müssen email mitsenden.
-    version: "1.2.0",
+    // 1.2.1: Optionale CORS-Freigabe exakter Origins (Serverkonfiguration
+    //        CORS_ALLOWED_ORIGINS) dokumentiert; Request/Response unverändert.
+    version: "1.2.1",
     summary:
       "Antrags- und Feedback-Einreichung für native Android-/iOS-Clients.",
     description: `Öffentliche, **nicht authentifizierte** API zum Einreichen von **Anträgen** und **Feedback**.
 
-Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen zwischengeschalteten Backend-Server und keine API-Authentifizierung. Native Clients unterliegen keinem Browser-CORS, deshalb setzt diese API **bewusst keine CORS-Header**. Aus einem Webbrowser heraus ist sie damit nicht cross-origin nutzbar.
+Sie ist für **direkte native Clients** (Android/iOS) gedacht — es gibt keinen zwischengeschalteten Backend-Server und keine API-Authentifizierung. Native Clients unterliegen keinem Browser-CORS, deshalb setzt diese API **standardmäßig keine CORS-Header** und ist aus einem Webbrowser heraus nicht cross-origin nutzbar. Betreiber können einzelne Webseiten über die Serverkonfiguration \`CORS_ALLOWED_ORIGINS\` freigeben (exakte Origins, kein \`*\`, nie mit Credentials).
 
 **Status-Link:** Die Antwort enthält \`statusUrl\` — einen geheimen Link, der wie ein Bearer-Token wirkt. Wer ihn besitzt, sieht die zugehörige öffentliche Statusansicht. Die App muss ihn lokal speichern und vertraulich behandeln (nicht loggen, nicht teilen). Bei aktivierter Empfangsbestätigung und angegebener E-Mail wird er an diese Kontaktadresse geschickt; ohne diese Bestätigung lässt sich ein verlorener Link nicht wiederherstellen. Anträge und Feedback haben getrennte Statusrouten (\`/status/…\` bzw. \`/feedback/status/…\`).
 

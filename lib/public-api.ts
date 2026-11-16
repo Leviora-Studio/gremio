@@ -11,8 +11,9 @@ import { env } from "@/lib/env";
  *
  * Diese Endpunkte sind unauthentifiziert und für direkte native Android-/
  * iOS-Clients gedacht. Native Apps unterliegen keinem Browser-CORS, deshalb
- * werden hier BEWUSST KEINE CORS-Header gesetzt (insbesondere kein
- * `Access-Control-Allow-Origin: *`).
+ * setzen die Handler selbst KEINE CORS-Header (insbesondere nie
+ * `Access-Control-Allow-Origin: *`). Eine optionale Freigabe exakter Origins
+ * per `CORS_ALLOWED_ORIGINS` übernimmt zentral `middleware.ts` / `lib/cors.ts`.
  */
 
 // --- Rate-Limit-Scopes ------------------------------------------------------

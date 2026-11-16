@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Leviora Studio
 
 import { z } from "zod";
+import { parseCorsAllowedOrigins } from "./cors";
 
 export const appOriginSchema = z.string().url().superRefine((value, ctx) => {
   let url: URL;
@@ -56,6 +57,19 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  // Optional: exakte Browser-Origins (kommagetrennt), die /api/public/v1 und
+  // /api/v1 cross-origin aufrufen dürfen. Leer = keine CORS-Header. Ausgewertet
+  // in middleware.ts; hier nur geprüft, damit ein Tippfehler den Start stoppt.
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .superRefine((value, ctx) => {
+      const parsed = parseCorsAllowedOrigins(value);
+      if (parsed.ok) return;
+      for (const message of parsed.errors) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    }),
 });
 
 export type Env = z.infer<typeof schema>;

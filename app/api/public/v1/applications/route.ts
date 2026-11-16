@@ -44,7 +44,8 @@ type Preflight =
 /**
  * Öffentliche Antragseinreichung für native Android-/iOS-Clients.
  *
- * Ohne Authentifizierung, ohne CORS-Header (native Clients brauchen keine).
+ * Ohne Authentifizierung, ohne eigene CORS-Header (native Clients brauchen
+ * keine; optional zentral über `middleware.ts` / `CORS_ALLOWED_ORIGINS`).
  * Die Fachlogik teilt sich diese Route mit dem Browserformular
  * (`lib/public-application-submission.ts`) — beide können nicht auseinander-
  * laufen. Zusätzlich hier: verpflichtende Idempotenz und eigene Rate-Limits.

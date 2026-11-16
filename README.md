@@ -408,6 +408,7 @@ bewusst nicht.**
 | `POSTGRES_PASSWORD` | Passwort des Postgres-Containers — **muss gesetzt sein** (docker-compose bricht sonst ab). |
 | `DATABASE_URL` | PostgreSQL-Verbindung (im Container von docker-compose gesetzt). |
 | `UPLOAD_DIR` | Verzeichnis für Anhänge + Profilbilder (Default `/app/uploads` im Container). |
+| `CORS_ALLOWED_ORIGINS` | Optional: exakte Browser-Origins (kommagetrennt, z. B. `https://www.example.org,https://app.example.org`), die `/api/public/v1` und `/api/v1` cross-origin aufrufen dürfen. Leer = keine CORS-Header. `*` ist nicht erlaubt; Credentials werden nie freigegeben. Wird beim Containerstart gelesen, kein Rebuild nötig. |
 | `AUTH_TRUST_HOST` | Hinter Reverse-Proxy auf `true`. |
 
 ---

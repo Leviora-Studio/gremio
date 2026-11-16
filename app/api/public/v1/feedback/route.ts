@@ -40,7 +40,8 @@ type Preflight = { kind: "replay"; cardId: number } | { kind: "conflict" };
 /**
  * Öffentliche Feedback-Einreichung für native Android-/iOS-Clients.
  *
- * Ohne Authentifizierung, ohne CORS-Header. Die Fachlogik teilt sich diese Route
+ * Ohne Authentifizierung, ohne eigene CORS-Header (optional zentral über
+ * `middleware.ts` / `CORS_ALLOWED_ORIGINS`). Die Fachlogik teilt sich diese Route
  * mit dem Browserformular (`lib/public-feedback-submission.ts`). Zusätzlich hier:
  * verpflichtende Idempotenz und eigene Rate-Limits.
  */
